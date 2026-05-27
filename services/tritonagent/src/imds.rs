@@ -4,30 +4,11 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! On-CN IMDSv2 listener -- the in-VM half of the layered metadata
-//! plane (`IMDS_DESIGN.md` §3, §4).
-//!
-//! A guest reaches this listener by talking to `169.254.169.254` (or
-//! `fd00:ec2::254`); the proteus kmod redirects the flow via
-//! `RouteTarget::LocalImds` to a CN-unique address on a dedicated
-//! proteus-owned internal datalink, SNAT'ing the guest source to a
-//! per-port pseudo-address. We `accept()` here, recover the
-//! originating port via the [`ImdsBindingTable`] -- the design's
-//! "Nitro card" caller-ID rule, never anything the guest sends --
-//! then mint or verify an HS256 session token bound to
-//! `(port_id, instance_id)`.
-//!
-//! ## Current state
-//!
-//! * Route table fully scaffolded (`router()`).
-//! * `PUT /latest/api/token` -- **implemented**: looks up the peer
-//!   in the binding table, parses + clamps
-//!   `X-aws-ec2-metadata-token-ttl-seconds`, mints with the per-CN
-//!   `ImdsTokenKey`, returns the opaque token.
-//! * All other routes -- placeholder `501 Not Implemented` while the
-//!   token-verified GET surface, the realized-view data source, the
-//!   `triton/guest/*` writeback, the rate limiter, and the
-//!   hop-limit-as-IP-TTL response control land in follow-up commits.
+//! On-CN IMDSv2 listener. The proteus kmod redirects the magic
+//! address to this listener and SNATs the guest to a per-port
+//! pseudo-address; the originating port is recovered via the binding
+//! table — never from anything the guest sends. Tokens are HS256
+//! bound to `(port_id, instance_id)`.
 
 use std::net::SocketAddr;
 use std::sync::Arc;

@@ -49,12 +49,6 @@ pub struct EdgeApplyStatus {
     pub error: Option<String>,
 }
 
-/// Apply one edge instance manifest through the legacy global-zone fhrun
-/// path.
-///
-/// The vmadm-backed edge executor should preserve this manifest validation
-/// and edge-control probe contract while replacing process supervision with
-/// zone create/start/reap operations.
 pub fn apply(
     edge_root: &Path,
     fhrun_bin: &Path,

@@ -4,38 +4,16 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! On-CN serial / VNC console listener.
+//! On-CN serial/VNC console listener.
 //!
-//! tritond proxies a browser's console session to here as the last hop:
-//! `browser → admin-backend → tritond → tritonagent → guest console`.
-//! This module runs a small **TLS WebSocket server bound to the CN
-//! admin IP**; tritond pins the listener's TLS leaf-cert SPKI (exchanged
-//! at registration) so a hijacked admin IP cannot MITM the byte stream.
-//!
-//! The single route is `GET /console/{vm_uuid}` (WebSocket upgrade) with
-//! query params `kind` (`serial` / `vnc`), `brand` (the zone brand), and
-//! `ticket` (a short-lived HS256 JWT minted by tritond with the per-CN
-//! [`ConsoleTicketKey`]). The handler:
-//!
-//! 1. Verifies the ticket against `(server_uuid, vm_uuid, kind)` — on
-//!    any failure, returns 401 without upgrading the socket.
-//! 2. Looks the zone up via `zoneadm` (404 if absent, 409 if not
-//!    running).
-//! 3. Picks the target Unix-domain socket by `(kind, brand)` —
-//!    mirroring `smartos-live/src/vm/sbin/vmadmd.js`:
-//!      * VNC, brand bhyve/kvm → `<zonepath>/root/tmp/vm.vnc` (no
-//!        handshake);
-//!      * serial, brand kvm → `<zonepath>/root/tmp/vm.console` (no
-//!        handshake);
-//!      * serial, any other brand → `/var/run/zones/<zonename>.console_sock`,
-//!        and write the zlogin `IDENT C 0\n` handshake (expect an `OK`
-//!        line back) before bytes flow.
-//! 4. Pumps bytes verbatim between the WebSocket (binary frames) and
-//!    the UDS until either side closes.
-//!
-//! `.console_sock` and the qemu sockets are single-consumer; a second
-//! concurrent attach to the same VM cleanly fails to connect, which is
-//! surfaced as a "console busy" close.
+//! TLS WebSocket at `GET /console/{vm_uuid}?kind=&brand=&ticket=`
+//! bound to the admin IP; tritond pins the leaf-cert SPKI exchanged at
+//! registration, so a hijacked admin IP can't MITM the stream. The
+//! handler verifies the HS256 ticket against `(server_uuid, vm_uuid,
+//! kind)`, picks the target UDS by `(kind, brand)` mirroring
+//! `vmadmd.js`, writes the zlogin handshake when applicable, then
+//! pumps bytes. `.console_sock` and the qemu sockets are
+//! single-consumer; concurrent attaches surface as "console busy".
 
 use std::io;
 use std::net::SocketAddr;
@@ -69,21 +47,12 @@ const ZLOGIN_HANDSHAKE: &[u8] = b"IDENT C 0\n";
 /// How long to wait for the `OK` ack after writing the handshake.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Idle-session cap: if not a single byte flows in either direction for
-/// this long, tear the session down and release the underlying console
-/// socket. A live VNC session is never idle (noVNC keeps requesting
-/// framebuffer updates); a live serial session at a quiet prompt can
-/// be, so this is generous — but a session whose browser vanished
-/// without a clean close (half-open TCP) leaks the single-consumer
-/// zoneadmd console socket until this fires, so don't make it huge.
-/// (The proper fix is a keepalive ping that the proxy chain forwards
-/// end to end; until then this is the backstop.)
+/// Backstop for half-open TCP: zoneadmd's console socket is
+/// single-consumer, so a vanished browser holds it until we tear down.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
-/// How often to send a WebSocket Ping toward the peer (tritond) to
-/// detect a dead chain faster than [`IDLE_TIMEOUT`]. The proxy hops
-/// forward Ping/Pong verbatim, and axum/tungstenite auto-respond to
-/// incoming Pings, so a peer that's alive but quiet still answers.
+/// Detects a dead proxy chain faster than `IDLE_TIMEOUT`. Pings are
+/// forwarded verbatim through every hop.
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
 
 /// If nothing at all (data, Ping, or Pong) is seen from the peer for

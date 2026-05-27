@@ -197,13 +197,8 @@ pub(crate) async fn agent_port_blueprint(
     Ok(HttpResponseOk(blueprint))
 }
 
-/// `GET /v2/agent/peer`: resolve one in-VPC peer to its host-CN
-/// underlay + guest MAC. The bound-CN agent calls this on every
-/// kmod v2p cache miss. Single FDB walk: find the VPC by VNI, list
-/// NICs in the VPC, pick the one whose primary IP matches, look up
-/// its host CN, derive the underlay address. 404 if no realized NIC
-/// owns the IP -- the agent populates a negative-cache entry on
-/// that path (item 6).
+/// Called on every kmod v2p cache miss; 404 lets the agent install a
+/// negative-cache entry.
 pub(crate) async fn agent_peer_resolve(
     rqctx: RequestContext<ApiContext>,
     query: Query<tritond_api::AgentPeerResolveQuery>,
@@ -211,11 +206,9 @@ pub(crate) async fn agent_peer_resolve(
     use std::net::IpAddr;
     use std::str::FromStr;
     let ctx = rqctx.context();
-    // Same auth surface as agent_port_blueprint: a CN-bound API key
-    // with the Agent scope. We don't need an instance-claim check
-    // here -- the peer resolution doesn't disclose blueprint
-    // content, only NIC primary IP -> {mac, host CN} which the
-    // agent already learns from its own port blueprints.
+    // No instance-claim check: peer resolution only discloses
+    // {mac, host CN} which the agent already sees in its own
+    // port blueprints.
     let _principal = authenticate_and_authorize(
         &rqctx,
         &ctx.auth,
@@ -237,10 +230,8 @@ pub(crate) async fn agent_peer_resolve(
         .map(HttpResponseOk)
 }
 
-/// `GET /v2/agent/peer-invalidations`: long-poll for v2p
-/// invalidations the agent should apply against the kmod cache.
-/// Returns everything strictly after the supplied `since` cursor
-/// plus a `tail_seq` for the next call.
+/// Long-poll: returns events strictly after the `since` cursor plus
+/// a fresh `tail_seq`.
 pub(crate) async fn agent_peer_invalidations(
     rqctx: RequestContext<ApiContext>,
     query: Query<tritond_api::AgentPeerInvalidationsQuery>,

@@ -106,20 +106,10 @@ pub async fn ensure(image: &Image) -> Result<()> {
         .with_context(|| format!("create cache dir {CACHE_DIR}"))?;
     let download_path: PathBuf = format!("{CACHE_DIR}/{}.gz", image.id).into();
 
-    // Two on-disk shapes for `source_url`:
-    //
-    //   * legacy bare-gz: pre-slice-B images (no compatibility
-    //     metadata) point at a gzipped `zfs send` stream
-    //     directly. We download it, sha256-verify, and feed
-    //     it to `zfs receive`.
-    //
-    //   * tritond bundle: slice-B images (compatibility set)
-    //     point at a tar bundle produced by `tritonimg-build`.
-    //     We download the tar, extract `content.zfs.gz` to
-    //     `download_path`, sha256-verify the extracted bytes,
-    //     and feed the same `zfs receive` path. The manifest
-    //     was already validated server-side at ingest, so we
-    //     don't re-parse it here.
+    // `source_url` is either a bare gzipped `zfs send` stream
+    // (legacy) or a tar bundle (`compatibility` set). The bundle
+    // case extracts `content.zfs.gz`; the manifest was validated
+    // server-side at ingest, so we don't re-parse it here.
     info!(image_id = %image.id, %source, "downloading image content");
     if image.compatibility.is_some() {
         download_bundle_extract_content(source, &image.sha256, &download_path).await?;

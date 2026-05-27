@@ -4,26 +4,10 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! RFD 00007 `/v1/system/users/...` capability administration.
-//!
-//! The operator-facing surface for granting and revoking
-//! `Capability`-typed permissions on a User row. These verbs are
-//! the operator's tool for upgrading a `fleet_admin == true` user
-//! to also carry `SystemConfigWrite` or `StorageAdmin` after the
-//! AP-1c migration runs.
-//!
-//! Capability-gated: requires `SystemOperate` per RFD 00007
-//! §3.1's enumeration. Capability changes are themselves an
-//! `Operate`-class action - granting / revoking a capability is a
-//! privilege-change, not a config-write, so it rides
-//! `SystemOperate` rather than `SystemConfigWrite`.
-//!
-//! This file also hosts the placeholder for
-//! `/v1/system/utilization/silos` per RFD 00007 D-Ap-13 + the
-//! "resolved questions" entry on locked behaviour: an explicit
-//! `501 UtilizationUnavailable` until quota accounting catches
-//! up. Returning `[]` would falsely indicate "zero silos have
-//! utilization data"; the 501 makes "not implemented" explicit.
+//! Grant/revoke `Capability` on a User. Privilege change so requires
+//! `SystemOperate`, not `SystemConfigWrite`. Also hosts the
+//! `/v1/system/utilization/silos` placeholder: returns 501 (not `[]`,
+//! which would falsely look like "zero silos have data").
 
 use dropshot::{
     ClientErrorStatusCode, HttpError, HttpResponseDeleted, HttpResponseOk, Path, RequestContext,
@@ -123,37 +107,20 @@ pub(crate) async fn revoke_user_capability_v1(
     Ok(HttpResponseDeleted())
 }
 
-/// `GET /v1/system/utilization/silos`. Per RFD 00007 D-Ap-13's
-/// resolved-questions entry, the endpoint is locked in the spec
-/// but returns `501 UtilizationUnavailable` until quota accounting
-/// catches up. The 501 (not `[]`) is intentional: an empty array
-/// would falsely indicate "zero silos have utilization data" and
-/// clients depending on the endpoint would silently render empty
-/// dashboards instead of surfacing "not implemented" to the
-/// operator.
-///
-/// Capability: `SystemRead`. The capability check still runs so
-/// non-SystemRead callers get the same 404 they'd get on any other
-/// /v1/system/ endpoint; SystemRead callers get the 501 carrying
-/// the explicit unavailability message.
+/// Returns 501 (not `[]`) until quota accounting lands so dashboards
+/// surface "not implemented" instead of "zero silos". Non-SystemRead
+/// callers still get 404 first.
 pub(crate) async fn get_system_utilization_silos_v1(
     rqctx: RequestContext<ApiContext>,
 ) -> Result<HttpResponseOk<Vec<tritond_store::Silo>>, HttpError> {
     let ctx = rqctx.context();
     let principal = crate::auth::authenticate_only(&rqctx, &ctx.auth, &ctx.store).await?;
     crate::auth::require_capability(&principal, Capability::SystemRead)?;
-    // The RFD says 501 Not Implemented but Dropshot's HttpError
-    // helpers only expose the 4xx (`for_client_error`) and 5xx
-    // (`for_internal_error` / `for_unavail`) constructors at a
-    // restricted set of status codes. `for_unavail` -> 503 is the
-    // closest available "endpoint reserved but the data isn't
-    // ready" shape; the body carries the explicit
-    // `UtilizationUnavailable` error_code so clients can dispatch
-    // on it regardless of the numeric status.
+    // Dropshot's HttpError helpers don't expose 501, so we ride 503
+    // (`for_unavail`); clients dispatch on `UtilizationUnavailable`
+    // in the body rather than the numeric status.
     Err(HttpError::for_unavail(
         Some("UtilizationUnavailable".to_string()),
-        "per-silo utilization accounting is not yet implemented; \
-         the path is reserved per RFD 00007 D-Ap-13"
-            .to_string(),
+        "per-silo utilization accounting is not yet implemented".to_string(),
     ))
 }

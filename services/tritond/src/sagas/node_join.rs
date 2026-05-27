@@ -4,7 +4,7 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! `node-join` saga (RFD 00004 SG-6).
+//! `node-join` saga.
 //!
 //! Per the RFD the chain is: CN registration → credential issuance
 //! → bound API-key mint, with undos that revoke the credentials.

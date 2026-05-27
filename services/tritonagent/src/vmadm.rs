@@ -6,34 +6,11 @@
 
 //! Thin wrapper around the SmartOS `vmadm` binary.
 //!
-//! Phase 0 started with `joyent-minimal` zones. The v1 path adds a
-//! pure bhyve payload builder so the agent can provision SmartOS
-//! hardware VMs once the scheduler routes those jobs here. Until the
-//! tritond `Instance` record grows an explicit brand field, the agent
-//! treats `Image.compatibility.brand == "bhyve"` as the dispatch
-//! signal.
-//!
-//! The agent does NOT call `imgadm` — the operator is expected
-//! to have already imported the image so its imgadm UUID equals
-//! tritond's `Image::id`. The agent assumes that mapping; if it
-//! breaks the agent reports `JobOutcome::Failed { reason }` and
-//! the operator either imports the image or fixes the catalog.
-//!
-//! ## Identity invariant
-//!
-//! The agent uses tritond's `Instance::id` directly as the
-//! SmartOS zone UUID by passing it as the `uuid` field of
-//! `vmadm create`. Stop/Restart can then address the zone by
-//! the same id with no separate mapping table.
-//!
-//! ## Why no shared crate
-//!
-//! `vmadm` exec'd by string-piped JSON is enough surface for the
-//! agent's needs; the broader workspace doesn't have an existing
-//! crate that wraps it (the `/opt/rust-vmadm` tree on the build
-//! host is a separate from-scratch port, not a library). When
-//! that crate stabilises this module becomes a one-line
-//! re-export.
+//! Brand dispatch reads `Image.compatibility.brand == "bhyve"`; the
+//! agent uses tritond's `Instance::id` as the SmartOS zone UUID so
+//! Stop/Restart can address the zone with no mapping table. The
+//! agent does NOT call `imgadm` — the operator imports the image
+//! to match tritond's `Image::id` or the job fails with a reason.
 
 use std::collections::BTreeMap;
 use std::net::Ipv4Addr;
@@ -48,21 +25,14 @@ use uuid::Uuid;
 
 pub(crate) type NicTagMap = BTreeMap<Uuid, String>;
 
-/// Default DNS resolver. Picked to match the existing fdb2 zone
-/// — the lab's home DNS server. Future slices will surface this
-/// as an agent-config flag once we have a per-CN config plane.
 const DEFAULT_RESOLVER: &str = "10.199.199.14";
 
-/// nic_tag every Phase 0 zone lands on. The lab is flat
-/// admin-tag-only; OPTE-managed overlay tags arrive with the
-/// dataplane slice.
 const PHASE0_NIC_TAG: &str = "admin";
 
-/// Legacy fallback nic_tag for side-effect-free bhyve payload tests.
-/// The live M1 provision path passes per-NIC Proteus link tags instead.
+/// Fallback for bhyve payload tests; live provision uses per-NIC
+/// Proteus link tags instead.
 const BHYVE_M1_NIC_TAG: &str = "external";
 
-/// Default MTU on the admin network.
 const DEFAULT_MTU: u32 = 1500;
 
 // Wire contract: SmartOS `internal_metadata` keys carrying the
@@ -538,7 +508,7 @@ fn build_nic_json(index: usize, nic: &Nic) -> Result<serde_json::Value> {
     let ip = match &nic.primary_ipv4 {
         Some(ip) => ip,
         None => bail!(
-            "NIC {} has no IPv4 — Phase 0 vmadm payload requires v4 (v6-only zones tracked separately)",
+            "NIC {} has no IPv4 — vmadm payload requires v4 (v6-only zones not supported)",
             nic.id,
         ),
     };

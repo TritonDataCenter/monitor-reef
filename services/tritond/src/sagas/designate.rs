@@ -4,41 +4,11 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! `designate` saga action (RFD 00005 PL-5d).
-//!
-//! Wraps [`crate::placement::pick`] in a steno `ActionFunc` and
-//! registers it in the catalog. The action body reads a
-//! `PlacementRequest` from the saga's params, runs the chain
-//! against the live store, and on success writes the
-//! `CnReservation` + pins `Instance.host_cn_uuid`. The `undesignate`
-//! undo releases both.
-//!
-//! ## Wire shape
-//!
-//! For PL-5d the action body reads its placement request from
-//! the saga's params as a [`tritond_placement::PlacementRequest`].
-//! Standalone tests drive it via a one-action saga over that
-//! shape; the upcoming integration with `instance-create`
-//! (PL-5e) wires the same action body via a small wrapper that
-//! synthesises the `PlacementRequest` from
-//! `InstanceCreateParams` + the previously-created `Instance`
-//! row.
-//!
-//! ## Action output
-//!
-//! The do-fn returns the chosen `Uuid` (the host CN). The
-//! `ExplainReport` is dropped on the saga state by design --
-//! the audit row carries the bounded projection (per RFD 00005
-//! invariant 4), not the full report. PL-5e routes the report
-//! into the audit log; PL-5d ships the action with the report
-//! discarded.
-//!
-//! ## Fencing
-//!
-//! The reservation row carries `(sec_id, epoch)` for audit per
-//! RFD 00004 D-Sg-8. The catalog-action boundary fence check
-//! (the SagaContext::verify_fence call existing actions perform)
-//! sits one level up; PL-5d adopts the existing pattern.
+//! `designate` saga action: runs `placement::pick` against the live
+//! store and on success writes the `CnReservation` + pins
+//! `Instance.host_cn_uuid`. `undesignate` releases both. The
+//! `ExplainReport` is dropped from saga state; audit gets the bounded
+//! projection.
 
 use serde::{Deserialize, Serialize};
 use tritond_placement::PlacementRequest;

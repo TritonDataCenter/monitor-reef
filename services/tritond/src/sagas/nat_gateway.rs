@@ -5,7 +5,7 @@
 // Copyright 2026 Edgecast Cloud LLC.
 
 //! `nat-gateway-create` / `nat-gateway-delete` sagas
-//! (RFD 00004 SG-5).
+//!.
 //!
 //! SG-5 (per the RFD) ultimately wants the create chain to
 //! allocate the public IP, select an edge CN, materialize the

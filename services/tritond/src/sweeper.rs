@@ -34,10 +34,8 @@
 //! * `TRITOND_STALE_CLAIM_THRESHOLD_SECS` — how old a claim must
 //!   be before it's considered stale (default 600 = 10 min).
 //! * `TRITOND_SAGA_RETENTION_SECS` — how long a terminal saga is
-//!   kept in FDB before the retention pass deletes it (default
-//!   `30 * 86400` = 30 days). RFD 00004 SG-4. Stuck sagas are
-//!   exempt from retention — `stuck_reason` is operator-actionable
-//!   and never expires automatically.
+//!   kept in FDB before deletion (default 30 days). Stuck sagas are
+//!   exempt; `stuck_reason` is operator-actionable.
 //!
 //! All env-driven so deployments tighten or loosen without a
 //! rebuild.
@@ -115,7 +113,7 @@ async fn run(
                 warn!(error = %e, "list_stale_claims failed; will retry next interval");
             }
         }
-        // RFD 00004 D-Sg-4 / SG-1: the same sweeper now picks up
+        // / SG-1: the same sweeper now picks up
         // sagas whose owning SEC's heartbeat is older than `cutoff`.
         // Reassignment CASes `current_sec` over and bumps
         // `current_epoch` (D-Sg-8), then resumes through Steno.
@@ -129,7 +127,7 @@ async fn run(
                 warn!(error = %e, "tritond-saga: reassign_stale_sec_sagas failed; will retry next interval")
             }
         }
-        // RFD 00004 SG-4 retention pass: drop every terminal saga
+        // retention pass: drop every terminal saga
         // whose `time_done` is older than `saga_retention`. Stuck
         // sagas are exempt — those carry an operator-actionable
         // `stuck_reason` and stay until human cleanup.

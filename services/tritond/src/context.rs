@@ -22,21 +22,10 @@ use crate::audit::AuditService;
 use crate::auth::AuthService;
 use crate::rate_limit::{IpRateLimiter, LoginRateLimiter};
 
-/// Bridge from `tritond_saga::SagaAuditEmitter` to the existing
-/// `tritond_audit::Chain` (RFD 00004 D-Sg-11).
-///
-/// Saga lifecycle events (`saga.started` / `saga.finished`) land in
-/// the same chain as every other audit event, with a `Saga::"<uuid>"`
-/// resource and `actor=system` (sagas are control-plane-initiated;
-/// the *triggering* operator's identity is on the per-silo
-/// side-effect events the catalog actions write through the
-/// existing `record_mutation` path). This gives operators
-/// breadcrumbs to correlate the saga's lifecycle with the per-silo
-/// resource writes via the shared `saga_id` payload field.
-///
-/// Strict per-silo / fleet chain separation (the RFD's `audit/saga/...`
-/// keyspace) is deferred to a follow-up that introduces a second
-/// chain instance.
+/// Emits saga lifecycle events into the main audit chain as
+/// `actor=system` events (the triggering operator is on the per-silo
+/// side-effect events the catalog actions write). Operators correlate
+/// via the shared `saga_id` payload field.
 struct ChainAuditEmitter {
     chain: Arc<dyn Chain>,
 }
@@ -60,9 +49,7 @@ impl SagaAuditEmitter for ChainAuditEmitter {
                 "version": version,
             }),
         };
-        // Fail-open: saga shouldn't block on an audit-chain hiccup.
-        // Drop the error and log via the saga executor's slog
-        // logger instead.
+        // Fail-open: a saga must not block on an audit-chain hiccup.
         let _ = self.chain.append(event).await;
     }
 
@@ -99,112 +86,54 @@ pub struct ApiContext {
     pub store: Arc<dyn Store>,
     pub auth: Arc<AuthService>,
     pub audit: Arc<AuditService>,
-    /// Per-source-IP throttle on `POST /v2/auth/login`. See
-    /// [`crate::rate_limit`] for the shape of the limiter and why it
-    /// only fronts login.
     pub login_rate_limiter: Arc<LoginRateLimiter>,
-    /// Per-source-IP throttle on `POST /v2/cns/approve`. Independent
-    /// bucket-set from the login limiter so a brute-force on one
-    /// surface doesn't drain the other's budget.
+    /// Independent bucket-set from `login_rate_limiter` so a
+    /// brute-force on one surface can't drain the other.
     pub cn_approve_rate_limiter: Arc<IpRateLimiter>,
-    /// When `false`, [`crate::start_server_with_context`] does *not*
-    /// spawn the in-process stub provisioner. The agent integration
-    /// test sets this so a real `tritonagent` (or its test stand-in)
-    /// can claim jobs without racing the stub. Defaults to `true`.
+    /// Agent integration tests set `false` so a real `tritonagent`
+    /// can claim jobs without racing the in-process stub.
     pub spawn_in_process_provisioner: bool,
-    /// Stale-claim sweeper config. When `Some(...)`,
-    /// [`crate::start_server_with_context`] spawns the sweeper task
-    /// from [`crate::sweeper::spawn`] with the given interval +
-    /// staleness threshold. Defaults to `None` so test contexts
-    /// don't get an unexpected background task that would
-    /// interfere with explicit job-state assertions.
+    /// `None` by default so tests don't get unexpected background
+    /// sweeps interfering with their job-state assertions.
     pub sweeper: Option<SweeperConfig>,
-    /// DHCP-lease reconciler config (γ.3). When `Some(...)`,
-    /// [`crate::start_server_with_context`] spawns the reconciler task
-    /// from [`crate::dhcp_reconciler::spawn`] with the given
-    /// interval + GC threshold. Defaults to `None` so test
-    /// contexts don't get unexpected lease deletes interleaved
-    /// with explicit IPAM assertions.
+    /// `None` by default so tests don't get unexpected lease deletes
+    /// interleaved with their IPAM assertions.
     pub dhcp_reconciler: Option<crate::dhcp_reconciler::ReconcilerConfig>,
-    /// Per-deployment HMAC-SHA256 key used to stamp managed-zone
-    /// identity (`instance_id`/`tenant_id`/`project_id`) into
-    /// SmartOS `internal_metadata` at provision time, and to verify
-    /// that identity in CN status reports. `ApiContext::new` defaults
-    /// to a freshly-generated key so tests get isolated per-context
-    /// signatures; `main` overrides via `with_identity_hmac_key` to
-    /// install the bootstrap-loaded, persisted key.
+    /// HMAC-SHA256 key for managed-zone identity (provision-time
+    /// stamping into SmartOS `internal_metadata` + verification in
+    /// CN status reports). `ApiContext::new` generates fresh per
+    /// context so tests get isolated signatures; `main` installs
+    /// the persisted bootstrap key via `with_identity_hmac_key`.
     pub identity_hmac_key: Arc<tritond_auth::IdentityHmacKey>,
-    /// Timeseries metrics sink. Defaults to an in-memory ring
-    /// buffer; production deploys swap in a ClickHouse-backed
-    /// implementation via [`ApiContext::with_metrics`]. The store
-    /// is consumed by the agent metrics-ingest endpoint and the
-    /// per-instance range query, and is intentionally separate
-    /// from `store` (control-plane state) so the metrics path
-    /// can fail-open without taking the API surface offline.
+    /// Separate from `store` so a metrics-tier hiccup never 5xx's
+    /// the API surface.
     pub metrics: Arc<dyn tritond_metrics::MetricsStore>,
-    /// Per-VM log line sink. Defaults to an in-memory ring buffer
-    /// (last ~10k lines per `(instance, source)`); production deploys
-    /// swap in a ClickHouse-backed store via
-    /// [`ApiContext::with_logs`]. Same fail-open behaviour as
-    /// `metrics` -- a storage hiccup never 5xx's the agent.
     pub logs: Arc<dyn tritond_logs::LogStore>,
-    /// When `true` (the default), the `instance-create` saga's
-    /// `await_provision_terminal` action waits for the agent to ack
-    /// the Provision job before returning. This is what completes
-    /// SG-2's unwind story (RFD 00004): a Provision-failed agent
-    /// outcome triggers the saga's unwind tail, which enqueues a
-    /// Delete job and tears the instance record back down.
-    ///
-    /// Set to `false` in tests that drive the agent protocol manually
-    /// (e.g. `agent.rs` opts out of the in-process provisioner and
-    /// then issues `claim_next_job`/`agent_complete_job` after the
-    /// `POST .../instances`). Without that opt-out the POST would
-    /// block forever waiting for an agent that the test hasn't yet
-    /// started driving.
+    /// Tests that drive the agent protocol manually (e.g. `agent.rs`)
+    /// set this `false`; otherwise `POST .../instances` blocks forever
+    /// waiting for an agent the test hasn't started driving.
     pub saga_wait_for_agent: bool,
-    /// Durable workflow executor (RFD 00004). Every multi-resource
-    /// operation that touches more than one FDB resource, or that
-    /// enqueues work for any `tritonagent`, runs as a registered
-    /// saga with explicit per-action undo. Catalog modules in
-    /// `crate::sagas` (SG-2 onwards) register their actions on this
-    /// executor.
-    ///
-    /// SG-1 builds a default executor over [`MemSecStore`] regardless
-    /// of the underlying [`Store`] backend; SG-1b will select
-    /// `FdbSecStore` when `Store` is `FdbStore` so sagas survive
-    /// process restarts. With an empty catalog the executor is a
-    /// no-op for everyone except the heartbeat/recovery plumbing it
-    /// keeps alive for SG-2.
+    /// Durable workflow executor for multi-resource ops and any
+    /// operation that enqueues work for a `tritonagent`. Defaults to
+    /// `MemSecStore`; production swaps to FDB via
+    /// `with_fdb_saga_executor`.
     pub saga: Arc<SagaExecutor>,
-    /// v2p invalidation ring (PROTEUS_PLAN §11.7.1 item 8). Pushed
-    /// onto by NIC teardown / migration paths; drained by
-    /// `GET /v2/agent/peer-invalidations` per-CN polls. Phase A
-    /// shape: a single global ring broadcast to every CN that polls
-    /// (acceptable for low-churn cluster sizes). Phase B narrows
-    /// to per-CN filtering once the resolver-served-log lands.
+    /// v2p invalidations: single global ring drained by every CN's
+    /// `GET /v2/agent/peer-invalidations` long-poll. Per-CN filtering
+    /// lands when the resolver-served-log does.
     pub peer_invalidations: Arc<crate::peer_invalidations::Ring>,
 }
 
-/// Cadence and staleness threshold for the
-/// [`crate::sweeper`] background task. See module docs.
 #[derive(Debug, Clone, Copy)]
 pub struct SweeperConfig {
     pub interval: std::time::Duration,
     pub stale_after: std::time::Duration,
-    /// How long terminal sagas are kept before the retention pass
-    /// deletes them. Default 30 days (RFD 00004 SG-4). Stuck sagas
-    /// are exempt and stay until human cleanup.
+    /// Retention for terminal sagas. Stuck sagas are exempt.
     pub saga_retention: std::time::Duration,
 }
 
-/// Build a default `SagaExecutor` over an in-memory SecStore, with
-/// every catalog action in [`crate::sagas`] pre-registered. Used by
-/// both [`ApiContext::new`] and [`ApiContext::in_memory`] so every
-/// test fixture gets an isolated SEC id and a fully wired catalog.
-///
-/// Production deploys with FoundationDB call
-/// [`ApiContext::with_fdb_saga_executor`] from `main` to swap this
-/// out for an FDB-backed executor.
+/// Per-context executor with an isolated SEC id so tests don't
+/// share saga state.
 fn default_saga_executor(
     state_store: &Arc<dyn Store>,
     identity_hmac_key: &Arc<tritond_auth::IdentityHmacKey>,

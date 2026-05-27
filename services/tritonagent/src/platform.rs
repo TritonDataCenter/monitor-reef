@@ -4,22 +4,10 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! Host-platform introspection for compatibility gates.
-//!
-//! Phase 0 reads the SmartOS platform buildstamp from
-//! `uname -v`, which returns a string like
-//! `joyent_20260417T033207Z` on every SmartOS host. The
-//! buildstamp portion (`20260417T033207Z`) is the
-//! lexicographically-comparable identifier the agent
-//! compares against an image's
-//! [`tritond_image_manifest::Compatibility::min_smartos_platform`]
-//! constraint.
-//!
-//! `uname -v` is preferred over `sysinfo` because it's a
-//! plain libc syscall away (no JSON parse, no `cmd::Command`
-//! cost) and exists on every illumos host. Falls back to
-//! `cmd::Command` if for any reason the syscall path returns
-//! something unexpected.
+//! Reads the SmartOS platform buildstamp via `uname -v` (faster than
+//! `sysinfo`'s JSON path; falls back to `cmd::Command` if the syscall
+//! returns something unexpected). The buildstamp portion sorts
+//! lexicographically against an image's `min_smartos_platform`.
 
 use anyhow::{Context, Result, anyhow};
 use tokio::process::Command;

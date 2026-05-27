@@ -77,7 +77,7 @@ use crate::VERSION;
 /// Concrete implementor of [`TritondApi`].
 use crate::context::ApiContext;
 
-/// RFD 00007 AP-3a-9: `GET /v1/system/cns?state=&label=&rack=&role=`.
+/// `GET /v1/system/cns?state=&label=&rack=&role=`.
 /// Fleet CN inventory. Capability: `SystemRead`. Delegates to the
 /// same underlying `Store::list_cns(state)` the v2 handler uses;
 /// the label/rack/role selectors land in a future slice once those
@@ -99,7 +99,7 @@ pub(crate) async fn list_system_cns_v1(
     Ok(HttpResponseOk(ResultsPage::single(views)))
 }
 
-/// RFD 00007 AP-3a-9: `GET /v1/system/cns/{cn_id}`. Single CN read.
+/// `GET /v1/system/cns/{cn_id}`. Single CN read.
 /// Capability: `SystemRead`.
 pub(crate) async fn get_system_cn_v1(
     rqctx: RequestContext<ApiContext>,
@@ -170,7 +170,7 @@ pub(crate) async fn approve_cn(
 
     let updated = mint_and_attach_cn_credential(ctx, &principal, request_id, &cn).await?;
 
-    // RFD 00004 SG-6: wrap the join outcome in a saga record so
+    // wrap the join outcome in a saga record so
     // the operation surface (Operations page, per-CN view) shows
     // the approval. Marker-only today — SG-6b expands to a real
     // chain with cred-revoke undo.

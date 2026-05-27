@@ -4,7 +4,7 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! `image-import` saga (RFD 00004 SG-6).
+//! `image-import` saga.
 //!
 //! Per the RFD: tritond-side image record + scope → enqueue agent
 //! fetch/import job → await. The current imperative path

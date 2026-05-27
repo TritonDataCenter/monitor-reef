@@ -4,99 +4,60 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! Pure classifier for VMs reported by tritonagent's status collector.
-//!
-//! Status reports flow through [`classify_vm`] one VM at a time. The
-//! function is sync and pure -- no Store, no FDB, no network --
-//! because the calling status handler pre-fetches the relevant
-//! instance lookup data inside the same FDB transaction that updates
-//! `Cn.last_status`. That keeps classification atomic with the report
-//! ingest and lets the test surface be a thin
-//! `(report, context) -> outcome` table.
-//!
-//! See `STATUS.md` for the load-bearing decisions and the discovery
-//! plan in `~/.claude/plans/one-of-the-better-giggly-zephyr.md` for
-//! the design rationale.
+//! Pure classifier for VMs reported by tritonagent. Sync and pure so
+//! the status handler can keep classification atomic with the FDB
+//! transaction that updates `Cn.last_status`.
 
 use uuid::Uuid;
 
 use tritond_auth::IdentityHmacKey;
 use tritond_store::{Instance, LifecycleState, VmReport};
 
-/// Outcome of classifying one VM in a CN status report.
-///
-/// `#[non_exhaustive]` per locked decision #14 -- adoption (Phase D)
-/// will add `Adopting { from_smartos_uuid }` and a future fabric
-/// integration may add `MetadataTampered`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Classification {
-    /// Tritond manages this zone; the report's identity HMAC verifies,
-    /// the carried `instance_id` is known, and the reporting CN is the
-    /// instance's current host. The status handler updates the
-    /// instance's runtime fields (lifecycle, memory, quota, etc.)
-    /// from the report.
-    Managed { instance_id: Uuid },
-    /// The identity is valid but the reporting CN is *not* the
-    /// instance's recorded host. Likely an out-of-band `vmadm
-    /// send|recv` evacuation. Surfaces an alarm; the handler does
-    /// not mutate either side.
+    Managed {
+        instance_id: Uuid,
+    },
+    /// Identity is valid but the reporting CN is not the recorded
+    /// host. Likely an out-of-band `vmadm send|recv` evacuation:
+    /// alarm and do not mutate either side.
     Orphan {
         instance_id: Uuid,
         expected_host: Option<Uuid>,
     },
-    /// `tritond:*` metadata is present but it cannot be trusted.
-    /// Either the HMAC didn't verify (forged or copied from another
-    /// deployment), or the instance_id is unknown to this tritond.
-    /// Quarantined: surfaced to fleet admin; no record mutation.
-    StaleFingerprint { reason: StaleFingerprintReason },
-    /// No `tritond:*` metadata yet, but the reported `smartos_uuid`
-    /// matches a known `Instance.id` whose lifecycle is `Provisioning`
-    /// and whose `host_cn_uuid` is the reporting CN. This is the
-    /// race window between `vmadm create` starting and the agent
-    /// having written the four `tritond:*` keys; the handler
-    /// no-ops to avoid creating a phantom legacy record.
-    MidProvision { instance_id: Uuid },
-    /// Pre-existing legacy zone with no tritond identity. The handler
-    /// upserts a `LegacyVm` record so the fleet-admin discovery
-    /// surface can list it.
+    /// `tritond:*` metadata present but untrusted. Surfaced to fleet
+    /// admin; no record mutation.
+    StaleFingerprint {
+        reason: StaleFingerprintReason,
+    },
+    /// Race window between `vmadm create` and the agent writing the
+    /// four `tritond:*` keys; handler no-ops to avoid a phantom
+    /// legacy record.
+    MidProvision {
+        instance_id: Uuid,
+    },
     Unmanaged,
 }
 
-/// Why a `tritond:*` identity tag was rejected.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum StaleFingerprintReason {
-    /// All four `tritond:*` keys present, but the HMAC over the
-    /// `(instance_id, tenant_id, project_id)` triple did not verify
-    /// against the deployment's identity HMAC key. Tampered metadata
-    /// or a record copied from another deployment.
+    /// HMAC didn't verify: tampered or imported from another deployment.
     HmacMismatch,
-    /// Identity present and HMAC valid, but the carried
-    /// `instance_id` is unknown to this deployment. Could be a stale
-    /// record from a previous tritond install with a shared HMAC
-    /// key, or a record we've already deleted.
+    /// HMAC valid but `instance_id` unknown locally: stale record from
+    /// a prior install with a shared key, or already-deleted instance.
     UnknownInstanceId,
 }
 
-/// Pure context for [`classify_vm`].
-///
-/// The status handler pre-fetches the instance lookup data inside its
-/// FDB transaction so the classifier itself can be sync and pure.
-/// `instance_lookup` returns `Some(&Instance)` for ids the store
-/// knows about and `None` otherwise.
+/// Caller pre-fetches instance lookup data inside the FDB transaction
+/// so classification stays sync and pure.
 pub struct ClassifierContext<'a> {
-    /// Server uuid of the CN whose status report we're classifying.
     pub reporting_cn_uuid: Uuid,
-    /// Lookup an instance by its tritond `Instance.id`.
     pub instance_lookup: &'a dyn Fn(Uuid) -> Option<&'a Instance>,
-    /// Per-deployment identity HMAC key used to sign and verify the
-    /// `tritond:identity_hmac` tag.
     pub identity_hmac_key: &'a IdentityHmacKey,
 }
 
-/// Classify one [`VmReport`] against the store view captured in
-/// [`ClassifierContext`].
 #[must_use]
 pub fn classify_vm(report: &VmReport, ctx: &ClassifierContext) -> Classification {
     match report.extract_managed_identity() {

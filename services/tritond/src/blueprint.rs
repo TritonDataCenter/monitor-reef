@@ -45,15 +45,8 @@ use crate::realized_meta::build_instance_realized_view;
 
 const INITIAL_PROTEUS_PORT_GENERATION: u64 = 1;
 
-/// Materialise the agent-side blueprint for a job. Resolves
-/// instance + image + nics + disks + ssh public keys for a
-/// `Provision`; returns just the instance (when still extant)
-/// for `Stop` / `Restart`.
-///
-/// Errors from the store path bubble up as HTTP errors via
-/// [`store_error_to_http`]. A concurrent operator delete that
-/// removes the instance after the job was claimed surfaces as
-/// `instance: None` rather than a 404; the agent then reports
+/// A concurrent delete after the job was claimed surfaces as
+/// `instance: None` instead of 404; the agent then reports
 /// `JobOutcome::Failed { reason: "instance gone" }`.
 pub(crate) async fn build_blueprint(
     store: &dyn Store,
@@ -198,12 +191,6 @@ pub(crate) async fn build_blueprint(
     })
 }
 
-/// Build the `provision_metadata` field of `ProvisioningBlueprint`:
-/// the list of `triton/instance/*` entries the agent will fold into
-/// `customer_metadata` / `internal_metadata` on `vmadm create`. A
-/// missing/empty list is fine -- the agent just doesn't add anything
-/// extra, and the historical SSH key + identity plumbing keeps
-/// working.
 async fn build_provision_metadata(
     store: &dyn Store,
     instance_id: Uuid,
@@ -222,28 +209,17 @@ async fn build_provision_metadata(
         .collect()
 }
 
-/// Build the per-NIC IMDS binding entries the tritonagent's
-/// reverse-lookup table needs. Returns empty when:
-///   * `TRITOND_IMDS_LISTENER_IPV4` is unset (cluster IMDS not wired)
-///   * the instance's realized `config/imds/enabled` is false
-///   * the realized-view fetch fails (we degrade rather than block
-///     provisioning -- IMDS is an addition, not a precondition)
+/// Returns empty when cluster IMDS is unwired or the instance has it
+/// disabled; degrades silently if the realized-view fetch fails so a
+/// bad metadata blob can't block provisioning.
 async fn build_imds_bindings_for_instance(
     store: &dyn Store,
     instance_id: Uuid,
     nics: &[tritond_store::Nic],
 ) -> Vec<ImdsBindingWire> {
     if ImdsListenerConfig::from_env().is_none() {
-        // Cluster IMDS not wired -- the listener address only flows
-        // into the per-port kmod blueprint anyway; the agent
-        // discovers its own bind address via `--imds-listen-addr`.
-        // What the agent NEEDS from us is the per-port pseudo-src
-        // table, which is itself gated by this env-var presence.
         return Vec::new();
     }
-    // Realized view gates per-instance. If it fails to assemble we
-    // skip the binding -- a malformed metadata blob shouldn't break
-    // provisioning.
     let view = match build_instance_realized_view(store, instance_id).await {
         Ok(v) => v,
         Err(_) => return Vec::new(),
@@ -265,8 +241,6 @@ async fn build_imds_bindings_for_instance(
         .collect()
 }
 
-/// Materialise the opaque Proteus `PortBlueprint` the bound CN agent
-/// should apply for a NIC.
 pub(crate) async fn build_port_blueprint(
     store: &dyn Store,
     port_id: Uuid,
@@ -556,9 +530,7 @@ fn build_routes_with_imds(
         .map(route_intent)
         .collect::<Result<Vec<_>, _>>()?;
     if imds_enabled {
-        // Synthetic IMDS magic-address route. The UUID is deterministic
-        // for the (route_table, "imds-v4-magic") pair so a blueprint
-        // re-emit comes out bit-identical.
+        // Deterministic UUID so re-emits are bit-identical.
         let synthetic_id = Uuid::new_v5(
             &Uuid::NAMESPACE_OID,
             &derive_imds_route_seed(route_table_id),
@@ -586,14 +558,9 @@ fn derive_imds_route_seed(route_table_id: Uuid) -> [u8; 32] {
     out
 }
 
-/// Same shape as [`build_routes_with_imds`] but additionally splices
-/// in a synthetic `LocalSubnet` route over the subnet's IPv4 block
-/// when `emit_local_subnet` is true. The plugin overlay compiler
-/// fans this one entry out into per-peer Geneve push rules using
-/// the port's `peer_table`. The route doesn't live in FDB -- it's a
-/// property of the dataplane wire shape -- so we synthesise it on
-/// every blueprint build with a deterministic UUID for bit-identical
-/// re-emits.
+/// `LocalSubnet` is a dataplane property, not user-configurable, so
+/// it isn't persisted; the overlay compiler fans it out per-peer
+/// using `peer_table`.
 fn build_routes_with_imds_and_local_subnet(
     stored: &[Route],
     route_table_id: Uuid,
@@ -632,10 +599,8 @@ fn derive_local_subnet_seed(route_table_id: Uuid) -> [u8; 32] {
     out
 }
 
-/// Default suggested TTL (seconds) returned with a successful peer
-/// resolve. Mirrors [`proteus_api::DEFAULT_PEER_ENTRY_TTL_SECS`] but
-/// re-declared here so the tritond default can drift independently
-/// (e.g., shorter in dev clusters to surface migration bugs faster).
+/// Re-declared (not re-exported from proteus_api) so tritond can drift
+/// independently — e.g. shorter in dev to surface migration bugs.
 const PEER_RESOLVE_DEFAULT_TTL_SECS: u32 = 300;
 
 /// Phase A resolver: find the NIC whose primary IP matches `peer_ip`
@@ -652,13 +617,9 @@ pub(crate) async fn resolve_peer(
     vni: u32,
     peer_ip: std::net::IpAddr,
 ) -> Result<tritond_api::AgentPeerResolveResponse, HttpError> {
-    // 1. Enumerate every realized NIC. Today: walk approved CNs ->
-    //    their instances -> their NICs. The CN list is small (~100
-    //    in target deployments) and `list_instances_for_cn` /
-    //    `list_nics_for_instance` are O(N) over actual placements,
-    //    so total cost scales with realized-NIC count, not the
-    //    cluster's full configuration surface. An index by
-    //    (vni, ip) -> nic_id lands when scale demands it.
+    // Brute-force walk over realized NICs. Cost scales with placed-NIC
+    // count, not configuration surface. Replace with a (vni, ip) index
+    // when scale demands it.
     let cns = store.list_cns(None).await.map_err(store_error_to_http)?;
     for cn in cns {
         let Some(admin_ip) = cn.admin_ip else {
@@ -681,9 +642,7 @@ pub(crate) async fn resolve_peer(
                 if !nic_matches {
                     continue;
                 }
-                // VNI match. We need the VPC's VNI; load the VPC.
-                // Mismatched (vni, ip) pairs return 404 -- v2p
-                // queries are tenant-bounded.
+                // v2p queries are tenant-bounded: mismatched (vni, ip) is 404.
                 let vpc = match store.get_vpc(nic.vpc_id).await {
                     Ok(v) => v,
                     Err(_) => continue,
@@ -706,16 +665,10 @@ pub(crate) async fn resolve_peer(
     ))
 }
 
-/// Enumerate every other realized NIC in the same subnet and emit
-/// one [`PeerIntentV1`] per peer pointing at the host CN's underlay
-/// address. Returns an empty vec on any store error so the rest of
-/// the blueprint can still ship -- intra-VPC reachability is an
-/// optimisation, not a precondition for provisioning.
-///
-/// Ownership lookup walks `Instance::host_cn_uuid -> Cn`; instances
-/// without an assigned CN, or peers whose CN has no recorded
-/// `admin_ip`, are silently skipped (they aren't reachable from the
-/// dataplane yet).
+/// Returns empty on any store error: intra-VPC reachability is an
+/// optimisation, not a precondition for provisioning. Unplaced
+/// instances or CNs without an admin IP are silently skipped (not
+/// reachable from the dataplane yet).
 async fn build_peers_in_subnet(
     store: &dyn Store,
     project_id: Uuid,
@@ -762,12 +715,9 @@ async fn build_peers_in_subnet(
     peers
 }
 
-/// Map a CN's IPv4 admin address into a deterministic IPv6
-/// underlay address inside the ULA range `fd00:cabe::/64`. Until
-/// CNs persist an explicit underlay address at registration, this
-/// gives tritond and the kmod a stable encoding to talk about. The
-/// operator is still responsible for plumbing matching IPv6
-/// addresses on the underlay link via SetUnderlay.
+/// Deterministic ULA encoding until CNs persist an explicit underlay
+/// address at registration. Operators still configure the matching
+/// IPv6 on the underlay link via SetUnderlay.
 fn underlay_v6_from_admin_ip(v4: std::net::Ipv4Addr) -> String {
     let o = v4.octets();
     std::net::Ipv6Addr::new(
@@ -905,14 +855,8 @@ pub(crate) fn firewall_rule_intent(rule: &tritond_store::FirewallRule) -> Firewa
     }
 }
 
-/// Flatten the per-VPC DHCP pool and the per-MAC reservation into the
-/// shape the proteus per-port compiler needs. Returns `None` when the
-/// NIC has no IPv4 (the gateway emits no `Dhcpv4Options` then anyway)
-/// *and* nothing to override; otherwise `Some` with the merged inputs.
-/// The raw-option list is `pool.additional_options` followed by the
-/// reservation's `per_mac_options` — the proteus compiler does the
-/// length-capping and per-value-size filtering, so this side just
-/// concatenates.
+/// Pool options precede reservation options in the raw-option list;
+/// the proteus compiler enforces length / per-value-size limits.
 pub(crate) fn dhcp_options_intent(
     nic: &tritond_store::Nic,
     pool: Option<&DhcpPool>,

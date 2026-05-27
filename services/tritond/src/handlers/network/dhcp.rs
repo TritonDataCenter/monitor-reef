@@ -77,7 +77,7 @@ use crate::VERSION;
 /// Concrete implementor of [`TritondApi`].
 use crate::context::ApiContext;
 
-/// RFD 00007 AP-2k: `GET /v1/vpc-dhcp-pools/{vpc_id}`. Flat single
+/// `GET /v1/vpc-dhcp-pools/{vpc_id}`. Flat single
 /// per-VPC DHCP-pool read. Returns 404 if no pool is set rather
 /// than 200 with `null`; the singleton-per-X PUT/GET/DELETE shape
 /// from Locked Decision #20 is preserved.
@@ -110,7 +110,7 @@ pub(crate) async fn get_vpc_dhcp_pool_v1(
     Ok(HttpResponseOk(pool))
 }
 
-/// RFD 00007 AP-2k: `GET /v1/vpc-dhcp-leases?vpc=<uuid>`. Flat list
+/// `GET /v1/vpc-dhcp-leases?vpc=<uuid>`. Flat list
 /// scoped to a VPC.
 pub(crate) async fn list_dhcp_leases_v1(
     rqctx: RequestContext<ApiContext>,
@@ -155,7 +155,7 @@ pub(crate) async fn list_dhcp_leases_v1(
     Ok(HttpResponseOk(ResultsPage::single(leases)))
 }
 
-/// RFD 00007 AP-2k: `GET /v1/vpc-dhcp-leases/{mac}`. Bare-MAC
+/// `GET /v1/vpc-dhcp-leases/{mac}`. Bare-MAC
 /// lookup using the AP-1c `dhcp_lease/by_mac/` index - cross-VPC by
 /// design (MAC is unique by invariant).
 pub(crate) async fn get_dhcp_lease_v1(
@@ -187,7 +187,7 @@ pub(crate) async fn get_dhcp_lease_v1(
     Ok(HttpResponseOk(lease))
 }
 
-/// RFD 00007 AP-2k: `GET /v1/vpc-dhcp-reservations?vpc=<uuid>`.
+/// `GET /v1/vpc-dhcp-reservations?vpc=<uuid>`.
 pub(crate) async fn list_dhcp_reservations_v1(
     rqctx: RequestContext<ApiContext>,
     query: Query<tritond_api::v1::VpcDhcpQuery>,
@@ -231,7 +231,7 @@ pub(crate) async fn list_dhcp_reservations_v1(
     Ok(HttpResponseOk(ResultsPage::single(reservations)))
 }
 
-/// RFD 00007 AP-3a-13: `PUT /v1/vpc-dhcp-pools/{vpc_id}`.
+/// `PUT /v1/vpc-dhcp-pools/{vpc_id}`.
 pub(crate) async fn put_vpc_dhcp_pool_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::VpcDhcpPoolPath>,
@@ -292,7 +292,7 @@ pub(crate) async fn put_vpc_dhcp_pool_v1(
     }
 }
 
-/// RFD 00007 AP-3a-13: `DELETE /v1/vpc-dhcp-pools/{vpc_id}`.
+/// `DELETE /v1/vpc-dhcp-pools/{vpc_id}`.
 pub(crate) async fn clear_vpc_dhcp_pool_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::VpcDhcpPoolPath>,
@@ -347,7 +347,7 @@ pub(crate) async fn clear_vpc_dhcp_pool_v1(
     }
 }
 
-/// RFD 00007 AP-3a-13: `POST /v1/vpc-dhcp-reservations?vpc=<uuid>`.
+/// `POST /v1/vpc-dhcp-reservations?vpc=<uuid>`.
 pub(crate) async fn create_vpc_dhcp_reservation_v1(
     rqctx: RequestContext<ApiContext>,
     query: Query<tritond_api::v1::VpcDhcpQuery>,
@@ -424,7 +424,7 @@ pub(crate) async fn create_vpc_dhcp_reservation_v1(
     }
 }
 
-/// RFD 00007 AP-3a-13: `DELETE /v1/vpc-dhcp-reservations/{vpc_id}/{mac}`.
+/// `DELETE /v1/vpc-dhcp-reservations/{vpc_id}/{mac}`.
 pub(crate) async fn delete_vpc_dhcp_reservation_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::DhcpReservationPath>,

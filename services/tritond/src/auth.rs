@@ -48,46 +48,11 @@ use uuid::Uuid;
 
 use crate::audit::AuditService;
 
-/// Embedded Cedar policy bundle.
-///
-/// Six rules, ordered by specificity:
-///
-/// * Anonymous callers can hit `health`, `login`, `refresh`,
-///   and the public-listing / by-id read actions for image and
-///   ssh-key.
-/// * Authenticated operators with `is_root == true` can perform any
-///   action (the bootstrap-root path).
-/// * Silo members can perform actions on resources that remain
-///   silo-scoped after E-3 (SSH keys, images, tenant CRUD). Gated
-///   by `principal.silo_id == resource.silo_id`. The tenant IdP
-///   actions are intentionally omitted — IdP management stays
-///   root-only because the IdP grants identity, and granting
-///   identity is operator turf.
-/// * Tenant members can perform actions on the tenant-scoped
-///   workload graph (project, VPC, subnet, instance, NIC, disk,
-///   floating IP, quota, image, ssh-key). Gated by
-///   `principal.tenant_id == resource.tenant_id`.
-/// * Authenticated principals can hit the global image/ssh-key
-///   actions when the resource is `System::"global"` (no
-///   silo / tenant attribute) — these are the multi-scope
-///   /v2/{ssh-keys,images}/{id} and /v2/auth/* endpoints whose
-///   visibility is enforced in the handler via the visibility
-///   predicate.
-/// * Fleet-admin operators (`principal.fleet_admin == true`) can
-///   inspect cross-silo CN + legacy-VM state at `/v2/admin/legacy/*`.
-///   Distinct from `is_root` so an operator can be granted
-///   read-only fleet visibility without picking up cluster-wide
-///   write authority.
-///
-/// `Action::StorageCluster*` (registration of external manta-storage
-/// daemons under `/v2/storage/clusters`) are intentionally absent
-/// from every per-scope rule below — operator-only by design, gated
-/// solely by the root-allows-all rule. Demoting them to a per-silo
-/// or fleet-admin scope would let a tenant-scoped operator hand
-/// tritond a malicious mantad endpoint, which would in turn proxy
-/// arbitrary admin calls back into our trust boundary.
-///
-/// Every other access falls through to Cedar's default deny.
+/// Cedar policy bundle. `Action::StorageCluster*` are deliberately
+/// root-only: a tenant operator who could register a storage cluster
+/// could point tritond at a malicious mantad and proxy admin calls
+/// back across our trust boundary. Everything not matched here falls
+/// through to Cedar's default deny.
 const POLICY_BUNDLE: &str = r#"
 @id("anonymous-public-actions")
 permit(
@@ -257,61 +222,25 @@ permit(
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum Principal {
-    /// Authenticated operator or federated user. `is_root` is true
-    /// for the bootstrap operator and any other cluster-wide
-    /// account; `tenant_id` is `Some(...)` for federated users
-    /// (and, in future, for tenant-scoped admin operators).
-    /// `silo_id` is the silo derived from `tenant_id` at auth time
-    /// via a [`Tenant`] lookup, kept as a separate cached field so
-    /// existing silo-gating Cedar rules keep working until E-3
-    /// re-parents resources under tenants. `scope` is `Some(...)`
-    /// only when the request authenticated via an API key that
-    /// carries an explicit permission scope; password-auth (JWT)
-    /// and OIDC paths set this to `None`, meaning "no extra
-    /// restriction beyond what Cedar already enforces."
     Operator {
         user_id: Uuid,
+        /// Bootstrap / cluster-wide root. Bypasses capability checks.
         is_root: bool,
-        /// Fleet-admin role from the underlying [`User`] record.
-        /// Independent of `is_root`: a fleet-admin can read CN +
-        /// legacy-VM state across silos but cannot perform
-        /// tenant-scoped writes. `is_root` already covers
-        /// fleet-admin actions via the root-allows-all rule, so
-        /// for root operators this is typically also `true`.
         fleet_admin: bool,
-        /// Operator capabilities granted to this user. Per RFD
-        /// 00007 D-Ap-13 the `/v1/system/` operator surface is
-        /// gated by capabilities, not by `fleet_admin` alone.
-        /// `is_root` users bypass capability checks; for non-root
-        /// callers the auth layer's `require_capability` helper
-        /// checks `capabilities.contains(&required)` before
-        /// serving any `/v1/system/` endpoint.
+        /// `is_root` skips this check; for non-root callers
+        /// `/v1/system/*` endpoints require the matching capability.
         capabilities: std::collections::BTreeSet<tritond_store::Capability>,
-        /// Tenant the user belongs to. `None` for cluster-wide
-        /// (root) operators. Source of truth for tenant
-        /// membership; `silo_id` below is a cached derivation.
         tenant_id: Option<Uuid>,
-        /// Silo derived from `tenant_id` at auth time via a
-        /// `Tenant.silo_id` lookup. Cached on the principal so
-        /// Cedar can gate on silo without a second store
-        /// round-trip. `None` for cluster-wide operators *and*
-        /// for the (defensive) case where the tenant lookup
-        /// failed — the latter is treated as "no silo
-        /// membership," denying silo-scoped actions.
+        /// Cached derivation from `tenant_id` so silo-gated Cedar
+        /// rules don't re-fetch the tenant on every request. `None`
+        /// here is treated as "no silo membership."
         silo_id: Option<Uuid>,
         scope: Option<ApiKeyScope>,
-        /// CN binding from the presenting API key, if any. Set
-        /// when the request authenticated via a key with
-        /// [`ApiKey::bound_to_cn`] populated (the per-CN keys
-        /// minted by the registration approval flow). Handlers
-        /// that act "as a CN" (the entire `/v2/agent/*` surface)
-        /// must verify this matches whatever CN identity the
-        /// request claims; mismatch is a 403.
+        /// CN binding from the per-CN API key minted at registration
+        /// approval. `/v2/agent/*` handlers must verify this matches
+        /// the CN identity the request claims; mismatch is a 403.
         bound_cn: Option<Uuid>,
     },
-    /// No valid credential was presented (or the presented one was
-    /// invalid). Cedar will allow this principal only on
-    /// public-action endpoints.
     Anonymous,
 }
 
@@ -319,11 +248,9 @@ pub enum Principal {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum AuthError {
-    /// The backing store reported a failure that the auth path
-    /// can't paper over (e.g. FoundationDB unreachable). We do **not**
-    /// downgrade these to anonymous, because then a partial outage
-    /// would silently de-authenticate every caller and produce 403
-    /// noise instead of an honest 503.
+    /// Backend failure (e.g. FoundationDB unreachable). Surfaced as
+    /// 503, not downgraded to anonymous — a partial outage should
+    /// not silently de-authenticate every caller.
     #[error("auth backend unavailable: {0}")]
     Backend(StoreError),
 }
@@ -414,12 +341,10 @@ pub enum Action {
     AuditList,
     AuditFetch,
     AuditVerify,
-    /// RFD 00004 D-Sg-12. Operator-initiated saga abandon (forces
-    /// the unwind direction at the current node). Operator-only by
-    /// the root-allows-all Cedar rule; no per-silo or per-tenant
-    /// principal can drive an unwind.
+    /// Operator-initiated saga abandon (forces unwind at the current
+    /// node). Operator-only by the root-allows-all Cedar rule.
     OperationsAbandon,
-    /// LM-1 read-only migrations surface. Operator-only at the
+    /// Read-only migrations surface. Operator-only at the
     /// fleet-wide list endpoint; per-instance views are gated by
     /// the existing instance-read permission elsewhere.
     MigrationList,
@@ -1575,10 +1500,10 @@ where
     }
 }
 
-/// RFD 00007 AP-3a: authenticate the caller WITHOUT running Cedar.
+/// authenticate the caller WITHOUT running Cedar.
 /// Used by the `/v1/system/` handlers which gate on
 /// [`require_capability`] instead of Cedar - the capability check
-/// is the operator-surface gate per RFD 00007 D-Ap-13. Returns the
+/// is the operator-surface gate. Returns the
 /// resolved [`Principal`] (which may be `Anonymous`); the caller
 /// must immediately follow with `require_capability` to reject
 /// anonymous / under-capabilitied callers with the standard
@@ -1596,21 +1521,9 @@ where
     Ok(principal)
 }
 
-/// RFD 00007 AP-3a: enforce a [`tritond_store::Capability`] against
-/// the operator principal. Per RFD 00007 D-Ap-13 the `/v1/system/`
-/// surface is gated by capabilities, not by `fleet_admin` alone.
-///
-/// Rules:
-/// * `is_root` users carry every capability implicitly. They pass.
-/// * `Principal::Operator` users pass iff
-///   `capabilities.contains(&required)`.
-/// * Anonymous and non-matching principals get `404 NotFound` (the
-///   same shape as cross-scope deny per Locked Decision #3, so an
-///   attacker can't distinguish "no resource" from "no capability").
-///
-/// The 404 shape is intentional: every gate failure on `/v1/system/`
-/// looks identical from the outside, whether the path doesn't exist,
-/// the capability is missing, or the auth token is invalid.
+/// Returns 404 (not 403) on miss so an attacker can't distinguish
+/// "no resource", "no capability", and "bad token". `is_root` users
+/// always pass.
 pub fn require_capability(
     principal: &Principal,
     capability: tritond_store::Capability,

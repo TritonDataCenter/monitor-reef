@@ -77,7 +77,7 @@ use crate::VERSION;
 /// Concrete implementor of [`TritondApi`].
 use crate::context::ApiContext;
 
-/// RFD 00007 AP-2j: `GET /v1/firewall-rules?vpc=<uuid>`. Flat list
+/// `GET /v1/firewall-rules?vpc=<uuid>`. Flat list
 /// scoped to a VPC; the handler reads the VPC to recover the
 /// owning tenant for auth.
 pub(crate) async fn list_firewall_rules_v1(
@@ -133,7 +133,7 @@ pub(crate) async fn list_firewall_rules_v1(
     Ok(HttpResponseOk(ResultsPage::single(rules)))
 }
 
-/// RFD 00007 AP-2j: `GET /v1/firewall-rules/{firewall_rule_id}`.
+/// `GET /v1/firewall-rules/{firewall_rule_id}`.
 pub(crate) async fn get_firewall_rule_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::FirewallRulePath>,
@@ -160,7 +160,7 @@ pub(crate) async fn get_firewall_rule_v1(
     Ok(HttpResponseOk(rule))
 }
 
-/// RFD 00007 AP-3a-13: `POST /v1/firewall-rules?vpc=<uuid>`.
+/// `POST /v1/firewall-rules?vpc=<uuid>`.
 pub(crate) async fn create_firewall_rule_v1(
     rqctx: RequestContext<ApiContext>,
     query: Query<tritond_api::v1::FirewallRuleQuery>,
@@ -236,7 +236,7 @@ pub(crate) async fn create_firewall_rule_v1(
     }
 }
 
-/// RFD 00007 AP-3a-13: `DELETE /v1/firewall-rules/{firewall_rule_id}`.
+/// `DELETE /v1/firewall-rules/{firewall_rule_id}`.
 pub(crate) async fn delete_firewall_rule_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::FirewallRulePath>,

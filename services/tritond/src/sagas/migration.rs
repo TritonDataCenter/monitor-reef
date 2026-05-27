@@ -4,50 +4,10 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! `migrate-instance` saga (LM-5 skeleton).
-//!
-//! The catalog saga the operator's
-//! `POST /v2/instances/{id}/actions/migrate` (with
-//! `action=begin`) starts. Walks the 11-node DAG from the plan
-//! `we-need-to-build-ancient-scone.md` §B.2:
-//!
-//! ```text
-//!  1. associate_record          ─ associate the saga_id with the
-//!                                  pre-created MigrationRecord
-//!  2. designate_target          ─ placement engine pick with
-//!                                  avoid_cn = [source_cn]
-//!  3. snapshot_source_quota     ─ capture quota+refreservation
-//!                                  for the abort path
-//!  4. create_target_zone        ─ provision empty target zone
-//!  5. reserve_target_nics       ─ pre-bind NICs to the target CN
-//!  6. initial_zfs_send          ─ base snapshot full send
-//!  7. final_zfs_increment       ─ pre-pause incremental
-//!  8. quiesce_and_stream        ─ vCPU pause + memory stream +
-//!                                  device-state handoff
-//!  9. switch_ownership          ─ atomic FDB CAS; POINT OF NO
-//!                                  RETURN (after this, target
-//!                                  is canonical)
-//! 10. cleanup_source            ─ vmadm delete + zfs destroy
-//!                                  on source
-//! 11. finish                    ─ set state=Successful + clear
-//!                                  the active-migration guard
-//! ```
-//!
-//! ## LM-5 scope
-//!
-//! Every action body is a no-op that just transitions the
-//! `MigrationRecord` through its state machine + records the
-//! audit-relevant timestamps. Real work — the placement call,
-//! the actual zfs send/recv jobs, the bhyve_ctl + Proteus side
-//! effects — lands in **LM-6** (cold-migrate path) and **LM-7**
-//! (live-memory + switch). The skeleton ships now so the
-//! operator action endpoint + the saga-recovery machinery + the
-//! `tcadm migrations get --watch` event-log surface can all be
-//! exercised end-to-end against the in-mem store.
-//!
-//! Undo behaviour is wired correctly in the skeleton even
-//! though the forward action is a no-op — the saga's unwind
-//! tail must work the day LM-6 fills in the bodies.
+//! `migrate-instance` saga. Forward actions are no-op state-machine
+//! transitions on the `MigrationRecord`; the unwind tail is wired
+//! correctly so it survives the day real send/recv bodies land.
+//! `switch_ownership` is the atomic FDB CAS — the point of no return.
 
 use std::sync::Arc;
 
@@ -63,7 +23,6 @@ use crate::sagas::common::{
     ACTION_TIMEOUT_AWAIT, ACTION_TIMEOUT_STORE, fence_check, no_op_undo, store_err_to_action_err,
 };
 
-/// Steno saga catalog name (kebab-case per RFD 00004 D-Sg-10).
 pub const SAGA_NAME: &str = "migrate-instance";
 
 /// Steno saga version. Bump on any change to the action sequence,

@@ -8,7 +8,7 @@
 //!
 //! Every multi-resource operation that touches more than one FDB
 //! resource, or that enqueues work for any `tritonagent`, runs as a
-//! saga registered here (RFD 00004 D-Sg-3). The catalog is also the
+//! saga registered here. The catalog is also the
 //! documented design surface: a module that doesn't exist is a gap;
 //! an action without an undo is a leak waiting to happen.
 //!
@@ -49,14 +49,10 @@ pub mod migration;
 pub mod nat_gateway;
 pub mod node_join;
 
-/// RFD 00004 D-Sg-9 / Invariant 9: per-action timeout. Catalog
-/// actions wrap their body in `with_action_timeout` so a wedged
-/// agent / store / external call surfaces as `ActionError` instead
-/// of hanging the saga forever. Per-saga deadlines are an upcoming
-/// follow-up; for now each action gets its own cap.
-///
-/// The returned error's payload is structured so the handler's
-/// unwind path can distinguish timeout from other failure modes.
+/// Per-action timeout so a wedged agent/store/external call surfaces
+/// as a structured `ActionError` instead of hanging the saga. The
+/// error payload lets unwind paths distinguish timeout from other
+/// failure modes.
 pub async fn with_action_timeout<T>(
     action: &'static str,
     duration: Duration,
@@ -93,7 +89,7 @@ pub fn register_all_actions(reg: &mut ActionRegistry) {
 /// `(name, version)` pairs for every saga registered above. The
 /// executor walks this list at build time so `recover_all_for_sec`
 /// can reject sagas whose persisted version is no longer in the
-/// registry (RFD 00004 D-Sg-10).
+/// registry.
 pub fn registered_versions() -> Vec<(&'static str, u32)> {
     vec![
         (

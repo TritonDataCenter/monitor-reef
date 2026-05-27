@@ -22,7 +22,7 @@
 //! * [`AwaitJobParams`] / [`await_provisioning_job_terminal`] — the
 //!   shared "wait for an enqueued `ProvisioningJob` to reach
 //!   `Completed` / `Failed`" action. Used by every saga that
-//!   dispatches CN-side work (RFD 00004 D-Sg-2).
+//!   dispatches CN-side work.
 //!
 //! Action bodies live here so the catalog modules don't drift on
 //! shape (e.g. one module wraps in `with_action_timeout`, another
@@ -46,7 +46,7 @@ pub const ACTION_TIMEOUT_STORE: Duration = Duration::from_secs(30);
 /// it fail together.
 pub const ACTION_TIMEOUT_AWAIT: Duration = Duration::from_secs(600);
 
-/// RFD 00004 D-Sg-8: best-effort fence check called at the top of
+/// best-effort fence check called at the top of
 /// every saga action body before any externally-visible side
 /// effect. If another SEC has adopted the saga since this action's
 /// context was built, short-circuit the action so the unwind tail

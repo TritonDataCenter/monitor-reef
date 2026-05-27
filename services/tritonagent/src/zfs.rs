@@ -6,30 +6,10 @@
 
 //! Thin wrappers around the SmartOS `zfs(1M)` CLI.
 //!
-//! Phase 0 deliberately uses the CLI rather than libzfs/ioctls:
-//! the operations the agent needs (snapshot existence check,
-//! `zfs receive`, snapshot, destroy) are all one-shot, and the
-//! shell-out cost is dwarfed by network and zone-create time
-//! anyway. A future slice with high-throughput needs (e.g.
-//! parallel image imports during a fleet refresh) can swap in
-//! the FFI bindings.
-//!
-//! ## Why `sh -c` for the gzipped receive
-//!
-//! `zfs receive` reads the raw `zfs send` stream from stdin;
-//! image content on disk is gzip-compressed. The natural
-//! pipeline is `gzip -dc image.gz | zfs receive zones/<id>`.
-//! Tokio's `ChildStdout`-as-`Stdio` story is awkward (no
-//! direct conversion path), and rolling our own copy loop adds
-//! complexity for no benefit. Going through `/bin/sh -c` with
-//! `set -o pipefail` gives us proper failure propagation when
-//! `gzip` chokes on a corrupt image: without `pipefail` the
-//! shell would report only `zfs`'s exit status, which is
-//! typically 0 because zfs sees EOF and reports a happy
-//! short-stream — silently corrupting our pool with a partial
-//! dataset. The strings we pass through are well-formed
-//! (uuid-keyed paths under our cache directory), so quoting
-//! escapes are not load-bearing here.
+//! `set -o pipefail` is load-bearing for the gzipped receive: without
+//! it, a corrupt input lets gzip fail while zfs sees EOF and reports
+//! 0, silently corrupting the pool with a partial dataset. Inputs are
+//! uuid-keyed paths under our cache, so shell quoting is not at risk.
 
 use std::path::Path;
 
@@ -118,21 +98,10 @@ pub async fn recv_gzipped(dataset: &str, gz_path: &Path) -> Result<()> {
     Ok(())
 }
 
-// ──────────────────────────────────────────────────────────────────
-// LM-4 — live-migration helpers.
-//
-// These spawn `zfs send` / `zfs recv` as long-lived subprocesses
-// with piped stdio so the migration's ZfsSender / ZfsReceiver
-// (from tritond-vmm-migrate) can copy bytes between the local
-// `zfs` process and the WebSocket transport without going through
-// the filesystem or SSH.
-//
-// Each spawn helper returns a `tokio::process::Child` rather than
-// awaiting the process — the caller drives the stream and waits
-// at its own pace. The caller MUST `await` `child.wait()` after
-// the stream drains so the child reaps cleanly; otherwise the
-// process is reparented to PID 1 as a zombie.
-// ──────────────────────────────────────────────────────────────────
+// Live-migration helpers: spawn `zfs send`/`zfs recv` with piped
+// stdio so the migration transport can ferry bytes directly to the
+// WebSocket. Each helper returns the `Child`; the caller MUST `await
+// child.wait()` after the stream drains or it will zombie.
 
 use tokio::process::Child;
 
@@ -166,19 +135,9 @@ pub async fn snapshot_for_migration(dataset: &str, label: &str) -> Result<String
     Ok(format!("{dataset}@{snap_name}"))
 }
 
-/// Spawn `zfs send <snapshot>` with stdout piped.
-///
-/// Returns the `Child` with `stdout: Some(_)` — the caller takes
-/// the stdout (`child.stdout.take()`), feeds it into a
-/// [`tritond_vmm_migrate::ZfsSender`], and `child.wait()`s when
-/// the sender returns to surface zfs's exit status.
-///
-/// Uses `-w` (raw, encryption-preserving) by default so the
-/// stream round-trips encrypted datasets verbatim. LM-4 ships
-/// encrypted-source migrations as out-of-scope (the
-/// `cn-not-encrypted-source` filter rejects them at designate
-/// time) but the raw flag is harmless for unencrypted datasets
-/// and removes a future migration of this code path.
+/// `-w` (raw, encryption-preserving) is unconditional so encrypted
+/// migrations work once the placement filter that rejects them is
+/// lifted; harmless on unencrypted datasets.
 pub fn spawn_send_full(snapshot: &str) -> Result<Child> {
     let mut cmd = Command::new("zfs");
     cmd.args(["send", "-w", snapshot])

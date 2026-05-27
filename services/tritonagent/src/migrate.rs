@@ -4,49 +4,14 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! On-CN live-migration listener + outbound dialer (LM-3).
+//! On-CN live-migration listener + outbound dialer.
 //!
-//! Lives at the same architectural layer as
-//! [`crate::console`]: a small TLS WebSocket server bound to the CN
-//! admin IP that tritond reaches by pinning the listener's SPKI
-//! (exchanged at registration). The route is
-//! `GET /migrate/{migration_id}` with a `?ticket=` HS256 JWT minted
-//! by tritond via [`tritond_auth::MigrateTicketKey`].
-//!
-//! Unlike the console, the migration flow has *two* parties — source
-//! and target both run a tritonagent. The target hosts this listener;
-//! the source uses [`dial`] to open the outbound WebSocket and feed
-//! it into [`tritond_vmm_migrate::OutboundMigration`]. Both sides
-//! wrap the WebSocket in a [`Transport`] implementation that
-//! plumbs binary frames into the state machine's
-//! [`tritond_vmm_migrate::Message`] codec.
-//!
-//! ## Auth model
-//!
-//! tritond mints two tickets per migration when the migration saga
-//! reaches the data-channel step:
-//!
-//! * outbound, given to the source agent's `dial` call.
-//! * inbound, written into the target's `MigrationRecord` so the
-//!   listener can recognise which migration an inbound dial
-//!   fulfils.
-//!
-//! Both tickets bind `(source_cn, target_cn, vm_uuid, migration_id,
-//! role)` and live ~10 minutes. The listener verifies the source's
-//! presented ticket against its own [`MigrateTicketKey`] (different
-//! key per CN, exchanged at registration), against the role
-//! `Outbound`, and against the migration_id it knows is in flight.
-//!
-//! ## What's wired vs. deferred (LM-3 scope)
-//!
-//! LM-3 ships the listener, the dialer, the Transport adapter, and
-//! the wiring to construct an `InboundMigration` / `OutboundMigration`.
-//! The actual driving of those state machines — including the
-//! `bhyve_ctl` calls, the saga callbacks for `pause_complete` /
-//! `switch_complete`, and the FDB `MigrationRecord` lookups — lands
-//! with LM-5 when the migration saga is the orchestrator. For now
-//! the listener has a placeholder runner that closes the WebSocket
-//! cleanly so end-to-end testing can still walk the auth path.
+//! TLS WebSocket at `GET /migrate/{migration_id}?ticket=` bound to
+//! the CN admin IP; tritond pins the listener's SPKI exchanged at
+//! registration. Two HS256 tickets per migration (one per role) bind
+//! `(source_cn, target_cn, vm_uuid, migration_id, role)` and expire
+//! at ~10 min. The placeholder runner closes cleanly so the auth
+//! path is exercisable before the saga orchestrator lands.
 
 use std::io;
 use std::net::SocketAddr;
@@ -133,13 +98,10 @@ struct MigrateZfsParams {
 /// over plain HTTP; production wraps it in TLS via [`serve`].
 fn build_router(state: Arc<MigrateState>) -> Router {
     Router::new()
-        // Memory channel — the LM-3 WebSocket the migration's
-        // OutboundMigration state machine connects to.
+        // Memory channel.
         .route("/migrate/{migration_id}", get(migrate_ws))
-        // ZFS channel — the LM-4 WebSocket the source agent's
-        // ZfsSender connects to. Separate route + separate
-        // ticket role (`MigrateRole::ZfsTarget`) so a leaked
-        // memory-channel ticket can't be replayed against it.
+        // ZFS channel: distinct route + ticket role so a leaked
+        // memory-channel ticket can't be replayed here.
         .route("/migrate/{migration_id}/zfs", get(migrate_zfs_ws))
         .with_state(state)
 }
@@ -201,16 +163,13 @@ async fn migrate_ws(
     );
 
     ws.on_upgrade(move |socket| async move {
-        // LM-3 placeholder: the LM-5 saga will own the
-        // InboundMigration::run call here, including the bhyve_ctl
-        // hooks and progress callbacks. For LM-3 we close cleanly
-        // so the end-to-end auth path is testable + the listener
-        // doesn't leak open sockets.
+        // Placeholder: close cleanly so the auth path is testable.
+        // Saga driver wires `InboundMigration::run` here later.
         let mut transport = AxumWsTransport::new(socket);
         if let Err(e) = transport.close().await {
             warn!(error = %e, "migrate: failed to close placeholder socket");
         }
-        info!(%migration_id, "migrate: placeholder inbound session closed (LM-5 wires the saga driver)");
+        info!(%migration_id, "migrate: placeholder inbound session closed");
     })
 }
 
@@ -338,26 +297,10 @@ pub struct DialParams {
     pub ticket: String,
 }
 
-/// LM-3 stub for the source-side dialer. The full implementation
-/// pulls in `tokio-tungstenite` + the SPKI pin (mirroring the
-/// admin-backend's console proxy). Landing it here without the
-/// LM-5 saga to invoke it would be code we can't exercise, so we
-/// keep the signature stable and panic if anyone tries to use it
-/// before LM-5 wires it up.
-///
-/// When LM-5 needs this, the body becomes:
-///
-/// 1. Build the `wss://...` URL from `params.base_url` + path +
-///    query.
-/// 2. Connect via `tokio_tungstenite::connect_async_tls_with_config`
-///    with the pinned SPKI from the registration response.
-/// 3. Wrap the `WebSocketStream` in [`TungsteniteTransport`].
-/// 4. Hand the transport to
-///    `tritond_vmm_migrate::OutboundMigration::new(...).run().await`.
+/// Source-side dialer stub; signature is stable so the saga driver
+/// can wire it in later.
 pub async fn dial(_params: DialParams) -> io::Result<Box<dyn Transport>> {
-    Err(io::Error::other(
-        "migrate::dial not wired yet: LM-3 lands the listener, LM-5 wires the source side",
-    ))
+    Err(io::Error::other("migrate::dial not wired yet"))
 }
 
 /// Parameters for [`dial_zfs`]: the source side opens the ZFS
@@ -701,10 +644,9 @@ mod tests {
     }
 
     #[test]
-    fn dial_stub_returns_error_until_lm5() {
-        // Documents the LM-3 deferral: until LM-5 wires this in,
-        // calling dial must surface a clear error rather than
-        // panicking or silently no-op'ing.
+    fn dial_stub_returns_error() {
+        // `dial` must surface a clear error rather than panic or
+        // silently no-op until the saga driver wires it.
         let params = DialParams {
             base_url: "https://127.0.0.1:4568".to_string(),
             migration_id: Uuid::nil(),
@@ -718,10 +660,8 @@ mod tests {
 
     #[test]
     fn dial_zfs_refuses_unreachable_peer() {
-        // LM-6c lands the real `dial_zfs` body. The smoke test
-        // here just confirms the call fails fast against a port
-        // nobody is listening on, rather than panicking — and
-        // that the SPKI-hex parsing rejects garbage cleanly.
+        // Confirms `dial_zfs` fails fast against an unlistened port
+        // (no panic) and that SPKI-hex parsing rejects garbage.
         let params = DialZfsParams {
             base_url: "wss://127.0.0.1:1".to_string(),
             migration_id: Uuid::nil(),

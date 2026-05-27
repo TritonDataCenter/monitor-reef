@@ -97,29 +97,10 @@ fn idempotency_key_from_headers(rqctx: &RequestContext<ApiContext>) -> Option<St
     Some(s.to_string())
 }
 
-/// RFD 00007 AP-3a `GET /v1/system/instances?image=&cn=&silo=&tenant=&project=&state=`.
-///
-/// Fleet-wide instance search. This is the endpoint that opened the
-/// entire RFD: an operator needs to ask "which VMs are using image X?"
-/// in one HTTP call. Backed by the AP-1c secondary indexes for
-/// image and cn (single FDB range read); falls back to per-tenant
-/// project membership when scoped narrower.
-///
-/// Capability gate: requires `SystemRead`. A caller without it gets
-/// 404 NotFound (indistinguishable from "no such path" per Locked
-/// Decision #3).
-///
-/// Dispatch (priority order, narrowest index first):
-///   ?image=<uuid>  -> Store::list_instances_by_image
-///   ?cn=<uuid>     -> Store::list_instances_by_cn
-///   else           -> 400 MissingScope today (cross-fleet scan
-///                     without an index would exceed SCAN_CAP).
-///                     A future slice may walk all tenant/project
-///                     prefixes when bounded by additional
-///                     selectors.
-///
-/// Post-index filters re-apply silo/tenant/project/cn/image/state
-/// to the result set so combinations narrow correctly.
+/// Fleet-wide instance search. Dispatch (narrowest index first):
+/// `?image` -> `list_instances_by_image`; `?cn` -> `list_instances_by_cn`;
+/// otherwise 400 (full-fleet enumeration is not enabled). Capability:
+/// `SystemRead`; missing capability returns 404 not 403.
 pub(crate) async fn list_system_instances_v1(
     rqctx: RequestContext<ApiContext>,
     query: Query<tritond_api::v1::InstanceQuery>,
@@ -153,16 +134,13 @@ pub(crate) async fn list_system_instances_v1(
             Some("MissingScope".to_string()),
             ClientErrorStatusCode::BAD_REQUEST,
             "GET /v1/system/instances requires `image=` or `cn=` to scope the \
-             fleet-wide scan; full-fleet enumeration is not enabled at AP-3a-2"
+             fleet-wide scan; full-fleet enumeration is not enabled"
                 .to_string(),
         ));
     };
 
-    // Apply the remaining selectors as filters. The
-    // `Instance.tenant_id`, `project_id`, `host_cn_uuid`, and
-    // `image_id` fields are all checked; the silo selector resolves
-    // through a per-instance Tenant.silo_id lookup which we skip at
-    // AP-3a-2 (operators usually scope via tenant directly).
+    // Silo selector intentionally skipped: would require a per-instance
+    // Tenant.silo_id lookup. Operators scope via tenant instead.
     let mut filtered: Vec<Instance> = raw
         .into_iter()
         .filter(|i| {
@@ -183,15 +161,8 @@ pub(crate) async fn list_system_instances_v1(
     Ok(HttpResponseOk(ResultsPage::single(filtered)))
 }
 
-/// RFD 00007 AP-3a-4: `GET /v1/system/networking/nics?ip=&subnet=&instance=&mac=`.
-/// Fleet-wide NIC search. Operator's "who owns 10.x.x.x?" query.
-///
-/// Indexed dispatch (priority: ip > subnet > instance):
-///   ?ip=<addr>  -> Store::find_nic_by_ip (unique by invariant)
-///   ?subnet=    -> Store::list_nics_by_subnet (AP-1c index)
-///   ?instance=  -> Store::list_nics_for_instance (existing index)
-///
-/// Capability: `SystemRead`.
+/// Fleet-wide NIC search. Dispatch (priority: ip > subnet > instance);
+/// no selector is 400. Capability: `SystemRead`.
 pub(crate) async fn list_system_nics_v1(
     rqctx: RequestContext<ApiContext>,
     query: Query<tritond_api::v1::NicQuery>,
@@ -239,14 +210,7 @@ pub(crate) async fn list_system_nics_v1(
     Ok(HttpResponseOk(ResultsPage::single(nics)))
 }
 
-/// RFD 00007 AP-3a-3: `GET /v1/system/cns/{cn_id}/instances`.
-/// Fixed-axis view: every instance currently placed on a single CN.
-/// The natural endpoint behind the admin UI's CN-detail "Hosted
-/// instances" tab. Backed by the existing
-/// `instance/in_host_cn/<cn>/` index (delegate to
-/// `Store::list_instances_by_cn`).
-///
-/// Capability: `SystemRead`.
+/// Every instance currently placed on a single CN. Capability: `SystemRead`.
 pub(crate) async fn list_system_cn_instances_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::SystemCnPath>,
@@ -264,13 +228,7 @@ pub(crate) async fn list_system_cn_instances_v1(
     Ok(HttpResponseOk(ResultsPage::single(instances)))
 }
 
-/// RFD 00007 AP-3a-3: `GET /v1/system/images/{image_id}/instances`.
-/// Fixed-axis "what's using this image?" view. The natural endpoint
-/// behind the admin UI's Image-detail "In use by" tab and the
-/// answer to the question that opened RFD 00007. Backed by the
-/// AP-1c `idx/image/<image>/<instance>` keyspace.
-///
-/// Capability: `SystemRead`.
+/// Every instance using a given image. Capability: `SystemRead`.
 pub(crate) async fn list_system_image_instances_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::SystemImagePath>,
@@ -288,32 +246,11 @@ pub(crate) async fn list_system_image_instances_v1(
     Ok(HttpResponseOk(ResultsPage::single(instances)))
 }
 
-/// RFD 00007 `GET /v1/instances?tenant=&project=&image=&cn=&state=`.
-///
-/// The flat customer-facing instance list. Dispatches on the
-/// selector set:
-///
-/// * `?image=<uuid>` -> single FDB range read against the AP-1c
-///   `instance/in_image/<image>/` index, then per-id point reads.
-/// * `?cn=<uuid>` -> existing `instance/in_host_cn/<cn>/` index via
-///   `Store::list_instances_by_cn`.
-/// * `?tenant=<uuid>&project=<uuid>` -> the bounded `list_instances_in_project`
-///   path, identical to the legacy `/v2/tenants/{t}/projects/{p}/instances`.
-/// * No selectors set, or only `?tenant=` -> `400 BadRequest`
-///   `MissingScope` until AP-3a lands the bounded-scan across-projects
-///   handler. A future slice expands this; today the failure is
-///   typed so a client can react.
-///
-/// Cross-scope checks: a non-fleet-admin principal who sets
-/// `?tenant=` outside their own tenant gets `404 NotFound` (via
-/// `authenticate_and_authorize_in_tenant`). The `?silo=` selector
-/// is rejected with `400 ScopeNotAccepted` on this endpoint (the
-/// fleet-admin variant lives at `/v1/system/instances` in a later
-/// slice).
-///
-/// AP-2b ships UUID-only selector parsing; name-resolution
-/// (`NameOrId::Name(...)`) returns `400 BadRequest` until
-/// `handlers::selectors::resolve_name_or_id` lands in AP-3a.
+/// Flat customer-facing instance list. Dispatch: `?image` or `?cn`
+/// hit indexed paths; `?tenant=&project=` uses the bounded
+/// per-project list; otherwise 400 MissingScope. `?silo=` is rejected
+/// here — the fleet-admin variant lives at `/v1/system/instances`.
+/// Cross-tenant `?tenant=` for non-fleet-admin callers returns 404.
 pub(crate) async fn list_instances_v1(
     rqctx: RequestContext<ApiContext>,
     query: Query<tritond_api::v1::InstanceQuery>,
@@ -327,9 +264,7 @@ pub(crate) async fn list_instances_v1(
         state,
     } = query.into_inner();
 
-    // Reject `?silo=` on the customer endpoint (typed error per
-    // RFD 00007 D-Ap-8). Fleet-admin reads with silo scope live at
-    // `/v1/system/instances`, which lands in a later slice.
+    // Customer endpoint: `?silo=` is reserved for `/v1/system/instances`.
     if scope.silo.is_some() {
         return Err(HttpError::for_client_error(
             Some("ScopeNotAccepted".to_string()),
@@ -340,9 +275,8 @@ pub(crate) async fn list_instances_v1(
         ));
     }
 
-    // AP-2b ships UUID-only selectors (Dropshot constraint on scalar
-    // query params). AP-3a swaps to a `NameOrId` newtype that
-    // resolves names server-side via `handlers::selectors`.
+    // UUID-only selectors today (Dropshot can't deserialize a sum type
+    // from a query string); name resolution lands with a `NameOrId`.
     let tenant_uuid = scope.tenant;
     let project_uuid = scope.project;
     let image_uuid = image;
@@ -402,16 +336,12 @@ pub(crate) async fn list_instances_v1(
             .await
             .map_err(store_error_to_http)?
     } else {
-        // AP-2b: no fleet-wide bounded-scan handler yet. The
-        // operator surface at /v1/system/instances will accept this
-        // shape; the customer surface always requires either an
-        // indexed selector (image/cn) or a project scope.
+        // Customer surface refuses unbounded scans; fleet-admin can
+        // hit `/v1/system/instances` instead.
         return Err(HttpError::for_client_error(
             Some("MissingScope".to_string()),
             ClientErrorStatusCode::BAD_REQUEST,
-            "set `image=`, `cn=`, or `tenant=&project=` to scope the list; \
-             cross-project scans on the customer surface require AP-3a"
-                .to_string(),
+            "set `image=`, `cn=`, or `tenant=&project=` to scope the list".to_string(),
         ));
     };
 
@@ -441,12 +371,7 @@ pub(crate) async fn list_instances_v1(
     Ok(HttpResponseOk(ResultsPage::single(filtered)))
 }
 
-/// RFD 00007 AP-2d: `POST /v1/instances?tenant=&project=` body
-/// handler. Unpacks the query selectors, requires both `tenant=` and
-/// `project=` (the customer surface always requires a project scope
-/// for creates), then delegates to the same inner machinery as the
-/// v2 path-scoped handler. `silo=` is rejected with 400
-/// `ScopeNotAccepted` here per RFD 00007 D-Ap-8.
+/// Both `tenant=` and `project=` are required; `silo=` is rejected.
 pub(crate) async fn create_instance_v1(
     rqctx: RequestContext<ApiContext>,
     query: Query<tritond_api::v1::ScopeSelectors>,
@@ -570,19 +495,10 @@ async fn create_instance_inner(
             }
         };
 
-    // From here on, instance allocation + host-CN pin + root_pw
-    // meta + Provision-job enqueue run as a `tritond-saga`
-    // `instance-create` saga. The saga has explicit per-action undo
-    // so any failure unwinds cleanly (no leaked Instance / NIC / IP
-    // / Disk / DhcpLease rows). See
-    // `services/tritond/src/sagas/instance_create.rs` for the chain
-    // and the unwind matrix; the RFD is 00004 SG-2.
-    // RFD 00004 D-Sg-5 / SG-4: the `Idempotency-Key` request header
-    // rides into the saga's Params so a future request whose key
-    // matches an in-flight or completed saga can be projected back
-    // to the original operation handle (store-side dedup is the
-    // 202-conversion piece; for now the key is captured durably on
-    // the saga record so operators can correlate retries).
+    // Allocation through enqueue runs as the `instance-create` saga so
+    // any failure unwinds without leaking Instance / NIC / IP / Disk /
+    // DhcpLease rows. `Idempotency-Key` is captured on the saga record
+    // so operators can correlate retries.
     let saga_params = crate::sagas::instance_create::InstanceCreateParams {
         tenant_id,
         project_id,
@@ -612,9 +528,8 @@ async fn create_instance_inner(
         }
     };
     let saga_id = tritond_saga::SagaId(uuid::Uuid::new_v4());
-    // Resource refs known at create time. The by_ref index makes
-    // these sagas discoverable from per-resource detail pages
-    // (RFD 00004 SG-4 resource indexing).
+    // Resource refs known at create time make the saga discoverable
+    // from per-resource detail pages via the by_ref index.
     let saga_refs = crate::sagas::instance_create::build_references(&saga_params);
     let saga_result = ctx
         .saga
@@ -743,13 +658,10 @@ async fn create_instance_inner(
     Ok(HttpResponseCreated(instance))
 }
 
-// AP-2c: flat /v1/instances/{instance_id}[/{action}] handlers.
-// Each reads the instance row to recover (tenant_id, project_id),
-// then delegates to the shared inner machinery. The principal's
-// silo is checked inside the inner functions via
-// `authenticate_and_authorize_in_tenant`. Cross-tenant probes
-// surface as 404 because the inner check rejects with NotFound when
-// the principal's silo doesn't match the instance's tenant.
+// /v1/ handlers read the instance row to recover (tenant_id,
+// project_id) then call the shared inner machinery. Cross-tenant
+// probes surface as 404 (the inner authorise call rejects with
+// NotFound when the principal's silo doesn't match).
 
 pub(crate) async fn get_instance_v1(
     rqctx: RequestContext<ApiContext>,
@@ -783,10 +695,8 @@ pub(crate) async fn delete_instance_v1(
     let tritond_api::v1::InstancePath { instance_id } = path.into_inner();
     let _force = query.into_inner().force;
 
-    // Read the instance first so we can authorise against its tenant
-    // and recover the (tenant_id, project_id, target_cn_uuid) the
-    // saga's params and audit records need. /v1/ paths don't carry
-    // tenant/project in the URL the way the legacy /v2/ shape did.
+    // /v1/ doesn't carry tenant/project in the URL; read the instance
+    // so we can authorise against its tenant and feed the saga params.
     let instance = ctx
         .store
         .get_instance(instance_id)
@@ -807,11 +717,8 @@ pub(crate) async fn delete_instance_v1(
     .await?;
     let request_id = parse_request_id(&rqctx);
 
-    // v2p invalidation push (PROTEUS_PLAN §11.7.1 item 8). Lives
-    // here (not in the saga action body) because the global
-    // `peer_invalidations` ring isn't reachable from a SagaContext
-    // yet. Done before the saga so the release_record action can
-    // drop the NIC rows safely.
+    // v2p invalidations must fire before the saga drops the NIC rows
+    // (the saga's release_record can't reach the global ring).
     if let Ok(nics) = ctx.store.list_nics_for_instance(instance_id).await {
         for nic in nics {
             let Ok(vpc) = ctx.store.get_vpc(nic.vpc_id).await else {
@@ -826,11 +733,10 @@ pub(crate) async fn delete_instance_v1(
         }
     }
 
-    // RFD 00004 SG-3: instance-delete saga. Detaches FIPs, enqueues
-    // a Delete job for the agent, awaits the agent's terminal
-    // status, then releases the record. Unwinds via the detach
-    // undo if anything fails before the record is released; lands
-    // Stuck if release_record fails after the agent acked Delete.
+    // instance-delete saga: detach FIPs, enqueue Delete for the agent,
+    // await terminal, release the record. Unwinds via detach undo if
+    // anything fails before release; lands Stuck if release fails
+    // after the agent acked Delete.
     let saga_params = crate::sagas::instance_delete::InstanceDeleteParams {
         tenant_id,
         project_id,
@@ -1030,11 +936,9 @@ async fn lifecycle_saga_entry(
     lifecycle_saga_entry_uuid(rqctx, tenant_id, project_id, instance_id, action, op).await
 }
 
-/// AP-2c: shared inner entry-point for both the v2 (path-scoped)
-/// and v1 (flat instance_id) lifecycle handlers. Takes the
-/// already-unpacked uuids so the flat /v1 endpoint can resolve the
-/// owning tenant + project from the Instance row before reaching
-/// the saga machinery.
+/// Shared lifecycle entry-point for the path-scoped and flat
+/// handlers; takes already-unpacked uuids so the flat endpoint can
+/// resolve owning tenant + project from the Instance row first.
 async fn lifecycle_saga_entry_uuid(
     rqctx: RequestContext<ApiContext>,
     tenant_id: Uuid,
@@ -1330,10 +1234,8 @@ pub(crate) async fn migrate_project_instance(
     }))
 }
 
-/// RFD 00007 AP-2f: `GET /v1/nics?tenant=&project=&instance=&subnet=&ip=`.
-/// Flat NIC list backed by the AP-1c secondary indexes. Dispatches
-/// on the selector set (priority: ip > subnet > instance) so each
-/// query is one index read.
+/// Flat NIC list. Dispatch (priority: ip > subnet > instance) is
+/// always one index read; no selector is 400.
 pub(crate) async fn list_nics_v1(
     rqctx: RequestContext<ApiContext>,
     query: Query<tritond_api::v1::NicQuery>,
@@ -1407,7 +1309,6 @@ pub(crate) async fn list_nics_v1(
     Ok(HttpResponseOk(ResultsPage::single(nics)))
 }
 
-/// RFD 00007 AP-2f: `GET /v1/nics/{nic_id}`. Flat single-NIC read.
 pub(crate) async fn get_nic_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::NicPath>,
@@ -1431,10 +1332,7 @@ pub(crate) async fn get_nic_v1(
     Ok(HttpResponseOk(nic))
 }
 
-/// RFD 00007 AP-2e: `GET /v1/disks?tenant=&project=&instance=`.
-/// Flat disk list. Requires `?instance=<uuid>` for now; a future
-/// slice expands to cross-project disk searches once the customer
-/// surface needs them.
+/// Flat disk list. Requires `?instance=<uuid>` today.
 pub(crate) async fn list_disks_v1(
     rqctx: RequestContext<ApiContext>,
     query: Query<tritond_api::v1::DiskQuery>,
@@ -1454,8 +1352,7 @@ pub(crate) async fn list_disks_v1(
         HttpError::for_client_error(
             Some("MissingScope".to_string()),
             ClientErrorStatusCode::BAD_REQUEST,
-            "GET /v1/disks requires `?instance=<uuid>` until the cross-project \
-             disk search lands in a later AP-2 slice"
+            "GET /v1/disks requires `?instance=<uuid>` (cross-project disk search not implemented)"
                 .to_string(),
         )
     })?;
@@ -1494,9 +1391,8 @@ pub(crate) async fn list_disks_v1(
     Ok(HttpResponseOk(ResultsPage::single(disks)))
 }
 
-/// RFD 00007 AP-2e: `GET /v1/disks/{disk_id}`. Flat single-disk
-/// read by UUID; reads the disk row, derives the owning tenant via
-/// the parent instance, then auths against the principal's silo.
+/// Derives the owning tenant from the parent instance, then auths
+/// against the principal's silo.
 pub(crate) async fn get_disk_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::DiskPath>,
@@ -1611,8 +1507,7 @@ async fn map_fip_saga_err<T>(
     Err(http_err)
 }
 
-/// RFD 00007 AP-2i: `GET /v1/floating-ips?tenant=&project=`. Flat
-/// floating-IP list scoped to a project. Both selectors required.
+/// Both `?tenant=` and `?project=` are required.
 pub(crate) async fn list_floating_ips_v1(
     rqctx: RequestContext<ApiContext>,
     query: Query<tritond_api::v1::FloatingIpQuery>,
@@ -1666,8 +1561,6 @@ pub(crate) async fn list_floating_ips_v1(
     Ok(HttpResponseOk(ResultsPage::single(fips)))
 }
 
-/// RFD 00007 AP-2i: `GET /v1/floating-ips/{floating_ip_id}`. Flat
-/// single-FIP read.
 pub(crate) async fn get_floating_ip_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::FloatingIpPath>,
@@ -1691,8 +1584,6 @@ pub(crate) async fn get_floating_ip_v1(
     Ok(HttpResponseOk(fip))
 }
 
-/// RFD 00007 AP-3a-12: `POST /v1/floating-ips?tenant=&project=`.
-/// Drives the same allocate-saga the legacy v2 handler used.
 pub(crate) async fn create_floating_ip_v1(
     rqctx: RequestContext<ApiContext>,
     query: Query<tritond_api::v1::ScopeSelectors>,
@@ -1801,7 +1692,6 @@ pub(crate) async fn create_floating_ip_v1(
     }
 }
 
-/// RFD 00007 AP-3a-12: `DELETE /v1/floating-ips/{floating_ip_id}`.
 /// Tenant resolved from the row; store enforces the detach-first gate.
 pub(crate) async fn delete_floating_ip_v1(
     rqctx: RequestContext<ApiContext>,
@@ -1863,8 +1753,6 @@ pub(crate) async fn delete_floating_ip_v1(
     }
 }
 
-/// RFD 00007 AP-2i: `POST /v1/floating-ips/{floating_ip_id}/attach`.
-/// Body is the same `AttachFloatingIpRequest` as v2.
 pub(crate) async fn attach_floating_ip_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::FloatingIpPath>,
@@ -1895,7 +1783,6 @@ pub(crate) async fn attach_floating_ip_v1(
     Ok(HttpResponseOk(attached))
 }
 
-/// RFD 00007 AP-2i: `POST /v1/floating-ips/{floating_ip_id}/detach`.
 pub(crate) async fn detach_floating_ip_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::FloatingIpPath>,

@@ -133,7 +133,7 @@ async fn serve(boot: BootstrapConfig) -> Result<()> {
     let mut context = ApiContext::new(Arc::clone(&store), auth, audit)
         .with_identity_hmac_key(Arc::clone(&identity_hmac_key));
 
-    // RFD 00004 SG-1b: when running with FDB, swap the default
+    // when running with FDB, swap the default
     // MemSecStore-backed executor for one backed by the same FDB
     // Database the store and audit chain use. Sagas in FDB land in
     // the region's single cluster (Locked Decision #4) under the

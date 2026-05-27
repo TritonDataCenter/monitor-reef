@@ -77,7 +77,7 @@ use crate::VERSION;
 /// Concrete implementor of [`TritondApi`].
 use crate::context::ApiContext;
 
-/// RFD 00007 AP-2g: `GET /v1/subnets?vpc=<uuid>`. Flat subnet list
+/// `GET /v1/subnets?vpc=<uuid>`. Flat subnet list
 /// scoped to a VPC. The handler reads the parent VPC to recover the
 /// owning tenant for auth (matches the legacy /v2 invariant).
 pub(crate) async fn list_subnets_v1(
@@ -133,7 +133,7 @@ pub(crate) async fn list_subnets_v1(
     Ok(HttpResponseOk(ResultsPage::single(subnets)))
 }
 
-/// RFD 00007 AP-2g: `GET /v1/subnets/{subnet_id}`. Flat single-subnet
+/// `GET /v1/subnets/{subnet_id}`. Flat single-subnet
 /// read; recovers the owning tenant from the row.
 pub(crate) async fn get_subnet_v1(
     rqctx: RequestContext<ApiContext>,
@@ -158,7 +158,7 @@ pub(crate) async fn get_subnet_v1(
     Ok(HttpResponseOk(subnet))
 }
 
-/// RFD 00007 AP-3a-11: `POST /v1/subnets?vpc=<uuid>`. Resolves
+/// `POST /v1/subnets?vpc=<uuid>`. Resolves
 /// tenant+project from the parent VPC row; the caller doesn't have
 /// to thread silo/tenant/project through the URL.
 pub(crate) async fn create_subnet_v1(
@@ -264,7 +264,7 @@ pub(crate) async fn create_subnet_v1(
     }
 }
 
-/// RFD 00007 AP-3a-11: `DELETE /v1/subnets/{subnet_id}`. Resolves
+/// `DELETE /v1/subnets/{subnet_id}`. Resolves
 /// the owning tenant from the row; the store enforces the
 /// dependency gate (no NICs allocated from this subnet).
 pub(crate) async fn delete_subnet_v1(

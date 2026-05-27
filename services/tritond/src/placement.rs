@@ -33,16 +33,10 @@ use tritond_store::{
 };
 use uuid::Uuid;
 
-/// Default heartbeat-staleness threshold for the
-/// `cn-approved-and-live` filter. PL-7 will move this to the
-/// FDB-backed cluster settings shape; PL-5 hardcodes the value the
-/// existing agent heartbeater (~5 s tick) is sized against.
+/// Sized against the agent heartbeater's ~5 s tick.
 pub const DEFAULT_AGENT_HEARTBEAT_THRESHOLD_SECS: u64 = 60;
 
-/// Default load-summary staleness threshold (3 ticks at the
-/// default 60 s interval, per RFD 00005 doc 02 §"The load
-/// materialiser"). PL-7 moves this to cluster settings; PL-5
-/// hardcodes.
+/// 3 ticks at the 60 s load-summary interval.
 pub const DEFAULT_LOAD_STALENESS_SECS: u64 = 180;
 
 /// Convert a [`CnPickSnapshot`] from the store to a
@@ -88,13 +82,6 @@ pub fn projection_to_sibling_view(p: TenantInstanceProjection) -> SiblingInstanc
     }
 }
 
-/// Build a [`ChainRunner`] with the default filter chain and the
-/// default scorer chain, with weights resolved against `strategy`.
-///
-/// PL-5 ships this as the only way to construct a runner; PL-7
-/// adds an `active_filters` / `active_scorers` configuration
-/// surface that lets operators rearrange the chain via cluster
-/// settings.
 pub fn build_default_runner(strategy: Strategy) -> ChainRunner {
     let mut runner = ChainRunner::empty(strategy);
     for filter in default_filter_chain() {
@@ -109,12 +96,6 @@ pub fn build_default_runner(strategy: Strategy) -> ChainRunner {
     runner
 }
 
-/// Build a [`ChainContext`] suitable for the default chain.
-///
-/// `strategy_weights` and `sibling_instances` are borrows; the
-/// caller owns the lifetime. PL-5's saga action constructs the
-/// `StrategyWeights` from [`resolved_weights`] and the sibling
-/// slice from [`projection_to_sibling_view`].
 pub fn build_chain_context<'a>(
     now: chrono::DateTime<chrono::Utc>,
     strategy_weights: &'a StrategyWeights,
@@ -139,10 +120,8 @@ pub struct PickCommit {
     pub instance: tritond_store::Instance,
 }
 
-/// What [`pick`] returns. `chosen` is `Some` when a CN passed
-/// every filter; the report names every CN's verdict either way.
-/// `committed` is `Some` when `commit == Commit::Yes` and a CN
-/// was chosen.
+/// `chosen` is `Some` when a CN passed every filter; `report` carries
+/// every CN's verdict either way.
 #[derive(Debug, Clone)]
 pub struct PickOutcome {
     pub chosen: Option<Uuid>,
@@ -150,34 +129,20 @@ pub struct PickOutcome {
     pub committed: Option<PickCommit>,
 }
 
-/// Whether [`pick`] should write the reservation + Instance pin
-/// after a successful pick.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Commit {
-    /// Dry-run: produce the explain report without touching state.
-    /// Backs the `POST /v2/placement/pick?dry-run=true` endpoint
-    /// (PL-5d) and the simulator panel in adminui (PL-9).
+    /// Dry-run: explain only, no state changes.
     No,
-    /// Insert the `CnReservation` and call
-    /// `Store::set_instance_host_cn`. Backs the `designate` saga
-    /// action body (PL-5d).
+    /// Insert the reservation and pin `Instance.host_cn_uuid`.
     Yes {
-        /// `steno::SagaId.0` -- stored on the reservation row so
-        /// `undesignate` can find it.
         saga_id: Uuid,
-        /// `tritond_saga::SecId.0` -- written for audit per
-        /// RFD 00004 D-Sg-8.
         sec_id: Uuid,
-        /// `tritond_saga::SecEpoch.0`.
         sec_epoch: u64,
     },
-    /// Insert the `CnReservation` *only* — do **not** touch
-    /// `Instance.host_cn_uuid`. Used by the live-migration
-    /// designate action (LM-6): the instance must keep its
-    /// source-CN pin until the cutover step atomically flips it,
-    /// but we still need to hold target capacity for the duration
-    /// of the migration so a concurrent `instance-create` can't
-    /// steal it.
+    /// Reservation only — leave `Instance.host_cn_uuid` alone.
+    /// Live migration uses this: source pin stays until cutover, but
+    /// target capacity must be held so a concurrent `instance-create`
+    /// can't steal it.
     ReservationOnly {
         saga_id: Uuid,
         sec_id: Uuid,
@@ -185,38 +150,16 @@ pub enum Commit {
     },
 }
 
-/// Errors `pick` can fail with.
 #[derive(Debug, thiserror::Error)]
 pub enum PickError {
-    /// No CN passed every filter in the chain. The
-    /// `ExplainReport` carried alongside names every rejected
-    /// CN's filter verdicts.
+    /// `report` carries every rejected CN's filter verdicts.
     #[error("no eligible CN")]
     NoEligibleCn { report: Box<ExplainReport> },
-    /// The store reported an error; surface it.
     #[error("store: {0}")]
     Store(#[from] StoreError),
 }
 
-/// Run the placement chain end to end against a live store.
-///
-/// 1. List every `Approved` CN.
-/// 2. For each, fetch the joined `CnPickSnapshot` and project to
-///    `CnView`.
-/// 3. Fetch the tenant's sibling instances + join the host CN's
-///    fault domain.
-/// 4. Build the default `ChainRunner` for the chosen strategy.
-/// 5. Run `pick`.
-/// 6. If a CN was chosen *and* `commit == Yes`, insert the
-///    reservation row and pin `Instance.host_cn_uuid` (two
-///    separate `Store` calls -- PL-5d adds the single-FDB-txn
-///    wrapper).
-///
-/// Returns the outcome (`chosen` + `report` + optional commit
-/// record). Failing the filter chain surfaces as
-/// `PickError::NoEligibleCn { report }` so the caller can
-/// decide whether to retry / surface the explain to the user /
-/// fail the saga.
+/// Run the placement chain end-to-end against a live store.
 pub async fn pick(
     store: &Arc<dyn Store>,
     request: PlacementRequest,
@@ -258,10 +201,8 @@ pub async fn pick(
     let ctx = build_chain_context(Utc::now(), &weights, &siblings);
     let (chosen, report) = runner.pick(&cn_views, &request, &ctx);
 
-    // 6. Commit if asked. The reservation + Instance pin run as
-    //    two sequential writes for PL-5c (MemStore behind one
-    //    lock; FdbStore writes are independent transactions);
-    //    PL-5d wraps them in a single FDB transaction.
+    // Commit: reservation + Instance pin run as two sequential
+    // writes (single FDB txn wrapper not landed).
     let committed = match (chosen, commit) {
         (
             Some(cn_uuid),
@@ -355,12 +296,8 @@ pub async fn pick(
     })
 }
 
-/// Release a reservation written by [`pick`] with `Commit::Yes`.
-/// Used by the `undesignate` compensation in the saga action
-/// (PL-5d). Idempotent in the same shape as
-/// `Store::release_cn_reservation`: `Ok(())` when the row was
-/// deleted, `Ok(())` on `NotFound` (already released by a
-/// concurrent unwind).
+/// Idempotent: `Ok(())` whether the row existed or was already
+/// released by a concurrent unwind.
 pub async fn release_reservation(
     store: &Arc<dyn Store>,
     server_uuid: Uuid,
@@ -429,10 +366,8 @@ fn capacity_view(c: tritond_store::CnCapacity) -> CapacityView {
         platform_version: c.platform_version,
         reported_at: c.reported_at,
         hvm_supported: c.hvm_supported,
-        // LM-0 migration compatibility fingerprint. Threaded from
-        // the agent-reported CnCapacity row; each migration filter
-        // Verdict::Skip's when its matching field is absent so the
-        // chain behaves identically for instance-create.
+        // Migration compatibility fingerprint. Filters Skip when a
+        // field is absent so instance-create runs unaffected.
         vmm_protocol_version: c.vmm_protocol_version,
         cpu_features: c.cpu_features,
         tsc_offset_ns: c.tsc_offset_ns,
@@ -496,10 +431,8 @@ fn load_summary_view(s: tritond_store::CnLoadSummary) -> CnLoadSummaryView {
         cpu_p50_1d: s.cpu_p50_1d,
         cpu_p95_1d: s.cpu_p95_1d,
         cpu_p95_7d: s.cpu_p95_7d,
-        ram_used_p95_5m: (s.ram_used_p95_5m as f32) / 1.0e9, // bytes -> ~normalised; better
-        // ratio when the engine also has
-        // `ram_total_mb`. PL-5 ships the
-        // projection; PL-7 refines.
+        // Bytes -> ~normalised; refine to a ratio when ram_total_mb arrives.
+        ram_used_p95_5m: (s.ram_used_p95_5m as f32) / 1.0e9,
         nic_tx_bps_p95_5m: s.nic_tx_bps_p95_5m,
         nic_rx_bps_p95_5m: s.nic_rx_bps_p95_5m,
     }
@@ -508,15 +441,9 @@ fn load_summary_view(s: tritond_store::CnLoadSummary) -> CnLoadSummaryView {
 fn assigned_instance_view(i: tritond_store::Instance) -> AssignedInstanceView {
     AssignedInstanceView {
         instance_id: i.id,
-        // The Instance row carries `tenant_id` and `project_id`;
-        // it does NOT carry `silo_id` directly. The placement
-        // engine's cotenant scorer reads `silo_uuid` to weight
-        // "same silo, different tenant" lower. For PL-5b we set
-        // silo to the nil UUID -- this de-weights the silo
-        // dimension of the cotenant penalty (it's still computed
-        // but with a constant value). PL-5c will join the silo
-        // via project -> tenant -> silo when the action wires
-        // through `instance-create`.
+        // Instance carries tenant/project but not silo; placeholder
+        // de-weights the cotenant scorer until the project→tenant→silo
+        // join lands.
         silo_uuid: silo_for_tenant_placeholder(i.tenant_id),
         tenant_uuid: i.tenant_id,
         cpu_units: (i.cpu as u32) * 100,
@@ -524,10 +451,6 @@ fn assigned_instance_view(i: tritond_store::Instance) -> AssignedInstanceView {
     }
 }
 
-/// Placeholder: returns the nil UUID. The full silo join lands in
-/// PL-5c via `Store::get_project(p).silo_id` (transitively, since
-/// projects carry the silo id). PL-5b accepts the de-weighting in
-/// the cotenant scorer documented in [`assigned_instance_view`].
 fn silo_for_tenant_placeholder(_tenant_id: uuid::Uuid) -> uuid::Uuid {
     uuid::Uuid::nil()
 }
@@ -729,9 +652,8 @@ mod tests {
         };
         let (chosen, report) = runner.pick(&[view.clone()], &req, &ctx);
         assert_eq!(chosen, Some(view.server_uuid));
-        // 23 filters in the default chain (17 RFD-00005 +
-        // cn-capacity-present + 5 LM-0 migration filters) + 12
-        // scorers.
+        // 23 filters (17 base + cn-capacity-present + 5 migration) +
+        // 12 scorers in the default chain.
         assert_eq!(report.per_cn[0].filter_results.len(), 23);
         assert_eq!(report.per_cn[0].scorer_results.len(), 12);
     }
@@ -887,10 +809,8 @@ mod tests {
 
     #[tokio::test]
     async fn pick_no_eligible_cn_dry_run_returns_outcome_without_error() {
-        // Same empty fleet, but Commit::No surfaces a no-pick
-        // outcome rather than an error -- the simulator panel
-        // (PL-9) renders the empty report cleanly without a
-        // 5xx.
+        // Commit::No must return a no-pick outcome instead of erroring
+        // so the explain UI renders the empty fleet without a 5xx.
         let store: Arc<dyn Store> = Arc::new(MemStore::new());
         let req = make_placement_request(Uuid::new_v4());
         let out = pick(&store, req, Commit::No).await.unwrap();
@@ -899,12 +819,7 @@ mod tests {
         assert_eq!(out.report.per_cn.len(), 0);
     }
 
-    // The "pick + commit" tests that wire through to a real
-    // Instance row + set_instance_host_cn live in an integration
-    // test fixture that the bin-packer-removal slice (PL-5d)
-    // brings online (it needs the full create-instance plumbing
-    // -- silo / tenant / project / image / subnet -- which the
-    // store unit tests do not exercise as a tree). The reserve_
-    // cn_capacity + set_instance_host_cn paths individually are
-    // verified by tests in tritond-store.
+    // End-to-end "pick + commit" coverage lives in integration tests
+    // that wire the full create-instance tree; reserve_cn_capacity and
+    // set_instance_host_cn are covered individually in tritond-store.
 }

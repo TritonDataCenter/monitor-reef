@@ -76,12 +76,9 @@ pub struct RegistrationOutcome {
     /// imds-credentials file was lost). The IMDS listener is not
     /// started in that case. See `IMDS_DESIGN.md` §3.
     pub imds_token_key: Option<[u8; tritond_auth::IMDS_TOKEN_KEY_BYTES]>,
-    /// Per-CN HS256 live-migration ticket key. Same delivery
-    /// contract as `console_ticket_key`; `None` when the agent
-    /// resumed from a credential file written before LM-6c
-    /// shipped. The migrate listener is not started in that
-    /// case; the operator must `tcadm cn disable` and re-approve
-    /// to mint one.
+    /// `None` when resumed from an older credential file: the migrate
+    /// listener stays down and the operator must re-approve to mint
+    /// the key.
     pub migrate_ticket_key: Option<[u8; tritond_auth::MIGRATE_TICKET_KEY_BYTES]>,
 }
 
@@ -157,8 +154,7 @@ pub async fn register_or_resume(
         }
         if migrate_ticket_key.is_none() {
             warn!(
-                "no per-CN migrate-ticket key on disk (agent registered before LM-6c, or \
-                 the console-credentials file was lost); live VM migration is unavailable \
+                "no per-CN migrate-ticket key on disk; live VM migration is unavailable \
                  for this CN until it re-registers (`tcadm cn disable` then approve again)",
             );
         }

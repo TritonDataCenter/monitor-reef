@@ -26,7 +26,7 @@ pub(crate) fn store_error_to_http(err: StoreError) -> HttpError {
         ),
         StoreError::Backend(msg) => HttpError::for_internal_error(msg),
         // A saga-issued mutation was fenced out by an adopting SEC
-        // (RFD 00004 D-Sg-8). Surface as 503 with retry semantics:
+        //. Surface as 503 with retry semantics:
         // the operator's request didn't break anything, the
         // adopting SEC is going to drive the saga forward, and the
         // caller can poll `/v2/operations/{id}` to follow it.
@@ -34,7 +34,7 @@ pub(crate) fn store_error_to_http(err: StoreError) -> HttpError {
             Some("FencedOut".to_string()),
             format!("saga {saga_id} adopted by another tritond instance; retry"),
         ),
-        // RFD 00005 PL-2: placement-keyspace errors. PinConflict is
+        // placement-keyspace errors. PinConflict is
         // operator-visible (409); AlreadyExists is an internal
         // programming error (500); CapacityExhausted is surfaced as
         // 503 with retry semantics so a transient capacity squeeze
@@ -54,7 +54,7 @@ pub(crate) fn store_error_to_http(err: StoreError) -> HttpError {
         StoreError::AlreadyExists(msg) => HttpError::for_internal_error(format!(
             "store reported AlreadyExists from a path that should never collide: {msg}"
         )),
-        // RFD 00007 D-Ap-7: bounded-scan list operations never silently
+        // bounded-scan list operations never silently
         // truncate. The handler surfaces the cap and the narrowing hint
         // in a structured 400 response. The body is intentionally
         // operator-facing - it names the cap value and a specific
@@ -153,7 +153,7 @@ pub(crate) fn not_found() -> HttpError {
     )
 }
 
-/// RFD 00007 AP-3e: 410 Gone for legacy `/v2/` paths whose
+/// 410 Gone for legacy `/v2/` paths whose
 /// functionality has fully moved to the `/v1/` flat surface.
 /// The message points callers at the replacement so a 410 from
 /// `curl`/`tcadm` carries the migration hint inline.

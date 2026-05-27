@@ -4,7 +4,7 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! `/v2/operations` HTTP handlers (RFD 00004 SG-4).
+//! `/v2/operations` HTTP handlers.
 //!
 //! The operator-visible projection of `tritond-saga`'s catalog.
 //! Reads from the SecStore via `SagaExecutor::list_sagas` /
@@ -48,7 +48,7 @@ pub(crate) async fn list_operations(
         .unwrap_or(DEFAULT_LIMIT);
     let marker = q.after_id.map(SagaId);
 
-    // Resource-scoped path (RFD 00004 SG-4): both query params
+    // Resource-scoped path: both query params
     // must be present together. Passing one without the other is
     // a 400 — silent fall-through to unfiltered would be a
     // footgun for callers building per-resource saga pages.
@@ -91,7 +91,7 @@ pub(crate) async fn get_operation(
         .get_saga(saga_id)
         .await
         .map_err(saga_error_to_http)?;
-    // RFD 00004 D-Sg-13: progress is computed from the persisted
+    // progress is computed from the persisted
     // DAG + node-event log so the value survives a tritond restart.
     // `load_events` paginates internally under the FDB 10 MB
     // single-txn limit (SG-0 acceptance).
@@ -113,7 +113,7 @@ pub(crate) async fn abandon_operation(
     path: Path<OperationPath>,
 ) -> Result<HttpResponseOk<AbandonResponse>, HttpError> {
     let ctx = rqctx.context();
-    // RFD 00004 D-Sg-12: operator-only. Gated by the
+    // operator-only. Gated by the
     // root-allows-all Cedar rule on Action::OperationsAbandon —
     // no per-silo or per-tenant principal can drive an unwind.
     authenticate_and_authorize(

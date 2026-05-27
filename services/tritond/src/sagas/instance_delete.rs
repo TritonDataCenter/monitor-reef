@@ -4,7 +4,7 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! `instance-delete` saga (RFD 00004 SG-3).
+//! `instance-delete` saga.
 //!
 //! Promotes the imperative `delete_project_instance` (today:
 //! `delete_instance(force=true)` + best-effort `JobKind::Delete`

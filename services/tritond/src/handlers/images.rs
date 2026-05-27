@@ -230,7 +230,7 @@ pub(crate) async fn create_silo_image(
     }
     match ctx.store.create_image_silo(silo_id, req).await {
         Ok(image) => {
-            // RFD 00004 SG-6: record the import in the saga catalog
+            // record the import in the saga catalog
             // so the operation surface and per-image / per-silo
             // saga views pick it up. Marker-only today.
             let imp_params = crate::sagas::image_import::ImageImportParams {
@@ -666,7 +666,7 @@ pub(crate) async fn create_my_image(
     }
 }
 
-/// RFD 00007 AP-2h: `GET /v1/images?scope=public[&silo=...&tenant=...&project=...]`.
+/// `GET /v1/images?scope=public[&silo=...&tenant=...&project=...]`.
 /// Flat image list discriminated by `scope`. AP-2h only accepts
 /// `scope=public`; the silo / tenant / project / user variants need
 /// the AP-3a scope-resolution helper and land then.
@@ -707,7 +707,7 @@ pub(crate) async fn list_images_v1(
     }
 }
 
-/// RFD 00007 AP-2h: `GET /v1/images/{image_id}`. Flat single-image
+/// `GET /v1/images/{image_id}`. Flat single-image
 /// read. Reuses the existing `image_visible_to` predicate so
 /// cross-scope visibility is unchanged from /v2.
 pub(crate) async fn get_image_v1(

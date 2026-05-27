@@ -116,7 +116,7 @@ pub(crate) async fn list_project_vpcs(
     Ok(HttpResponseOk(vpcs))
 }
 
-/// RFD 00007 AP-2g: `GET /v1/vpcs?tenant=&project=`. Flat VPC list
+/// `GET /v1/vpcs?tenant=&project=`. Flat VPC list
 /// scoped to a tenant + project. Both selectors required at AP-2g.
 pub(crate) async fn list_vpcs_v1(
     rqctx: RequestContext<ApiContext>,
@@ -171,7 +171,7 @@ pub(crate) async fn list_vpcs_v1(
     Ok(HttpResponseOk(ResultsPage::single(vpcs)))
 }
 
-/// RFD 00007 AP-2g: `GET /v1/vpcs/{vpc_id}`. Flat single-VPC read.
+/// `GET /v1/vpcs/{vpc_id}`. Flat single-VPC read.
 pub(crate) async fn get_vpc_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::VpcPath>,
@@ -195,7 +195,7 @@ pub(crate) async fn get_vpc_v1(
     Ok(HttpResponseOk(vpc))
 }
 
-/// RFD 00007 AP-3a-10: `POST /v1/vpcs?tenant=&project=`. Same
+/// `POST /v1/vpcs?tenant=&project=`. Same
 /// behaviour as the legacy `create_project_vpc`, but takes the
 /// scope from query selectors. `silo=` is rejected at the customer
 /// surface; both `tenant=` and `project=` are required.
@@ -302,7 +302,7 @@ pub(crate) async fn create_vpc_v1(
     }
 }
 
-/// RFD 00007 AP-3a-10: `DELETE /v1/vpcs/{vpc_id}`. Resolves the
+/// `DELETE /v1/vpcs/{vpc_id}`. Resolves the
 /// owning tenant from the VPC row (no path-level defence-in-depth
 /// because /v1/ singletons are by id only); the store enforces
 /// the dependency gate (subnets, firewall rules, NAT gateways,

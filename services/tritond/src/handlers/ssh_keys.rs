@@ -513,7 +513,7 @@ pub(crate) async fn create_my_ssh_key(
     }
 }
 
-/// RFD 00007 AP-2h: `GET /v1/ssh-keys?scope=public[&silo=&tenant=&project=]`.
+/// `GET /v1/ssh-keys?scope=public[&silo=&tenant=&project=]`.
 /// Same shape as `/v1/images`; only `scope=public` is wired today.
 pub(crate) async fn list_ssh_keys_v1(
     rqctx: RequestContext<ApiContext>,
@@ -550,7 +550,7 @@ pub(crate) async fn list_ssh_keys_v1(
     }
 }
 
-/// RFD 00007 AP-2h: `GET /v1/ssh-keys/{key_id}`. Flat single-key
+/// `GET /v1/ssh-keys/{key_id}`. Flat single-key
 /// read; reuses `ssh_key_visible_to` for cross-scope visibility.
 pub(crate) async fn get_ssh_key_v1(
     rqctx: RequestContext<ApiContext>,

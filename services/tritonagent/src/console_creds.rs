@@ -31,12 +31,8 @@ use tritond_auth::CONSOLE_TICKET_KEY_BYTES;
 /// same directory as the `--credential-path` API-key file.
 const CONSOLE_CREDS_FILE_NAME: &str = "console-credentials.json";
 
-/// Loaded TLS material for the console listener.
-///
-/// Kept as PEM bytes because that is exactly what
-/// [`axum_server::tls_rustls::RustlsConfig::from_pem`] consumes and
-/// what we persist on disk. The SPKI fingerprint is derived once from
-/// the leaf cert DER (the same way tritond's `SpkiPinVerifier` does).
+/// PEM bytes match what `RustlsConfig::from_pem` expects and what we
+/// persist; the SPKI fingerprint mirrors tritond's `SpkiPinVerifier`.
 #[derive(Clone)]
 pub struct ConsoleTls {
     /// PEM-encoded self-signed leaf certificate.
@@ -59,13 +55,8 @@ struct ConsoleCredsFile {
     /// [`load_console_ticket_key`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     console_ticket_key_hex: Option<String>,
-    /// Per-CN migrate-ticket key, lowercase hex (64 chars). Same
-    /// "delivered once, persist forever" contract as the console
-    /// ticket key. Absent on agents that registered before LM-6c
-    /// added the field; the migrate listener refuses to start
-    /// when the key is missing so an operator has to `tcadm cn
-    /// disable` and re-approve to mint one. See
-    /// [`load_migrate_ticket_key`].
+    /// Lowercase hex (64 chars). Absent on older registrations; the
+    /// migrate listener stays down until the operator re-approves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     migrate_ticket_key_hex: Option<String>,
     /// PEM-encoded self-signed TLS leaf cert.
@@ -206,11 +197,8 @@ fn tls_from_pem(cert_pem: &str, key_pem: &str) -> Result<ConsoleTls> {
     })
 }
 
-/// Generate a fresh self-signed cert + keypair for the console
-/// listener. The CN is a stable label; the admin IP (if known) is added
-/// as a SAN. tritond does not verify the name — it pins the SPKI
-/// fingerprint — but a strict client *could*. Uses `rcgen` rather than
-/// shelling out to `openssl`.
+/// CN is a stable label; admin IP becomes a SAN. tritond pins the
+/// SPKI fingerprint, not the name, but a strict client could check it.
 fn generate_self_signed(admin_ip: Option<Ipv4Addr>) -> Result<(String, String)> {
     let mut sans: Vec<String> = vec!["tritonagent-console".to_string()];
     if let Some(ip) = admin_ip {
@@ -223,19 +211,9 @@ fn generate_self_signed(admin_ip: Option<Ipv4Addr>) -> Result<(String, String)> 
     Ok((cert_pem, key_pem))
 }
 
-/// Load the persisted TLS material, generating + persisting a fresh
-/// self-signed keypair on first boot.
-///
-/// On every boot the SPKI fingerprint is recomputed from the (loaded or
-/// freshly-generated) leaf cert so the caller can report it at
-/// registration.
-///
-/// The TLS keypair is *stable* across boots: regenerating it would
-/// invalidate the SPKI pin tritond stored at the last registration,
-/// breaking the console until the next re-registration. So this only
-/// generates when the file is absent (or lacks TLS material — a
-/// half-written file is unusable, so treat that as "regenerate" while
-/// preserving any console-ticket key already in the file).
+/// Stable across boots — regenerating would invalidate the SPKI pin
+/// tritond stored at registration. Only generates on first boot or
+/// when the file is missing TLS material; ticket keys are preserved.
 pub fn load_or_init_tls(credential_path: &Path, admin_ip: Option<Ipv4Addr>) -> Result<ConsoleTls> {
     let path = console_creds_path(credential_path);
 
@@ -258,10 +236,7 @@ pub fn load_or_init_tls(credential_path: &Path, admin_ip: Option<Ipv4Addr>) -> R
         return Ok(tls);
     }
 
-    // Fresh CN: generate and persist (no console-ticket key or
-    // migrate-ticket key yet — both arrive in the registration
-    // response and are folded in via `save_console_ticket_key` /
-    // `save_migrate_ticket_key`).
+    // Fresh CN: ticket keys arrive in the registration response.
     let (cert_pem, key_pem) = generate_self_signed(admin_ip)?;
     let tls = tls_from_pem(&cert_pem, &key_pem)?;
     write_file(
@@ -276,13 +251,8 @@ pub fn load_or_init_tls(credential_path: &Path, admin_ip: Option<Ipv4Addr>) -> R
     Ok(tls)
 }
 
-/// Persist the per-CN console-ticket key, leaving the TLS material in
-/// place. Called once, when the registration long-poll delivers it
-/// alongside the API key. If there is no file yet, writes one holding
-/// only the key; `load_or_init_tls` will then generate the TLS part on
-/// its next call (ordering-robustness — main.rs always calls
-/// `load_or_init_tls` first, but this keeps the key from being lost if
-/// that ever changes).
+/// Writes the key whether or not TLS material exists yet; the next
+/// `load_or_init_tls` call will fill in the TLS side.
 pub fn save_console_ticket_key(
     credential_path: &Path,
     key_bytes: &[u8; CONSOLE_TICKET_KEY_BYTES],
@@ -308,12 +278,8 @@ pub fn save_console_ticket_key(
     )
 }
 
-/// Persist the per-CN migrate-ticket key alongside the
-/// console-ticket key + TLS material. Same atomic write
-/// semantics. Mirrors [`save_console_ticket_key`] but on the
-/// `migrate_ticket_key_hex` field; preserves every other field
-/// in the file so the two keys + the TLS material can be
-/// written in any order without race-overwriting each other.
+/// Mirrors `save_console_ticket_key` on the migrate field. Both
+/// callers may run in any order; each preserves the other's fields.
 pub fn save_migrate_ticket_key(
     credential_path: &Path,
     key_bytes: &[u8; tritond_auth::MIGRATE_TICKET_KEY_BYTES],
@@ -339,13 +305,8 @@ pub fn save_migrate_ticket_key(
     )
 }
 
-/// Load the per-CN migrate-ticket key, if it has been persisted.
-///
-/// Returns `Ok(None)` when the file is absent *or* the migrate
-/// key field is absent — the latter is the "agent registered
-/// before LM-6c" case the caller logs a warning about (the
-/// migrate listener does not start without a key, so the CN
-/// must be re-approved to get one).
+/// `Ok(None)` whether the file is absent or the field is missing
+/// (the migrate listener stays down in that case).
 pub fn load_migrate_ticket_key(
     credential_path: &Path,
 ) -> Result<Option<[u8; tritond_auth::MIGRATE_TICKET_KEY_BYTES]>> {
@@ -371,11 +332,7 @@ pub fn load_migrate_ticket_key(
     Ok(Some(out))
 }
 
-/// Load the per-CN console-ticket key, if it has been persisted.
-///
-/// Returns `Ok(None)` when the file is absent *or* the key field is
-/// absent — the latter is the "agent registered before this feature"
-/// case the caller logs a warning about.
+/// `Ok(None)` whether the file is absent or the field is missing.
 pub fn load_console_ticket_key(
     credential_path: &Path,
 ) -> Result<Option<[u8; CONSOLE_TICKET_KEY_BYTES]>> {

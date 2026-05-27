@@ -5,7 +5,7 @@
 // Copyright 2026 Edgecast Cloud LLC.
 
 //! `floating-ip-allocate` / `floating-ip-attach` /
-//! `floating-ip-detach` sagas (RFD 00004 SG-3).
+//! `floating-ip-detach` sagas.
 //!
 //! Single-store-call operations on the surface — saga-shape is
 //! light. Their value is the resource-reference index entries

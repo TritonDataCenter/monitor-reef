@@ -4,36 +4,10 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! Tritonagent binary entry point. See [`tritonagent`] for the
-//! agent loop and design notes.
-//!
-//! Configuration is via `clap`-parsed args + env vars:
-//!
-//! * `--endpoint` / `TRITONAGENT_ENDPOINT` — tritond URL
-//! * `--credential-path` / `TRITONAGENT_CREDENTIAL_PATH` —
-//!   on-disk file holding the wire-form `tcadm_…` per-CN API key.
-//!   Default `/var/lib/tritonagent/credentials`.
-//! * `--sysinfo-bin` / `TRITONAGENT_SYSINFO_BIN` — path to the
-//!   SmartOS `sysinfo` binary. Default `/usr/bin/sysinfo`. Tests
-//!   stub this.
-//! * `--poll-interval-secs` / `TRITONAGENT_POLL_INTERVAL_SECS` —
-//!   default 5
-//! * `--proteus-dev` / `TRITONAGENT_PROTEUS_DEV` — Proteus device
-//!   node. Default `/dev/proteus`.
-//! * `--edge-root` / `TRITONAGENT_EDGE_ROOT` — directory where edge
-//!   manifests and control sockets live. The legacy host-process edge
-//!   shim also stores pid files and logs there.
-//! * `--fhrun-bin` / `TRITONAGENT_FHRUN_BIN` — fhrun launcher path.
-//! * `--console-listen-port` / `TRITONAGENT_CONSOLE_PORT` — TCP port the
-//!   on-CN serial / VNC console listener binds on the admin IP. Default
-//!   `9101`.
-//! * `--dry-run` / `TRITONAGENT_DRY_RUN`
-//!
-//! There is no longer an `--api-key` flag: on first boot the agent
-//! self-registers with tritond, prints a claim code on the console
-//! for an operator to approve, and persists the resulting per-CN
-//! API key to the credential file. Subsequent boots resume from
-//! disk without re-registering.
+//! Tritonagent binary entry point. On first boot the agent
+//! self-registers and prints a claim code; the operator approves and
+//! the resulting per-CN API key persists for subsequent boots. See
+//! `--help` for the configuration surface.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -53,7 +27,7 @@ const REGISTER_TIMEOUT: Duration = Duration::from_secs(3600);
 #[derive(Debug, Parser)]
 #[command(
     version,
-    about = "Triton Cloud per-CN provisioning agent (Phase 0 stub)"
+    about = "Triton Cloud per-CN provisioning agent"
 )]
 struct Cli {
     /// Tritond URL, e.g. `http://10.199.199.10:8080`.
@@ -170,13 +144,9 @@ struct Cli {
     )]
     no_heartbeater: bool,
 
-    /// Disable the v2p lazy-resolver loop. When set, miss events
-    /// fired by the kmod are ignored and forwarding falls back to
-    /// the pre-shipped `peer_table` shipped on each per-port
-    /// blueprint. The kmod-side cache stays installed (it's a no-op
-    /// when nothing populates it); flipping this flag does not
-    /// require restarting VMs or unloading the kmod. Documented
-    /// rollback knob per `PROTEUS_PLAN.md` §11.7.1.
+    /// Disable the v2p lazy-resolver: miss events are dropped and
+    /// forwarding falls back to the pre-shipped per-port `peer_table`.
+    /// Flipping this needs no VM/kmod restart.
     #[arg(
         long = "peer-resolver",
         env = "TRITONAGENT_PEER_RESOLVER",

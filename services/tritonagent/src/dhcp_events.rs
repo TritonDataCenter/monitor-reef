@@ -16,11 +16,9 @@
 //! * `PeerResolveNeeded` -> calls tritond's
 //!   `/v2/agent/peer?vni=&ip=` endpoint, then issues an
 //!   `AddPeerEntry` ioctl back into the kmod's per-port v2p cache.
-//!   The kmod-side cache's single-flight gate already collapses
-//!   duplicate misses for the same `(port, vni, peer_ip)`; the
-//!   agent runs each resolution sequentially so we don't issue
-//!   parallel tritond queries for the same peer across CN boots.
-//!   See `PROTEUS_PLAN.md` §11.7.1.
+//!   The kmod-side single-flight gate collapses duplicate misses for
+//!   the same `(port, vni, peer_ip)`; we still resolve sequentially
+//!   so parallel boots don't race on the same peer.
 //!
 //! Best-effort, like the metrics and log tickers: a missing
 //! `/dev/proteus`, a `SubscribeEvents` failure, or a transient 5xx from
@@ -418,12 +416,9 @@ async fn resolve_one_peer(
         }
     };
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
-        // No realized NIC owns this IP. Clear the kmod's
-        // single-flight marker so a subsequent guest retry (which
-        // might land *after* a peer comes online) re-fires the
-        // miss event cleanly. Phase B's negative cache (item 6)
-        // will rate-limit the retries; for now we rely on the
-        // guest's own ARP cadence.
+        // No realized NIC. Clear the kmod's single-flight marker so a
+        // later guest retry re-fires once a peer comes online. Until
+        // a negative cache lands we rely on the guest's ARP cadence.
         debug!(peer_ip = %ip_str, vni = job.vni,
             "peer-resolve: tritond 404 (no realized NIC); clearing inflight");
         clear_inflight_after_failure(proteus, job);
@@ -478,18 +473,10 @@ async fn resolve_one_peer(
     }
 }
 
-/// Poll `GET /v2/agent/peer-invalidations?since=<cursor>` and
-/// apply each returned invalidation to every local port via
-/// `InvalidatePeerEntry`. Returns the new `since` cursor. Errors
-/// degrade silently (the next poll catches up).
-///
-/// Phase A: the kmod ioctl requires a port_id, but tritond's
-/// invalidation directive is per-(vni, ip) -- it doesn't know
-/// which local ports might have cached the peer. We DumpPeerCache
-/// for every local port to enumerate them. This is O(ports * inv)
-/// per poll which is fine at CN scale (~100 ports, ~tens of
-/// invalidations per cycle). Phase B will narrow with a single
-/// "invalidate-all-ports-for-vni" ioctl.
+/// Returns the new `since` cursor. Errors degrade silently (next poll
+/// catches up). O(ports * inv) per poll because the kmod ioctl needs
+/// a port_id but tritond's directive is per `(vni, ip)`; fine at CN
+/// scale, narrows when an "invalidate-all-ports-for-vni" ioctl lands.
 #[cfg(target_os = "illumos")]
 async fn poll_invalidations(
     client: &Client,
@@ -527,11 +514,8 @@ async fn poll_invalidations(
         applied = body.invalidations.len(),
         "applying v2p invalidations from tritond",
     );
-    // Phase A: list local ports via DumpUnderlay (TODO: gives us
-    // the underlay handles, not the port list). For now, iterate
-    // every (vni, ip) and try `InvalidatePeerEntry` against each
-    // port the kmod knows about; the ioctl is a no-op for absent
-    // entries (cheap). We do this by walking `ListPorts` first.
+    // `InvalidatePeerEntry` is a no-op for absent entries, so it's
+    // cheap to fan a `(vni, ip)` over every local port.
     let ports = match proteus.list_ports() {
         Ok(p) => p,
         Err(_) => return Some(body.tail_seq),

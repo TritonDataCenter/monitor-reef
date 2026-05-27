@@ -4,34 +4,11 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! Triton Cloud per-CN provisioning agent.
-//!
-//! Polls tritond's `/v2/agent/jobs/claim` endpoint, drives each
-//! claimed [`ProvisioningJob`] to a terminal state, and reports
-//! the outcome via `/v2/agent/jobs/{id}/complete`.
-//!
-//! ## Local host execution
-//!
-//! The agent is the only component that mutates CN-local runtime
-//! state. Provision jobs drive image import, Proteus port realization,
-//! and `vmadm`; edge jobs persist fhrun manifests under the configured
-//! edge root and currently use the legacy global-zone fhrun shim.
-//! The M1 edge target is vmadm-owned zone lifecycle with fhrun/firehyve
-//! running inside that zone. Dry-run mode remains available for
-//! transport-only smoke testing.
-//!
-//! ## Authentication
-//!
-//! The agent presents an API key (`tcadm_…` wire-form) minted with
-//! [`ApiKeyScope::Agent`] from the operator-CLI. The scope check on
-//! tritond's side gates the key to *only* `agent_claim` and
-//! `agent_complete` — even if the underlying user is root, this
-//! key cannot read tenant resources or audit events. The audit
-//! chain captures both the key's owner *and* the agent's
-//! self-reported `claimed_by` identifier.
-//!
-//! [`ApiKeyScope::Agent`]: tritond_client::types::ApiKeyScope::Agent
-//! [`ProvisioningJob`]: tritond_client::types::ProvisioningJob
+//! Triton Cloud per-CN provisioning agent. The agent is the only
+//! component that mutates CN-local runtime state. The presented API
+//! key is `ApiKeyScope::Agent` — even if the owner is root, it can
+//! only call `agent_claim`/`agent_complete`. Audit captures both
+//! the key owner and the agent's `claimed_by` identifier.
 
 pub mod console;
 pub mod console_creds;
@@ -96,16 +73,10 @@ pub const DEFAULT_EDGE_ROOT: &str = "/var/lib/tritonagent/edge";
 /// Default fhrun launcher path on SmartOS CNs.
 pub const DEFAULT_FHRUN_BIN: &str = "/opt/firehyve/bin/fhrun";
 
-/// Default TCP port the on-CN serial / VNC console listener binds on
-/// the admin IP. Picked from the dynamic/private range; operators can
-/// override with `--console-listen-port`.
 pub const DEFAULT_CONSOLE_LISTEN_PORT: u16 = 9101;
 
-/// Configuration for an [`Agent`] run.
-///
-/// Deliberately not `Debug` — it carries the per-CN API key, the
-/// console-ticket key, and a TLS private key; a stray `{:?}` would be a
-/// credential leak.
+/// Not `Debug`: carries API key, console-ticket key, and a TLS
+/// private key — a stray `{:?}` would be a credential leak.
 #[derive(Clone)]
 pub struct AgentConfig {
     /// Tritond endpoint, e.g. `http://10.199.199.10:8080`.
@@ -171,19 +142,13 @@ pub struct AgentConfig {
     /// recovers existing VMs' bindings before any new provision job
     /// arrives. `None` keeps the table in-memory only (tests).
     pub imds_bindings_path: Option<PathBuf>,
-    /// v2p lazy resolver toggle. `true` (default) drives the loop in
-    /// `dhcp_events::run_loop` to call tritond + AddPeerEntry on
-    /// every `PeerResolveNeeded` event. `false` is the rollback
-    /// path: miss events are silently dropped, the kmod cache stays
-    /// empty, and intra-VPC forwarding falls back to the pre-shipped
-    /// `peer_table` on each per-port blueprint. Documented per
-    /// `PROTEUS_PLAN.md` §11.7.1; no VM/kmod restart required to
-    /// flip.
+    /// `false` is the rollback path: miss events are dropped and
+    /// intra-VPC forwarding falls back to the pre-shipped per-port
+    /// `peer_table`. No VM/kmod restart needed to flip.
     pub peer_resolver_enabled: bool,
-    /// Per-CN HS256 migrate-ticket key. `None` for an agent that
-    /// registered before LM-6c shipped — the migrate listener is
-    /// skipped. tritond delivers the bytes alongside the
-    /// console-ticket key at CN approval.
+    /// `None` skips the migrate listener (older registrations lack
+    /// the key). tritond delivers it alongside the console-ticket
+    /// key at CN approval.
     pub migrate_ticket_key: Option<[u8; tritond_auth::MIGRATE_TICKET_KEY_BYTES]>,
     /// TCP port the live-migration WebSocket listener binds (on
     /// `admin_ip`). Source-side agents dial
@@ -780,21 +745,12 @@ async fn drive_job(
             edge::reap(&cfg.edge_root, *edge_instance_id)
                 .with_context(|| format!("reap edge instance {edge_instance_id}"))?;
         }
-        // ────────────────────────────────────────────────────
-        // Live-migration job arms (LM-6c).
-        //
-        // Cleanup arms run real work (vmadm-delete + zfs-destroy
-        // the migration snapshots) — they're identical on
-        // source and target since both sides need the same
-        // tear-down. ZFS-send / VMM-stream / Proteus-flip arms
-        // are stubs that log + complete so the saga's await
-        // loops walk through; the real dispatch lands in LM-6c
-        // step 4 (ZFS) and LM-7 (VMM + Proteus). Stubs
-        // intentionally `Ok(())` rather than `bail!` so a saga
-        // running against a half-deployed fleet can still drain
-        // the queue and surface the gap on the migration record
-        // rather than wedging.
-        // ────────────────────────────────────────────────────
+        // Live-migration arms. Cleanup paths do real work
+        // (vmadm-delete + zfs-destroy of the migration snapshots);
+        // ZFS-send / VMM-stream / Proteus-flip are stubs that
+        // `Ok(())` instead of bailing so a saga on a half-deployed
+        // fleet still drains the queue and surfaces the gap on the
+        // migration record.
         JobKind::MigrationCleanupSource {
             instance_id,
             migration_id,
@@ -934,14 +890,11 @@ async fn drive_job(
             instance_id,
             role,
         } => {
-            // LM-7 wires this — drives `OutboundMigration` /
-            // `InboundMigration` via the `tritond-vmm-migrate`
-            // crate over the LM-3 memory channel. Step 3 stub
-            // so an accidental enqueue (e.g. `cold: false`
-            // before LM-7) doesn't wedge the agent.
+            // Stub so an accidental enqueue doesn't wedge the agent
+            // before the dispatcher lands.
             info!(
                 %migration_id, %instance_id, ?role,
-                "migrate-vmm-stream: LM-7 dispatcher pending — completing stub",
+                "migrate-vmm-stream: dispatcher pending — completing stub",
             );
         }
         JobKind::ProteusActivate {
@@ -949,12 +902,9 @@ async fn drive_job(
             instance_id,
             nic_ids,
         } => {
-            // LM-7 wires this — `proteus.start_port` on each
-            // NIC after the cutover fence reports
-            // `PauseComplete`. Stub.
             info!(
                 %migration_id, %instance_id, nic_count = nic_ids.len(),
-                "proteus-activate: LM-7 dispatcher pending — completing stub",
+                "proteus-activate: dispatcher pending — completing stub",
             );
         }
         JobKind::ProteusDeactivate {
@@ -962,13 +912,9 @@ async fn drive_job(
             instance_id,
             nic_ids,
         } => {
-            // LM-7 wires this — `proteus.pause_port` +
-            // `delete_port` on the source after the cutover.
-            // Audit warning on failure (target is canonical
-            // post-switch). Stub.
             info!(
                 %migration_id, %instance_id, nic_count = nic_ids.len(),
-                "proteus-deactivate: LM-7 dispatcher pending — completing stub",
+                "proteus-deactivate: dispatcher pending — completing stub",
             );
         }
     }
@@ -1388,24 +1334,10 @@ fn port_realization_resource(nic: &Nic) -> NetworkResourceId {
     NetworkResourceId::Vpc(nic.vpc_id)
 }
 
-/// Refuse a Provision when the host can't satisfy the image's
-/// declared compatibility constraints. Returns `Ok(())` when
-/// the host meets every constraint; `Err` otherwise — the
-/// caller wraps the error into `JobOutcome::Failed` so the
-/// operator sees a clear reason in the audit chain.
-///
-/// Phase 0 enforces:
-///
-/// * `min_smartos_platform` — host's `uname -v` buildstamp
-///   must lex-compare `>=` the image's minimum.
-///
-/// `compatibility.brand` is *not* enforced here because the
-/// agent's vmadm payload always uses the brand the image
-/// declares (`joyent-minimal`); a mismatch between the
-/// image's brand and what vmadm would accept fails inside
-/// `vmadm create` itself. A future slice that lets operators
-/// pick the instance brand independently of the image will
-/// add the brand check too.
+/// Refuses a Provision when the host can't satisfy the image's
+/// `min_smartos_platform` (lex-compared against `uname -v`). Caller
+/// wraps the error into `JobOutcome::Failed`. `compatibility.brand`
+/// is enforced by `vmadm create` itself.
 async fn check_image_compatibility(compat: &ImageCompatibility) -> Result<()> {
     let Some(min_required) = compat.min_smartos_platform.as_deref() else {
         return Ok(());

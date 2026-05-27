@@ -5,7 +5,7 @@
 // Copyright 2026 Edgecast Cloud LLC.
 
 //! `instance-start` / `instance-stop` / `instance-restart` sagas
-//! (RFD 00004 SG-3).
+//!.
 //!
 //! Each is the same shape — a CAS lifecycle transition followed by
 //! a job enqueue and (optionally) an agent-terminal await:

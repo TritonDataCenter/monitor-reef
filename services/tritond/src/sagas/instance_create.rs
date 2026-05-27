@@ -4,7 +4,7 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! `instance-create` saga (RFD 00004 SG-2).
+//! `instance-create` saga.
 //!
 //! Replaces the imperative body of `create_project_instance`
 //! (`handlers/instances.rs:116`). The previous flow allocated the
@@ -58,7 +58,7 @@ use uuid::Uuid;
 /// Saga `NAME` (kebab-case, matches Steno's `SagaName` convention).
 pub const SAGA_NAME: &str = "instance-create";
 
-/// Saga `VERSION` (RFD 00004 D-Sg-10). Bump on any change to the
+/// Saga `VERSION`. Bump on any change to the
 /// action sequence, action ids, or `Params` shape. The registry
 /// keeps the previous N=2 versions registered so a rolling deploy
 /// and crash recovery against the prior version both work.
@@ -102,16 +102,10 @@ fn default_true() -> bool {
     true
 }
 
-/// Per-action timeouts (RFD 00004 D-Sg-9 / Invariant 9). Each
-/// catalog action wraps its body in `with_action_timeout`; expiry
-/// surfaces as an `ActionError` with kind=`action_timeout` and
-/// triggers the saga's unwind tail.
-///
-/// The `await` action's cap matches the existing
-/// `TRITOND_STALE_CLAIM_THRESHOLD_SECS` default (600 s) so a
-/// wedged agent claim and the saga awaiting it fail together.
-/// The other actions are short store mutations; 30 s is far
-/// outside what any of them should ever take in practice but
+/// Per-action timeouts. The `await` cap mirrors
+/// `TRITOND_STALE_CLAIM_THRESHOLD_SECS` so a wedged agent claim and
+/// the saga awaiting it fail together. Other actions are short store
+/// mutations; 30 s is far outside their practical envelope but
 /// catches a wedged FDB / hanging metadata write.
 const ACTION_TIMEOUT_STORE: std::time::Duration = std::time::Duration::from_secs(30);
 const ACTION_TIMEOUT_AWAIT_PROVISION: std::time::Duration = std::time::Duration::from_secs(600);
@@ -500,7 +494,7 @@ async fn no_op_undo(_ctx: Ctx) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-/// RFD 00004 D-Sg-8: best-effort fence check called at the top of
+/// best-effort fence check called at the top of
 /// every saga action body before any externally-visible side effect.
 /// If another SEC has adopted the saga since this action's context
 /// was built (heartbeat-driven reassignment, etc.), short-circuit
@@ -527,7 +521,7 @@ fn store_err_to_action_err(e: tritond_store::StoreError) -> ActionError {
         tritond_store::StoreError::NotFound => "not_found",
         tritond_store::StoreError::Backend(_) => "backend",
         tritond_store::StoreError::FencedOut { .. } => "fenced_out",
-        // RFD 00005 PL-2 variants. PinConflict tags as conflict so
+        // variants. PinConflict tags as conflict so
         // the existing 409 mapping picks it up; CapacityExhausted
         // and AlreadyExists ride the backend tag (500 / retry-able)
         // since the placement saga action lands in PL-5.

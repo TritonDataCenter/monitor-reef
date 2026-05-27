@@ -77,7 +77,7 @@ use crate::VERSION;
 /// Concrete implementor of [`TritondApi`].
 use crate::context::ApiContext;
 
-/// RFD 00007 AP-2j: `GET /v1/route-tables?vpc=<uuid>`. Flat list.
+/// `GET /v1/route-tables?vpc=<uuid>`. Flat list.
 pub(crate) async fn list_route_tables_v1(
     rqctx: RequestContext<ApiContext>,
     query: Query<tritond_api::v1::RouteTableQuery>,
@@ -131,7 +131,7 @@ pub(crate) async fn list_route_tables_v1(
     Ok(HttpResponseOk(ResultsPage::single(tables)))
 }
 
-/// RFD 00007 AP-2j: `GET /v1/route-tables/{route_table_id}`.
+/// `GET /v1/route-tables/{route_table_id}`.
 pub(crate) async fn get_route_table_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::RouteTablePath>,
@@ -155,7 +155,7 @@ pub(crate) async fn get_route_table_v1(
     Ok(HttpResponseOk(rt))
 }
 
-/// RFD 00007 AP-2j: `GET /v1/routes?route_table=<uuid>`. Flat list.
+/// `GET /v1/routes?route_table=<uuid>`. Flat list.
 pub(crate) async fn list_routes_v1(
     rqctx: RequestContext<ApiContext>,
     query: Query<tritond_api::v1::RouteQuery>,
@@ -204,7 +204,7 @@ pub(crate) async fn list_routes_v1(
     Ok(HttpResponseOk(ResultsPage::single(routes)))
 }
 
-/// RFD 00007 AP-2j: `GET /v1/routes/{route_id}`.
+/// `GET /v1/routes/{route_id}`.
 pub(crate) async fn get_route_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::RoutePath>,
@@ -228,7 +228,7 @@ pub(crate) async fn get_route_v1(
     Ok(HttpResponseOk(route))
 }
 
-/// RFD 00007 AP-3a-13: `POST /v1/route-tables?vpc=<uuid>`.
+/// `POST /v1/route-tables?vpc=<uuid>`.
 pub(crate) async fn create_route_table_v1(
     rqctx: RequestContext<ApiContext>,
     query: Query<tritond_api::v1::RouteTableQuery>,
@@ -305,7 +305,7 @@ pub(crate) async fn create_route_table_v1(
     }
 }
 
-/// RFD 00007 AP-3a-13: `DELETE /v1/route-tables/{route_table_id}`.
+/// `DELETE /v1/route-tables/{route_table_id}`.
 pub(crate) async fn delete_route_table_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::RouteTablePath>,
@@ -368,7 +368,7 @@ pub(crate) async fn delete_route_table_v1(
     }
 }
 
-/// RFD 00007 AP-3a-13: `POST /v1/routes?route_table=<uuid>`.
+/// `POST /v1/routes?route_table=<uuid>`.
 pub(crate) async fn create_route_v1(
     rqctx: RequestContext<ApiContext>,
     query: Query<tritond_api::v1::RouteQuery>,
@@ -468,7 +468,7 @@ pub(crate) async fn create_route_v1(
     }
 }
 
-/// RFD 00007 AP-3a-13: `DELETE /v1/routes/{route_id}`.
+/// `DELETE /v1/routes/{route_id}`.
 pub(crate) async fn delete_route_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::RoutePath>,

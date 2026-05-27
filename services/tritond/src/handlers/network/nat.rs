@@ -77,7 +77,7 @@ use crate::VERSION;
 /// Concrete implementor of [`TritondApi`].
 use crate::context::ApiContext;
 
-/// RFD 00007 AP-2j: `GET /v1/nat-gateways?vpc=<uuid>`. Flat list.
+/// `GET /v1/nat-gateways?vpc=<uuid>`. Flat list.
 pub(crate) async fn list_nat_gateways_v1(
     rqctx: RequestContext<ApiContext>,
     query: Query<tritond_api::v1::NatGatewayQuery>,
@@ -131,7 +131,7 @@ pub(crate) async fn list_nat_gateways_v1(
     Ok(HttpResponseOk(ResultsPage::single(nats)))
 }
 
-/// RFD 00007 AP-2j: `GET /v1/nat-gateways/{nat_gateway_id}`.
+/// `GET /v1/nat-gateways/{nat_gateway_id}`.
 pub(crate) async fn get_nat_gateway_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::NatGatewayPath>,
@@ -155,7 +155,7 @@ pub(crate) async fn get_nat_gateway_v1(
     Ok(HttpResponseOk(nat))
 }
 
-/// RFD 00007 AP-3a-13: `POST /v1/nat-gateways?vpc=<uuid>`.
+/// `POST /v1/nat-gateways?vpc=<uuid>`.
 /// Same `nat_gateway_create` saga as the legacy v2 path; the
 /// tenant+project are resolved from the parent VPC.
 pub(crate) async fn create_nat_gateway_v1(
@@ -259,7 +259,7 @@ pub(crate) async fn create_nat_gateway_v1(
     }
 }
 
-/// RFD 00007 AP-3a-13: `DELETE /v1/nat-gateways/{nat_gateway_id}`.
+/// `DELETE /v1/nat-gateways/{nat_gateway_id}`.
 pub(crate) async fn delete_nat_gateway_v1(
     rqctx: RequestContext<ApiContext>,
     path: Path<tritond_api::v1::NatGatewayPath>,

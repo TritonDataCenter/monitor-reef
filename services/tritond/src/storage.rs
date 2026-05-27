@@ -181,7 +181,7 @@ fn store_error_to_http(err: StoreError) -> HttpError {
             Some("FencedOut".to_string()),
             format!("saga {saga_id} adopted by another tritond instance; retry"),
         ),
-        // RFD 00005 PL-2: placement-keyspace errors. The
+        // placement-keyspace errors. The
         // storage-cluster handlers never write to the placement
         // keyspaces, so reaching any of these here would be a
         // programming error; surface as 500 with the underlying

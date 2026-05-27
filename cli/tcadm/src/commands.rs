@@ -25,8 +25,6 @@ use uuid::Uuid;
 use crate::config::{Config, Tokens};
 use crate::session::{Session, anonymous_client, build_http_client};
 
-/// Hit `/v2/health` to confirm the control plane is reachable.
-/// Anonymous-allowed; this is the same Phase 0 contract as before.
 pub async fn bootstrap(endpoint: &str, json_output: bool) -> Result<()> {
     let client = anonymous_client(endpoint)?;
     let response = client
@@ -55,8 +53,7 @@ pub async fn bootstrap(endpoint: &str, json_output: bool) -> Result<()> {
     Ok(())
 }
 
-/// Interactive: prompt for endpoint + username + password, exchange
-/// for tokens, persist to `~/.config/tcadm/config.json`.
+/// Interactively log in and persist credentials to `~/.config/tcadm/config.json`.
 pub async fn configure(
     endpoint: Option<String>,
     username: Option<String>,
@@ -123,16 +120,14 @@ pub async fn login(
     Ok(())
 }
 
-/// Delete the on-disk config.
 pub fn logout() -> Result<()> {
     Config::delete()?;
     println!("Logged out (config removed).");
     Ok(())
 }
 
-/// Emit shell exports for the current session so the operator can
-/// embed the access token in scripts that don't share a config file
-/// (CI runners, sudo escalation).
+/// Emit shell exports for the current session (for scripts that
+/// don't share the on-disk config).
 pub async fn env(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -149,7 +144,6 @@ pub async fn env(
     Ok(())
 }
 
-/// Mint an API key for the calling user.
 pub async fn api_key_create(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -183,7 +177,6 @@ pub async fn api_key_create(
     Ok(())
 }
 
-/// List the calling user's API keys.
 pub async fn api_key_list(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -218,7 +211,6 @@ pub async fn api_key_list(
     Ok(())
 }
 
-/// Delete one of the calling user's API keys.
 pub async fn api_key_delete(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -236,7 +228,6 @@ pub async fn api_key_delete(
     Ok(())
 }
 
-/// Page through audit events.
 pub async fn audit_list(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -277,11 +268,6 @@ pub async fn audit_list(
     Ok(())
 }
 
-/// Fetch a single audit event by sequence.
-///
-/// `json_output` is accepted for symmetry with the other audit
-/// subcommands; the human form is just pretty-printed JSON because an
-/// AuditEvent has no shorter useful textual representation.
 pub async fn audit_get(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -301,7 +287,6 @@ pub async fn audit_get(
     Ok(())
 }
 
-/// List long-running operations (RFD 00004 SG-4). Operator-only.
 pub async fn operations_list(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -344,9 +329,8 @@ pub async fn operations_list(
     Ok(())
 }
 
-/// Abandon (force-unwind) an in-flight operation (RFD 00004 D-Sg-12).
-/// Operator-only; the running action body completes its natural
-/// outcome before the catalog's undos fire.
+/// Abandon (force-unwind) an in-flight operation. The running action
+/// body completes its natural outcome before the catalog's undos fire.
 pub async fn operations_abandon(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -716,1135 +700,8 @@ fn print_instance(i: &tritond_client::types::Instance) {
     println!("  updated:     {}", i.updated_at);
 }
 
-fn print_floating_ip(f: &tritond_client::types::FloatingIp) {
-    println!("FloatingIp {} in project {}", f.id, f.project_id);
-    println!("  name:        {}", f.name);
-    println!("  description: {}", f.description);
-    println!("  address:     {}", f.address);
-    match &f.attached_to {
-        Some(a) => {
-            println!(
-                "  attached_to: nic={} instance={} (since {})",
-                a.nic_id, a.instance_id, a.attached_at
-            );
-        }
-        None => {
-            println!("  attached_to: (unattached)");
-        }
-    }
-    println!("  created:     {}", f.created_at);
-    println!("  updated:     {}", f.updated_at);
-}
 
-fn parse_address_family(family: &str) -> Result<tritond_client::types::AddressFamily> {
-    match family.to_ascii_lowercase().as_str() {
-        "v4" | "ipv4" | "4" => Ok(tritond_client::types::AddressFamily::V4),
-        "v6" | "ipv6" | "6" => Ok(tritond_client::types::AddressFamily::V6),
-        other => anyhow::bail!("--family must be `v4` or `v6`, got {other:?}"),
-    }
-}
 
-fn parse_route_target(target: &str) -> Result<tritond_client::types::RouteTarget> {
-    let target = target.trim();
-    match target.to_ascii_lowercase().as_str() {
-        "blackhole" => Ok(tritond_client::types::RouteTarget::Blackhole),
-        "reject" => Ok(tritond_client::types::RouteTarget::Reject),
-        "virtual-gateway" | "virtual_gateway" | "vgw" => {
-            Ok(tritond_client::types::RouteTarget::VirtualGateway)
-        }
-        _ => {
-            if let Some(id) = target
-                .strip_prefix("nat-gateway:")
-                .or_else(|| target.strip_prefix("nat-gw:"))
-            {
-                return Ok(tritond_client::types::RouteTarget::NatGateway {
-                    nat_gateway_id: id.parse().context("parse nat gateway target uuid")?,
-                });
-            }
-            if let Some(id) = target.strip_prefix("floating-ip:") {
-                return Ok(tritond_client::types::RouteTarget::FloatingIp {
-                    floating_ip_id: id.parse().context("parse floating ip target uuid")?,
-                });
-            }
-            anyhow::bail!(
-                "--target must be blackhole, reject, virtual-gateway, nat-gateway:<uuid>, or floating-ip:<uuid>"
-            )
-        }
-    }
-}
-
-/// List FloatingIps in a project.
-pub async fn tenant_project_floating_ip_list(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let fips = client
-        .list_project_floating_ips()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .send()
-        .await
-        .context("list floating ips")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&fips)?);
-        return Ok(());
-    }
-    if fips.is_empty() {
-        println!("(no floating ips)");
-        return Ok(());
-    }
-    for f in fips {
-        let attached = match &f.attached_to {
-            Some(a) => format!("nic={}", a.nic_id),
-            None => "(unattached)".to_string(),
-        };
-        println!("{}  {}  {attached}  {}", f.id, f.address, f.name);
-    }
-    Ok(())
-}
-
-/// Allocate a new FloatingIp.
-#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
-// into a struct here just adds
-// ceremony.
-pub async fn tenant_project_floating_ip_create(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    name: String,
-    description: String,
-    family: String,
-    json_output: bool,
-) -> Result<()> {
-    let family = parse_address_family(&family)?;
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let fip = client
-        .create_project_floating_ip()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .body(tritond_client::types::NewFloatingIp {
-            name,
-            description: Some(description),
-            family,
-        })
-        .send()
-        .await
-        .context("create floating ip")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&fip)?);
-    } else {
-        println!("Allocated floating ip {} from pool", fip.id);
-        print_floating_ip(&fip);
-    }
-    Ok(())
-}
-
-/// Read a single FloatingIp.
-pub async fn tenant_project_floating_ip_get(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    floating_ip_id: Uuid,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let fip = client
-        .get_project_floating_ip()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .floating_ip_id(floating_ip_id)
-        .send()
-        .await
-        .context("get floating ip")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&fip)?);
-    } else {
-        print_floating_ip(&fip);
-    }
-    Ok(())
-}
-
-/// Release a FloatingIp.
-pub async fn tenant_project_floating_ip_delete(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    floating_ip_id: Uuid,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    client
-        .delete_project_floating_ip()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .floating_ip_id(floating_ip_id)
-        .send()
-        .await
-        .context("delete floating ip")?;
-    println!("Released floating ip {floating_ip_id} back to pool");
-    Ok(())
-}
-
-/// Attach a FloatingIp to a NIC.
-#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
-// into a struct here just adds
-// ceremony.
-pub async fn tenant_project_floating_ip_attach(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    floating_ip_id: Uuid,
-    nic_id: Uuid,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let fip = client
-        .attach_project_floating_ip()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .floating_ip_id(floating_ip_id)
-        .body(tritond_client::types::AttachFloatingIpRequest { nic_id })
-        .send()
-        .await
-        .context("attach floating ip")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&fip)?);
-    } else {
-        print_floating_ip(&fip);
-    }
-    Ok(())
-}
-
-/// Detach a FloatingIp.
-pub async fn tenant_project_floating_ip_detach(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    floating_ip_id: Uuid,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let fip = client
-        .detach_project_floating_ip()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .floating_ip_id(floating_ip_id)
-        .send()
-        .await
-        .context("detach floating ip")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&fip)?);
-    } else {
-        print_floating_ip(&fip);
-    }
-    Ok(())
-}
-
-fn print_nat_gateway(n: &tritond_client::types::NatGateway) {
-    println!("NatGateway {} in vpc {}", n.id, n.vpc_id);
-    println!("  name:               {}", n.name);
-    println!("  description:        {}", n.description);
-    println!("  public_address:     {}", n.public_address);
-    println!("  family:             {:?}", n.family);
-    println!("  desired_generation: {}", n.desired_generation);
-    match n.realized.applied_generation {
-        Some(generation) => println!("  applied_generation: {}", generation),
-        None => println!("  applied_generation: (none)"),
-    }
-    match n.edge_cluster_id {
-        Some(edge_cluster_id) => println!("  edge_cluster_id:    {}", edge_cluster_id),
-        None => println!("  edge_cluster_id:    (unplaced)"),
-    }
-    println!("  created:            {}", n.created_at);
-    println!("  updated:            {}", n.updated_at);
-}
-
-fn print_route_table(rt: &tritond_client::types::RouteTable) {
-    println!("RouteTable {} in vpc {}", rt.id, rt.vpc_id);
-    println!("  name:        {}", rt.name);
-    println!("  description: {}", rt.description);
-    println!("  is_main:     {}", rt.is_main);
-    println!("  created:     {}", rt.created_at);
-}
-
-fn route_target_label(target: &tritond_client::types::RouteTarget) -> String {
-    match target {
-        tritond_client::types::RouteTarget::Blackhole => "blackhole".to_string(),
-        tritond_client::types::RouteTarget::Reject => "reject".to_string(),
-        tritond_client::types::RouteTarget::VirtualGateway => "virtual-gateway".to_string(),
-        tritond_client::types::RouteTarget::NatGateway { nat_gateway_id } => {
-            format!("nat-gateway:{nat_gateway_id}")
-        }
-        tritond_client::types::RouteTarget::FloatingIp { floating_ip_id } => {
-            format!("floating-ip:{floating_ip_id}")
-        }
-    }
-}
-
-fn print_route(route: &tritond_client::types::Route) {
-    println!("Route {} in table {}", route.id, route.route_table_id);
-    println!("  name:        {}", route.name);
-    println!("  description: {}", route.description);
-    println!("  destination: {}", route.destination);
-    println!("  target:      {}", route_target_label(&route.target));
-    println!("  created:     {}", route.created_at);
-}
-
-/// List route tables in a VPC.
-#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
-// into a struct here just adds
-// ceremony.
-pub async fn net_route_table_list(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let route_tables = client
-        .list_vpc_route_tables()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .send()
-        .await
-        .context("list route tables")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&route_tables)?);
-        return Ok(());
-    }
-    if route_tables.is_empty() {
-        println!("(no route tables)");
-        return Ok(());
-    }
-    for rt in route_tables {
-        println!(
-            "{}  main={}  {}",
-            rt.id,
-            if rt.is_main { "yes" } else { "no" },
-            rt.name
-        );
-    }
-    Ok(())
-}
-
-/// Create a route table in a VPC.
-#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
-// into a struct here just adds
-// ceremony.
-pub async fn net_route_table_create(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    name: String,
-    description: String,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let route_table = client
-        .create_vpc_route_table()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .body(tritond_client::types::NewRouteTable {
-            name,
-            description: Some(description),
-        })
-        .send()
-        .await
-        .context("create route table")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&route_table)?);
-    } else {
-        println!("Created route table {} in vpc {vpc_id}", route_table.id);
-        print_route_table(&route_table);
-    }
-    Ok(())
-}
-
-/// Read a single route table.
-#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
-// into a struct here just adds
-// ceremony.
-pub async fn net_route_table_get(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    route_table_id: Uuid,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let route_table = client
-        .get_vpc_route_table()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .route_table_id(route_table_id)
-        .send()
-        .await
-        .context("get route table")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&route_table)?);
-    } else {
-        print_route_table(&route_table);
-    }
-    Ok(())
-}
-
-/// Delete a route table.
-#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
-// into a struct here just adds
-// ceremony.
-pub async fn net_route_table_delete(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    route_table_id: Uuid,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    client
-        .delete_vpc_route_table()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .route_table_id(route_table_id)
-        .send()
-        .await
-        .context("delete route table")?;
-    println!("Deleted route table {route_table_id} from vpc {vpc_id}");
-    Ok(())
-}
-
-/// List routes in a route table.
-#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
-// into a struct here just adds
-// ceremony.
-pub async fn net_route_list(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    route_table_id: Uuid,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let routes = client
-        .list_vpc_route_table_routes()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .route_table_id(route_table_id)
-        .send()
-        .await
-        .context("list routes")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&routes)?);
-        return Ok(());
-    }
-    if routes.is_empty() {
-        println!("(no routes)");
-        return Ok(());
-    }
-    for route in routes {
-        println!(
-            "{}  {}  {}  {}",
-            route.id,
-            route.destination,
-            route_target_label(&route.target),
-            route.name
-        );
-    }
-    Ok(())
-}
-
-/// Create a route in a route table.
-#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
-// into a struct here just adds
-// ceremony.
-pub async fn net_route_create(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    route_table_id: Uuid,
-    name: String,
-    description: String,
-    destination: String,
-    target: String,
-    json_output: bool,
-) -> Result<()> {
-    let target = parse_route_target(&target)?;
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let route = client
-        .create_vpc_route_table_route()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .route_table_id(route_table_id)
-        .body(tritond_client::types::NewRoute {
-            name,
-            description: Some(description),
-            destination,
-            target,
-        })
-        .send()
-        .await
-        .context("create route")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&route)?);
-    } else {
-        println!("Created route {} in route table {route_table_id}", route.id);
-        print_route(&route);
-    }
-    Ok(())
-}
-
-/// Read a single route.
-#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
-// into a struct here just adds
-// ceremony.
-pub async fn net_route_get(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    route_table_id: Uuid,
-    route_id: Uuid,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let route = client
-        .get_vpc_route_table_route()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .route_table_id(route_table_id)
-        .route_id(route_id)
-        .send()
-        .await
-        .context("get route")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&route)?);
-    } else {
-        print_route(&route);
-    }
-    Ok(())
-}
-
-/// Delete a route.
-#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
-// into a struct here just adds
-// ceremony.
-pub async fn net_route_delete(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    route_table_id: Uuid,
-    route_id: Uuid,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    client
-        .delete_vpc_route_table_route()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .route_table_id(route_table_id)
-        .route_id(route_id)
-        .send()
-        .await
-        .context("delete route")?;
-    println!("Deleted route {route_id} from route table {route_table_id}");
-    Ok(())
-}
-
-/// List NAT gateways in a VPC.
-#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
-// into a struct here just adds
-// ceremony.
-pub async fn net_nat_gw_list(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let nat_gateways = client
-        .list_vpc_nat_gateways()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .send()
-        .await
-        .context("list nat gateways")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&nat_gateways)?);
-        return Ok(());
-    }
-    if nat_gateways.is_empty() {
-        println!("(no nat gateways)");
-        return Ok(());
-    }
-    for n in nat_gateways {
-        println!(
-            "{}  {}  desired={}  applied={}  {}",
-            n.id,
-            n.public_address,
-            n.desired_generation,
-            n.realized
-                .applied_generation
-                .map(|generation| generation.to_string())
-                .unwrap_or_else(|| "(none)".to_string()),
-            n.name
-        );
-    }
-    Ok(())
-}
-
-/// Create a NAT gateway in a VPC.
-#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
-// into a struct here just adds
-// ceremony.
-pub async fn net_nat_gw_create(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    name: String,
-    description: String,
-    family: String,
-    json_output: bool,
-) -> Result<()> {
-    let family = parse_address_family(&family)?;
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let nat_gateway = client
-        .create_vpc_nat_gateway()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .body(tritond_client::types::NewNatGateway {
-            name,
-            description: Some(description),
-            family,
-        })
-        .send()
-        .await
-        .context("create nat gateway")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&nat_gateway)?);
-    } else {
-        println!("Created nat gateway {} in vpc {vpc_id}", nat_gateway.id);
-        print_nat_gateway(&nat_gateway);
-    }
-    Ok(())
-}
-
-/// Read a single NAT gateway.
-#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
-// into a struct here just adds
-// ceremony.
-pub async fn net_nat_gw_get(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    nat_gateway_id: Uuid,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let nat_gateway = client
-        .get_vpc_nat_gateway()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .nat_gateway_id(nat_gateway_id)
-        .send()
-        .await
-        .context("get nat gateway")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&nat_gateway)?);
-    } else {
-        print_nat_gateway(&nat_gateway);
-    }
-    Ok(())
-}
-
-/// Delete a NAT gateway.
-#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
-// into a struct here just adds
-// ceremony.
-pub async fn net_nat_gw_delete(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    nat_gateway_id: Uuid,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    client
-        .delete_vpc_nat_gateway()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .nat_gateway_id(nat_gateway_id)
-        .send()
-        .await
-        .context("delete nat gateway")?;
-    println!("Deleted nat gateway {nat_gateway_id} from vpc {vpc_id}");
-    Ok(())
-}
-
-// ── DHCP / IPAM (per-VPC pool, sticky reservations, issued leases) ────
-
-/// Parse a `CODE=HEXBYTES` raw-DHCP-option spec (e.g. `42=c63364fa`)
-/// into the wire shape. `HEXBYTES` is an even-length string of hex
-/// nibbles with no separators; the empty value (`53=`) is allowed.
-fn parse_dhcp_option(spec: &str) -> Result<tritond_client::types::DhcpOptionRaw> {
-    let (code_str, hex) = spec
-        .split_once('=')
-        .with_context(|| format!("DHCP option {spec:?} must be CODE=HEXBYTES"))?;
-    let code: u8 = code_str
-        .trim()
-        .parse()
-        .with_context(|| format!("DHCP option code {code_str:?} is not a u8"))?;
-    let hex = hex.trim();
-    if hex.len() % 2 != 0 {
-        bail!("DHCP option {spec:?}: hex value must have an even number of digits");
-    }
-    let value = (0..hex.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16))
-        .collect::<std::result::Result<Vec<u8>, _>>()
-        .with_context(|| format!("DHCP option {spec:?}: value is not valid hex"))?;
-    if value.len() > 250 {
-        bail!("DHCP option {spec:?}: value exceeds 250 bytes");
-    }
-    Ok(tritond_client::types::DhcpOptionRaw { code, value })
-}
-
-fn parse_dhcp_options(specs: &[String]) -> Result<Vec<tritond_client::types::DhcpOptionRaw>> {
-    specs.iter().map(|s| parse_dhcp_option(s)).collect()
-}
-
-fn fmt_dhcp_options(opts: &[tritond_client::types::DhcpOptionRaw]) -> String {
-    if opts.is_empty() {
-        return "(none)".to_string();
-    }
-    opts.iter()
-        .map(|o| {
-            let hex: String = o.value.iter().map(|b| format!("{b:02x}")).collect();
-            format!("{}={hex}", o.code)
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn print_dhcp_pool(p: &tritond_client::types::DhcpPool) {
-    println!("  vpc:            {}", p.vpc_id);
-    println!("  lease_seconds:  {}", p.lease_seconds_default);
-    let excluded = if p.excluded_ipv4.is_empty() {
-        "(none)".to_string()
-    } else {
-        p.excluded_ipv4.join(", ")
-    };
-    println!("  excluded_ipv4:  {excluded}");
-    println!(
-        "  options:        {}",
-        fmt_dhcp_options(&p.additional_options)
-    );
-}
-
-pub async fn net_dhcp_pool_show(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    match client
-        .get_vpc_dhcp_pool()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .send()
-        .await
-    {
-        Ok(resp) => {
-            let pool = resp.into_inner();
-            if json_output {
-                println!("{}", serde_json::to_string_pretty(&pool)?);
-            } else {
-                print_dhcp_pool(&pool);
-            }
-        }
-        // A 404 means "no pool config" — subnet defaults apply.
-        Err(tritond_client::Error::ErrorResponse(rv)) if rv.status().as_u16() == 404 => {
-            if json_output {
-                println!("null");
-            } else {
-                println!("(no dhcp pool config — subnet defaults apply)");
-            }
-        }
-        Err(e) => return Err(e).context("get dhcp pool"),
-    }
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)] // CLI subcommand args.
-pub async fn net_dhcp_pool_set(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    lease_seconds: u32,
-    exclude: Vec<std::net::Ipv4Addr>,
-    option: Vec<String>,
-    json_output: bool,
-) -> Result<()> {
-    let additional_options = parse_dhcp_options(&option)?;
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let pool = client
-        .set_vpc_dhcp_pool()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .body(tritond_client::types::NewDhcpPool {
-            lease_seconds_default: lease_seconds,
-            excluded_ipv4: exclude.iter().map(|ip| ip.to_string()).collect(),
-            additional_options,
-        })
-        .send()
-        .await
-        .context("set dhcp pool")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&pool)?);
-    } else {
-        println!("Set dhcp pool config for vpc {vpc_id}");
-        print_dhcp_pool(&pool);
-    }
-    Ok(())
-}
-
-pub async fn net_dhcp_pool_clear(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    client
-        .clear_vpc_dhcp_pool()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .send()
-        .await
-        .context("clear dhcp pool")?;
-    println!("Cleared dhcp pool config for vpc {vpc_id}");
-    Ok(())
-}
-
-fn print_dhcp_reservation(r: &tritond_client::types::DhcpReservation) {
-    println!(
-        "{}  {}  {}  options={}",
-        r.mac,
-        r.ipv4,
-        r.hostname.as_deref().unwrap_or("(no hostname)"),
-        fmt_dhcp_options(&r.per_mac_options),
-    );
-}
-
-pub async fn net_dhcp_reservation_list(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let reservations = client
-        .list_vpc_dhcp_reservations()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .send()
-        .await
-        .context("list dhcp reservations")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&reservations)?);
-        return Ok(());
-    }
-    if reservations.is_empty() {
-        println!("(no reservations)");
-        return Ok(());
-    }
-    for r in &reservations {
-        print_dhcp_reservation(r);
-    }
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)] // CLI subcommand args.
-pub async fn net_dhcp_reservation_add(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    mac: String,
-    ip: std::net::Ipv4Addr,
-    hostname: Option<String>,
-    option: Vec<String>,
-    json_output: bool,
-) -> Result<()> {
-    let per_mac_options = parse_dhcp_options(&option)?;
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let reservation = client
-        .create_vpc_dhcp_reservation()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .body(tritond_client::types::NewDhcpReservation {
-            mac,
-            ipv4: ip,
-            hostname,
-            per_mac_options,
-        })
-        .send()
-        .await
-        .context("create dhcp reservation")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&reservation)?);
-    } else {
-        println!("Created reservation in vpc {vpc_id}:");
-        print_dhcp_reservation(&reservation);
-    }
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)] // CLI subcommand args.
-pub async fn net_dhcp_reservation_get(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    mac: String,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let reservation = client
-        .get_vpc_dhcp_reservation()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .mac(mac)
-        .send()
-        .await
-        .context("get dhcp reservation")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&reservation)?);
-    } else {
-        print_dhcp_reservation(&reservation);
-    }
-    Ok(())
-}
-
-pub async fn net_dhcp_reservation_remove(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    mac: String,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    client
-        .delete_vpc_dhcp_reservation()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .mac(&mac)
-        .send()
-        .await
-        .context("delete dhcp reservation")?;
-    println!("Removed reservation for {mac} from vpc {vpc_id}");
-    Ok(())
-}
-
-fn print_dhcp_lease(l: &tritond_client::types::DhcpLease) {
-    println!(
-        "{}  {}  instance={}  last_msg={}  renewed={}",
-        l.mac,
-        l.ipv4,
-        l.instance_id,
-        l.last_msg_type
-            .map(|m| m.to_string())
-            .unwrap_or_else(|| "-".to_string()),
-        l.last_renewed_at
-            .map(|t| t.to_rfc3339())
-            .unwrap_or_else(|| "-".to_string()),
-    );
-}
-
-pub async fn net_dhcp_lease_list(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let leases = client
-        .list_vpc_dhcp_leases()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .send()
-        .await
-        .context("list dhcp leases")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&leases)?);
-        return Ok(());
-    }
-    if leases.is_empty() {
-        println!("(no leases)");
-        return Ok(());
-    }
-    for l in &leases {
-        print_dhcp_lease(l);
-    }
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)] // CLI subcommand args.
-pub async fn net_dhcp_lease_get(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    mac: String,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let lease = client
-        .get_vpc_dhcp_lease()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .mac(mac)
-        .send()
-        .await
-        .context("get dhcp lease")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&lease)?);
-    } else {
-        print_dhcp_lease(&lease);
-    }
-    Ok(())
-}
-
-pub async fn net_dhcp_lease_release(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    mac: String,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    client
-        .delete_vpc_dhcp_lease()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .mac(&mac)
-        .send()
-        .await
-        .context("delete dhcp lease")?;
-    println!("Released lease for {mac} from vpc {vpc_id}");
-    Ok(())
-}
 
 /// Set (or replace) a project's quota.
 #[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
@@ -1961,315 +818,6 @@ pub async fn tenant_project_delete(
     Ok(())
 }
 
-fn fmt_opt_cidr(opt: Option<&String>) -> &str {
-    opt.map(|s| s.as_str()).unwrap_or("(none)")
-}
-
-/// List the VPCs in a project.
-pub async fn tenant_project_vpc_list(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let vpcs = client
-        .list_project_vpcs()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .send()
-        .await
-        .context("list vpcs")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&vpcs)?);
-        return Ok(());
-    }
-    if vpcs.is_empty() {
-        println!("(no vpcs)");
-        return Ok(());
-    }
-    for v in vpcs {
-        println!(
-            "{}  vni={:>8}  v4={}  v6={}  {}",
-            v.id,
-            v.vni,
-            fmt_opt_cidr(v.ipv4_block.as_ref()),
-            fmt_opt_cidr(v.ipv6_block.as_ref()),
-            v.name
-        );
-    }
-    Ok(())
-}
-
-/// Create a new VPC in a project.
-#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
-// into a struct here just adds
-// ceremony.
-pub async fn tenant_project_vpc_create(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    name: String,
-    description: String,
-    ipv4_block: Option<String>,
-    ipv6_block: Option<String>,
-    json_output: bool,
-) -> Result<()> {
-    if ipv4_block.is_none() && ipv6_block.is_none() {
-        anyhow::bail!("at least one of --ipv4-block or --ipv6-block is required");
-    }
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let vpc = client
-        .create_project_vpc()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .body(tritond_client::types::NewVpc {
-            name,
-            description: Some(description),
-            ipv4_block,
-            ipv6_block,
-        })
-        .send()
-        .await
-        .context("create vpc")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&vpc)?);
-    } else {
-        println!("Created vpc {} in project {project_id}", vpc.id);
-        println!("  name:        {}", vpc.name);
-        println!("  description: {}", vpc.description);
-        println!("  vni:         {}", vpc.vni);
-        println!("  ipv4_block:  {}", fmt_opt_cidr(vpc.ipv4_block.as_ref()));
-        println!("  ipv6_block:  {}", fmt_opt_cidr(vpc.ipv6_block.as_ref()));
-        println!("  created:     {}", vpc.created_at);
-    }
-    Ok(())
-}
-
-/// Read a single VPC.
-pub async fn tenant_project_vpc_get(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let vpc = client
-        .get_project_vpc()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .send()
-        .await
-        .context("get vpc")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&vpc)?);
-    } else {
-        println!("Vpc {} in project {project_id}", vpc.id);
-        println!("  name:        {}", vpc.name);
-        println!("  description: {}", vpc.description);
-        println!("  vni:         {}", vpc.vni);
-        println!("  ipv4_block:  {}", fmt_opt_cidr(vpc.ipv4_block.as_ref()));
-        println!("  ipv6_block:  {}", fmt_opt_cidr(vpc.ipv6_block.as_ref()));
-        println!("  created:     {}", vpc.created_at);
-    }
-    Ok(())
-}
-
-/// Delete a VPC.
-pub async fn tenant_project_vpc_delete(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    client
-        .delete_project_vpc()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .send()
-        .await
-        .context("delete vpc")?;
-    println!("Deleted vpc {vpc_id} from project {project_id}");
-    Ok(())
-}
-
-/// List the subnets in a VPC.
-pub async fn tenant_project_vpc_subnet_list(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let subnets = client
-        .list_vpc_subnets()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .send()
-        .await
-        .context("list subnets")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&subnets)?);
-        return Ok(());
-    }
-    if subnets.is_empty() {
-        println!("(no subnets)");
-        return Ok(());
-    }
-    for s in subnets {
-        println!(
-            "{}  v4={}  v6={}  {}",
-            s.id,
-            fmt_opt_cidr(s.ipv4_block.as_ref()),
-            fmt_opt_cidr(s.ipv6_block.as_ref()),
-            s.name
-        );
-    }
-    Ok(())
-}
-
-/// Create a new subnet in a VPC.
-#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
-// into a struct here just adds
-// ceremony.
-pub async fn tenant_project_vpc_subnet_create(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    name: String,
-    description: String,
-    ipv4_block: Option<String>,
-    ipv6_block: Option<String>,
-    json_output: bool,
-) -> Result<()> {
-    if ipv4_block.is_none() && ipv6_block.is_none() {
-        anyhow::bail!("at least one of --ipv4-block or --ipv6-block is required");
-    }
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let subnet = client
-        .create_vpc_subnet()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .body(tritond_client::types::NewSubnet {
-            name,
-            description: Some(description),
-            ipv4_block,
-            ipv6_block,
-        })
-        .send()
-        .await
-        .context("create subnet")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&subnet)?);
-    } else {
-        println!("Created subnet {} in vpc {vpc_id}", subnet.id);
-        println!("  name:        {}", subnet.name);
-        println!("  description: {}", subnet.description);
-        println!(
-            "  ipv4_block:  {}",
-            fmt_opt_cidr(subnet.ipv4_block.as_ref())
-        );
-        println!(
-            "  ipv6_block:  {}",
-            fmt_opt_cidr(subnet.ipv6_block.as_ref())
-        );
-        println!("  created:     {}", subnet.created_at);
-    }
-    Ok(())
-}
-
-/// Read a single subnet.
-#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
-// into a struct here just adds
-// ceremony.
-pub async fn tenant_project_vpc_subnet_get(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    subnet_id: Uuid,
-    json_output: bool,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    let subnet = client
-        .get_vpc_subnet()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .subnet_id(subnet_id)
-        .send()
-        .await
-        .context("get subnet")?
-        .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&subnet)?);
-    } else {
-        println!("Subnet {} in vpc {vpc_id}", subnet.id);
-        println!("  name:        {}", subnet.name);
-        println!("  description: {}", subnet.description);
-        println!(
-            "  ipv4_block:  {}",
-            fmt_opt_cidr(subnet.ipv4_block.as_ref())
-        );
-        println!(
-            "  ipv6_block:  {}",
-            fmt_opt_cidr(subnet.ipv6_block.as_ref())
-        );
-        println!("  created:     {}", subnet.created_at);
-    }
-    Ok(())
-}
-
-/// Delete a subnet.
-pub async fn tenant_project_vpc_subnet_delete(
-    endpoint_override: Option<String>,
-    api_key_override: Option<String>,
-    tenant_id: Uuid,
-    project_id: Uuid,
-    vpc_id: Uuid,
-    subnet_id: Uuid,
-) -> Result<()> {
-    let session = Session::resolve(endpoint_override, api_key_override).await?;
-    let client = session.client()?;
-    client
-        .delete_vpc_subnet()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .subnet_id(subnet_id)
-        .send()
-        .await
-        .context("delete subnet")?;
-    println!("Deleted subnet {subnet_id} from vpc {vpc_id}");
-    Ok(())
-}
 
 /// Resolve `--public-key` / `--public-key-file` into the openssh
 /// string the API edge expects. Used by every per-scope ssh-key
@@ -2688,11 +1236,6 @@ pub async fn silo_image_add(
             sha256,
             source_url,
             id,
-            // tcadm's explicit-fields image-create path doesn't
-            // populate compatibility — operators who want
-            // compatibility gates should use the bundle path
-            // (`tritonimg-build` + `tcadm silo image add-bundle`,
-            // future flag).
             compatibility: None,
         })
         .send()
@@ -3161,7 +1704,7 @@ fn fmt_opt_ts(opt: &Option<chrono::DateTime<chrono::Utc>>) -> String {
         .unwrap_or_else(|| "-".to_string())
 }
 
-/// List CNs, optionally filtered by state.
+/// List CNs, optionally filtered by state. Capability: `SystemRead`.
 pub async fn cn_list(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -3170,27 +1713,29 @@ pub async fn cn_list(
 ) -> Result<()> {
     let session = Session::resolve(endpoint_override, api_key_override).await?;
     let client = session.client()?;
-    let mut req = client.list_cns();
+    let mut req = client.list_system_cns_v1();
     if let Some(s) = state {
         req = req.state(s);
     }
-    let cns = req.send().await.context("list cns")?.into_inner();
+    let page = req
+        .send()
+        .await
+        .context("/v1/system/cns list")?
+        .into_inner();
 
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&cns)?);
+        println!("{}", serde_json::to_string_pretty(&page)?);
         return Ok(());
     }
-    if cns.is_empty() {
+    if page.items.is_empty() {
         println!("(no compute nodes)");
         return Ok(());
     }
-    // Tab-separated table mirroring the existing `silo project vpc list`
-    // approach: hand-rolled, no extra dependency, easy to grep / awk.
     println!(
         "{:<36}  {:<24}  {:<9}  {:<7}  {:<15}  REGISTERED_AT",
         "SERVER_UUID", "HOSTNAME", "STATE", "ROLE", "ADMIN_IP"
     );
-    for cn in cns {
+    for cn in &page.items {
         println!(
             "{:<36}  {:<24}  {:<9}  {:<7}  {:<15}  {}",
             cn.server_uuid,
@@ -3214,11 +1759,11 @@ pub async fn cn_show(
     let session = Session::resolve(endpoint_override, api_key_override).await?;
     let client = session.client()?;
     let cn = client
-        .get_cn()
-        .server_uuid(server_uuid)
+        .get_system_cn_v1()
+        .cn_id(server_uuid)
         .send()
         .await
-        .context("get cn")?
+        .context("/v1/system/cns/{id} get")?
         .into_inner();
 
     if json_output {
@@ -3364,13 +1909,9 @@ fn print_auto_approve_window(w: &tritond_client::types::AutoApproveWindow) {
     println!("  opened_by:       {}", w.opened_by);
 }
 
-/// Read the current auto-approve window.
-///
-/// The trait surface returns `Option<AutoApproveWindow>` (so the wire
-/// is `null` when no window is open), but the OpenAPI spec — and
-/// therefore the generated client — only models the present case. To
-/// faithfully render both shapes without modifying the spec, we make
-/// the GET ourselves and parse the body as `Option<AutoApproveWindow>`.
+/// Read the current auto-approve window. Issues the GET directly
+/// (instead of the generated client) so a `null` body parses as
+/// `Option::None` — the OpenAPI spec only models the present case.
 pub async fn cn_auto_approve_status(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4162,12 +2703,6 @@ pub async fn config_reset(
     Ok(())
 }
 
-// === Meta (IMDS layered metadata) =========================================
-//
-// See `IMDS_DESIGN.md` §4.1 for the surface. These wrap the
-// progenitor-generated `tritond-client` builders + decode the
-// responses into a human-readable form (or JSON via --json).
-
 use tritond_client::types::{MetaProvenance, MetaScope, RealizedMetaEntry, SetMetaRequest};
 
 fn meta_scope_label(scope: &MetaScope) -> &'static str {
@@ -4402,11 +2937,6 @@ pub async fn meta_realized(
     Ok(())
 }
 
-// ---------------------------------------------------------------------
-// RFD 00007 AP-3c-2: flat-verb commands against the new /v1/ surface.
-// ---------------------------------------------------------------------
-
-/// `tcadm instance list [--image=&cn=&tenant=&project=&state=]`.
 pub async fn instance_list_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4457,7 +2987,6 @@ pub async fn instance_list_v1(
     Ok(())
 }
 
-/// `tcadm instance show <instance_id>`.
 pub async fn instance_show_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4481,9 +3010,6 @@ pub async fn instance_show_v1(
     Ok(())
 }
 
-/// `tcadm instance create --tenant=&--project=&--name=&--image-id=...`.
-/// AP-3c-9: full flat-verb instance create, replacing the legacy
-/// `tcadm tenant project instance create` nested form.
 #[allow(clippy::too_many_arguments)]
 pub async fn instance_create_v1(
     endpoint_override: Option<String>,
@@ -4799,15 +3325,10 @@ pub async fn system_user_grant_v1(
     Ok(())
 }
 
-/// `tcadm find <what>` - client-side composition over the typed
-/// /v1/system/* list endpoints. Parses `what` in priority order
-/// (UUID > IP > MAC > name) and fires one or more system queries
-/// in parallel, then renders the union.
-///
-/// This is the operator's headline "find anything" verb per RFD
-/// 00007 §3.5 + D-Ap-10. Per D-Ap-10 the server-side
-/// `/v1/system/find` endpoint is intentionally not shipped; this
-/// CLI composition is the substitute.
+/// Parses `what` in priority order (UUID > IP > MAC > name), fires
+/// the matching /v1/system/* list queries in parallel, and renders
+/// the union. No server-side `/v1/system/find` endpoint exists by
+/// design.
 pub async fn find_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4891,10 +3412,6 @@ pub async fn find_v1(
     }
     Ok(())
 }
-
-// ---------------------------------------------------------------------
-// RFD 00007 AP-3c-4: more flat-verb commands.
-// ---------------------------------------------------------------------
 
 fn parse_image_scope(s: &str) -> Result<tritond_client::types::ImageScopeSelector> {
     use tritond_client::types::ImageScopeSelector;
@@ -5216,9 +3733,6 @@ pub async fn vpc_show_v1(
     Ok(())
 }
 
-/// `tcadm vpc create --tenant=&--project=&--name=&--ipv4-block=...`.
-/// AP-3c-11: flat-verb VPC create, replaces the legacy
-/// `tcadm tenant project vpc create` form.
 #[allow(clippy::too_many_arguments)]
 pub async fn vpc_create_v1(
     endpoint_override: Option<String>,
@@ -5332,8 +3846,6 @@ pub async fn subnet_show_v1(
     Ok(())
 }
 
-/// `tcadm subnet create --vpc=&--name=&--ipv4-block=...`.
-/// AP-3c-12: flat-verb subnet create.
 #[allow(clippy::too_many_arguments)]
 pub async fn subnet_create_v1(
     endpoint_override: Option<String>,
@@ -5453,8 +3965,6 @@ pub async fn floating_ip_show_v1(
     Ok(())
 }
 
-/// `tcadm floating-ip create --tenant= --project= --name= [--family=ipv4|ipv6]`.
-/// AP-3c-13: flat-verb FIP allocate.
 #[allow(clippy::too_many_arguments)]
 pub async fn floating_ip_create_v1(
     endpoint_override: Option<String>,
@@ -5555,11 +4065,6 @@ pub async fn floating_ip_detach_v1(
     Ok(())
 }
 
-/// `tcadm system images-using <image_id>` -> the fixed-axis view at
-/// `/v1/system/images/{image}/instances`. Equivalent to
-/// `tcadm system instances --image=<image_id>` but reaches the
-/// dedicated endpoint, mirroring how an operator drills in from
-/// an image detail page.
 pub async fn system_images_using_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -5650,9 +4155,8 @@ pub async fn system_utilization_v1(
     Ok(())
 }
 
-/// `tcadm system dhcp-lease-show <mac>` -> bare-MAC lease lookup
-/// across every VPC via the AP-1c MAC index. Auth recovers the
-/// owning tenant from the lease row.
+/// Bare-MAC lease lookup across every VPC. Auth recovers the owning
+/// tenant from the lease row.
 pub async fn dhcp_lease_show_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -5702,14 +4206,9 @@ pub async fn system_user_revoke_v1(
     Ok(())
 }
 
-// ----- AP-3c-8: firewall-rule / nat-gateway / route-table / route flat verbs -----
-//
-// Selectors mirror the /v1/ trait surface: each list endpoint accepts
-// silo/tenant/project/vpc as optional scope-narrowing query params, and the
-// server enforces the scope-selectors invariant (at least one must be present;
-// see RFD 00007 §3.1 "scope is mandatory at customer-surface listing").
+// List endpoints accept silo/tenant/project/vpc as optional scope
+// selectors; the server enforces that at least one is present.
 
-/// `tcadm firewall-rule list --vpc=<uuid> [--project=<uuid>] [--tenant=<uuid>]`.
 pub async fn firewall_rule_list_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -6013,5 +4512,318 @@ pub async fn route_show_v1(
     println!("  route_table: {}", r.route_table_id);
     println!("  destination: {}", r.destination);
     println!("  target:      {:?}", r.target);
+    Ok(())
+}
+
+fn parse_port_range(s: &str) -> Result<tritond_client::types::FirewallPortRange> {
+    // Accept "low-high" or a single "n" (treated as low=high=n).
+    let (low_s, high_s) = match s.split_once('-') {
+        Some((a, b)) => (a.trim(), b.trim()),
+        None => (s.trim(), s.trim()),
+    };
+    let low: u16 = low_s
+        .parse()
+        .with_context(|| format!("port range low `{low_s}` is not a u16"))?;
+    let high: u16 = high_s
+        .parse()
+        .with_context(|| format!("port range high `{high_s}` is not a u16"))?;
+    if low > high {
+        anyhow::bail!("port range low ({low}) > high ({high})");
+    }
+    Ok(tritond_client::types::FirewallPortRange { low, high })
+}
+
+/// `tcadm firewall-rule create --vpc=<uuid> --name=X --action=allow ...`.
+#[allow(clippy::too_many_arguments)]
+pub async fn firewall_rule_create_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    vpc: Uuid,
+    name: String,
+    description: String,
+    action: String,
+    direction: String,
+    protocol: String,
+    priority: u16,
+    source_cidr: Option<String>,
+    destination_cidr: Option<String>,
+    source_ports: Option<String>,
+    destination_ports: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    use tritond_client::types::{
+        FirewallAction, FirewallDirection, FirewallProtocol, NewFirewallRule,
+    };
+
+    let action = match action.to_ascii_lowercase().as_str() {
+        "allow" => FirewallAction::Allow,
+        "deny" => FirewallAction::Deny,
+        other => anyhow::bail!("unknown action `{other}`; expected allow or deny"),
+    };
+    let direction = match direction.to_ascii_lowercase().as_str() {
+        "inbound" | "in" => FirewallDirection::Inbound,
+        "outbound" | "out" => FirewallDirection::Outbound,
+        other => anyhow::bail!("unknown direction `{other}`; expected inbound or outbound"),
+    };
+    let protocol = match protocol.to_ascii_lowercase().as_str() {
+        "any" => FirewallProtocol::Any,
+        "tcp" => FirewallProtocol::Tcp,
+        "udp" => FirewallProtocol::Udp,
+        "icmp4" | "icmp" => FirewallProtocol::Icmp4,
+        "icmp6" => FirewallProtocol::Icmp6,
+        other => anyhow::bail!("unknown protocol `{other}`"),
+    };
+
+    let source_ports = source_ports.as_deref().map(parse_port_range).transpose()?;
+    let destination_ports = destination_ports
+        .as_deref()
+        .map(parse_port_range)
+        .transpose()?;
+
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let r = client
+        .create_firewall_rule_v1()
+        .vpc(vpc)
+        .body(NewFirewallRule {
+            name,
+            description: Some(description),
+            action,
+            direction,
+            protocol,
+            priority,
+            source_cidr,
+            destination_cidr,
+            source_ports,
+            destination_ports,
+            icmp_type_code: None,
+        })
+        .send()
+        .await
+        .context("/v1/firewall-rules create")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&r)?);
+        return Ok(());
+    }
+    println!("FirewallRule {}", r.id);
+    println!("  name:      {}", r.name);
+    println!("  vpc:       {}", r.vpc_id);
+    println!("  action:    {}", r.action);
+    println!("  direction: {}", r.direction);
+    println!("  protocol:  {}", r.protocol);
+    println!("  priority:  {}", r.priority);
+    Ok(())
+}
+
+/// `tcadm firewall-rule delete <id>`.
+pub async fn firewall_rule_delete_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    firewall_rule_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_firewall_rule_v1()
+        .firewall_rule_id(firewall_rule_id)
+        .send()
+        .await
+        .context("/v1/firewall-rules/{id} delete")?;
+    println!("FirewallRule {firewall_rule_id} deleted.");
+    Ok(())
+}
+
+/// `tcadm nat-gateway create --vpc=<uuid> --name=X --family=ipv4`.
+pub async fn nat_gateway_create_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    vpc: Uuid,
+    name: String,
+    description: String,
+    family: String,
+    json_output: bool,
+) -> Result<()> {
+    let family = match family.to_ascii_lowercase().as_str() {
+        "ipv4" | "v4" => tritond_client::types::AddressFamily::V4,
+        "ipv6" | "v6" => tritond_client::types::AddressFamily::V6,
+        other => anyhow::bail!("unknown family `{other}`; expected ipv4 or ipv6"),
+    };
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let g = client
+        .create_nat_gateway_v1()
+        .vpc(vpc)
+        .body(tritond_client::types::NewNatGateway {
+            name,
+            description: Some(description),
+            family,
+        })
+        .send()
+        .await
+        .context("/v1/nat-gateways create")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&g)?);
+        return Ok(());
+    }
+    println!("NatGateway {}", g.id);
+    println!("  name:           {}", g.name);
+    println!("  vpc:            {}", g.vpc_id);
+    println!("  public_address: {}", g.public_address);
+    Ok(())
+}
+
+/// `tcadm nat-gateway delete <id>`.
+pub async fn nat_gateway_delete_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    nat_gateway_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_nat_gateway_v1()
+        .nat_gateway_id(nat_gateway_id)
+        .send()
+        .await
+        .context("/v1/nat-gateways/{id} delete")?;
+    println!("NatGateway {nat_gateway_id} deleted.");
+    Ok(())
+}
+
+/// `tcadm route-table create --vpc=<uuid> --name=X`.
+pub async fn route_table_create_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    vpc: Uuid,
+    name: String,
+    description: String,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let rt = client
+        .create_route_table_v1()
+        .vpc(vpc)
+        .body(tritond_client::types::NewRouteTable {
+            name,
+            description: Some(description),
+        })
+        .send()
+        .await
+        .context("/v1/route-tables create")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&rt)?);
+        return Ok(());
+    }
+    println!("RouteTable {}", rt.id);
+    println!("  name: {}", rt.name);
+    println!("  vpc:  {}", rt.vpc_id);
+    Ok(())
+}
+
+/// `tcadm route-table delete <id>`.
+pub async fn route_table_delete_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    route_table_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_route_table_v1()
+        .route_table_id(route_table_id)
+        .send()
+        .await
+        .context("/v1/route-tables/{id} delete")?;
+    println!("RouteTable {route_table_id} deleted.");
+    Ok(())
+}
+
+/// `tcadm route create --route-table=<uuid> --name=X --destination=...`.
+#[allow(clippy::too_many_arguments)]
+pub async fn route_create_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    route_table: Uuid,
+    name: String,
+    description: String,
+    destination: String,
+    target_nat_gateway: Option<Uuid>,
+    target_blackhole: bool,
+    target_reject: bool,
+    target_virtual_gateway: bool,
+    json_output: bool,
+) -> Result<()> {
+    use tritond_client::types::{NewRoute, RouteTarget};
+
+    let chosen = [
+        target_nat_gateway.is_some(),
+        target_blackhole,
+        target_reject,
+        target_virtual_gateway,
+    ]
+    .iter()
+    .filter(|b| **b)
+    .count();
+    if chosen != 1 {
+        anyhow::bail!(
+            "exactly one of --target-nat-gateway, --target-blackhole, --target-reject, --target-virtual-gateway must be provided ({chosen} given)"
+        );
+    }
+
+    let target = if let Some(id) = target_nat_gateway {
+        RouteTarget::NatGateway { nat_gateway_id: id }
+    } else if target_blackhole {
+        RouteTarget::Blackhole
+    } else if target_reject {
+        RouteTarget::Reject
+    } else {
+        RouteTarget::VirtualGateway
+    };
+
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let r = client
+        .create_route_v1()
+        .route_table(route_table)
+        .body(NewRoute {
+            name,
+            description: Some(description),
+            destination,
+            target,
+        })
+        .send()
+        .await
+        .context("/v1/routes create")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&r)?);
+        return Ok(());
+    }
+    println!("Route {}", r.id);
+    println!("  name:        {}", r.name);
+    println!("  destination: {}", r.destination);
+    println!("  target:      {:?}", r.target);
+    Ok(())
+}
+
+/// `tcadm route delete <id>`.
+pub async fn route_delete_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    route_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_route_v1()
+        .route_id(route_id)
+        .send()
+        .await
+        .context("/v1/routes/{id} delete")?;
+    println!("Route {route_id} deleted.");
     Ok(())
 }

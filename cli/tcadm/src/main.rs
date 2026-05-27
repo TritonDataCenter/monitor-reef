@@ -5,21 +5,6 @@
 // Copyright 2026 Edgecast Cloud LLC.
 
 //! tcadm — Triton Cloud operator CLI.
-//!
-//! Phase 0e ships:
-//!
-//! * `tcadm bootstrap` — health-check ping (anonymous-allowed).
-//! * `tcadm configure` / `tcadm login` / `tcadm logout` — interactive
-//!   login flow that persists tokens at `~/.config/tcadm/config.json`.
-//! * `tcadm env` — emit shell exports so the access token can be
-//!   embedded in `eval "$(tcadm env)"` style invocations.
-//! * `tcadm api-key {create,list,delete}` — long-lived bearer
-//!   credentials for automation. The plaintext is shown once at
-//!   creation and never persisted server-side.
-//!
-//! `--endpoint` and `--api-key` are global flags; they short-circuit
-//! the on-disk config in priority order documented in
-//! [`crate::session`].
 
 mod commands;
 mod config;
@@ -101,87 +86,63 @@ enum Commands {
         #[command(subcommand)]
         command: CnCommand,
     },
-    /// RFD 00007 flat-verb tree for instances. Calls the new /v1/
-    /// surface; the legacy `tcadm tenant project instance list ...`
-    /// nested verbs stay around through AP-3e for backwards-compat
-    /// during the cutover.
     Instance {
         #[command(subcommand)]
         command: InstanceCommand,
     },
-    /// RFD 00007 flat-verb tree for disks.
     Disk {
         #[command(subcommand)]
         command: DiskCommand,
     },
-    /// RFD 00007 flat-verb tree for NICs.
     Nic {
         #[command(subcommand)]
         command: NicCommand,
     },
-    /// RFD 00007 flat-verb tree for VPCs.
     Vpc {
         #[command(subcommand)]
         command: VpcCommand,
     },
-    /// RFD 00007 flat-verb tree for subnets.
     Subnet {
         #[command(subcommand)]
         command: SubnetCommand,
     },
-    /// RFD 00007 flat-verb tree for floating IPs.
     FloatingIp {
         #[command(subcommand)]
         command: FloatingIpCommand,
     },
-    /// RFD 00007 flat-verb tree for firewall rules.
     FirewallRule {
         #[command(subcommand)]
         command: FirewallRuleCommand,
     },
-    /// RFD 00007 flat-verb tree for NAT gateways.
     NatGateway {
         #[command(subcommand)]
         command: NatGatewayCommand,
     },
-    /// RFD 00007 flat-verb tree for route tables.
     RouteTable {
         #[command(subcommand)]
         command: RouteTableCommand,
     },
-    /// RFD 00007 flat-verb tree for routes.
     Route {
         #[command(subcommand)]
         command: RouteCommand,
     },
-    /// RFD 00007 flat-verb tree for images. AP-2h ships the
-    /// `--scope=public` form; silo / tenant / project / user
-    /// dispatch lands when the AP-3a name-resolver arrives.
     ImageV1 {
         #[command(subcommand)]
         command: ImageV1Command,
     },
-    /// RFD 00007 flat-verb tree for SSH keys.
     SshKeyV1 {
         #[command(subcommand)]
         command: SshKeyV1Command,
     },
-    /// RFD 00007 fleet-admin operator commands. Capability-gated;
-    /// callers without the right `Capability` see 404 NotFound.
+    /// Fleet-admin operator commands. Capability-gated; callers
+    /// without the right capability see 404 NotFound.
     System {
         #[command(subcommand)]
         command: SystemCommand,
     },
-    /// RFD 00007 `tcadm find` - client-side composition over the
-    /// typed /v1/system/* list endpoints. The single positional
-    /// argument is parsed in priority order:
-    ///   1. UUID  -> hit every kind by id (image-uses, cn-instances,
-    ///              raw instance lookup)
-    ///   2. IP    -> /v1/system/networking/nics?ip=
-    ///   3. MAC   -> (future, requires --kind=)
-    ///   4. Name  -> requires --kind=
-    ///
-    /// Per RFD 00007 §3.5 D-Ap-10. Capability: SystemRead.
+    /// Client-side composition over the typed /v1/system/* list
+    /// endpoints. Argument is parsed as UUID, then IP, then MAC,
+    /// then (with --kind) name. Capability: SystemRead.
     Find {
         /// Freeform input: a UUID, an IP address, or a name. If
         /// ambiguous (e.g. a hex string that could be uuid or name),
@@ -207,7 +168,6 @@ enum Commands {
         command: AuditCommand,
     },
     /// Inspect long-running operations (durable workflow runs / sagas).
-    /// See RFD 00004.
     Operations {
         #[command(subcommand)]
         command: OperationsCommand,
@@ -223,11 +183,6 @@ enum Commands {
     Tenant {
         #[command(subcommand)]
         command: TenantCommand,
-    },
-    /// Manage network resources with operational shorthand commands.
-    Net {
-        #[command(subcommand)]
-        command: NetCommand,
     },
     /// Manage Public images (operator-facing root commands).
     /// Tenant- / project- / user-scoped images live under the
@@ -844,21 +799,10 @@ enum TenantProjectCommand {
     },
     /// Delete a project.
     Delete { tenant_id: Uuid, project_id: Uuid },
-    /// Manage VPCs inside a project.
-    Vpc {
-        #[command(subcommand)]
-        command: TenantProjectVpcCommand,
-    },
     /// Manage the project's resource quota.
     Quota {
         #[command(subcommand)]
         command: TenantProjectQuotaCommand,
-    },
-    /// Manage floating IPs (project-scoped, allocated from a fleet
-    /// pool, attachable to any NIC in the project).
-    FloatingIp {
-        #[command(subcommand)]
-        command: TenantProjectFloatingIpCommand,
     },
     /// Manage `Project`-scoped images.
     Image {
@@ -907,351 +851,6 @@ enum TenantProjectImageCommand {
     },
 }
 
-#[derive(Subcommand)]
-enum TenantProjectFloatingIpCommand {
-    /// List floating IPs in the project.
-    List {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Allocate a new floating IP from the fleet pool.
-    Create {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        #[arg(long)]
-        name: String,
-        #[arg(long, default_value = "")]
-        description: String,
-        /// Address family. Valid values: `v4` or `v6`.
-        #[arg(long, default_value = "v4")]
-        family: String,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Read a single floating IP.
-    Get {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        floating_ip_id: Uuid,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Release a floating IP back to its pool. Returns 409 if
-    /// currently attached.
-    Delete {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        floating_ip_id: Uuid,
-    },
-    /// Attach a floating IP to a NIC. Replace semantics — if the
-    /// IP was already attached elsewhere, it swaps atomically.
-    Attach {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        floating_ip_id: Uuid,
-        #[arg(long)]
-        nic_id: Uuid,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Detach a floating IP. Idempotent.
-    Detach {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        floating_ip_id: Uuid,
-        #[arg(long)]
-        json: bool,
-    },
-}
-
-#[derive(Subcommand)]
-enum NetCommand {
-    /// Manage VPC route tables.
-    RouteTable {
-        #[command(subcommand)]
-        command: NetRouteTableCommand,
-    },
-    /// Manage VPC routes.
-    Route {
-        #[command(subcommand)]
-        command: NetRouteCommand,
-    },
-    /// Manage VPC NAT gateways.
-    NatGw {
-        #[command(subcommand)]
-        command: NetNatGwCommand,
-    },
-    /// Manage VPC DHCP/IPAM (pool config, reservations, leases).
-    Dhcp {
-        #[command(subcommand)]
-        command: NetDhcpCommand,
-    },
-}
-
-#[derive(Subcommand)]
-enum NetDhcpCommand {
-    /// Manage the per-VPC DHCP pool (lease cadence, exclusions, raw options).
-    Pool {
-        #[command(subcommand)]
-        command: NetDhcpPoolCommand,
-    },
-    /// Manage sticky MAC -> IP reservations.
-    Reservation {
-        #[command(subcommand)]
-        command: NetDhcpReservationCommand,
-    },
-    /// Inspect or release issued DHCP leases.
-    Lease {
-        #[command(subcommand)]
-        command: NetDhcpLeaseCommand,
-    },
-}
-
-#[derive(Subcommand)]
-enum NetDhcpPoolCommand {
-    /// Show the VPC's DHCP pool config (prints "(none)" when unset).
-    Show {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Set the VPC's DHCP pool config (replaces any existing config).
-    Set {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        /// DHCP option-51 renewal-cadence hint, in seconds.
-        #[arg(long, default_value_t = 86_400)]
-        lease_seconds: u32,
-        /// IPv4 address to exclude from allocation. Repeatable.
-        #[arg(long = "exclude", value_name = "IPV4")]
-        exclude: Vec<std::net::Ipv4Addr>,
-        /// Extra raw DHCP option as CODE=HEXBYTES (e.g. 42=c63364fa).
-        /// Repeatable.
-        #[arg(long = "option", value_name = "CODE=HEX")]
-        option: Vec<String>,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Clear the VPC's DHCP pool config (revert to subnet defaults).
-    Clear {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-    },
-}
-
-#[derive(Subcommand)]
-enum NetDhcpReservationCommand {
-    /// List the VPC's reservations.
-    List {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Add (or replace) a sticky MAC -> IP reservation.
-    Add {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        #[arg(long)]
-        mac: String,
-        #[arg(long, value_name = "IPV4")]
-        ip: std::net::Ipv4Addr,
-        #[arg(long)]
-        hostname: Option<String>,
-        /// Per-MAC raw DHCP option as CODE=HEXBYTES (e.g. 252=687474703a2f2f...).
-        /// Repeatable.
-        #[arg(long = "option", value_name = "CODE=HEX")]
-        option: Vec<String>,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Show a single reservation by MAC.
-    Get {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        mac: String,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Remove a reservation by MAC.
-    Remove {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        mac: String,
-    },
-}
-
-#[derive(Subcommand)]
-enum NetDhcpLeaseCommand {
-    /// List the VPC's issued leases.
-    List {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Show a single lease by MAC.
-    Get {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        mac: String,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Release (delete) a lease by MAC. Frees the IP; breaks
-    /// sticky-by-MAC for that MAC until a reservation is re-created.
-    Release {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        mac: String,
-    },
-}
-
-#[derive(Subcommand)]
-enum NetRouteTableCommand {
-    /// List route tables in a VPC.
-    List {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Create a route table in a VPC.
-    Create {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        #[arg(long)]
-        name: String,
-        #[arg(long, default_value = "")]
-        description: String,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Read a single route table.
-    Get {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        route_table_id: Uuid,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Delete a route table.
-    Delete {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        route_table_id: Uuid,
-    },
-}
-
-#[derive(Subcommand)]
-enum NetRouteCommand {
-    /// List routes in a route table.
-    List {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        route_table_id: Uuid,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Create a route in a route table.
-    Create {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        route_table_id: Uuid,
-        #[arg(long)]
-        name: String,
-        #[arg(long, default_value = "")]
-        description: String,
-        /// Destination CIDR, e.g. 0.0.0.0/0.
-        #[arg(long)]
-        destination: String,
-        /// Target: blackhole, reject, virtual-gateway, nat-gateway:<uuid>, or floating-ip:<uuid>.
-        #[arg(long)]
-        target: String,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Read a single route.
-    Get {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        route_table_id: Uuid,
-        route_id: Uuid,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Delete a route.
-    Delete {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        route_table_id: Uuid,
-        route_id: Uuid,
-    },
-}
-
-#[derive(Subcommand)]
-enum NetNatGwCommand {
-    /// List NAT gateways in a VPC.
-    List {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Create a NAT gateway in a VPC.
-    Create {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        #[arg(long)]
-        name: String,
-        #[arg(long, default_value = "")]
-        description: String,
-        /// Address family. Valid values: `v4` or `v6`.
-        #[arg(long, default_value = "v4")]
-        family: String,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Read a single NAT gateway.
-    Get {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        nat_gateway_id: Uuid,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Delete a NAT gateway and release its public address.
-    Delete {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        nat_gateway_id: Uuid,
-    },
-}
 
 #[derive(Subcommand)]
 enum TenantProjectQuotaCommand {
@@ -1281,102 +880,6 @@ enum TenantProjectQuotaCommand {
     Delete { tenant_id: Uuid, project_id: Uuid },
 }
 
-#[derive(Subcommand)]
-enum TenantProjectVpcCommand {
-    /// List VPCs in a project.
-    List {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Create a new VPC in a project. At least one of `--ipv4-block`
-    /// and `--ipv6-block` must be provided.
-    Create {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        #[arg(long)]
-        name: String,
-        #[arg(long, default_value = "")]
-        description: String,
-        /// IPv4 CIDR for the VPC overlay, e.g. `10.0.0.0/24`.
-        #[arg(long)]
-        ipv4_block: Option<String>,
-        /// IPv6 CIDR for the VPC overlay, e.g. `fd00::/48`.
-        #[arg(long)]
-        ipv6_block: Option<String>,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Read a single VPC.
-    Get {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Delete a VPC.
-    Delete {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-    },
-    /// Manage subnets inside a VPC.
-    Subnet {
-        #[command(subcommand)]
-        command: TenantProjectVpcSubnetCommand,
-    },
-}
-
-#[derive(Subcommand)]
-enum TenantProjectVpcSubnetCommand {
-    /// List subnets in a VPC.
-    List {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Create a new subnet in a VPC. At least one of `--ipv4-block`
-    /// and `--ipv6-block` must be provided. Each block must be
-    /// contained in the parent VPC's same-family CIDR and must not
-    /// overlap an existing subnet.
-    Create {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        #[arg(long)]
-        name: String,
-        #[arg(long, default_value = "")]
-        description: String,
-        /// IPv4 CIDR carved out of the parent VPC's ipv4_block.
-        #[arg(long)]
-        ipv4_block: Option<String>,
-        /// IPv6 CIDR carved out of the parent VPC's ipv6_block.
-        #[arg(long)]
-        ipv6_block: Option<String>,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Read a single subnet.
-    Get {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        subnet_id: Uuid,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Delete a subnet.
-    Delete {
-        tenant_id: Uuid,
-        project_id: Uuid,
-        vpc_id: Uuid,
-        subnet_id: Uuid,
-    },
-}
 
 #[derive(Subcommand)]
 enum TenantIdpCommand {
@@ -1430,10 +933,9 @@ enum OperationsCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Operator-initiated unwind (RFD 00004 D-Sg-12): inject an
-    /// error at every pending saga node so the next one fails and
-    /// the catalog's own undos run. The currently-running action
-    /// (if any) completes its natural outcome first.
+    /// Operator-initiated unwind: inject an error at every pending
+    /// saga node so the catalog's own undos run. The currently-running
+    /// action (if any) completes its natural outcome first.
     Abandon {
         operation_id: Uuid,
         #[arg(long)]
@@ -1618,20 +1120,10 @@ enum MetaCommand {
     },
 }
 
-/// RFD 00007 AP-3c-2: flat-verb instance commands. Calls the new
-/// `/v1/instances` and friends. Today this complements the legacy
-/// `tcadm tenant project instance list ...` nested verb; the
-/// legacy form deletes at AP-3e along with the v2 server paths.
 #[derive(Subcommand)]
 enum InstanceCommand {
-    /// List instances. Selectors:
-    ///   --image=<uuid>      indexed (AP-1c)
-    ///   --cn=<uuid>         indexed
-    ///   --tenant=<uuid> --project=<uuid>
-    ///                       bounded by project-membership index
-    ///   --state=<running|stopped|...>
-    ///                       narrows the result set client-side
-    /// One of (image, cn, tenant+project) is required.
+    /// List instances. One of --image, --cn, or --tenant+--project
+    /// is required; --state narrows client-side.
     List {
         #[arg(long)]
         tenant: Option<Uuid>,
@@ -1652,8 +1144,7 @@ enum InstanceCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Create a new instance under a project. Posts to
-    /// `/v1/instances?tenant=&project=` (AP-2d).
+    /// Create a new instance under a project.
     #[command(name = "create")]
     Create {
         #[arg(long)]
@@ -1679,28 +1170,23 @@ enum InstanceCommand {
         json: bool,
     },
     /// Delete an instance (must be Stopped or Failed).
-    /// `DELETE /v1/instances/{id}`.
     Delete {
         instance_id: Uuid,
-        /// Force-delete a non-terminal instance (operator escape
-        /// hatch; the server enforces the same Stopped/Failed gate
-        /// without this flag).
+        /// Force-delete a non-terminal instance; server still enforces
+        /// the Stopped/Failed gate without this flag.
         #[arg(long)]
         force: bool,
     },
-    /// Start a Stopped instance. `POST /v1/instances/{id}/start`.
     Start {
         instance_id: Uuid,
         #[arg(long)]
         json: bool,
     },
-    /// Stop a Running instance. `POST /v1/instances/{id}/stop`.
     Stop {
         instance_id: Uuid,
         #[arg(long)]
         json: bool,
     },
-    /// Restart a Running instance. `POST /v1/instances/{id}/restart`.
     Restart {
         instance_id: Uuid,
         #[arg(long)]
@@ -1710,9 +1196,7 @@ enum InstanceCommand {
 
 #[derive(Subcommand)]
 enum DiskCommand {
-    /// List disks. Requires --instance (the AP-2e customer surface
-    /// is scoped to one instance until cross-project disk searches
-    /// land).
+    /// List disks. Requires --instance.
     List {
         #[arg(long)]
         instance: Uuid,
@@ -1763,8 +1247,7 @@ enum VpcCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Create a new VPC under a project. Posts to
-    /// `/v1/vpcs?tenant=&project=` (AP-3a-10).
+    /// Create a new VPC under a project.
     Create {
         #[arg(long)]
         tenant: Uuid,
@@ -1804,8 +1287,7 @@ enum SubnetCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Create a subnet inside a VPC. POSTs to
-    /// `/v1/subnets?vpc=<uuid>` (AP-3a-11).
+    /// Create a subnet inside a VPC.
     Create {
         #[arg(long)]
         vpc: Uuid,
@@ -1828,14 +1310,13 @@ enum SubnetCommand {
 
 #[derive(Subcommand)]
 enum ImageV1Command {
-    /// List images at a given scope. AP-2h: only --scope=public.
+    /// List images at a given scope. Only `--scope=public` works today.
     List {
         #[arg(long, default_value = "public")]
         scope: String,
         #[arg(long)]
         json: bool,
     },
-    /// Read a single image by UUID.
     Show {
         image_id: Uuid,
         #[arg(long)]
@@ -1845,7 +1326,7 @@ enum ImageV1Command {
 
 #[derive(Subcommand)]
 enum SshKeyV1Command {
-    /// List SSH keys at a given scope. AP-2h: only --scope=public.
+    /// List SSH keys at a given scope. Only `--scope=public` works today.
     List {
         #[arg(long, default_value = "public")]
         scope: String,
@@ -1877,8 +1358,7 @@ enum FloatingIpCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Allocate a new floating IP into a project. POSTs to
-    /// `/v1/floating-ips?tenant=&project=` (AP-3a-12).
+    /// Allocate a new floating IP into a project.
     Create {
         #[arg(long)]
         tenant: Uuid,
@@ -1907,10 +1387,6 @@ enum FloatingIpCommand {
     Detach { floating_ip_id: Uuid },
 }
 
-/// RFD 00007 AP-3c-8: flat-verb wrappers around the v1 firewall /
-/// nat / route trait surface. List selectors are optional: the
-/// server enforces "at least one scope" itself and 400s if none are
-/// provided.
 #[derive(Subcommand)]
 enum FirewallRuleCommand {
     /// List firewall rules. Provide one of --vpc, --project, --tenant.
@@ -1930,6 +1406,42 @@ enum FirewallRuleCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Create a firewall rule on a VPC.
+    Create {
+        #[arg(long)]
+        vpc: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        /// allow | deny
+        #[arg(long)]
+        action: String,
+        /// inbound | outbound
+        #[arg(long)]
+        direction: String,
+        /// any | tcp | udp | icmp4 | icmp6
+        #[arg(long, default_value = "any")]
+        protocol: String,
+        #[arg(long)]
+        priority: u16,
+        /// Source CIDR (optional; omitted means any).
+        #[arg(long = "source-cidr")]
+        source_cidr: Option<String>,
+        /// Destination CIDR (optional; omitted means any).
+        #[arg(long = "destination-cidr")]
+        destination_cidr: Option<String>,
+        /// Source ports as `low-high` (TCP/UDP only).
+        #[arg(long = "source-ports")]
+        source_ports: Option<String>,
+        /// Destination ports as `low-high` (TCP/UDP only).
+        #[arg(long = "destination-ports")]
+        destination_ports: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete a firewall rule by UUID.
+    Delete { firewall_rule_id: Uuid },
 }
 
 #[derive(Subcommand)]
@@ -1951,6 +1463,23 @@ enum NatGatewayCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Create a NAT gateway on a VPC.
+    Create {
+        #[arg(long)]
+        vpc: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        /// ipv4 | ipv6
+        #[arg(long, default_value = "ipv4")]
+        family: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete a NAT gateway. Server enforces that no route still
+    /// targets it; 409 Conflict otherwise.
+    Delete { nat_gateway_id: Uuid },
 }
 
 #[derive(Subcommand)]
@@ -1972,6 +1501,21 @@ enum RouteTableCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Create a non-main route table inside a VPC. POSTs to
+    /// `/v1/route-tables?vpc=<uuid>`.
+    Create {
+        #[arg(long)]
+        vpc: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete a route table. The VPC's main route table cannot be
+    /// deleted; server returns 409 Conflict.
+    Delete { route_table_id: Uuid },
 }
 
 #[derive(Subcommand)]
@@ -1993,15 +1537,46 @@ enum RouteCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Create a route in a route table. Exactly one of `--target-*`
+    /// flags must be provided; NAT-gateway targets must live in the
+    /// same VPC as the route table.
+    Create {
+        #[arg(long = "route-table")]
+        route_table: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        /// Destination CIDR.
+        #[arg(long)]
+        destination: String,
+        /// Target: send to a NAT gateway by UUID.
+        #[arg(long = "target-nat-gateway")]
+        target_nat_gateway: Option<Uuid>,
+        /// Target: blackhole the traffic.
+        #[arg(long = "target-blackhole")]
+        target_blackhole: bool,
+        /// Target: ICMP-reject the traffic.
+        #[arg(long = "target-reject")]
+        target_reject: bool,
+        /// Target: send to the VPC's virtual gateway.
+        #[arg(long = "target-virtual-gateway")]
+        target_virtual_gateway: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete a route by UUID. Server forbids deleting system routes
+    /// (e.g. the default route in the main route table); 409 Conflict.
+    Delete { route_id: Uuid },
 }
 
-/// RFD 00007 AP-3c-2: fleet-admin operator commands. All under
-/// `/v1/system/`; capability-gated server-side. A caller without
-/// the right `Capability` sees the same 404 as a missing resource.
+/// Fleet-admin operator commands under `/v1/system/`. A caller
+/// without the right capability sees the same 404 as a missing
+/// resource.
 #[derive(Subcommand)]
 enum SystemCommand {
-    /// Fleet-wide instance search. The answer to "which VMs use
-    /// image X?" and "what is on CN Y?". Capability: `SystemRead`.
+    /// Fleet-wide instance search ("which VMs use image X?",
+    /// "what is on CN Y?"). Capability: `SystemRead`.
     Instances {
         #[arg(long)]
         image: Option<Uuid>,
@@ -2029,16 +1604,14 @@ enum SystemCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Fixed-axis "which VMs use this image?" view. Hits the
-    /// AP-3a-3 `/v1/system/images/{image}/instances` endpoint
-    /// directly; one FDB range read against `idx/image/<image>/`.
+    /// "Which VMs use this image?" Single FDB range read against
+    /// the `idx/image/<image>/` index.
     ImagesUsing {
         image_id: Uuid,
         #[arg(long)]
         json: bool,
     },
-    /// Fixed-axis "what's on this CN?" view. Hits the AP-3a-3
-    /// `/v1/system/cns/{cn}/instances` endpoint.
+    /// "What's on this CN?"
     CnInstances {
         cn_id: Uuid,
         #[arg(long)]
@@ -2051,18 +1624,14 @@ enum SystemCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Fetch per-silo utilization. Today returns 501
-    /// UtilizationUnavailable per RFD 00007 D-Ap-13 - the path
-    /// is locked but quota accounting hasn't landed yet.
+    /// Fetch per-silo utilization. Returns 501 until quota
+    /// accounting lands.
     Utilization {
         #[arg(long)]
         json: bool,
     },
-    /// Find a DHCP lease by MAC across every VPC. Uses the AP-1c
-    /// `dhcp_lease/by_mac/<mac>` index. Capability: SystemRead
-    /// (the lookup itself goes through /v1/vpc-dhcp-leases/{mac}
-    /// which is customer-surface but recovers the owning tenant
-    /// for auth).
+    /// Find a DHCP lease by MAC across every VPC. Backed by the
+    /// `dhcp_lease/by_mac/<mac>` index.
     DhcpLeaseShow {
         mac: String,
         #[arg(long)]
@@ -2609,6 +2178,41 @@ async fn main() -> Result<()> {
                 commands::firewall_rule_show_v1(cli.endpoint, cli.api_key, firewall_rule_id, json)
                     .await
             }
+            FirewallRuleCommand::Create {
+                vpc,
+                name,
+                description,
+                action,
+                direction,
+                protocol,
+                priority,
+                source_cidr,
+                destination_cidr,
+                source_ports,
+                destination_ports,
+                json,
+            } => {
+                commands::firewall_rule_create_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    vpc,
+                    name,
+                    description,
+                    action,
+                    direction,
+                    protocol,
+                    priority,
+                    source_cidr,
+                    destination_cidr,
+                    source_ports,
+                    destination_ports,
+                    json,
+                )
+                .await
+            }
+            FirewallRuleCommand::Delete { firewall_rule_id } => {
+                commands::firewall_rule_delete_v1(cli.endpoint, cli.api_key, firewall_rule_id).await
+            }
         },
         Commands::NatGateway { command } => match command {
             NatGatewayCommand::List {
@@ -2626,6 +2230,27 @@ async fn main() -> Result<()> {
             } => {
                 commands::nat_gateway_show_v1(cli.endpoint, cli.api_key, nat_gateway_id, json).await
             }
+            NatGatewayCommand::Create {
+                vpc,
+                name,
+                description,
+                family,
+                json,
+            } => {
+                commands::nat_gateway_create_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    vpc,
+                    name,
+                    description,
+                    family,
+                    json,
+                )
+                .await
+            }
+            NatGatewayCommand::Delete { nat_gateway_id } => {
+                commands::nat_gateway_delete_v1(cli.endpoint, cli.api_key, nat_gateway_id).await
+            }
         },
         Commands::RouteTable { command } => match command {
             RouteTableCommand::List {
@@ -2642,6 +2267,25 @@ async fn main() -> Result<()> {
                 json,
             } => {
                 commands::route_table_show_v1(cli.endpoint, cli.api_key, route_table_id, json).await
+            }
+            RouteTableCommand::Create {
+                vpc,
+                name,
+                description,
+                json,
+            } => {
+                commands::route_table_create_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    vpc,
+                    name,
+                    description,
+                    json,
+                )
+                .await
+            }
+            RouteTableCommand::Delete { route_table_id } => {
+                commands::route_table_delete_v1(cli.endpoint, cli.api_key, route_table_id).await
             }
         },
         Commands::Route { command } => match command {
@@ -2663,6 +2307,35 @@ async fn main() -> Result<()> {
             }
             RouteCommand::Show { route_id, json } => {
                 commands::route_show_v1(cli.endpoint, cli.api_key, route_id, json).await
+            }
+            RouteCommand::Create {
+                route_table,
+                name,
+                description,
+                destination,
+                target_nat_gateway,
+                target_blackhole,
+                target_reject,
+                target_virtual_gateway,
+                json,
+            } => {
+                commands::route_create_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    route_table,
+                    name,
+                    description,
+                    destination,
+                    target_nat_gateway,
+                    target_blackhole,
+                    target_reject,
+                    target_virtual_gateway,
+                    json,
+                )
+                .await
+            }
+            RouteCommand::Delete { route_id } => {
+                commands::route_delete_v1(cli.endpoint, cli.api_key, route_id).await
             }
         },
         Commands::Find { what, kind, json } => {
@@ -2945,106 +2618,6 @@ async fn main() -> Result<()> {
                         .await
                     }
                 },
-                TenantProjectCommand::FloatingIp { command } => match command {
-                    TenantProjectFloatingIpCommand::List {
-                        tenant_id,
-                        project_id,
-                        json,
-                    } => {
-                        commands::tenant_project_floating_ip_list(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            json,
-                        )
-                        .await
-                    }
-                    TenantProjectFloatingIpCommand::Create {
-                        tenant_id,
-                        project_id,
-                        name,
-                        description,
-                        family,
-                        json,
-                    } => {
-                        commands::tenant_project_floating_ip_create(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            name,
-                            description,
-                            family,
-                            json,
-                        )
-                        .await
-                    }
-                    TenantProjectFloatingIpCommand::Get {
-                        tenant_id,
-                        project_id,
-                        floating_ip_id,
-                        json,
-                    } => {
-                        commands::tenant_project_floating_ip_get(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            floating_ip_id,
-                            json,
-                        )
-                        .await
-                    }
-                    TenantProjectFloatingIpCommand::Delete {
-                        tenant_id,
-                        project_id,
-                        floating_ip_id,
-                    } => {
-                        commands::tenant_project_floating_ip_delete(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            floating_ip_id,
-                        )
-                        .await
-                    }
-                    TenantProjectFloatingIpCommand::Attach {
-                        tenant_id,
-                        project_id,
-                        floating_ip_id,
-                        nic_id,
-                        json,
-                    } => {
-                        commands::tenant_project_floating_ip_attach(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            floating_ip_id,
-                            nic_id,
-                            json,
-                        )
-                        .await
-                    }
-                    TenantProjectFloatingIpCommand::Detach {
-                        tenant_id,
-                        project_id,
-                        floating_ip_id,
-                        json,
-                    } => {
-                        commands::tenant_project_floating_ip_detach(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            floating_ip_id,
-                            json,
-                        )
-                        .await
-                    }
-                },
                 TenantProjectCommand::Image { command } => match command {
                     TenantProjectImageCommand::List {
                         tenant_id,
@@ -3128,150 +2701,6 @@ async fn main() -> Result<()> {
                         )
                         .await
                     }
-                },
-                TenantProjectCommand::Vpc { command } => match command {
-                    TenantProjectVpcCommand::List {
-                        tenant_id,
-                        project_id,
-                        json,
-                    } => {
-                        commands::tenant_project_vpc_list(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            json,
-                        )
-                        .await
-                    }
-                    TenantProjectVpcCommand::Create {
-                        tenant_id,
-                        project_id,
-                        name,
-                        description,
-                        ipv4_block,
-                        ipv6_block,
-                        json,
-                    } => {
-                        commands::tenant_project_vpc_create(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            name,
-                            description,
-                            ipv4_block,
-                            ipv6_block,
-                            json,
-                        )
-                        .await
-                    }
-                    TenantProjectVpcCommand::Get {
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        json,
-                    } => {
-                        commands::tenant_project_vpc_get(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            vpc_id,
-                            json,
-                        )
-                        .await
-                    }
-                    TenantProjectVpcCommand::Delete {
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                    } => {
-                        commands::tenant_project_vpc_delete(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            vpc_id,
-                        )
-                        .await
-                    }
-                    TenantProjectVpcCommand::Subnet { command } => match command {
-                        TenantProjectVpcSubnetCommand::List {
-                            tenant_id,
-                            project_id,
-                            vpc_id,
-                            json,
-                        } => {
-                            commands::tenant_project_vpc_subnet_list(
-                                cli.endpoint,
-                                cli.api_key,
-                                tenant_id,
-                                project_id,
-                                vpc_id,
-                                json,
-                            )
-                            .await
-                        }
-                        TenantProjectVpcSubnetCommand::Create {
-                            tenant_id,
-                            project_id,
-                            vpc_id,
-                            name,
-                            description,
-                            ipv4_block,
-                            ipv6_block,
-                            json,
-                        } => {
-                            commands::tenant_project_vpc_subnet_create(
-                                cli.endpoint,
-                                cli.api_key,
-                                tenant_id,
-                                project_id,
-                                vpc_id,
-                                name,
-                                description,
-                                ipv4_block,
-                                ipv6_block,
-                                json,
-                            )
-                            .await
-                        }
-                        TenantProjectVpcSubnetCommand::Get {
-                            tenant_id,
-                            project_id,
-                            vpc_id,
-                            subnet_id,
-                            json,
-                        } => {
-                            commands::tenant_project_vpc_subnet_get(
-                                cli.endpoint,
-                                cli.api_key,
-                                tenant_id,
-                                project_id,
-                                vpc_id,
-                                subnet_id,
-                                json,
-                            )
-                            .await
-                        }
-                        TenantProjectVpcSubnetCommand::Delete {
-                            tenant_id,
-                            project_id,
-                            vpc_id,
-                            subnet_id,
-                        } => {
-                            commands::tenant_project_vpc_subnet_delete(
-                                cli.endpoint,
-                                cli.api_key,
-                                tenant_id,
-                                project_id,
-                                vpc_id,
-                                subnet_id,
-                            )
-                            .await
-                        }
-                    },
                 },
             },
             TenantCommand::Idp { command } => match command {
@@ -3359,422 +2788,6 @@ async fn main() -> Result<()> {
                     )
                     .await
                 }
-            },
-        },
-        Commands::Net { command } => match command {
-            NetCommand::RouteTable { command } => match command {
-                NetRouteTableCommand::List {
-                    tenant_id,
-                    project_id,
-                    vpc_id,
-                    json,
-                } => {
-                    commands::net_route_table_list(
-                        cli.endpoint,
-                        cli.api_key,
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        json,
-                    )
-                    .await
-                }
-                NetRouteTableCommand::Create {
-                    tenant_id,
-                    project_id,
-                    vpc_id,
-                    name,
-                    description,
-                    json,
-                } => {
-                    commands::net_route_table_create(
-                        cli.endpoint,
-                        cli.api_key,
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        name,
-                        description,
-                        json,
-                    )
-                    .await
-                }
-                NetRouteTableCommand::Get {
-                    tenant_id,
-                    project_id,
-                    vpc_id,
-                    route_table_id,
-                    json,
-                } => {
-                    commands::net_route_table_get(
-                        cli.endpoint,
-                        cli.api_key,
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        route_table_id,
-                        json,
-                    )
-                    .await
-                }
-                NetRouteTableCommand::Delete {
-                    tenant_id,
-                    project_id,
-                    vpc_id,
-                    route_table_id,
-                } => {
-                    commands::net_route_table_delete(
-                        cli.endpoint,
-                        cli.api_key,
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        route_table_id,
-                    )
-                    .await
-                }
-            },
-            NetCommand::Route { command } => match command {
-                NetRouteCommand::List {
-                    tenant_id,
-                    project_id,
-                    vpc_id,
-                    route_table_id,
-                    json,
-                } => {
-                    commands::net_route_list(
-                        cli.endpoint,
-                        cli.api_key,
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        route_table_id,
-                        json,
-                    )
-                    .await
-                }
-                NetRouteCommand::Create {
-                    tenant_id,
-                    project_id,
-                    vpc_id,
-                    route_table_id,
-                    name,
-                    description,
-                    destination,
-                    target,
-                    json,
-                } => {
-                    commands::net_route_create(
-                        cli.endpoint,
-                        cli.api_key,
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        route_table_id,
-                        name,
-                        description,
-                        destination,
-                        target,
-                        json,
-                    )
-                    .await
-                }
-                NetRouteCommand::Get {
-                    tenant_id,
-                    project_id,
-                    vpc_id,
-                    route_table_id,
-                    route_id,
-                    json,
-                } => {
-                    commands::net_route_get(
-                        cli.endpoint,
-                        cli.api_key,
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        route_table_id,
-                        route_id,
-                        json,
-                    )
-                    .await
-                }
-                NetRouteCommand::Delete {
-                    tenant_id,
-                    project_id,
-                    vpc_id,
-                    route_table_id,
-                    route_id,
-                } => {
-                    commands::net_route_delete(
-                        cli.endpoint,
-                        cli.api_key,
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        route_table_id,
-                        route_id,
-                    )
-                    .await
-                }
-            },
-            NetCommand::NatGw { command } => match command {
-                NetNatGwCommand::List {
-                    tenant_id,
-                    project_id,
-                    vpc_id,
-                    json,
-                } => {
-                    commands::net_nat_gw_list(
-                        cli.endpoint,
-                        cli.api_key,
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        json,
-                    )
-                    .await
-                }
-                NetNatGwCommand::Create {
-                    tenant_id,
-                    project_id,
-                    vpc_id,
-                    name,
-                    description,
-                    family,
-                    json,
-                } => {
-                    commands::net_nat_gw_create(
-                        cli.endpoint,
-                        cli.api_key,
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        name,
-                        description,
-                        family,
-                        json,
-                    )
-                    .await
-                }
-                NetNatGwCommand::Get {
-                    tenant_id,
-                    project_id,
-                    vpc_id,
-                    nat_gateway_id,
-                    json,
-                } => {
-                    commands::net_nat_gw_get(
-                        cli.endpoint,
-                        cli.api_key,
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        nat_gateway_id,
-                        json,
-                    )
-                    .await
-                }
-                NetNatGwCommand::Delete {
-                    tenant_id,
-                    project_id,
-                    vpc_id,
-                    nat_gateway_id,
-                } => {
-                    commands::net_nat_gw_delete(
-                        cli.endpoint,
-                        cli.api_key,
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        nat_gateway_id,
-                    )
-                    .await
-                }
-            },
-            NetCommand::Dhcp { command } => match command {
-                NetDhcpCommand::Pool { command } => match command {
-                    NetDhcpPoolCommand::Show {
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        json,
-                    } => {
-                        commands::net_dhcp_pool_show(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            vpc_id,
-                            json,
-                        )
-                        .await
-                    }
-                    NetDhcpPoolCommand::Set {
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        lease_seconds,
-                        exclude,
-                        option,
-                        json,
-                    } => {
-                        commands::net_dhcp_pool_set(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            vpc_id,
-                            lease_seconds,
-                            exclude,
-                            option,
-                            json,
-                        )
-                        .await
-                    }
-                    NetDhcpPoolCommand::Clear {
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                    } => {
-                        commands::net_dhcp_pool_clear(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            vpc_id,
-                        )
-                        .await
-                    }
-                },
-                NetDhcpCommand::Reservation { command } => match command {
-                    NetDhcpReservationCommand::List {
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        json,
-                    } => {
-                        commands::net_dhcp_reservation_list(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            vpc_id,
-                            json,
-                        )
-                        .await
-                    }
-                    NetDhcpReservationCommand::Add {
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        mac,
-                        ip,
-                        hostname,
-                        option,
-                        json,
-                    } => {
-                        commands::net_dhcp_reservation_add(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            vpc_id,
-                            mac,
-                            ip,
-                            hostname,
-                            option,
-                            json,
-                        )
-                        .await
-                    }
-                    NetDhcpReservationCommand::Get {
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        mac,
-                        json,
-                    } => {
-                        commands::net_dhcp_reservation_get(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            vpc_id,
-                            mac,
-                            json,
-                        )
-                        .await
-                    }
-                    NetDhcpReservationCommand::Remove {
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        mac,
-                    } => {
-                        commands::net_dhcp_reservation_remove(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            vpc_id,
-                            mac,
-                        )
-                        .await
-                    }
-                },
-                NetDhcpCommand::Lease { command } => match command {
-                    NetDhcpLeaseCommand::List {
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        json,
-                    } => {
-                        commands::net_dhcp_lease_list(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            vpc_id,
-                            json,
-                        )
-                        .await
-                    }
-                    NetDhcpLeaseCommand::Get {
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        mac,
-                        json,
-                    } => {
-                        commands::net_dhcp_lease_get(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            vpc_id,
-                            mac,
-                            json,
-                        )
-                        .await
-                    }
-                    NetDhcpLeaseCommand::Release {
-                        tenant_id,
-                        project_id,
-                        vpc_id,
-                        mac,
-                    } => {
-                        commands::net_dhcp_lease_release(
-                            cli.endpoint,
-                            cli.api_key,
-                            tenant_id,
-                            project_id,
-                            vpc_id,
-                            mac,
-                        )
-                        .await
-                    }
-                },
             },
         },
         Commands::Image { command } => match command {
