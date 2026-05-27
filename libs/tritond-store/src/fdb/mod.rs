@@ -119,6 +119,33 @@ fn txn_err<E: std::fmt::Display>(ctx: &'static str) -> impl FnOnce(E) -> FdbBind
     move |e| FdbBindingError::CustomError(format!("{ctx}: {e}").into())
 }
 
+/// Run an FDB transaction. Clones each named capture once per retry
+/// iteration (the FDB binding's `db.run` calls the closure `FnMut`, so
+/// captures must be owned). Body sees `tr: &Transaction` and returns
+/// `Result<T, FdbBindingError>`.
+///
+/// ```ignore
+/// let outcome: Result<Outcome, FdbBindingError> = fdb_txn!(
+///     self.db,
+///     [by_id_key, by_name_key, value],
+///     |tr| {
+///         if tr.get(&by_name_key, false).await?.is_some() {
+///             return Ok(Outcome::NameTaken);
+///         }
+///         tr.set(&by_id_key, &value);
+///         Ok(Outcome::Created)
+///     }
+/// );
+/// ```
+macro_rules! fdb_txn {
+    ($db:expr, [$($capture:ident),* $(,)?], |$tr:ident| $body:block) => {{
+        $db.run(|$tr, _| {
+            $(let $capture = $capture.clone();)*
+            async move $body
+        }).await
+    }};
+}
+
 /// FoundationDB-backed [`Store`].
 pub struct FdbStore {
     db: Arc<Database>,
@@ -628,28 +655,22 @@ impl Store for FdbStore {
         let prefix_len = prefix.len();
 
         // Collect the key ids that this user owns.
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
 
@@ -1171,28 +1192,22 @@ impl Store for FdbStore {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
 
@@ -1328,28 +1343,22 @@ impl Store for FdbStore {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
 
@@ -1545,28 +1554,22 @@ impl Store for FdbStore {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
 
@@ -1843,28 +1846,22 @@ impl Store for FdbStore {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
 
@@ -2013,28 +2010,22 @@ impl Store for FdbStore {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
 
@@ -2282,28 +2273,22 @@ impl Store for FdbStore {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
 
@@ -2543,28 +2528,22 @@ impl Store for FdbStore {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
 
@@ -2765,28 +2744,22 @@ impl Store for FdbStore {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
 
@@ -2811,28 +2784,22 @@ impl Store for FdbStore {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
 
@@ -4058,28 +4025,22 @@ impl Store for FdbStore {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
 
@@ -4206,28 +4167,22 @@ impl Store for FdbStore {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
 
@@ -4256,28 +4211,22 @@ impl Store for FdbStore {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
 
@@ -4336,28 +4285,22 @@ impl Store for FdbStore {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
 
@@ -4650,28 +4593,22 @@ impl Store for FdbStore {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
 
@@ -4694,28 +4631,22 @@ impl Store for FdbStore {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
 
@@ -4904,28 +4835,22 @@ impl Store for FdbStore {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
 
@@ -7643,28 +7568,22 @@ impl Store for FdbStore {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
 
@@ -8138,28 +8057,22 @@ impl FdbStore {
     async fn list_images_via_index(&self, prefix: Vec<u8>) -> Result<Vec<Image>, StoreError> {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(id_strs.len());
@@ -8279,28 +8192,22 @@ impl FdbStore {
     async fn list_ssh_keys_via_index(&self, prefix: Vec<u8>) -> Result<Vec<SshKey>, StoreError> {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
                 }
-            })
+            }
+            Ok(ids)
+        })
             .await;
         let id_strs = id_strs.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(id_strs.len());
