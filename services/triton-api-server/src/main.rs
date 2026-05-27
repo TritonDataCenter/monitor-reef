@@ -216,6 +216,10 @@ async fn load_config() -> Result<ApiServerConfig> {
 struct OperatorCreds {
     /// CloudAPI base URL (e.g. `https://cloudapi.example.com`).
     cloudapi_url: String,
+    /// Operator account login name (e.g. `travis`).
+    /// Used as `TRITON_ACCOUNT` in the controller ConfigMap; must be the
+    /// login name, not the UUID, for HTTP Signature keyId to resolve.
+    account_login: String,
     /// Key fingerprint in MD5 colon-hex format (e.g. `aa:bb:cc:...`).
     /// Used as `TRITON_KEY_ID` in the controller Secret.
     key_id: String,
@@ -1928,7 +1932,7 @@ async fn run_lb_install(
         "triton-url".to_string(),
         operator_creds.cloudapi_url.clone(),
     );
-    configmap_data.insert("triton-account".to_string(), provision_account.clone());
+    configmap_data.insert("triton-account".to_string(), operator_creds.account_login.clone());
     configmap_data.insert(
         "triton-insecure".to_string(),
         operator_creds.insecure.to_string(),
@@ -2556,6 +2560,7 @@ async fn build_operator_creds(
         })?;
     Ok(Some(Arc::new(OperatorCreds {
         cloudapi_url: cfg.url.to_string(),
+        account_login: cfg.account.clone(),
         key_id: fp.clone(),
         key_pem,
         insecure: cfg.insecure,
