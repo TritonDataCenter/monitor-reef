@@ -6,7 +6,7 @@
 
 //! Per-source-IP rate limiting for the operator-auth surface.
 //!
-//! Today this fronts only `POST /v2/auth/login`. Refresh and API-key
+//! Today this fronts only `POST /v1/auth/login`. Refresh and API-key
 //! creation already require an authenticated principal, so the
 //! brute-force surface is small. Login takes a username + password
 //! straight off the wire and the password is the most valuable secret

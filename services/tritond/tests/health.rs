@@ -5,7 +5,7 @@
 // Copyright 2026 Edgecast Cloud LLC.
 
 //! Phase 0 smoke test: spin up `tritond` on a random local port, hit
-//! `/v2/health` via the generated client, verify the response.
+//! `/v1/health` via the generated client, verify the response.
 //!
 //! Verifies the OpenAPI-first toolchain end to end: the trait in
 //! `tritond-api` produces a spec, the spec generates a client in
@@ -14,7 +14,7 @@
 
 use tritond::{VERSION, start_server};
 
-/// Spin up tritond on an ephemeral port, ask it for `/v2/health` via
+/// Spin up tritond on an ephemeral port, ask it for `/v1/health` via
 /// the generated client, and assert the body shape.
 #[tokio::test]
 async fn health_endpoint_returns_ok_via_generated_client() {

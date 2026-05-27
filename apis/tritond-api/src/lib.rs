@@ -9,7 +9,7 @@
 //! Phase 0 ships a deliberately small surface — a liveness check and
 //! the silo CRUD primitives — that exercises the full Dropshot +
 //! OpenAPI + Progenitor + FoundationDB pipeline end to end. Subsequent
-//! phases extend the trait with `/v2/instances`, `/v2/audit`, and the
+//! phases extend the trait with `/v1/instances`, `/v1/audit`, and the
 //! rest of DESIGN.md §14.
 //!
 //! Domain types live in [`tritond_store`] and are re-exported from
@@ -57,7 +57,7 @@ pub struct SiloPath {
 /// inside a silo. Tenants live under silos in the URL even though
 /// the operator-only Tenant CRUD endpoints administer them
 /// directly; the silo segment lets a future per-silo operator
-/// role surface tenant management without rooting it at `/v2/tenants`.
+/// role surface tenant management without rooting it at `/v1/tenants`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SiloTenantPath {
     pub silo_id: Uuid,
@@ -70,7 +70,7 @@ pub struct ApiKeyPath {
     pub api_key_id: Uuid,
 }
 
-/// Request body for `POST /v2/auth/login`.
+/// Request body for `POST /v1/auth/login`.
 ///
 /// `password` is a [`RedactedString`] so a stray `Debug` of this
 /// struct does not print the credential and so the in-memory copy
@@ -81,7 +81,7 @@ pub struct LoginRequest {
     pub password: RedactedString,
 }
 
-/// Request body for `POST /v2/auth/refresh`.
+/// Request body for `POST /v1/auth/refresh`.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct RefreshRequest {
     pub refresh_token: String,
@@ -96,7 +96,7 @@ pub struct TokenResponse {
     pub refresh_expires_at: DateTime<Utc>,
 }
 
-/// Request body for `POST /v2/silos/{silo_id}/image-bundles`.
+/// Request body for `POST /v1/silos/{silo_id}/image-bundles`.
 /// (Bundle ingest stays silo-scoped through slice F; multi-scope
 /// bundle ingest is a future concern.)
 ///
@@ -119,7 +119,7 @@ pub struct NewImageFromBundle {
     pub bundle_url: String,
 }
 
-/// Request body for `POST /v2/silos/{silo_id}/images/from-imgapi`.
+/// Request body for `POST /v1/silos/{silo_id}/images/from-imgapi`.
 ///
 /// The IMGAPI v2 manifest is the canonical Joyent / Triton image
 /// wire format. Operators (and the `tcadm image fetch-nocloud`
@@ -165,7 +165,7 @@ pub struct NewImageFromImgapi {
     pub sha256: String,
 }
 
-/// Request body for `POST /v2/auth/api-keys`.
+/// Request body for `POST /v1/auth/api-keys`.
 ///
 /// `scope` defaults to [`ApiKeyScope::Full`] when omitted on the
 /// wire — preserves the pre-scope behaviour where every minted
@@ -180,7 +180,7 @@ pub struct NewApiKey {
     pub scope: ApiKeyScope,
 }
 
-/// Response body for `POST /v2/auth/api-keys`.
+/// Response body for `POST /v1/auth/api-keys`.
 ///
 /// `secret` is the wire-form key. It is shown to the operator
 /// **once**; the server retains only a bcrypt hash.
@@ -204,7 +204,7 @@ pub struct AgentPortBlueprintPath {
     pub port_id: Uuid,
 }
 
-/// Query parameters for `GET /v2/agent/peer`. The endpoint resolves
+/// Query parameters for `GET /v1/agent/peer`. The endpoint resolves
 /// a single in-VPC peer address to its host CN's underlay address +
 /// guest MAC; the bound CN agent calls this on every cache miss
 /// (the kmod's v2p cache fires a `PeerResolveNeeded` event with the
@@ -219,7 +219,7 @@ pub struct AgentPeerResolveQuery {
     pub ip: String,
 }
 
-/// Response body for `GET /v2/agent/peer`. Matches the on-wire
+/// Response body for `GET /v1/agent/peer`. Matches the on-wire
 /// shape of [`proteus_api::peer::PeerEntry`] (guest MAC + underlay
 /// IPv6) plus a server-suggested TTL the agent should honour when
 /// calling [`proteus_api::peer::AddPeerEntryRequest`].
@@ -234,7 +234,7 @@ pub struct AgentPeerResolveResponse {
     pub ttl_seconds: u32,
 }
 
-/// Query parameters for `GET /v2/agent/peer-invalidations`. The
+/// Query parameters for `GET /v1/agent/peer-invalidations`. The
 /// agent supplies the last invalidation `seq` it has applied; the
 /// response returns everything strictly after that seq.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -260,7 +260,7 @@ pub struct AgentPeerInvalidation {
     pub peer_ip: String,
 }
 
-/// Response body for `GET /v2/agent/peer-invalidations`.
+/// Response body for `GET /v1/agent/peer-invalidations`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct AgentPeerInvalidationsResponse {
     pub invalidations: Vec<AgentPeerInvalidation>,
@@ -270,7 +270,7 @@ pub struct AgentPeerInvalidationsResponse {
 }
 
 /// Optional `?force=true` query parameter on
-/// `DELETE /v2/silos/.../instances/{id}`. Default is `false`,
+/// `DELETE /v1/silos/.../instances/{id}`. Default is `false`,
 /// which preserves the "must be Stopped or Failed first" gate.
 /// Operators set `force=true` to delete an instance from any
 /// state — useful when an instance is wedged in `Pending` /
@@ -283,7 +283,7 @@ pub struct InstanceDeleteQuery {
 }
 
 /// Query string for the console `#[channel]` endpoints
-/// (`/v2/.../instances/{id}/console`, `/v2/admin/legacy/vms/{uuid}/console`).
+/// (`/v1/.../instances/{id}/console`, `/v1/admin/legacy/vms/{uuid}/console`).
 ///
 /// `kind=serial` opens the text console (zone console for native /
 /// lx / bhyve, KVM serial UDS for kvm); `kind=vnc` opens the RFB
@@ -295,7 +295,7 @@ pub struct ConsoleQuery {
     pub kind: ConsoleKind,
 }
 
-/// Request body for `POST /v2/agent/jobs/claim`.
+/// Request body for `POST /v1/agent/jobs/claim`.
 ///
 /// `claimed_by` is the agent's own identity — used by the store as
 /// the [`ProvisioningJob::claimed_by`] field, and rolled into audit
@@ -305,7 +305,7 @@ pub struct ClaimJobRequest {
     pub claimed_by: String,
 }
 
-/// Response body for `POST /v2/agent/jobs/claim`.
+/// Response body for `POST /v1/agent/jobs/claim`.
 ///
 /// `job` is `Some(...)` when the queue had a Pending job and the
 /// claim succeeded; `None` when the queue is empty. The HTTP status
@@ -317,13 +317,13 @@ pub struct ClaimJobResponse {
     pub job: Option<ProvisioningJob>,
 }
 
-/// Request body for `POST /v2/agent/jobs/{job_id}/complete`.
+/// Request body for `POST /v1/agent/jobs/{job_id}/complete`.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CompleteJobRequest {
     pub outcome: JobOutcome,
 }
 
-/// Request body for `POST /v2/agent/status`.
+/// Request body for `POST /v1/agent/status`.
 ///
 /// `payload` is opaque to tritond — agents pick the shape — but
 /// the Triton-classic shape is `{ vms, zpools, meminfo,
@@ -335,7 +335,7 @@ pub struct AgentStatusRequest {
     pub payload: serde_json::Value,
 }
 
-/// Request body for `POST /v2/agent/network-realization`.
+/// Request body for `POST /v1/agent/network-realization`.
 ///
 /// Agents report one `(resource, realizer)` row at a time. Tritond
 /// validates the resource exists and then lets the store enforce
@@ -372,7 +372,7 @@ pub struct DhcpLeaseActivity {
     pub xid: u32,
 }
 
-/// Request body for `POST /v2/agent/dhcp-lease-activity`. A batch —
+/// Request body for `POST /v1/agent/dhcp-lease-activity`. A batch —
 /// the agent drains the event ring on each poll and forwards every
 /// DHCP request it found in one round-trip.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -395,7 +395,7 @@ pub struct AgentPortBlueprint {
 
 /// Materialised view of everything the agent needs to act on a
 /// claimed [`ProvisioningJob`]. Returned by
-/// `GET /v2/agent/jobs/{job_id}/blueprint`.
+/// `GET /v1/agent/jobs/{job_id}/blueprint`.
 ///
 /// The shape is intentionally a flat bundle: instance + image +
 /// nics + subnets + disks + ssh public keys, all in one response. That lets
@@ -499,10 +499,10 @@ pub struct AuditEventPath {
 /// Public state of a long-running operation (RFD 00004 D-Sg-13).
 /// String values are stable on the wire.
 ///
-/// The list endpoint (`GET /v2/operations`) projects coarse state —
+/// The list endpoint (`GET /v1/operations`) projects coarse state —
 /// Pending / Running / Unwinding / Done / Stuck — derived from the
 /// saga record alone (cheap). The detail endpoint
-/// (`GET /v2/operations/{id}`) refines `Done` into one of
+/// (`GET /v1/operations/{id}`) refines `Done` into one of
 /// `Succeeded` / `Failed` / `Unwound` by walking the persisted
 /// node-event log. Operators reading a row in the list see the
 /// coarse view; expanding the row reveals the refined outcome.
@@ -545,7 +545,7 @@ pub enum OperationState {
     Done,
 }
 
-/// One operation as it appears in `GET /v2/operations`. Minimal
+/// One operation as it appears in `GET /v1/operations`. Minimal
 /// shape suitable for an adminUI list view; clients fetch the
 /// detail surface for the full DAG / event log.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -614,7 +614,7 @@ pub struct ResourceReference {
 }
 
 /// Detail view: the summary plus the persisted DAG + event log.
-/// Used by `GET /v2/operations/{operation_id}` and rendered by
+/// Used by `GET /v1/operations/{operation_id}` and rendered by
 /// `tcadm operations get` / adminUI Operations detail panel.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct OperationDetail {
@@ -733,7 +733,7 @@ pub struct OperationStep {
     pub undo_error: Option<serde_json::Value>,
 }
 
-/// Path parameters for `/v2/operations/{operation_id}`.
+/// Path parameters for `/v1/operations/{operation_id}`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct OperationPath {
     pub operation_id: Uuid,
@@ -743,26 +743,26 @@ pub struct OperationPath {
 // Live migrations (LM-1).
 //
 // Read-only surface. The mutating endpoint
-// (`POST /v2/instances/{id}/actions/migrate`) lands with the
+// (`POST /v1/instances/{id}/actions/migrate`) lands with the
 // migration saga (LM-5) so the action handler can dispatch on
 // MigrationAction.
 // ---------------------------------------------------------------------
 
-/// Path parameters for `/v2/migrations/{migration_id}` + nested
+/// Path parameters for `/v1/migrations/{migration_id}` + nested
 /// routes.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct MigrationPath {
     pub migration_id: Uuid,
 }
 
-/// Path parameters for `/v2/instances/{instance_id}/migrations`.
+/// Path parameters for `/v1/instances/{instance_id}/migrations`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InstanceMigrationsPath {
     pub instance_id: Uuid,
 }
 
-/// Query parameters for `GET /v2/migrations`. Pagination follows the
-/// same cursor pattern as `/v2/operations`.
+/// Query parameters for `GET /v1/migrations`. Pagination follows the
+/// same cursor pattern as `/v1/operations`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ListMigrationsQuery {
     /// Maximum number of items to return. Defaults to 50 if absent;
@@ -816,8 +816,8 @@ fn default_migration_action() -> tritond_store::MigrationAction {
 
 /// Response body for `POST .../instances/{instance_id}/migrate`
 /// when the action is `Begin`. The operation id is the Steno
-/// saga id; clients poll `GET /v2/operations/{operation_id}` for
-/// saga-level progress and `GET /v2/migrations/{migration_id}`
+/// saga id; clients poll `GET /v1/operations/{operation_id}` for
+/// saga-level progress and `GET /v1/migrations/{migration_id}`
 /// for the migration-specific timeline.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MigrateInstanceResponse {
@@ -825,7 +825,7 @@ pub struct MigrateInstanceResponse {
     pub operation_id: Uuid,
 }
 
-/// Query parameters for `GET /v2/migrations/{migration_id}/progress`.
+/// Query parameters for `GET /v1/migrations/{migration_id}/progress`.
 /// Operators page the per-migration event log by passing the
 /// `last_progress_seq` they have already seen as `after_seq`; the
 /// server returns events with `seq > after_seq` in ascending order.
@@ -841,7 +841,7 @@ pub struct ListMigrationProgressQuery {
     pub after_seq: Option<u64>,
 }
 
-/// Response body for `POST /v2/operations/{operation_id}/abandon`.
+/// Response body for `POST /v1/operations/{operation_id}/abandon`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct AbandonResponse {
     /// The operation we abandoned.
@@ -853,7 +853,7 @@ pub struct AbandonResponse {
     pub poked_nodes: u64,
 }
 
-/// Query parameters for `GET /v2/operations`. Pagination is
+/// Query parameters for `GET /v1/operations`. Pagination is
 /// continuation-token style: pass back the `id` of the last entry
 /// from the previous page as `after_id`.
 ///
@@ -885,7 +885,7 @@ pub struct ListOperationsQuery {
 // CN registration / approval (slice C)
 // ---------------------------------------------------------------------
 
-/// Request body for `POST /v2/agent/register`. Anonymous endpoint
+/// Request body for `POST /v1/agent/register`. Anonymous endpoint
 /// (no auth header required); the agent has no credentials yet at
 /// this point in its lifecycle.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -915,10 +915,10 @@ pub struct RegisterCnRequest {
     pub console_tls_spki_sha256_hex: Option<String>,
 }
 
-/// Response body for `POST /v2/agent/register`.
+/// Response body for `POST /v1/agent/register`.
 ///
 /// The agent gets back its `poll_token` — needed for every
-/// subsequent call to `GET /v2/agent/register/status` — plus, when
+/// subsequent call to `GET /v1/agent/register/status` — plus, when
 /// in Pending state, the `claim_code` it must display on the
 /// console for the operator to pair.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -934,14 +934,14 @@ pub struct RegisterCnResponse {
     pub poll_token: String,
 }
 
-/// Query string for `GET /v2/agent/register/status`. The agent
+/// Query string for `GET /v1/agent/register/status`. The agent
 /// long-polls this endpoint until tritond returns the API key.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct RegisterStatusQuery {
     pub poll_token: String,
 }
 
-/// Response body for `GET /v2/agent/register/status`.
+/// Response body for `GET /v1/agent/register/status`.
 ///
 /// `api_key` is populated exactly once — on the first call after
 /// the operator approves (or auto-approve fires). Subsequent calls
@@ -1013,7 +1013,7 @@ pub struct DrainMigrationRow {
     pub reason: Option<String>,
 }
 
-/// Response from `POST /v2/cns/{server_uuid}/drain/preview`. Used by
+/// Response from `POST /v1/cns/{server_uuid}/drain/preview`. Used by
 /// the operator console's `BlastRadiusCard` to show the actual
 /// migration plan + capacity / quorum signals before commit.
 ///
@@ -1039,7 +1039,7 @@ pub struct DrainPreviewResponse {
     pub quorum_ok: bool,
 }
 
-/// Optional state filter for `GET /v2/cns`.
+/// Optional state filter for `GET /v1/cns`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CnListQuery {
     #[serde(default)]
@@ -1053,7 +1053,7 @@ pub struct LegacyVmPath {
     pub smartos_uuid: Uuid,
 }
 
-/// Optional filter for `GET /v2/admin/legacy/vms`.
+/// Optional filter for `GET /v1/admin/legacy/vms`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct LegacyVmListQuery {
     /// Restrict to legacy VMs hosted on the given CN.
@@ -1062,14 +1062,14 @@ pub struct LegacyVmListQuery {
 }
 
 /// Path parameter for endpoints that operate on a single registered
-/// storage cluster (`/v2/storage/clusters/{id}`).
+/// storage cluster (`/v1/storage/clusters/{id}`).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct StorageClusterPath {
     pub id: Uuid,
 }
 
 /// Per-node forwarder path, e.g.
-/// `/v2/storage/clusters/{id}/nodes/{node_id}`.
+/// `/v1/storage/clusters/{id}/nodes/{node_id}`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct StorageClusterNodePath {
     pub id: Uuid,
@@ -1079,7 +1079,7 @@ pub struct StorageClusterNodePath {
 }
 
 /// Per-bucket forwarder path,
-/// `/v2/storage/clusters/{id}/buckets/{bucket}`.
+/// `/v1/storage/clusters/{id}/buckets/{bucket}`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct StorageClusterBucketPath {
     pub id: Uuid,
@@ -1087,7 +1087,7 @@ pub struct StorageClusterBucketPath {
 }
 
 /// Per-IAM-user forwarder path,
-/// `/v2/storage/clusters/{id}/users/{user}`.
+/// `/v1/storage/clusters/{id}/users/{user}`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct StorageClusterUserPath {
     pub id: Uuid,
@@ -1095,7 +1095,7 @@ pub struct StorageClusterUserPath {
 }
 
 /// Per-access-key forwarder path,
-/// `/v2/storage/clusters/{id}/access-keys/{access_key_id}`. Note that
+/// `/v1/storage/clusters/{id}/access-keys/{access_key_id}`. Note that
 /// access-key delete in mantad's API is *not* nested under the user
 /// (the AKID alone identifies the key) — the path mirrors that shape.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1105,7 +1105,7 @@ pub struct StorageClusterAccessKeyPath {
 }
 
 /// Per-policy forwarder path,
-/// `/v2/storage/clusters/{id}/users/{user}/policies/{policy}`.
+/// `/v1/storage/clusters/{id}/users/{user}/policies/{policy}`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct StorageClusterUserPolicyPath {
     pub id: Uuid,
@@ -1124,7 +1124,7 @@ pub struct StorageClusterUserPolicyPath {
 // each side via `From` impls living in `services/tritond/src/lib.rs`.
 
 /// Mirror of `mantad_client::types::ClusterSummary`. Returned by
-/// `GET /v2/storage/clusters/{id}/cluster`.
+/// `GET /v1/storage/clusters/{id}/cluster`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StorageClusterSummary {
     pub version: String,
@@ -1141,7 +1141,7 @@ pub struct StorageClusterSummary {
 }
 
 /// Mirror of `mantad_client::types::Node`. Returned by
-/// `GET /v2/storage/clusters/{id}/nodes` (and the per-node lookup).
+/// `GET /v1/storage/clusters/{id}/nodes` (and the per-node lookup).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StorageNode {
     pub id: u32,
@@ -1165,7 +1165,7 @@ pub struct StoragePeerEntry {
 }
 
 /// Mirror of `mantad_client::types::Membership`. Returned by
-/// `GET /v2/storage/clusters/{id}/membership` and by every
+/// `GET /v1/storage/clusters/{id}/membership` and by every
 /// node-mutation endpoint (drain / undrain / reweight / add /
 /// remove) that mantad answers with the refreshed view.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -1175,7 +1175,7 @@ pub struct StorageMembership {
     pub auto_membership: bool,
 }
 
-/// Body for `POST /v2/storage/clusters/{id}/nodes`.
+/// Body for `POST /v1/storage/clusters/{id}/nodes`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StorageAddNodeRequest {
     pub id: u32,
@@ -1183,7 +1183,7 @@ pub struct StorageAddNodeRequest {
     pub internal_url: String,
 }
 
-/// Body for `POST /v2/storage/clusters/{id}/nodes/{node_id}/reweight`.
+/// Body for `POST /v1/storage/clusters/{id}/nodes/{node_id}/reweight`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StorageReweightRequest {
     /// New reweight factor; 1.0 = normal, 0.0 = drained.
@@ -1191,7 +1191,7 @@ pub struct StorageReweightRequest {
 }
 
 /// Mirror of `mantad_client::types::Bucket`. Returned by
-/// `GET /v2/storage/clusters/{id}/buckets` (and per-bucket get).
+/// `GET /v1/storage/clusters/{id}/buckets` (and per-bucket get).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StorageBucket {
     pub name: String,
@@ -1204,7 +1204,7 @@ pub struct StorageBucket {
     pub total_bytes: Option<u64>,
 }
 
-/// Body for `POST /v2/storage/clusters/{id}/buckets`.
+/// Body for `POST /v1/storage/clusters/{id}/buckets`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StorageCreateBucketRequest {
     pub name: String,
@@ -1217,7 +1217,7 @@ pub struct StorageCreateBucketRequest {
 }
 
 /// Mirror of `mantad_client::types::ObjectsPage`. Paged
-/// `GET /v2/storage/clusters/{id}/buckets/{bucket}/objects` response.
+/// `GET /v1/storage/clusters/{id}/buckets/{bucket}/objects` response.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StorageObjectsPage {
     pub objects: Vec<StorageObjectSummary>,
@@ -1269,7 +1269,7 @@ pub struct StorageUser {
     pub created_at: DateTime<Utc>,
 }
 
-/// Body for `POST /v2/storage/clusters/{id}/users`.
+/// Body for `POST /v1/storage/clusters/{id}/users`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StorageCreateUserRequest {
     pub name: String,
@@ -1291,7 +1291,7 @@ pub struct StorageAccessKey {
 
 // ----- Presign + multipart wire types (Stage 6a) -----
 
-/// Body of `POST /v2/storage/clusters/{id}/presigner`. Operator
+/// Body of `POST /v1/storage/clusters/{id}/presigner`. Operator
 /// configures the IAM credential tritond signs presigned S3 URLs
 /// with. To clear the presigner, send empty strings — the handler
 /// treats empty as "unset". `s3_endpoint` is the data-plane URL
@@ -1305,7 +1305,7 @@ pub struct SetPresignerRequest {
     pub secret_access_key: String,
 }
 
-/// Body of `POST /v2/storage/clusters/{id}/s3/presign/put`.
+/// Body of `POST /v1/storage/clusters/{id}/s3/presign/put`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PresignPutRequest {
     pub bucket: String,
@@ -1314,7 +1314,7 @@ pub struct PresignPutRequest {
     pub expires_secs: u32,
 }
 
-/// Body of `POST /v2/storage/clusters/{id}/s3/presign/get`. Same
+/// Body of `POST /v1/storage/clusters/{id}/s3/presign/get`. Same
 /// shape as the PUT request — kept as a distinct type for audit and
 /// API-doc clarity.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -1340,7 +1340,7 @@ pub struct PresignResponse {
     pub headers: std::collections::HashMap<String, String>,
 }
 
-/// Body of `POST /v2/storage/clusters/{id}/s3/multipart/initiate`.
+/// Body of `POST /v1/storage/clusters/{id}/s3/multipart/initiate`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MultipartInitiateRequest {
     pub bucket: String,
@@ -1359,7 +1359,7 @@ pub struct MultipartInitiateResponse {
     pub upload_id: String,
 }
 
-/// Body of `POST /v2/storage/clusters/{id}/s3/multipart/parts`.
+/// Body of `POST /v1/storage/clusters/{id}/s3/multipart/parts`.
 /// Returns one presigned URL per part. The browser PUTs each part
 /// directly to mantad and tracks the returned `ETag` headers.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -1406,7 +1406,7 @@ pub struct CompletedMultipartPart {
     pub etag: String,
 }
 
-/// Body of `POST /v2/storage/clusters/{id}/s3/multipart/complete`.
+/// Body of `POST /v1/storage/clusters/{id}/s3/multipart/complete`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MultipartCompleteRequest {
     pub bucket: String,
@@ -1424,7 +1424,7 @@ pub struct MultipartCompleteResponse {
     pub etag: String,
 }
 
-/// Body of `POST /v2/storage/clusters/{id}/s3/multipart/abort`.
+/// Body of `POST /v1/storage/clusters/{id}/s3/multipart/abort`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MultipartAbortRequest {
     pub bucket: String,
@@ -1432,7 +1432,7 @@ pub struct MultipartAbortRequest {
     pub upload_id: String,
 }
 
-/// Per-CN summary returned by `GET /v2/admin/legacy/cns`.
+/// Per-CN summary returned by `GET /v1/admin/legacy/cns`.
 ///
 /// Distinct from [`CnView`]: this view rolls up the discovery
 /// classifier's per-CN counts (how many tritond-managed instances
@@ -1451,7 +1451,7 @@ pub struct LegacyCnSummary {
     pub legacy_vm_count: usize,
 }
 
-/// Request body for `POST /v2/cns/approve`.
+/// Request body for `POST /v1/cns/approve`.
 ///
 /// The operator presents the claim code displayed on the CN's
 /// console (or syslog, or the `/var/lib/tritonagent/claim-code`
@@ -1461,13 +1461,13 @@ pub struct ApproveCnRequest {
     pub code: String,
 }
 
-/// Request body for `POST /v2/cns/{server_uuid}/role`.
+/// Request body for `POST /v1/cns/{server_uuid}/role`.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SetCnRoleRequest {
     pub role: CnRole,
 }
 
-/// Request body for `POST /v2/cns/auto-approve`.
+/// Request body for `POST /v1/cns/auto-approve`.
 ///
 /// Opens (or replaces) the global auto-approve window. Bounded by
 /// both wall-time and a remaining-count budget so a forgotten
@@ -1483,12 +1483,12 @@ pub struct OpenAutoApproveRequest {
 }
 
 // ---------------------------------------------------------------------
-// Cluster configuration (`/v2/config`)
+// Cluster configuration (`/v1/config`)
 // ---------------------------------------------------------------------
 
 /// One cluster-wide configuration key with its current value,
 /// default, description, and operational metadata. Returned by the
-/// `/v2/config` endpoints; consumed by `tcadm config` and the admin
+/// `/v1/config` endpoints; consumed by `tcadm config` and the admin
 /// console.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ConfigEntry {
@@ -1519,7 +1519,7 @@ pub struct ConfigKeyPath {
     pub key: String,
 }
 
-/// Request body for `PUT /v2/config/{key}`.
+/// Request body for `PUT /v1/config/{key}`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct SetConfigRequest {
     /// New value for the key. Must match the key's type; an ill-typed
@@ -1529,14 +1529,14 @@ pub struct SetConfigRequest {
 
 /// Path parameters for endpoints that operate on a single tenant.
 /// Used by the project-list / project-create endpoints rooted at
-/// `/v2/tenants/{tenant_id}/projects`.
+/// `/v1/tenants/{tenant_id}/projects`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TenantPath {
     pub tenant_id: Uuid,
 }
 
 /// Path parameters for endpoints that operate on a single tenant's
-/// IdP config (the OIDC IdP rooted at `/v2/tenants/{tenant_id}/idp`).
+/// IdP config (the OIDC IdP rooted at `/v1/tenants/{tenant_id}/idp`).
 /// Distinct from [`TenantPath`] for shape-clarity in handler
 /// signatures even though the field set is identical.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1626,7 +1626,7 @@ pub struct TenantProjectVpcNatGatewayPath {
 
 /// Path parameter for endpoints that operate on a single SSH
 /// key by id, regardless of scope. Used by `GET
-/// /v2/ssh-keys/{key_id}` and `DELETE /v2/ssh-keys/{key_id}`.
+/// /v1/ssh-keys/{key_id}` and `DELETE /v1/ssh-keys/{key_id}`.
 /// Visibility / ownership gating happens in the handler via the
 /// visibility predicate.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1635,8 +1635,8 @@ pub struct SshKeyPath {
 }
 
 /// Path parameter for endpoints that operate on a single image
-/// by id, regardless of scope. Used by `GET /v2/images/{image_id}`
-/// and `DELETE /v2/images/{image_id}`. Visibility / ownership
+/// by id, regardless of scope. Used by `GET /v1/images/{image_id}`
+/// and `DELETE /v1/images/{image_id}`. Visibility / ownership
 /// gating happens in the handler via the visibility predicate.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ImagePath {
@@ -1700,9 +1700,9 @@ pub struct MetricsRangeQuery {
     pub schema: Option<String>,
 }
 
-/// Path parameters for `GET /v2/tenants/{tenant_id}/metrics`. Reused
+/// Path parameters for `GET /v1/tenants/{tenant_id}/metrics`. Reused
 /// for the per-tenant Prometheus exposition; the existing
-/// `TenantPath` lives in `types.rs` and is used by `/v2/tenants/{}/...`
+/// `TenantPath` lives in `types.rs` and is used by `/v1/tenants/{}/...`
 /// CRUD endpoints, but the metrics endpoint adds new auth semantics
 /// so it gets its own path type for clarity.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1743,7 +1743,7 @@ pub struct AttachFloatingIpRequest {
     pub nic_id: Uuid,
 }
 
-/// Query parameters for `GET /v2/audit/events`.
+/// Query parameters for `GET /v1/audit/events`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AuditListQuery {
     /// Return events with `seq > after_seq`. Default 0 (start of chain).
@@ -1754,14 +1754,14 @@ pub struct AuditListQuery {
     pub limit: Option<u32>,
 }
 
-/// Response body for `GET /v2/audit/events`.
+/// Response body for `GET /v1/audit/events`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct AuditEventList {
     pub events: Vec<AuditEvent>,
     pub head: Option<AuditChainHead>,
 }
 
-/// Query parameters for `GET /v2/audit/verify`.
+/// Query parameters for `GET /v1/audit/verify`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AuditVerifyQuery {
     /// First seq to walk. Default 0.
@@ -1772,14 +1772,14 @@ pub struct AuditVerifyQuery {
     pub to: Option<u64>,
 }
 
-/// Response body for `GET /v2/audit/verify`.
+/// Response body for `GET /v1/audit/verify`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct AuditVerifyResponse {
     pub outcome: AuditVerifyOutcome,
     pub head: Option<AuditChainHead>,
 }
 
-/// Request body for `POST /v2/tenants/{tenant_id}/idp`. tritond
+/// Request body for `POST /v1/tenants/{tenant_id}/idp`. tritond
 /// **eagerly** fetches the IdP's discovery document on this call;
 /// a 4xx/5xx return means the IdP isn't reachable or doesn't speak
 /// OIDC, and the config is not persisted.
@@ -1822,7 +1822,7 @@ pub struct MetaEntry {
     pub value: tritond_store::MetaValue,
 }
 
-/// Request body for `PUT /v2/meta/{scope}/{scope_id}/entry`. `value`
+/// Request body for `PUT /v1/meta/{scope}/{scope_id}/entry`. `value`
 /// is required; the two flags are optional and default to the values
 /// from [`tritond_store::default_guest_visible`] (and `false` for
 /// `guest_writable`).
@@ -1835,7 +1835,7 @@ pub struct SetMetaRequest {
     pub guest_writable: Option<bool>,
 }
 
-/// Response body for `PUT /v2/meta/{scope}/{scope_id}/entry`. Carries
+/// Response body for `PUT /v1/meta/{scope}/{scope_id}/entry`. Carries
 /// the stored entry and the scope's new generation counter (the
 /// realized-view cache key on the agent side).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -1844,7 +1844,7 @@ pub struct SetMetaResponse {
     pub generation: u64,
 }
 
-/// Request body for `PUT /v2/agent/instances/{instance_id}/meta`.
+/// Request body for `PUT /v1/agent/instances/{instance_id}/meta`.
 /// The agent-facing variant of [`SetMetaRequest`]; the agent can
 /// only ever write `guest/*` keys at instance scope, so the visibility
 /// + writable flags are fixed server-side (`guest_visible: true`,
@@ -1857,7 +1857,7 @@ pub struct SetGuestMetaRequest {
 }
 
 /// Path parameter for endpoints that operate on the realized view of
-/// one instance (`/v2/meta/instance/{instance_id}/realized`).
+/// one instance (`/v1/meta/instance/{instance_id}/realized`).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InstanceRealizedMetaPath {
     pub instance_id: Uuid,
@@ -1888,7 +1888,7 @@ pub struct AffectedInstanceRef {
 }
 
 /// One row of the `shadowed` list returned by
-/// `GET /v2/meta/{scope}/{scope_id}/affected?key=K`. Carries the
+/// `GET /v1/meta/{scope}/{scope_id}/affected?key=K`. Carries the
 /// instance plus the scope that actually wins for it (a narrower
 /// scope's override, or `System` for a computed system key that
 /// shadows operator metadata).
@@ -1903,7 +1903,7 @@ pub struct ShadowedInstance {
     pub winner_scope: tritond_store::MetaProvenance,
 }
 
-/// Response body for `GET /v2/meta/{scope}/{scope_id}/affected?key=K`
+/// Response body for `GET /v1/meta/{scope}/{scope_id}/affected?key=K`
 /// — the affected-instances reverse-index. Answers the question
 /// "if I edit `key` at this scope, which instances does that change
 /// actually flow to, and which are shielded by a narrower override?"
@@ -1912,7 +1912,7 @@ pub struct ShadowedInstance {
 pub struct AffectedInstancesResponse {
     /// The value stored at the request scope (`null` when the key is
     /// not set there). Returned for context — the UI doesn't have to
-    /// make a separate `GET /v2/meta/.../entry` call.
+    /// make a separate `GET /v1/meta/.../entry` call.
     pub value_at_scope: Option<tritond_store::MetaValue>,
     /// Instances under the request scope where this scope's value
     /// is the realized winner (no narrower scope overrides it).
@@ -1932,7 +1932,7 @@ pub trait TritondApi {
     /// Liveness check. Returns service status and version string.
     #[endpoint {
         method = GET,
-        path = "/v2/health",
+        path = "/v1/health",
         tags = ["system"],
     }]
     async fn health(
@@ -1943,7 +1943,7 @@ pub trait TritondApi {
     /// silo visibility filter so this returns the full set.
     #[endpoint {
         method = GET,
-        path = "/v2/silos",
+        path = "/v1/silos",
         tags = ["silos"],
     }]
     async fn list_silos(
@@ -1955,7 +1955,7 @@ pub trait TritondApi {
     /// Fails with 409 if a silo with the requested name already exists.
     #[endpoint {
         method = POST,
-        path = "/v2/silos",
+        path = "/v1/silos",
         tags = ["silos"],
     }]
     async fn create_silo(
@@ -1966,7 +1966,7 @@ pub trait TritondApi {
     /// Look up a silo by id. Returns 404 if no such silo exists.
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}",
+        path = "/v1/silos/{silo_id}",
         tags = ["silos"],
     }]
     async fn get_silo(
@@ -1978,7 +1978,7 @@ pub trait TritondApi {
     /// Returns 401 if credentials are invalid.
     #[endpoint {
         method = POST,
-        path = "/v2/auth/login",
+        path = "/v1/auth/login",
         tags = ["auth"],
     }]
     async fn login(
@@ -1990,7 +1990,7 @@ pub trait TritondApi {
     /// Returns 401 if the refresh token is invalid or expired.
     #[endpoint {
         method = POST,
-        path = "/v2/auth/refresh",
+        path = "/v1/auth/refresh",
         tags = ["auth"],
     }]
     async fn refresh(
@@ -2002,7 +2002,7 @@ pub trait TritondApi {
     /// secret is included in the response **once** and never shown again.
     #[endpoint {
         method = POST,
-        path = "/v2/auth/api-keys",
+        path = "/v1/auth/api-keys",
         tags = ["auth"],
     }]
     async fn create_api_key(
@@ -2014,7 +2014,7 @@ pub trait TritondApi {
     /// returned by this endpoint.
     #[endpoint {
         method = GET,
-        path = "/v2/auth/api-keys",
+        path = "/v1/auth/api-keys",
         tags = ["auth"],
     }]
     async fn list_api_keys(
@@ -2025,7 +2025,7 @@ pub trait TritondApi {
     /// id does not belong to the calling user.
     #[endpoint {
         method = DELETE,
-        path = "/v2/auth/api-keys/{api_key_id}",
+        path = "/v1/auth/api-keys/{api_key_id}",
         tags = ["auth"],
     }]
     async fn delete_api_key(
@@ -2037,7 +2037,7 @@ pub trait TritondApi {
     /// `seq > after_seq` plus the current chain head.
     #[endpoint {
         method = GET,
-        path = "/v2/audit/events",
+        path = "/v1/audit/events",
         tags = ["audit"],
     }]
     async fn list_audit_events(
@@ -2048,7 +2048,7 @@ pub trait TritondApi {
     /// Fetch a single audit event by sequence number.
     #[endpoint {
         method = GET,
-        path = "/v2/audit/events/{seq}",
+        path = "/v1/audit/events/{seq}",
         tags = ["audit"],
     }]
     async fn get_audit_event(
@@ -2062,7 +2062,7 @@ pub trait TritondApi {
     /// chain once per export.
     #[endpoint {
         method = GET,
-        path = "/v2/audit/verify",
+        path = "/v1/audit/verify",
         tags = ["audit"],
     }]
     async fn verify_audit_chain(
@@ -2078,7 +2078,7 @@ pub trait TritondApi {
     /// sagas with resource references.
     #[endpoint {
         method = GET,
-        path = "/v2/operations",
+        path = "/v1/operations",
         tags = ["operations"],
     }]
     async fn list_operations(
@@ -2091,7 +2091,7 @@ pub trait TritondApi {
     /// adminUI Operations detail panel.
     #[endpoint {
         method = GET,
-        path = "/v2/operations/{operation_id}",
+        path = "/v1/operations/{operation_id}",
         tags = ["operations"],
     }]
     async fn get_operation(
@@ -2109,7 +2109,7 @@ pub trait TritondApi {
     /// Returns the count of nodes poked. Operator-only.
     #[endpoint {
         method = POST,
-        path = "/v2/operations/{operation_id}/abandon",
+        path = "/v1/operations/{operation_id}/abandon",
         tags = ["operations"],
     }]
     async fn abandon_operation(
@@ -2127,7 +2127,7 @@ pub trait TritondApi {
     /// route below covers the customer-facing view.
     #[endpoint {
         method = GET,
-        path = "/v2/migrations",
+        path = "/v1/migrations",
         tags = ["migrations"],
     }]
     async fn list_migrations(
@@ -2138,7 +2138,7 @@ pub trait TritondApi {
     /// One migration by id.
     #[endpoint {
         method = GET,
-        path = "/v2/migrations/{migration_id}",
+        path = "/v1/migrations/{migration_id}",
         tags = ["migrations"],
     }]
     async fn get_migration(
@@ -2152,7 +2152,7 @@ pub trait TritondApi {
     /// `after_seq`.
     #[endpoint {
         method = GET,
-        path = "/v2/migrations/{migration_id}/progress",
+        path = "/v1/migrations/{migration_id}/progress",
         tags = ["migrations"],
     }]
     async fn list_migration_progress(
@@ -2166,7 +2166,7 @@ pub trait TritondApi {
     /// migration timeline.
     #[endpoint {
         method = GET,
-        path = "/v2/instances/{instance_id}/migrations",
+        path = "/v1/instances/{instance_id}/migrations",
         tags = ["migrations"],
     }]
     async fn list_instance_migrations(
@@ -2181,13 +2181,13 @@ pub trait TritondApi {
     /// transitioned to `InProgress`. Auth: requires an API key
     /// with [`tritond_store::ApiKeyScope::Agent`].
     ///
-    /// The path is `/v2/agent/claim` rather than
-    /// `/v2/agent/jobs/claim` because Dropshot's router cannot
+    /// The path is `/v1/agent/claim` rather than
+    /// `/v1/agent/jobs/claim` because Dropshot's router cannot
     /// disambiguate a literal `claim` segment from a `{job_id}`
     /// path parameter at the same level.
     #[endpoint {
         method = POST,
-        path = "/v2/agent/claim",
+        path = "/v1/agent/claim",
         tags = ["agent"],
     }]
     async fn agent_claim_job(
@@ -2201,7 +2201,7 @@ pub trait TritondApi {
     /// [`tritond_store::ApiKeyScope::Agent`].
     #[endpoint {
         method = POST,
-        path = "/v2/agent/jobs/{job_id}/complete",
+        path = "/v1/agent/jobs/{job_id}/complete",
         tags = ["agent"],
     }]
     async fn agent_complete_job(
@@ -2217,7 +2217,7 @@ pub trait TritondApi {
     /// [`tritond_store::ApiKeyScope::Agent`].
     #[endpoint {
         method = GET,
-        path = "/v2/agent/jobs/{job_id}/blueprint",
+        path = "/v1/agent/jobs/{job_id}/blueprint",
         tags = ["agent"],
     }]
     async fn agent_job_blueprint(
@@ -2231,7 +2231,7 @@ pub trait TritondApi {
     /// an in-progress claim for the port's instance.
     #[endpoint {
         method = GET,
-        path = "/v2/agent/blueprints/{port_id}",
+        path = "/v1/agent/blueprints/{port_id}",
         tags = ["agent"],
     }]
     async fn agent_port_blueprint(
@@ -2247,7 +2247,7 @@ pub trait TritondApi {
     /// See `PROTEUS_PLAN.md` §11.7.1.
     #[endpoint {
         method = GET,
-        path = "/v2/agent/peer",
+        path = "/v1/agent/peer",
         tags = ["agent"],
     }]
     async fn agent_peer_resolve(
@@ -2261,11 +2261,11 @@ pub trait TritondApi {
     /// via `InvalidatePeerEntry` on every local port that might
     /// have cached it. Phase A v1: tritond broadcasts NIC-teardown
     /// invalidations to all CNs; Phase B adds per-CN filtering by
-    /// tracking which CNs have queried `/v2/agent/peer`. See
+    /// tracking which CNs have queried `/v1/agent/peer`. See
     /// `PROTEUS_PLAN.md` §11.7.1.
     #[endpoint {
         method = GET,
-        path = "/v2/agent/peer-invalidations",
+        path = "/v1/agent/peer-invalidations",
         tags = ["agent"],
     }]
     async fn agent_peer_invalidations(
@@ -2286,7 +2286,7 @@ pub trait TritondApi {
     /// agent's CN.
     #[endpoint {
         method = GET,
-        path = "/v2/agent/instances/{instance_id}/realized-meta",
+        path = "/v1/agent/instances/{instance_id}/realized-meta",
         tags = ["agent"],
     }]
     async fn agent_get_instance_realized_meta(
@@ -2310,7 +2310,7 @@ pub trait TritondApi {
     ///   reaches the agent only via that instance's vnic).
     #[endpoint {
         method = PUT,
-        path = "/v2/agent/instances/{instance_id}/meta",
+        path = "/v1/agent/instances/{instance_id}/meta",
         tags = ["agent"],
     }]
     async fn agent_set_instance_guest_meta(
@@ -2328,7 +2328,7 @@ pub trait TritondApi {
     /// there's no CN to attribute the heartbeat to.
     #[endpoint {
         method = POST,
-        path = "/v2/agent/heartbeat",
+        path = "/v1/agent/heartbeat",
         tags = ["agent"],
     }]
     async fn agent_heartbeat(
@@ -2340,7 +2340,7 @@ pub trait TritondApi {
     /// as `agent_heartbeat`.
     #[endpoint {
         method = POST,
-        path = "/v2/agent/status",
+        path = "/v1/agent/status",
         tags = ["agent"],
     }]
     async fn agent_status(
@@ -2355,7 +2355,7 @@ pub trait TritondApi {
     /// `409 Conflict`.
     #[endpoint {
         method = POST,
-        path = "/v2/agent/network-realization",
+        path = "/v1/agent/network-realization",
         tags = ["agent"],
     }]
     async fn agent_report_network_realization(
@@ -2370,7 +2370,7 @@ pub trait TritondApi {
     /// ports with no lease record yet are silently skipped.
     #[endpoint {
         method = POST,
-        path = "/v2/agent/dhcp-lease-activity",
+        path = "/v1/agent/dhcp-lease-activity",
         tags = ["agent"],
     }]
     async fn agent_report_dhcp_lease_activity(
@@ -2392,7 +2392,7 @@ pub trait TritondApi {
     /// credentials.
     #[endpoint {
         method = POST,
-        path = "/v2/agent/register",
+        path = "/v1/agent/register",
         tags = ["agent"],
     }]
     async fn agent_register(
@@ -2412,7 +2412,7 @@ pub trait TritondApi {
     /// return `state = Approved` with `api_key = None`.
     #[endpoint {
         method = GET,
-        path = "/v2/agent/register/status",
+        path = "/v1/agent/register/status",
         tags = ["agent"],
     }]
     async fn agent_register_status(
@@ -2429,13 +2429,13 @@ pub trait TritondApi {
     /// codes (conflated to defeat enumeration). Returns 429
     /// when the per-IP bucket is drained.
     ///
-    /// The path is `/v2/cn-approvals` rather than nested under
-    /// `/v2/cns/...` because Dropshot's router cannot
+    /// The path is `/v1/cn-approvals` rather than nested under
+    /// `/v1/cns/...` because Dropshot's router cannot
     /// disambiguate a literal `approve` segment from the
     /// `{server_uuid}` parameter at the same level.
     #[endpoint {
         method = POST,
-        path = "/v2/cn-approvals",
+        path = "/v1/cn-approvals",
         tags = ["cns"],
     }]
     async fn approve_cn(
@@ -2448,7 +2448,7 @@ pub trait TritondApi {
     /// visibility; a second call is idempotent.
     #[endpoint {
         method = POST,
-        path = "/v2/cns/{server_uuid}/disable",
+        path = "/v1/cns/{server_uuid}/disable",
         tags = ["cns"],
     }]
     async fn disable_cn(
@@ -2459,7 +2459,7 @@ pub trait TritondApi {
     /// Set the placement role for a compute node. Operator-only.
     #[endpoint {
         method = POST,
-        path = "/v2/cns/{server_uuid}/role",
+        path = "/v1/cns/{server_uuid}/role",
         tags = ["cns"],
     }]
     async fn set_cn_role(
@@ -2482,7 +2482,7 @@ pub trait TritondApi {
     /// at risk: vault-primary" before the operator commits.
     #[endpoint {
         method = POST,
-        path = "/v2/cns/{server_uuid}/drain/preview",
+        path = "/v1/cns/{server_uuid}/drain/preview",
         tags = ["cns"],
     }]
     async fn drain_preview(
@@ -2493,13 +2493,13 @@ pub trait TritondApi {
     /// Read the current auto-approve window, if open.
     /// Returns `200 OK` with `null` when no window is open.
     ///
-    /// Path lives at `/v2/cn-auto-approve` rather than nested
-    /// under `/v2/cns/...` for the same reason as `/v2/cn-approvals`:
+    /// Path lives at `/v1/cn-auto-approve` rather than nested
+    /// under `/v1/cns/...` for the same reason as `/v1/cn-approvals`:
     /// a literal `auto-approve` segment cannot coexist with the
     /// `{server_uuid}` parameter on Dropshot's router.
     #[endpoint {
         method = GET,
-        path = "/v2/cn-auto-approve",
+        path = "/v1/cn-auto-approve",
         tags = ["cns"],
     }]
     async fn get_auto_approve_window(
@@ -2512,7 +2512,7 @@ pub trait TritondApi {
     /// `duration_secs` is clamped to 24h.
     #[endpoint {
         method = POST,
-        path = "/v2/cn-auto-approve",
+        path = "/v1/cn-auto-approve",
         tags = ["cns"],
     }]
     async fn open_auto_approve_window(
@@ -2524,7 +2524,7 @@ pub trait TritondApi {
     /// window is open.
     #[endpoint {
         method = DELETE,
-        path = "/v2/cn-auto-approve",
+        path = "/v1/cn-auto-approve",
         tags = ["cns"],
     }]
     async fn close_auto_approve_window(
@@ -2537,7 +2537,7 @@ pub trait TritondApi {
     /// boot. Fleet-admin only.
     #[endpoint {
         method = GET,
-        path = "/v2/config",
+        path = "/v1/config",
         tags = ["config"],
     }]
     async fn list_config(
@@ -2548,7 +2548,7 @@ pub trait TritondApi {
     /// Fleet-admin only.
     #[endpoint {
         method = GET,
-        path = "/v2/config/{key}",
+        path = "/v1/config/{key}",
         tags = ["config"],
     }]
     async fn get_config(
@@ -2563,7 +2563,7 @@ pub trait TritondApi {
     /// in the audit log.
     #[endpoint {
         method = PUT,
-        path = "/v2/config/{key}",
+        path = "/v1/config/{key}",
         tags = ["config"],
     }]
     async fn set_config(
@@ -2578,7 +2578,7 @@ pub trait TritondApi {
     /// Fleet-admin only; recorded in the audit log.
     #[endpoint {
         method = DELETE,
-        path = "/v2/config/{key}",
+        path = "/v1/config/{key}",
         tags = ["config"],
     }]
     async fn reset_config(
@@ -2593,7 +2593,7 @@ pub trait TritondApi {
     /// redacted view of what was persisted.
     #[endpoint {
         method = POST,
-        path = "/v2/tenants/{tenant_id}/idp",
+        path = "/v1/tenants/{tenant_id}/idp",
         tags = ["tenants", "auth"],
     }]
     async fn put_tenant_idp(
@@ -2606,7 +2606,7 @@ pub trait TritondApi {
     /// never returned. 404 when no IdP is configured.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/idp",
+        path = "/v1/tenants/{tenant_id}/idp",
         tags = ["tenants", "auth"],
     }]
     async fn get_tenant_idp(
@@ -2619,7 +2619,7 @@ pub trait TritondApi {
     /// config is posted.
     #[endpoint {
         method = DELETE,
-        path = "/v2/tenants/{tenant_id}/idp",
+        path = "/v1/tenants/{tenant_id}/idp",
         tags = ["tenants", "auth"],
     }]
     async fn delete_tenant_idp(
@@ -2631,7 +2631,7 @@ pub trait TritondApi {
     /// can administer tenants directly.
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/tenants",
+        path = "/v1/silos/{silo_id}/tenants",
         tags = ["silos", "tenants"],
     }]
     async fn list_silo_tenants(
@@ -2643,7 +2643,7 @@ pub trait TritondApi {
     /// already in use within the silo, 404 if the silo does not exist.
     #[endpoint {
         method = POST,
-        path = "/v2/silos/{silo_id}/tenants",
+        path = "/v1/silos/{silo_id}/tenants",
         tags = ["silos", "tenants"],
     }]
     async fn create_silo_tenant(
@@ -2657,7 +2657,7 @@ pub trait TritondApi {
     /// not learn that the resource exists).
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/tenants/{tenant_id}",
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}",
         tags = ["silos", "tenants"],
     }]
     async fn get_silo_tenant(
@@ -2671,7 +2671,7 @@ pub trait TritondApi {
     /// block-on-children guard belongs in a future cleanup.
     #[endpoint {
         method = DELETE,
-        path = "/v2/silos/{silo_id}/tenants/{tenant_id}",
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}",
         tags = ["silos", "tenants"],
     }]
     async fn delete_silo_tenant(
@@ -2682,7 +2682,7 @@ pub trait TritondApi {
     /// List the projects inside a tenant.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects",
+        path = "/v1/tenants/{tenant_id}/projects",
         tags = ["projects"],
     }]
     async fn list_tenant_projects(
@@ -2694,7 +2694,7 @@ pub trait TritondApi {
     /// name is already in use within that tenant.
     #[endpoint {
         method = POST,
-        path = "/v2/tenants/{tenant_id}/projects",
+        path = "/v1/tenants/{tenant_id}/projects",
         tags = ["projects"],
     }]
     async fn create_tenant_project(
@@ -2708,7 +2708,7 @@ pub trait TritondApi {
     /// not learn that other tenants exist).
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}",
         tags = ["projects"],
     }]
     async fn get_tenant_project(
@@ -2720,7 +2720,7 @@ pub trait TritondApi {
     /// or belongs to a different tenant.
     #[endpoint {
         method = DELETE,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}",
         tags = ["projects"],
     }]
     async fn delete_tenant_project(
@@ -2733,7 +2733,7 @@ pub trait TritondApi {
     /// tenant).
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs",
         tags = ["vpcs"],
     }]
     async fn list_project_vpcs(
@@ -2746,7 +2746,7 @@ pub trait TritondApi {
     /// do not learn that the resource exists).
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}",
         tags = ["vpcs"],
     }]
     async fn get_project_vpc(
@@ -2758,7 +2758,7 @@ pub trait TritondApi {
     /// project, or VPC does not exist (or is in the wrong parent).
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets",
         tags = ["subnets"],
     }]
     async fn list_vpc_subnets(
@@ -2770,7 +2770,7 @@ pub trait TritondApi {
     /// exist or belongs to a different tenant, project, or VPC.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}",
         tags = ["subnets"],
     }]
     async fn get_vpc_subnet(
@@ -3204,7 +3204,7 @@ pub trait TritondApi {
     /// RFD 00007 `POST /v1/vpcs?tenant=&project=`. Create a VPC
     /// under the named project. `silo=` is rejected at the customer
     /// surface; tenant + project are both required selectors. Body
-    /// is the same `NewVpc` shape the /v2/ create handler accepted.
+    /// is the same `NewVpc` shape the /v1/ create handler accepted.
     #[endpoint {
         method = POST,
         path = "/v1/vpcs",
@@ -3217,7 +3217,7 @@ pub trait TritondApi {
     ) -> Result<HttpResponseCreated<Vpc>, HttpError>;
 
     /// RFD 00007 `DELETE /v1/vpcs/{vpc_id}`. The handler enforces
-    /// the same dependency gate as the legacy /v2/ delete: subnets,
+    /// the same dependency gate as the legacy /v1/ delete: subnets,
     /// firewall rules, NAT gateways, and route tables anchored on
     /// the VPC must be deleted first.
     #[endpoint {
@@ -3283,7 +3283,7 @@ pub trait TritondApi {
     /// List route tables inside a VPC.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables",
         tags = ["route-tables"],
     }]
     async fn list_vpc_route_tables(
@@ -3294,7 +3294,7 @@ pub trait TritondApi {
     /// Read a single route table.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}",
         tags = ["route-tables"],
     }]
     async fn get_vpc_route_table(
@@ -3305,7 +3305,7 @@ pub trait TritondApi {
     /// List routes inside a route table.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}/routes",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}/routes",
         tags = ["routes"],
     }]
     async fn list_vpc_route_table_routes(
@@ -3316,7 +3316,7 @@ pub trait TritondApi {
     /// Read a single route.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}/routes/{route_id}",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}/routes/{route_id}",
         tags = ["routes"],
     }]
     async fn get_vpc_route_table_route(
@@ -3330,7 +3330,7 @@ pub trait TritondApi {
     /// descending (highest evaluates first).
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules",
         tags = ["firewall-rules"],
     }]
     async fn list_vpc_firewall_rules(
@@ -3345,7 +3345,7 @@ pub trait TritondApi {
     /// customised this VPC.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool",
         tags = ["dhcp"],
     }]
     async fn get_vpc_dhcp_pool(
@@ -3356,7 +3356,7 @@ pub trait TritondApi {
     /// List DHCP reservations (operator-pinned MAC→IP mappings) in a VPC.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations",
         tags = ["dhcp"],
     }]
     async fn list_vpc_dhcp_reservations(
@@ -3367,7 +3367,7 @@ pub trait TritondApi {
     /// Look up a reservation by MAC.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations/{mac}",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations/{mac}",
         tags = ["dhcp"],
     }]
     async fn get_vpc_dhcp_reservation(
@@ -3379,7 +3379,7 @@ pub trait TritondApi {
     /// tritond pre-assigned an IP to a NIC at instance create.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases",
         tags = ["dhcp"],
     }]
     async fn list_vpc_dhcp_leases(
@@ -3390,7 +3390,7 @@ pub trait TritondApi {
     /// Look up a lease by MAC.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}",
         tags = ["dhcp"],
     }]
     async fn get_vpc_dhcp_lease(
@@ -3404,7 +3404,7 @@ pub trait TritondApi {
     /// reservation.
     #[endpoint {
         method = DELETE,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}",
         tags = ["dhcp"],
     }]
     async fn delete_vpc_dhcp_lease(
@@ -3415,7 +3415,7 @@ pub trait TritondApi {
     /// List NAT gateways inside a VPC.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways",
         tags = ["nat-gateways"],
     }]
     async fn list_vpc_nat_gateways(
@@ -3426,7 +3426,7 @@ pub trait TritondApi {
     /// Read a single NAT gateway.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways/{nat_gateway_id}",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways/{nat_gateway_id}",
         tags = ["nat-gateways"],
     }]
     async fn get_vpc_nat_gateway(
@@ -3434,8 +3434,9 @@ pub trait TritondApi {
         path: Path<TenantProjectVpcNatGatewayPath>,
     ) -> Result<HttpResponseOk<NatGateway>, HttpError>;
 
-    /// List Public SSH keys. Anonymous-accessible — Public means
-    /// public, so unauthenticated probes get the catalog.
+    /// Legacy unpaged list. The `/v1/ssh-keys?scope=public` shape
+    /// is the new surface; this exists only to keep deployed callers
+    /// of the old client method working until they migrate.
     #[endpoint {
         method = GET,
         path = "/v2/ssh-keys",
@@ -3451,7 +3452,7 @@ pub trait TritondApi {
     /// Public keys.
     #[endpoint {
         method = POST,
-        path = "/v2/ssh-keys",
+        path = "/v1/ssh-keys",
         tags = ["ssh-keys"],
     }]
     async fn create_public_ssh_key(
@@ -3460,11 +3461,11 @@ pub trait TritondApi {
     ) -> Result<HttpResponseCreated<SshKey>, HttpError>;
 
     /// List the SSH keys whose scope is exactly `Silo { silo_id }`
-    /// (does NOT include Public — use `/v2/tenants/{tenant_id}/ssh-keys`
+    /// (does NOT include Public — use `/v1/tenants/{tenant_id}/ssh-keys`
     /// for the unioned tenant view).
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/ssh-keys",
+        path = "/v1/silos/{silo_id}/ssh-keys",
         tags = ["ssh-keys"],
     }]
     async fn list_silo_ssh_keys(
@@ -3478,7 +3479,7 @@ pub trait TritondApi {
     /// if the name or fingerprint is already in use within the silo.
     #[endpoint {
         method = POST,
-        path = "/v2/silos/{silo_id}/ssh-keys",
+        path = "/v1/silos/{silo_id}/ssh-keys",
         tags = ["ssh-keys"],
     }]
     async fn create_silo_ssh_key(
@@ -3491,7 +3492,7 @@ pub trait TritondApi {
     /// tenant's silo) + Tenant.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/ssh-keys",
+        path = "/v1/tenants/{tenant_id}/ssh-keys",
         tags = ["ssh-keys"],
     }]
     async fn list_tenant_ssh_keys(
@@ -3502,7 +3503,7 @@ pub trait TritondApi {
     /// Register a `Tenant`-scoped SSH key.
     #[endpoint {
         method = POST,
-        path = "/v2/tenants/{tenant_id}/ssh-keys",
+        path = "/v1/tenants/{tenant_id}/ssh-keys",
         tags = ["ssh-keys"],
     }]
     async fn create_tenant_ssh_key(
@@ -3515,7 +3516,7 @@ pub trait TritondApi {
     /// project's silo) + Tenant (of project's tenant) + Project.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/ssh-keys",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/ssh-keys",
         tags = ["ssh-keys"],
     }]
     async fn list_project_ssh_keys(
@@ -3526,7 +3527,7 @@ pub trait TritondApi {
     /// Register a `Project`-scoped SSH key.
     #[endpoint {
         method = POST,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/ssh-keys",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/ssh-keys",
         tags = ["ssh-keys"],
     }]
     async fn create_project_ssh_key(
@@ -3540,7 +3541,7 @@ pub trait TritondApi {
     /// from the authenticated principal.
     #[endpoint {
         method = GET,
-        path = "/v2/auth/ssh-keys",
+        path = "/v1/auth/ssh-keys",
         tags = ["ssh-keys"],
     }]
     async fn list_my_ssh_keys(
@@ -3550,7 +3551,7 @@ pub trait TritondApi {
     /// Register a `User`-scoped SSH key owned by the caller.
     #[endpoint {
         method = POST,
-        path = "/v2/auth/ssh-keys",
+        path = "/v1/auth/ssh-keys",
         tags = ["ssh-keys"],
     }]
     async fn create_my_ssh_key(
@@ -3558,18 +3559,6 @@ pub trait TritondApi {
         body: TypedBody<NewSshKey>,
     ) -> Result<HttpResponseCreated<SshKey>, HttpError>;
 
-    /// Read a single SSH key by id. Returns 404 when the key
-    /// does not exist OR when the principal cannot see it
-    /// (cross-scope visibility deny).
-    #[endpoint {
-        method = GET,
-        path = "/v2/ssh-keys/{key_id}",
-        tags = ["ssh-keys"],
-    }]
-    async fn get_ssh_key(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<SshKeyPath>,
-    ) -> Result<HttpResponseOk<SshKey>, HttpError>;
 
     /// Delete an SSH key by id. Returns 404 when the key does
     /// not exist OR the principal lacks ownership for the key's
@@ -3580,7 +3569,7 @@ pub trait TritondApi {
     /// * `User` — only the owning user (or root).
     #[endpoint {
         method = DELETE,
-        path = "/v2/ssh-keys/{key_id}",
+        path = "/v1/ssh-keys/{key_id}",
         tags = ["ssh-keys"],
     }]
     async fn delete_ssh_key(
@@ -3588,8 +3577,20 @@ pub trait TritondApi {
         path: Path<SshKeyPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
-    /// List Public images. Anonymous-accessible — Public means
-    /// public, so unauthenticated probes get the catalog.
+    /// Legacy single-key read. `/v1/ssh-keys/{id}` (typed) is the
+    /// new surface; this stays for old client callers.
+    #[endpoint {
+        method = GET,
+        path = "/v2/ssh-keys/{key_id}",
+        tags = ["ssh-keys"],
+    }]
+    async fn get_ssh_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SshKeyPath>,
+    ) -> Result<HttpResponseOk<SshKey>, HttpError>;
+
+    /// Legacy unpaged list. The `/v1/images?scope=public` shape is
+    /// the new surface; this stays for old client callers.
     #[endpoint {
         method = GET,
         path = "/v2/images",
@@ -3605,7 +3606,7 @@ pub trait TritondApi {
     /// already in use among Public images.
     #[endpoint {
         method = POST,
-        path = "/v2/images",
+        path = "/v1/images",
         tags = ["images"],
     }]
     async fn create_public_image(
@@ -3614,11 +3615,11 @@ pub trait TritondApi {
     ) -> Result<HttpResponseCreated<Image>, HttpError>;
 
     /// List the images whose scope is exactly `Silo { silo_id }`
-    /// (does NOT include Public — use `/v2/tenants/{tenant_id}/images`
+    /// (does NOT include Public — use `/v1/tenants/{tenant_id}/images`
     /// for the unioned tenant view).
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/images",
+        path = "/v1/silos/{silo_id}/images",
         tags = ["images"],
     }]
     async fn list_silo_images(
@@ -3629,7 +3630,7 @@ pub trait TritondApi {
     /// Register a `Silo`-scoped image.
     #[endpoint {
         method = POST,
-        path = "/v2/silos/{silo_id}/images",
+        path = "/v1/silos/{silo_id}/images",
         tags = ["images"],
     }]
     async fn create_silo_image(
@@ -3649,14 +3650,14 @@ pub trait TritondApi {
     /// unreachable, 409 on a name or content collision within
     /// the silo.
     ///
-    /// The path is `/v2/silos/{silo_id}/image-bundles` rather
-    /// than `/v2/silos/{silo_id}/images/from-bundle` because
+    /// The path is `/v1/silos/{silo_id}/image-bundles` rather
+    /// than `/v1/silos/{silo_id}/images/from-bundle` because
     /// Dropshot's router cannot disambiguate a literal
     /// `from-bundle` segment from a sibling `{image_id}`
     /// parameter at the same level.
     #[endpoint {
         method = POST,
-        path = "/v2/silos/{silo_id}/image-bundles",
+        path = "/v1/silos/{silo_id}/image-bundles",
         tags = ["images"],
     }]
     async fn create_silo_image_from_bundle(
@@ -3681,10 +3682,10 @@ pub trait TritondApi {
     /// Path is `/imgapi-images` (sibling resource) to mirror
     /// the `image-bundles` precedent and sidestep any Dropshot
     /// literal-vs-`{image_id}` ambiguity at
-    /// `/v2/silos/{silo_id}/images/...`.
+    /// `/v1/silos/{silo_id}/images/...`.
     #[endpoint {
         method = POST,
-        path = "/v2/silos/{silo_id}/imgapi-images",
+        path = "/v1/silos/{silo_id}/imgapi-images",
         tags = ["images"],
     }]
     async fn create_silo_image_from_imgapi(
@@ -3697,7 +3698,7 @@ pub trait TritondApi {
     /// tenant's silo) + Tenant.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/images",
+        path = "/v1/tenants/{tenant_id}/images",
         tags = ["images"],
     }]
     async fn list_tenant_images(
@@ -3708,7 +3709,7 @@ pub trait TritondApi {
     /// Register a `Tenant`-scoped image.
     #[endpoint {
         method = POST,
-        path = "/v2/tenants/{tenant_id}/images",
+        path = "/v1/tenants/{tenant_id}/images",
         tags = ["images"],
     }]
     async fn create_tenant_image(
@@ -3723,7 +3724,7 @@ pub trait TritondApi {
     /// from?" query.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/images",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/images",
         tags = ["images"],
     }]
     async fn list_project_images(
@@ -3734,7 +3735,7 @@ pub trait TritondApi {
     /// Register a `Project`-scoped image.
     #[endpoint {
         method = POST,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/images",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/images",
         tags = ["images"],
     }]
     async fn create_project_image(
@@ -3748,7 +3749,7 @@ pub trait TritondApi {
     /// resolved from the authenticated principal.
     #[endpoint {
         method = GET,
-        path = "/v2/auth/images",
+        path = "/v1/auth/images",
         tags = ["images"],
     }]
     async fn list_my_images(
@@ -3758,7 +3759,7 @@ pub trait TritondApi {
     /// Register a `User`-scoped image owned by the caller.
     #[endpoint {
         method = POST,
-        path = "/v2/auth/images",
+        path = "/v1/auth/images",
         tags = ["images"],
     }]
     async fn create_my_image(
@@ -3766,18 +3767,6 @@ pub trait TritondApi {
         body: TypedBody<NewImage>,
     ) -> Result<HttpResponseCreated<Image>, HttpError>;
 
-    /// Read a single image by id. Returns 404 when the image
-    /// does not exist OR when the principal cannot see it
-    /// (cross-scope visibility deny).
-    #[endpoint {
-        method = GET,
-        path = "/v2/images/{image_id}",
-        tags = ["images"],
-    }]
-    async fn get_image(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<ImagePath>,
-    ) -> Result<HttpResponseOk<Image>, HttpError>;
 
     /// Delete an image by id. Returns 404 when the image does
     /// not exist OR the principal lacks ownership for the
@@ -3788,13 +3777,25 @@ pub trait TritondApi {
     /// * `User` — only the owning user (or root).
     #[endpoint {
         method = DELETE,
-        path = "/v2/images/{image_id}",
+        path = "/v1/images/{image_id}",
         tags = ["images"],
     }]
     async fn delete_image(
         rqctx: RequestContext<Self::Context>,
         path: Path<ImagePath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// Legacy single-image read. `/v1/images/{id}` (typed) is the
+    /// new surface; this stays for old client callers.
+    #[endpoint {
+        method = GET,
+        path = "/v2/images/{image_id}",
+        tags = ["images"],
+    }]
+    async fn get_image(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ImagePath>,
+    ) -> Result<HttpResponseOk<Image>, HttpError>;
 
     /// Set (or replace) the resource quota on a project. Returns
     /// 404 when the project does not exist or belongs to a
@@ -3803,7 +3804,7 @@ pub trait TritondApi {
     /// eventual instance-create flow to consult.
     #[endpoint {
         method = PUT,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/quota",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/quota",
         tags = ["quotas"],
     }]
     async fn put_project_quota(
@@ -3817,7 +3818,7 @@ pub trait TritondApi {
     /// (no record means "unlimited").
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/quota",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/quota",
         tags = ["quotas"],
     }]
     async fn get_project_quota(
@@ -3830,7 +3831,7 @@ pub trait TritondApi {
     /// different tenant, or had no quota set.
     #[endpoint {
         method = DELETE,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/quota",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/quota",
         tags = ["quotas"],
     }]
     async fn delete_project_quota(
@@ -4004,7 +4005,7 @@ pub trait TritondApi {
 
     /// RFD 00007 `POST /v1/instances?tenant=&project=`. Create an
     /// instance in the named tenant + project. Equivalent semantics
-    /// to the v2 `POST /v2/tenants/{t}/projects/{p}/instances`; the
+    /// to the v2 `POST /v1/tenants/{t}/projects/{p}/instances`; the
     /// only difference is the URL shape (scope as selectors, not
     /// path segments). The handler still validates that the
     /// resolved tenant / project exist and live in the principal's
@@ -4085,7 +4086,7 @@ pub trait TritondApi {
     /// behind the `root-allows-all` Cedar rule.
     #[endpoint {
         method = POST,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/migrate",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/migrate",
         tags = ["instances", "migrations"],
     }]
     async fn migrate_project_instance(
@@ -4102,7 +4103,7 @@ pub trait TritondApi {
     /// consumed by the hand-rolled admin-backend proxy).
     #[channel {
         protocol = WEBSOCKETS,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/console",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/console",
         tags = ["instances"],
     }]
     async fn instance_console(
@@ -4164,7 +4165,7 @@ pub trait TritondApi {
     /// List FloatingIps owned by a project.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/floating-ips",
         tags = ["floating-ips"],
     }]
     async fn list_project_floating_ips(
@@ -4176,7 +4177,7 @@ pub trait TritondApi {
     /// does not exist or belongs to a different tenant or project.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}",
         tags = ["floating-ips"],
     }]
     async fn get_project_floating_ip(
@@ -4189,7 +4190,7 @@ pub trait TritondApi {
     /// tenant + project as the FloatingIp; mismatch surfaces as 404.
     #[endpoint {
         method = POST,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach",
         tags = ["floating-ips"],
     }]
     async fn attach_project_floating_ip(
@@ -4203,7 +4204,7 @@ pub trait TritondApi {
     /// returns the current record.
     #[endpoint {
         method = POST,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach",
         tags = ["floating-ips"],
     }]
     async fn detach_project_floating_ip(
@@ -4218,7 +4219,7 @@ pub trait TritondApi {
     /// still have legacy zones I haven't adopted yet".
     #[endpoint {
         method = GET,
-        path = "/v2/admin/legacy/cns",
+        path = "/v1/admin/legacy/cns",
         tags = ["legacy-admin"],
     }]
     async fn list_legacy_cns(
@@ -4229,7 +4230,7 @@ pub trait TritondApi {
     /// CN. Fleet-admin only.
     #[endpoint {
         method = GET,
-        path = "/v2/admin/legacy/vms",
+        path = "/v1/admin/legacy/vms",
         tags = ["legacy-admin"],
     }]
     async fn list_legacy_vms(
@@ -4241,7 +4242,7 @@ pub trait TritondApi {
     /// NIC inventory. Fleet-admin only.
     #[endpoint {
         method = GET,
-        path = "/v2/admin/legacy/vms/{smartos_uuid}",
+        path = "/v1/admin/legacy/vms/{smartos_uuid}",
         tags = ["legacy-admin"],
     }]
     async fn get_legacy_vm(
@@ -4256,7 +4257,7 @@ pub trait TritondApi {
     /// generated client.
     #[channel {
         protocol = WEBSOCKETS,
-        path = "/v2/admin/legacy/vms/{smartos_uuid}/console",
+        path = "/v1/admin/legacy/vms/{smartos_uuid}/console",
         tags = ["legacy-admin"],
     }]
     async fn legacy_vm_console(
@@ -4272,7 +4273,7 @@ pub trait TritondApi {
     /// Operator surface (root-only via Cedar root-allows-all).
     #[endpoint {
         method = GET,
-        path = "/v2/storage/clusters",
+        path = "/v1/storage/clusters",
         tags = ["storage-clusters"],
     }]
     async fn list_storage_clusters(
@@ -4285,7 +4286,7 @@ pub trait TritondApi {
     /// for the redacted wire shape.
     #[endpoint {
         method = POST,
-        path = "/v2/storage/clusters",
+        path = "/v1/storage/clusters",
         tags = ["storage-clusters"],
     }]
     async fn create_storage_cluster(
@@ -4296,7 +4297,7 @@ pub trait TritondApi {
     /// Read a single registered storage cluster by id.
     #[endpoint {
         method = GET,
-        path = "/v2/storage/clusters/{id}",
+        path = "/v1/storage/clusters/{id}",
         tags = ["storage-clusters"],
     }]
     async fn get_storage_cluster(
@@ -4307,7 +4308,7 @@ pub trait TritondApi {
     /// Drop a storage cluster registration. Idempotent.
     #[endpoint {
         method = DELETE,
-        path = "/v2/storage/clusters/{id}",
+        path = "/v1/storage/clusters/{id}",
         tags = ["storage-clusters"],
     }]
     async fn delete_storage_cluster(
@@ -4321,7 +4322,7 @@ pub trait TritondApi {
     /// because it actively mutates state.
     #[endpoint {
         method = POST,
-        path = "/v2/storage/clusters/{id}/health",
+        path = "/v1/storage/clusters/{id}/health",
         tags = ["storage-clusters"],
     }]
     async fn probe_storage_cluster_health(
@@ -4341,7 +4342,7 @@ pub trait TritondApi {
     /// `GET /admin/v1/cluster` — cluster summary.
     #[endpoint {
         method = GET,
-        path = "/v2/storage/clusters/{id}/cluster",
+        path = "/v1/storage/clusters/{id}/cluster",
         tags = ["storage-clusters"],
     }]
     async fn get_storage_cluster_summary(
@@ -4352,7 +4353,7 @@ pub trait TritondApi {
     /// `GET /admin/v1/nodes` — list all nodes.
     #[endpoint {
         method = GET,
-        path = "/v2/storage/clusters/{id}/nodes",
+        path = "/v1/storage/clusters/{id}/nodes",
         tags = ["storage-clusters"],
     }]
     async fn list_storage_cluster_nodes(
@@ -4363,7 +4364,7 @@ pub trait TritondApi {
     /// `GET /admin/v1/nodes/{node_id}` — single-node detail.
     #[endpoint {
         method = GET,
-        path = "/v2/storage/clusters/{id}/nodes/{node_id}",
+        path = "/v1/storage/clusters/{id}/nodes/{node_id}",
         tags = ["storage-clusters"],
     }]
     async fn get_storage_cluster_node(
@@ -4374,7 +4375,7 @@ pub trait TritondApi {
     /// `POST /admin/v1/nodes` — register a peer.
     #[endpoint {
         method = POST,
-        path = "/v2/storage/clusters/{id}/nodes",
+        path = "/v1/storage/clusters/{id}/nodes",
         tags = ["storage-clusters"],
     }]
     async fn add_storage_cluster_node(
@@ -4386,7 +4387,7 @@ pub trait TritondApi {
     /// `DELETE /admin/v1/nodes/{node_id}` — drop a peer.
     #[endpoint {
         method = DELETE,
-        path = "/v2/storage/clusters/{id}/nodes/{node_id}",
+        path = "/v1/storage/clusters/{id}/nodes/{node_id}",
         tags = ["storage-clusters"],
     }]
     async fn remove_storage_cluster_node(
@@ -4397,7 +4398,7 @@ pub trait TritondApi {
     /// `POST /admin/v1/nodes/{node_id}/drain`.
     #[endpoint {
         method = POST,
-        path = "/v2/storage/clusters/{id}/nodes/{node_id}/drain",
+        path = "/v1/storage/clusters/{id}/nodes/{node_id}/drain",
         tags = ["storage-clusters"],
     }]
     async fn drain_storage_cluster_node(
@@ -4408,7 +4409,7 @@ pub trait TritondApi {
     /// `POST /admin/v1/nodes/{node_id}/undrain`.
     #[endpoint {
         method = POST,
-        path = "/v2/storage/clusters/{id}/nodes/{node_id}/undrain",
+        path = "/v1/storage/clusters/{id}/nodes/{node_id}/undrain",
         tags = ["storage-clusters"],
     }]
     async fn undrain_storage_cluster_node(
@@ -4419,7 +4420,7 @@ pub trait TritondApi {
     /// `POST /admin/v1/nodes/{node_id}/reweight`.
     #[endpoint {
         method = POST,
-        path = "/v2/storage/clusters/{id}/nodes/{node_id}/reweight",
+        path = "/v1/storage/clusters/{id}/nodes/{node_id}/reweight",
         tags = ["storage-clusters"],
     }]
     async fn reweight_storage_cluster_node(
@@ -4431,7 +4432,7 @@ pub trait TritondApi {
     /// `GET /admin/v1/membership` — current membership view.
     #[endpoint {
         method = GET,
-        path = "/v2/storage/clusters/{id}/membership",
+        path = "/v1/storage/clusters/{id}/membership",
         tags = ["storage-clusters"],
     }]
     async fn get_storage_cluster_membership(
@@ -4444,7 +4445,7 @@ pub trait TritondApi {
     /// per-bucket object counts + total bytes (a more expensive scan).
     #[endpoint {
         method = GET,
-        path = "/v2/storage/clusters/{id}/buckets",
+        path = "/v1/storage/clusters/{id}/buckets",
         tags = ["storage-clusters"],
     }]
     async fn list_storage_cluster_buckets(
@@ -4456,7 +4457,7 @@ pub trait TritondApi {
     /// `GET /admin/v1/buckets/{bucket}` — bucket detail.
     #[endpoint {
         method = GET,
-        path = "/v2/storage/clusters/{id}/buckets/{bucket}",
+        path = "/v1/storage/clusters/{id}/buckets/{bucket}",
         tags = ["storage-clusters"],
     }]
     async fn get_storage_cluster_bucket(
@@ -4467,7 +4468,7 @@ pub trait TritondApi {
     /// `POST /admin/v1/buckets` — create a bucket.
     #[endpoint {
         method = POST,
-        path = "/v2/storage/clusters/{id}/buckets",
+        path = "/v1/storage/clusters/{id}/buckets",
         tags = ["storage-clusters"],
     }]
     async fn create_storage_cluster_bucket(
@@ -4479,7 +4480,7 @@ pub trait TritondApi {
     /// `DELETE /admin/v1/buckets/{bucket}` — delete an empty bucket.
     #[endpoint {
         method = DELETE,
-        path = "/v2/storage/clusters/{id}/buckets/{bucket}",
+        path = "/v1/storage/clusters/{id}/buckets/{bucket}",
         tags = ["storage-clusters"],
     }]
     async fn delete_storage_cluster_bucket(
@@ -4490,7 +4491,7 @@ pub trait TritondApi {
     /// `GET /admin/v1/buckets/{bucket}/objects` — paged object listing.
     #[endpoint {
         method = GET,
-        path = "/v2/storage/clusters/{id}/buckets/{bucket}/objects",
+        path = "/v1/storage/clusters/{id}/buckets/{bucket}/objects",
         tags = ["storage-clusters"],
     }]
     async fn list_storage_cluster_objects(
@@ -4502,7 +4503,7 @@ pub trait TritondApi {
     /// `GET /admin/v1/users`.
     #[endpoint {
         method = GET,
-        path = "/v2/storage/clusters/{id}/users",
+        path = "/v1/storage/clusters/{id}/users",
         tags = ["storage-clusters"],
     }]
     async fn list_storage_cluster_users(
@@ -4513,7 +4514,7 @@ pub trait TritondApi {
     /// `POST /admin/v1/users`.
     #[endpoint {
         method = POST,
-        path = "/v2/storage/clusters/{id}/users",
+        path = "/v1/storage/clusters/{id}/users",
         tags = ["storage-clusters"],
     }]
     async fn create_storage_cluster_user(
@@ -4525,7 +4526,7 @@ pub trait TritondApi {
     /// `GET /admin/v1/users/{user}`.
     #[endpoint {
         method = GET,
-        path = "/v2/storage/clusters/{id}/users/{user}",
+        path = "/v1/storage/clusters/{id}/users/{user}",
         tags = ["storage-clusters"],
     }]
     async fn get_storage_cluster_user(
@@ -4536,7 +4537,7 @@ pub trait TritondApi {
     /// `DELETE /admin/v1/users/{user}`.
     #[endpoint {
         method = DELETE,
-        path = "/v2/storage/clusters/{id}/users/{user}",
+        path = "/v1/storage/clusters/{id}/users/{user}",
         tags = ["storage-clusters"],
     }]
     async fn delete_storage_cluster_user(
@@ -4547,7 +4548,7 @@ pub trait TritondApi {
     /// `GET /admin/v1/users/{user}/access-keys`.
     #[endpoint {
         method = GET,
-        path = "/v2/storage/clusters/{id}/users/{user}/access-keys",
+        path = "/v1/storage/clusters/{id}/users/{user}/access-keys",
         tags = ["storage-clusters"],
     }]
     async fn list_storage_cluster_access_keys(
@@ -4560,7 +4561,7 @@ pub trait TritondApi {
     /// retain the cleartext.
     #[endpoint {
         method = POST,
-        path = "/v2/storage/clusters/{id}/users/{user}/access-keys",
+        path = "/v1/storage/clusters/{id}/users/{user}/access-keys",
         tags = ["storage-clusters"],
     }]
     async fn create_storage_cluster_access_key(
@@ -4573,7 +4574,7 @@ pub trait TritondApi {
     /// here, mirroring mantad's surface.
     #[endpoint {
         method = DELETE,
-        path = "/v2/storage/clusters/{id}/access-keys/{access_key_id}",
+        path = "/v1/storage/clusters/{id}/access-keys/{access_key_id}",
         tags = ["storage-clusters"],
     }]
     async fn delete_storage_cluster_access_key(
@@ -4585,7 +4586,7 @@ pub trait TritondApi {
     /// names. Returns a Vec<String> verbatim from mantad.
     #[endpoint {
         method = GET,
-        path = "/v2/storage/clusters/{id}/users/{user}/policies",
+        path = "/v1/storage/clusters/{id}/users/{user}/policies",
         tags = ["storage-clusters"],
     }]
     async fn list_storage_cluster_user_policies(
@@ -4596,7 +4597,7 @@ pub trait TritondApi {
     /// `GET /admin/v1/users/{user}/policies/{policy}` — raw policy JSON.
     #[endpoint {
         method = GET,
-        path = "/v2/storage/clusters/{id}/users/{user}/policies/{policy}",
+        path = "/v1/storage/clusters/{id}/users/{user}/policies/{policy}",
         tags = ["storage-clusters"],
     }]
     async fn get_storage_cluster_user_policy(
@@ -4609,7 +4610,7 @@ pub trait TritondApi {
     /// validate schema beyond "is JSON".
     #[endpoint {
         method = PUT,
-        path = "/v2/storage/clusters/{id}/users/{user}/policies/{policy}",
+        path = "/v1/storage/clusters/{id}/users/{user}/policies/{policy}",
         tags = ["storage-clusters"],
     }]
     async fn put_storage_cluster_user_policy(
@@ -4621,7 +4622,7 @@ pub trait TritondApi {
     /// `DELETE /admin/v1/users/{user}/policies/{policy}`.
     #[endpoint {
         method = DELETE,
-        path = "/v2/storage/clusters/{id}/users/{user}/policies/{policy}",
+        path = "/v1/storage/clusters/{id}/users/{user}/policies/{policy}",
         tags = ["storage-clusters"],
     }]
     async fn delete_storage_cluster_user_policy(
@@ -4643,7 +4644,7 @@ pub trait TritondApi {
     /// (one empty, one set) → 409.
     #[endpoint {
         method = POST,
-        path = "/v2/storage/clusters/{id}/presigner",
+        path = "/v1/storage/clusters/{id}/presigner",
         tags = ["storage-clusters"],
     }]
     async fn set_storage_cluster_presigner(
@@ -4656,7 +4657,7 @@ pub trait TritondApi {
     /// Returns 409 when the cluster has no presigner configured.
     #[endpoint {
         method = POST,
-        path = "/v2/storage/clusters/{id}/s3/presign/put",
+        path = "/v1/storage/clusters/{id}/s3/presign/put",
         tags = ["storage-clusters"],
     }]
     async fn presign_storage_cluster_object_put(
@@ -4669,7 +4670,7 @@ pub trait TritondApi {
     /// links).
     #[endpoint {
         method = POST,
-        path = "/v2/storage/clusters/{id}/s3/presign/get",
+        path = "/v1/storage/clusters/{id}/s3/presign/get",
         tags = ["storage-clusters"],
     }]
     async fn presign_storage_cluster_object_get(
@@ -4711,7 +4712,7 @@ pub trait TritondApi {
     /// with `413 Payload Too Large`.
     #[endpoint {
         method = POST,
-        path = "/v2/agent/metrics",
+        path = "/v1/agent/metrics",
         tags = ["agent"],
     }]
     async fn agent_metrics_ingest(
@@ -4729,7 +4730,7 @@ pub trait TritondApi {
     /// to the named instance.
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/metrics",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/metrics",
         tags = ["instances"],
     }]
     async fn instance_metrics_range(
@@ -4749,7 +4750,7 @@ pub trait TritondApi {
     /// surface.
     #[endpoint {
         method = GET,
-        path = "/v2/cns/{server_uuid}/metrics",
+        path = "/v1/cns/{server_uuid}/metrics",
         tags = ["cns"],
     }]
     async fn cn_metrics_range(
@@ -4773,7 +4774,7 @@ pub trait TritondApi {
     /// `413 Payload Too Large`.
     #[endpoint {
         method = POST,
-        path = "/v2/agent/logs",
+        path = "/v1/agent/logs",
         tags = ["agent"],
     }]
     async fn agent_logs_ingest(
@@ -4789,7 +4790,7 @@ pub trait TritondApi {
     /// to the named instance (same envelope as `get_project_instance`).
     #[endpoint {
         method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/logs/{source}",
+        path = "/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/logs/{source}",
         tags = ["instances"],
     }]
     async fn instance_logs_tail(
@@ -4805,7 +4806,7 @@ pub trait TritondApi {
     /// for `scope=tenant|project|instance`.
     #[endpoint {
         method = GET,
-        path = "/v2/meta/{scope}/{scope_id}",
+        path = "/v1/meta/{scope}/{scope_id}",
         tags = ["meta"],
     }]
     async fn list_meta(
@@ -4818,7 +4819,7 @@ pub trait TritondApi {
     /// hence the query-string placement.
     #[endpoint {
         method = GET,
-        path = "/v2/meta/{scope}/{scope_id}/entry",
+        path = "/v1/meta/{scope}/{scope_id}/entry",
         tags = ["meta"],
     }]
     async fn get_meta(
@@ -4834,7 +4835,7 @@ pub trait TritondApi {
     /// only accepted on `guest/*` keys at instance scope.
     #[endpoint {
         method = PUT,
-        path = "/v2/meta/{scope}/{scope_id}/entry",
+        path = "/v1/meta/{scope}/{scope_id}/entry",
         tags = ["meta"],
     }]
     async fn set_meta(
@@ -4848,7 +4849,7 @@ pub trait TritondApi {
     /// generation bump in that case).
     #[endpoint {
         method = DELETE,
-        path = "/v2/meta/{scope}/{scope_id}/entry",
+        path = "/v1/meta/{scope}/{scope_id}/entry",
         tags = ["meta"],
     }]
     async fn delete_meta(
@@ -4865,7 +4866,7 @@ pub trait TritondApi {
     /// RBAC: tenant-member of the instance's owning tenant.
     #[endpoint {
         method = GET,
-        path = "/v2/instances/{instance_id}/realized-meta",
+        path = "/v1/instances/{instance_id}/realized-meta",
         tags = ["meta"],
     }]
     async fn get_instance_realized_meta(
@@ -4885,7 +4886,7 @@ pub trait TritondApi {
     /// chat.
     #[endpoint {
         method = GET,
-        path = "/v2/meta/{scope}/{scope_id}/affected",
+        path = "/v1/meta/{scope}/{scope_id}/affected",
         tags = ["meta"],
     }]
     async fn get_affected_instances(

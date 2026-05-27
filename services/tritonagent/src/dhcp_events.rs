@@ -10,11 +10,11 @@
 //! and dispatches each event by kind:
 //!
 //! * `DhcpRequest` -> forwarded to tritond's
-//!   `/v2/agent/dhcp-lease-activity` endpoint, refreshing each lease
+//!   `/v1/agent/dhcp-lease-activity` endpoint, refreshing each lease
 //!   record's `last_renewed_at` so the reconciler's idle-GC heuristic
 //!   doesn't mistake a long-lived VM for an orphaned lease.
 //! * `PeerResolveNeeded` -> calls tritond's
-//!   `/v2/agent/peer?vni=&ip=` endpoint, then issues an
+//!   `/v1/agent/peer?vni=&ip=` endpoint, then issues an
 //!   `AddPeerEntry` ioctl back into the kmod's per-port v2p cache.
 //!   The kmod-side single-flight gate collapses duplicate misses for
 //!   the same `(port, vni, peer_ip)`; we still resolve sequentially
@@ -402,7 +402,7 @@ async fn resolve_one_peer(
     // method is generated, swap this block for the typed call.
     let baseurl = client.baseurl().to_string();
     let url = format!(
-        "{baseurl}/v2/agent/peer?vni={vni}&ip={ip}",
+        "{baseurl}/v1/agent/peer?vni={vni}&ip={ip}",
         vni = job.vni,
         ip = urlencoding::encode(&ip_str),
     );
@@ -485,7 +485,7 @@ async fn poll_invalidations(
 ) -> Option<u64> {
     use tritond_client::ClientInfo;
     let baseurl = client.baseurl().to_string();
-    let url = format!("{baseurl}/v2/agent/peer-invalidations?since={since}");
+    let url = format!("{baseurl}/v1/agent/peer-invalidations?since={since}");
     let resp = match client.client().get(&url).send().await {
         Ok(r) if r.status().is_success() => r,
         Ok(r) => {

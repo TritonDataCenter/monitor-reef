@@ -12,7 +12,7 @@
 //! `bundle.tar` containing `manifest.json` + `content.zfs.gz`.
 //! The bundle is then served somewhere HTTP-reachable from
 //! every CN, and tritond is told about it via
-//! `POST /v2/silos/.../images { "bundle_url": "..." }`.
+//! `POST /v1/silos/.../images { "bundle_url": "..." }`.
 //!
 //! ## What it does, step by step
 //!

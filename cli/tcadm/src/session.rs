@@ -14,7 +14,7 @@
 //! 2. `TCADM_API_KEY` environment variable.
 //! 3. `TCADM_ACCESS_TOKEN` environment variable (no auto-refresh).
 //! 4. Tokens stored in `~/.config/tcadm/config.json`. The access
-//!    token is silently refreshed via `/v2/auth/refresh` if it has
+//!    token is silently refreshed via `/v1/auth/refresh` if it has
 //!    less than `REFRESH_LEEWAY` left, and the rewritten tokens are
 //!    persisted back to disk.
 //!

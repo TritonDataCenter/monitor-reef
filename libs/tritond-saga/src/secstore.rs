@@ -115,7 +115,7 @@ pub trait TritondSecStore: steno::SecStore {
 
     /// Page through every saga the store knows about, regardless of
     /// owning SEC or terminal status. Used by the operator-visible
-    /// `/v2/operations` surface and the adminUI Operations tab
+    /// `/v1/operations` surface and the adminUI Operations tab
     /// (RFD 00004 SG-4). `marker` is an opaque continuation
     /// token; pass `None` for the first page.
     ///
@@ -131,7 +131,7 @@ pub trait TritondSecStore: steno::SecStore {
     /// (then by event_kind for ties). Implementations are expected
     /// to paginate internally so they don't exceed the FDB single-
     /// transaction limit (see `load_events_paged` in the FDB impl).
-    /// Used by the operator-visible `/v2/operations/{id}` surface
+    /// Used by the operator-visible `/v1/operations/{id}` surface
     /// to project step-by-step progress (RFD 00004 D-Sg-13).
     async fn load_events(&self, saga_id: SagaId) -> SagaResult<Vec<SagaNodeEvent>>;
 
@@ -153,7 +153,7 @@ pub trait TritondSecStore: steno::SecStore {
     /// saga id of the last entry from the prior page; pass `None`
     /// for the first page.
     ///
-    /// Operator-visible endpoint: `GET /v2/operations?resource_scope=
+    /// Operator-visible endpoint: `GET /v1/operations?resource_scope=
     /// &resource_id=` (RFD 00004 SG-4 resource indexing).
     async fn list_sagas_by_reference(
         &self,

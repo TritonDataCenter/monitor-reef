@@ -10,7 +10,7 @@
 //!
 //! Strategy: stand up a tritond with a known identity HMAC key, register
 //! and approve a CN, mint per-CN bound credentials, then have the agent
-//! POST `/v2/agent/status` payloads that mix:
+//! POST `/v1/agent/status` payloads that mix:
 //!
 //! 1. A pre-existing legacy zone (no `tritond:*` metadata).
 //! 2. A tritond-managed zone (signed identity matching the test's
@@ -18,7 +18,7 @@
 //! 3. A zone with a *forged* identity (HMAC signed by a different key).
 //!
 //! Then verify the fleet-admin read endpoints surface the right things:
-//! the legacy zone shows up under `/v2/admin/legacy/vms`, the managed
+//! the legacy zone shows up under `/v1/admin/legacy/vms`, the managed
 //! one does NOT, the forged one is skipped (and would surface as a
 //! StaleFingerprint alarm in a later slice -- alarm endpoint is
 //! deferred so we just confirm it isn't upserted as a LegacyVm).
@@ -54,7 +54,7 @@ impl TestServer {
     async fn start() -> Self {
         let store: Arc<dyn Store> = Arc::new(MemStore::new());
         // Root operator with fleet_admin so we can hit the
-        // /v2/admin/legacy/* endpoints. is_root alone would suffice
+        // /v1/admin/legacy/* endpoints. is_root alone would suffice
         // via the root-allows-all rule, but flipping fleet_admin
         // explicitly exercises the new sixth Cedar rule too.
         let user = User {
@@ -127,7 +127,7 @@ async fn root_client(test: &TestServer) -> tritond_client::Client {
 }
 
 /// Register a CN and approve it; return the per-CN bound API key the
-/// agent uses to authenticate `/v2/agent/*` calls.
+/// agent uses to authenticate `/v1/agent/*` calls.
 async fn register_and_approve(test: &TestServer, cn_uuid: Uuid, hostname: &str) -> String {
     let anon = test.anonymous_client();
     let registered = anon

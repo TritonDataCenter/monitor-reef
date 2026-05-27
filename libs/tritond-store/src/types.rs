@@ -189,7 +189,7 @@ pub struct Federation {
 /// Per-silo OpenID Connect identity-provider configuration.
 ///
 /// Operators write one of these per silo via
-/// `POST /v2/silos/{silo_id}/idp`; tritond eagerly fetches the
+/// `POST /v1/silos/{silo_id}/idp`; tritond eagerly fetches the
 /// discovery document at write time and only persists the config if
 /// the IdP is reachable and well-formed. Tenant users in that silo
 /// then authenticate by presenting their IdP-issued ID token as a
@@ -209,7 +209,7 @@ pub struct IdpConfig {
 }
 
 /// Wire-safe view of an [`IdpConfig`] with the client secret
-/// redacted. Returned by `GET /v2/silos/{silo_id}/idp`.
+/// redacted. Returned by `GET /v1/silos/{silo_id}/idp`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct IdpConfigView {
     pub issuer_url: String,
@@ -507,7 +507,7 @@ pub struct DhcpOptionRaw {
     pub value: Vec<u8>,
 }
 
-/// Request body for `PUT /v2/.../vpcs/{vpc_id}/dhcp/pool`.
+/// Request body for `PUT /v1/.../vpcs/{vpc_id}/dhcp/pool`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct NewDhcpPool {
     pub lease_seconds_default: u32,
@@ -537,7 +537,7 @@ pub struct DhcpReservation {
     pub created_at: DateTime<Utc>,
 }
 
-/// Request body for `POST /v2/.../vpcs/{vpc_id}/dhcp/reservations`.
+/// Request body for `POST /v1/.../vpcs/{vpc_id}/dhcp/reservations`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct NewDhcpReservation {
     pub mac: String,
@@ -1103,7 +1103,7 @@ pub enum ApiKeyScope {
     /// only. A key with this scope cannot read tenant resources or
     /// audit events; it can only pull jobs from the queue and
     /// report outcomes. Used by the per-CN `tritonagent` to
-    /// authenticate to tritond's `/v2/agent/*` surface.
+    /// authenticate to tritond's `/v1/agent/*` surface.
     Agent,
 }
 
@@ -2540,7 +2540,7 @@ pub struct NewJob {
 
 /// Outcome a worker reports when finishing a job.
 ///
-/// Wire-stable: rides as the body of `POST /v2/agent/jobs/{id}/complete`
+/// Wire-stable: rides as the body of `POST /v1/agent/jobs/{id}/complete`
 /// when a real `tritonagent` is reporting back. The serde tag is
 /// `kind` and the case is snake_case — matches every other tagged
 /// enum on the wire (e.g. [`JobStatus`]).
@@ -3135,7 +3135,7 @@ impl Settings {
 }
 
 /// Stable identifier for one [`Settings`] field. Used as the path
-/// segment in `/v2/config/{key}`, the key argument to `tcadm config`,
+/// segment in `/v1/config/{key}`, the key argument to `tcadm config`,
 /// and the JSON field name in the stored blob. Centralising the
 /// string⇆field mapping here keeps the rest of the codebase off
 /// hardcoded config-key strings.
@@ -3396,7 +3396,7 @@ pub enum CnState {
     Pending,
     /// Approved and active. The per-CN API key bound via
     /// [`ApiKey::bound_to_cn`] is the agent's credential for the
-    /// rest of the `/v2/agent/*` surface.
+    /// rest of the `/v1/agent/*` surface.
     Approved,
     /// Explicitly disabled by an operator. The bound API key is
     /// revoked and the record stays for audit visibility. A fresh
@@ -3463,7 +3463,7 @@ pub struct Cn {
     pub claim_code: Option<String>,
     pub claim_code_expires_at: Option<DateTime<Utc>>,
     /// Opaque token the agent presents to long-poll
-    /// `/v2/agent/register/status`. Rotated on every (re-)registration
+    /// `/v1/agent/register/status`. Rotated on every (re-)registration
     /// so a stale agent never accidentally retrieves a credential
     /// belonging to a fresh registration. Holding the token is *not*
     /// sufficient to approve; operators approve via `claim_code`.
@@ -4378,7 +4378,7 @@ impl From<VmNicReport> for LegacyNic {
 ///
 /// Legacy VMs live in their own FDB keyspace (`legacy_vm/...`) and
 /// are visible only to fleet-admin operators via
-/// `/v2/admin/legacy/vms`. They are NOT part of any tenant's
+/// `/v1/admin/legacy/vms`. They are NOT part of any tenant's
 /// workload tree until adopted (deferred Phase D).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct LegacyVm {
@@ -4671,7 +4671,7 @@ mod cn_tests {
 // `tritond` is the desired-state authority. Realizers
 // (`tritonagent` per CN, the future firehyve/fhrun-managed edge
 // runtime per VPC) report what they actually programmed via
-// `POST /v2/agent/network-realization` (Slice H-13). The control
+// `POST /v1/agent/network-realization` (Slice H-13). The control
 // plane stores one row per `(resource, realizer)` tuple; the
 // `RealizedNetworkState` view rolls those rows up at read time.
 //
@@ -4934,7 +4934,7 @@ impl RealizedNetworkState {
 /// Discriminator for the storage surface a registered cluster serves.
 ///
 /// Each surface has its own forwarder endpoint family
-/// (`/v2/storage/clusters/{id}/s3/*` etc.); attempting to call a
+/// (`/v1/storage/clusters/{id}/s3/*` etc.); attempting to call a
 /// surface's endpoint family on a cluster registered under a
 /// different surface returns a `409 Conflict`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -4965,7 +4965,7 @@ impl StorageClusterSurface {
 
 /// Operator-observed health of a registered storage cluster.
 ///
-/// Populated by the `/v2/storage/clusters/{id}/health` endpoint, which
+/// Populated by the `/v1/storage/clusters/{id}/health` endpoint, which
 /// runs a probe against the cluster's `/admin/v1/cluster` summary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(rename_all = "snake_case")]
@@ -4989,7 +4989,7 @@ pub enum StorageClusterStatus {
 /// token used to authenticate against the cluster's `/admin/v1/*`
 /// surface; admin-backend never sees the raw token because every
 /// admin operation goes through tritond's typed forwarder endpoints
-/// at `/v2/storage/clusters/{id}/...`.
+/// at `/v1/storage/clusters/{id}/...`.
 ///
 /// `admin_token` is stored in plaintext for Phase 0 — same precedent
 /// as `IdpConfig.client_secret` (see `STATUS.md` deferred-work table:
@@ -5027,7 +5027,7 @@ pub struct StorageCluster {
     pub s3_endpoint: Option<String>,
     /// IAM access key tritond signs presigned S3 URLs with. The
     /// operator configures this once per cluster via
-    /// `POST /v2/storage/clusters/{id}/presigner`. Both fields are
+    /// `POST /v1/storage/clusters/{id}/presigner`. Both fields are
     /// either `Some(_)` together or both `None`. Same Phase 0
     /// plaintext caveat as `admin_token`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -5039,7 +5039,7 @@ pub struct StorageCluster {
     pub presigner_secret_access_key: Option<String>,
 }
 
-/// Body of `POST /v2/storage/clusters`.
+/// Body of `POST /v1/storage/clusters`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct NewStorageCluster {
     pub name: String,
@@ -5058,7 +5058,7 @@ fn default_storage_cluster_region() -> String {
 
 /// Wire-side projection of [`StorageCluster`] that **redacts every
 /// secret field** (admin token, presigner secret access key). This
-/// is what `GET /v2/storage/clusters` and `GET /v2/storage/clusters/{id}`
+/// is what `GET /v1/storage/clusters` and `GET /v1/storage/clusters/{id}`
 /// return.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct StorageClusterView {
@@ -5103,7 +5103,7 @@ impl From<StorageCluster> for StorageClusterView {
     }
 }
 
-/// Body of `POST /v2/storage/clusters/{id}/presigner`. Operator
+/// Body of `POST /v1/storage/clusters/{id}/presigner`. Operator
 /// configures the IAM credential tritond signs presigned S3 URLs with.
 /// Both fields are required so the call is unambiguous — to clear
 /// the presigner, send empty strings (the handler treats that as
@@ -6881,7 +6881,7 @@ pub enum MigrationPhase {
 }
 
 /// Operator-initiated action against a migration record. The HTTP
-/// handler at `POST /v2/instances/{id}/actions/migrate` (LM-1 task
+/// handler at `POST /v1/instances/{id}/actions/migrate` (LM-1 task
 /// #16 / LM-5) dispatches on this enum; `Begin` starts a saga, the
 /// others address an existing migration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

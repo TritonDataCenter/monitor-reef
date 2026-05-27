@@ -7,7 +7,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 //! End-to-end tests for the
-//! `/v2/silos/{silo_id}/projects/{project_id}/instances` surface,
+//! `/v1/silos/{silo_id}/projects/{project_id}/instances` surface,
 //! including the lifecycle state machine.
 //!
 //! Phase 0 collapses Pending → Provisioning → Running into a
@@ -623,7 +623,7 @@ async fn duplicate_instance_name_within_project_returns_409() {
 }
 
 /// SG-4 end-to-end: creating an instance produces an observable
-/// `instance-create` operation on `/v2/operations`. This is the
+/// `instance-create` operation on `/v1/operations`. This is the
 /// shippable proof that the saga engine + the operator-visibility
 /// surface are wired correctly to each other.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -650,7 +650,7 @@ async fn instance_create_appears_on_operations_surface() {
     let our_op = ops
         .iter()
         .find(|o| o.kind == "instance-create")
-        .expect("instance-create operation must be visible on /v2/operations");
+        .expect("instance-create operation must be visible on /v1/operations");
     assert_eq!(our_op.version, 2);
     // The saga has run to terminal (Done with Ok); the
     // operations surface maps that to "done".
@@ -680,7 +680,7 @@ async fn instance_create_appears_on_operations_surface() {
 
     // SG-2b + D-Sg-11: the saga's lifecycle emits `saga.started`
     // and `saga.finished` to the audit chain. The operator sees
-    // them via `/v2/audit/events` next to the per-silo
+    // them via `/v1/audit/events` next to the per-silo
     // side-effect events the catalog actions wrote.
     let events = root
         .list_audit_events()

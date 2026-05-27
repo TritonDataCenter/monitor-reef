@@ -130,7 +130,7 @@ impl OidcVerifier {
     }
 
     /// Eagerly fetch the discovery document and populate the cache.
-    /// Used by `POST /v2/silos/{silo_id}/idp` so a misconfigured IdP
+    /// Used by `POST /v1/silos/{silo_id}/idp` so a misconfigured IdP
     /// fails the write rather than producing mysterious 401s on
     /// later login attempts.
     pub async fn discover(&self, cache_key: &str, config: &OidcConfig) -> Result<(), OidcError> {

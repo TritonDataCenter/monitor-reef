@@ -9,7 +9,7 @@
 //! Implements item 8 of `PROTEUS_PLAN.md` §11.7.1: when a NIC is
 //! torn down or migrated, tritond pushes an `(vni, peer_ip)`
 //! invalidation directive onto a per-process ring. The bound CN
-//! agent polls `GET /v2/agent/peer-invalidations?since=<seq>` on a
+//! agent polls `GET /v1/agent/peer-invalidations?since=<seq>` on a
 //! fixed cadence; the response contains every entry with `seq >
 //! since` and a `tail_seq` cursor for the next poll.
 //!
@@ -18,7 +18,7 @@
 //! low-NIC-churn deployments (the resolver re-queries on the next
 //! packet anyway, so over-broadcasting is wasted work but not a
 //! correctness problem). Phase B narrows to per-CN filtering once
-//! tritond tracks which CNs have queried `/v2/agent/peer`.
+//! tritond tracks which CNs have queried `/v1/agent/peer`.
 //!
 //! Bounded: the ring keeps the most recent
 //! [`MAX_RING_ENTRIES`]; older entries fall off. A CN whose

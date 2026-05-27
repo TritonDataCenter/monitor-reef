@@ -16,7 +16,7 @@
 //!
 //! Operators build bundles with the `tritonimg-build` CLI on a
 //! host that already has the source dataset; tritond ingests
-//! them via `POST /v2/silos/.../images { "bundle_url": "..." }`,
+//! them via `POST /v1/silos/.../images { "bundle_url": "..." }`,
 //! pulls the content sha256 + name + version + compatibility
 //! straight off the manifest, and stores the bundle's URL on the
 //! Image record so the per-CN agent can fetch on demand at

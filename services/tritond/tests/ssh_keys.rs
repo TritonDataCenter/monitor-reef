@@ -7,7 +7,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 //! End-to-end tests for the `Silo`-scoped slice of the multi-scope
-//! `/v2/silos/{silo_id}/ssh-keys` surface and the cross-cutting
+//! `/v1/silos/{silo_id}/ssh-keys` surface and the cross-cutting
 //! concerns that aren't visibility (fingerprint validation,
 //! openssh parsing, name + fingerprint uniqueness within a single
 //! scope).

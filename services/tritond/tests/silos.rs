@@ -6,7 +6,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-//! End-to-end tests for the `/v2/silos` surface, exercised through
+//! End-to-end tests for the `/v1/silos` surface, exercised through
 //! the auth gate by minting a root-operator JWT and presenting it as
 //! a `Bearer` token.
 

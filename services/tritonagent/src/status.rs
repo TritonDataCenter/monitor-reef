@@ -6,7 +6,7 @@
 
 //! [`StatusSink`] wiring the harvested
 //! [`tritond_cn_platform::cn_status::Heartbeater`] to tritond's
-//! `POST /v2/agent/heartbeat` and `POST /v2/agent/status`.
+//! `POST /v1/agent/heartbeat` and `POST /v1/agent/status`.
 //!
 //! The implementation is intentionally a thin adapter: the legacy
 //! transport rules (auth, base URL, TLS posture) all live in the

@@ -1194,8 +1194,8 @@ pub(crate) async fn migrate_project_instance(
 
     // saga_execute spawns the saga; we don't block on its
     // terminal state for migration (it can take minutes) — the
-    // operator polls /v2/operations/{id} for saga state and
-    // /v2/migrations/{id}/progress for the per-phase event log.
+    // operator polls /v1/operations/{id} for saga state and
+    // /v1/migrations/{id}/progress for the per-phase event log.
     let _ = ctx
         .saga
         .saga_execute(

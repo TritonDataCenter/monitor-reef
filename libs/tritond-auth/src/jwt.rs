@@ -11,7 +11,7 @@
 //! * **Access tokens** are short-lived (15 minutes) and presented on
 //!   every authenticated API request.
 //! * **Refresh tokens** are longer-lived (24 hours) and used only by
-//!   `POST /v2/auth/refresh` to obtain a fresh access token without
+//!   `POST /v1/auth/refresh` to obtain a fresh access token without
 //!   re-prompting the operator.
 //!
 //! Both use the same symmetric `JwtKey` and discriminate via a `typ`

@@ -7,7 +7,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 //! End-to-end tests for the silo-scoped image endpoints
-//! (`/v2/silos/{silo_id}/images` create + list, `/v2/images/{id}`
+//! (`/v1/silos/{silo_id}/images` create + list, `/v1/images/{id}`
 //! cross-scope get + delete).
 //!
 //! Visibility / ownership / cross-scope cases live in
@@ -271,7 +271,7 @@ async fn same_name_in_different_silos_does_not_conflict() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn root_can_get_image_globally() {
     // The legacy "cross-silo get returns 404" test is now obsolete:
-    // /v2/images/{id} is a global lookup and root sees everything.
+    // /v1/images/{id} is a global lookup and root sees everything.
     // The cross-silo / cross-tenant 404 invariant is exercised by
     // image_scope.rs against non-root principals where it actually
     // matters.
@@ -303,7 +303,7 @@ async fn root_can_get_image_globally() {
 async fn anonymous_cannot_reach_silo_image_list() {
     // The silo-scoped list still requires silo membership; an
     // anonymous probe gets the cross-silo 404. (Public images
-    // are reachable anonymously via /v2/images — see
+    // are reachable anonymously via /v1/images — see
     // image_scope.rs).
     let test = TestServer::start().await;
     let root = test.root_client();

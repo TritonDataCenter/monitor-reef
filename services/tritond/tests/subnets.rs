@@ -7,7 +7,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 //! End-to-end tests for the
-//! `/v2/silos/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets`
+//! `/v1/silos/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets`
 //! surface.
 //!
 //! Mirrors `tests/vpcs.rs`: same in-process tritond fixture + stub

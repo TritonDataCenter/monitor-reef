@@ -206,7 +206,7 @@ impl StrategyWeights {
 /// Everything the engine needs to know about the workload being
 /// placed. Built by the saga step (`designate`) from the
 /// instance-create params; built by the materialised dry-run path
-/// from the `/v2/placement/pick` request body.
+/// from the `/v1/placement/pick` request body.
 ///
 /// The Silo / Tenant / Project triple comes straight from the
 /// requesting principal (`IMDS_DESIGN.md`'s hierarchy, also locked

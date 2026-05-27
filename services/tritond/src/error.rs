@@ -29,7 +29,7 @@ pub(crate) fn store_error_to_http(err: StoreError) -> HttpError {
         //. Surface as 503 with retry semantics:
         // the operator's request didn't break anything, the
         // adopting SEC is going to drive the saga forward, and the
-        // caller can poll `/v2/operations/{id}` to follow it.
+        // caller can poll `/v1/operations/{id}` to follow it.
         StoreError::FencedOut { saga_id } => HttpError::for_unavail(
             Some("FencedOut".to_string()),
             format!("saga {saga_id} adopted by another tritond instance; retry"),
@@ -153,7 +153,7 @@ pub(crate) fn not_found() -> HttpError {
     )
 }
 
-/// 410 Gone for legacy `/v2/` paths whose
+/// 410 Gone for legacy `/v1/` paths whose
 /// functionality has fully moved to the `/v1/` flat surface.
 /// The message points callers at the replacement so a 410 from
 /// `curl`/`tcadm` carries the migration hint inline.
@@ -163,7 +163,7 @@ pub(crate) fn gone(replacement: &str) -> HttpError {
         ClientErrorStatusCode::GONE,
         format!(
             "this endpoint has moved per RFD 00007; use `{replacement}` instead. \
-             /v2/ stubs will be removed at AP-8."
+             /v1/ stubs will be removed at AP-8."
         ),
     )
 }

@@ -12,8 +12,8 @@
 //! through the generated client and that the capability gate on
 //! `/v1/system/*` rejects unauthorized callers with the
 //! cross-scope-deny 404 shape. The full AP-3b rewrite (replacing
-//! every existing /v2/ test) lands across subsequent slices once
-//! the AP-3e 410-flip plan settles; today the existing /v2/ tests
+//! every existing /v1/ test) lands across subsequent slices once
+//! the AP-3e 410-flip plan settles; today the existing /v1/ tests
 //! stay intact and these new tests run alongside them.
 
 use std::sync::Arc;
@@ -364,9 +364,9 @@ async fn capability_grant_on_root_refused() {
 // instance-creation chain on the *new* flat surface and then
 // verifies the AP-1c FDB image index returns the right row from
 // /v1/system/instances?image=. The fixture chain (silo + project
-// + vpc + subnet + image + ssh-key) still goes through /v2/
+// + vpc + subnet + image + ssh-key) still goes through /v1/
 // because RFD 00007 §3.5 D-Ap-7 leaves the silo/tenant write
-// surface on /v2/ for now - only the read/list/lifecycle paths
+// surface on /v1/ for now - only the read/list/lifecycle paths
 // on the resource families moved.
 // ---------------------------------------------------------------
 

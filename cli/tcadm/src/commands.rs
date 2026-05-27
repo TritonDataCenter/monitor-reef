@@ -1802,7 +1802,7 @@ pub async fn cn_show(
 ///
 /// Note: the per-CN API key plaintext is **never** shown to the
 /// operator. It is delivered to the agent via the long-poll on
-/// `/v2/agent/register/status`. The operator only sees the bound key
+/// `/v1/agent/register/status`. The operator only sees the bound key
 /// id so they can correlate audit events.
 pub async fn cn_approve(
     endpoint_override: Option<String>,
@@ -1923,7 +1923,7 @@ pub async fn cn_auto_approve_status(
     // paths are interchangeable from the server's perspective.
     let http = build_http_client(session.bearer.as_deref())?;
 
-    let url = format!("{}/v2/cn-auto-approve", session.endpoint);
+    let url = format!("{}/v1/cn-auto-approve", session.endpoint);
     // Match the api-version header that the generated client sends
     // on every call so behaviour stays identical between this raw GET
     // and the typed callers below.

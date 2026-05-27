@@ -7,8 +7,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 //! End-to-end tests for the serial / VNC console proxy `#[channel]`s
-//! (`/v2/admin/legacy/vms/{uuid}/console`, plus the precondition
-//! branches on `/v2/tenants/.../instances/{id}/console`).
+//! (`/v1/admin/legacy/vms/{uuid}/console`, plus the precondition
+//! branches on `/v1/tenants/.../instances/{id}/console`).
 //!
 //! Strategy: stand up a tritond, register + approve a fake CN that
 //! reports a console listener port and an rcgen-self-signed cert's SPKI
@@ -318,7 +318,7 @@ async fn legacy_console_proxies_bytes_through_the_agent() {
 
     let mut ws = connect_console(
         test.bind(),
-        &format!("/v2/admin/legacy/vms/{smartos_uuid}/console?kind=serial"),
+        &format!("/v1/admin/legacy/vms/{smartos_uuid}/console?kind=serial"),
         &root,
     )
     .await
@@ -361,7 +361,7 @@ async fn legacy_console_rejects_non_fleet_admin() {
     // handler closes it because `plain` is not a fleet admin.
     let mut ws = connect_console(
         test.bind(),
-        &format!("/v2/admin/legacy/vms/{smartos_uuid}/console?kind=serial"),
+        &format!("/v1/admin/legacy/vms/{smartos_uuid}/console?kind=serial"),
         &plain,
     )
     .await
@@ -404,7 +404,7 @@ async fn console_does_not_gate_vnc_on_the_stored_brand() {
 
     let mut ws = connect_console(
         test.bind(),
-        &format!("/v2/admin/legacy/vms/{smartos_uuid}/console?kind=vnc"),
+        &format!("/v1/admin/legacy/vms/{smartos_uuid}/console?kind=vnc"),
         &root,
     )
     .await
@@ -468,7 +468,7 @@ async fn legacy_console_rejects_when_cn_has_no_console_listener() {
 
     let mut ws = connect_console(
         test.bind(),
-        &format!("/v2/admin/legacy/vms/{smartos_uuid}/console?kind=serial"),
+        &format!("/v1/admin/legacy/vms/{smartos_uuid}/console?kind=serial"),
         &root,
     )
     .await
@@ -494,7 +494,7 @@ async fn instance_console_rejects_unknown_instance() {
     let mut ws = connect_console(
         test.bind(),
         &format!(
-            "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/console?kind=serial"
+            "/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/console?kind=serial"
         ),
         &root,
     )

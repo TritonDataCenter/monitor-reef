@@ -4,11 +4,11 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! `/v2/migrations` + `/v2/instances/{id}/migrations` handlers (LM-1).
+//! `/v1/migrations` + `/v1/instances/{id}/migrations` handlers (LM-1).
 //!
 //! Read-only at LM-1: list, get-one, page progress, per-instance
 //! history. The mutating endpoint
-//! (`POST /v2/instances/{id}/actions/migrate`) lands with the
+//! (`POST /v1/instances/{id}/actions/migrate`) lands with the
 //! migration saga (LM-5) so the handler can dispatch on
 //! `MigrationAction`.
 //!

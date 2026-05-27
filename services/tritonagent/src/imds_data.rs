@@ -9,7 +9,7 @@
 //! The IMDS HTTP handlers don't reach into tritond (or FDB) directly
 //! -- they go through a [`RealizedDataSource`] trait. Today this has
 //! one implementation, [`TritondRealizedDataSource`], which calls
-//! `GET /v2/instances/{id}/realized-meta`. Per `IMDS_DESIGN.md` (the
+//! `GET /v1/instances/{id}/realized-meta`. Per `IMDS_DESIGN.md` (the
 //! "swappable data-source" decision in §3 / the hot-path-independence
 //! decision in the proposed-decisions table), the daemon's HTTP
 //! surface doesn't change when the impl swaps -- a follow-up commit
@@ -67,7 +67,7 @@ pub trait RealizedDataSource: Send + Sync + 'static {
 }
 
 /// tritond-backed implementation: calls
-/// `GET /v2/instances/{id}/realized-meta` via the generated client.
+/// `GET /v1/instances/{id}/realized-meta` via the generated client.
 /// The agent's existing API key (scope: `Agent`) authorises the
 /// call; tritond's `MetaList` Cedar grant covers it (agent ==
 /// tenant-member in the legacy sense for this CN's hosted

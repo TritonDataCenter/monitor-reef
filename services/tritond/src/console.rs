@@ -404,7 +404,7 @@ async fn audit_console_open(
         .await;
 }
 
-/// `GET /v2/tenants/{tenant}/projects/{project}/instances/{instance}/console`
+/// `GET /v1/tenants/{tenant}/projects/{project}/instances/{instance}/console`
 /// — browser-facing serial / VNC console for a managed instance.
 ///
 /// The HTTP 101 is already sent by the time this runs, so every check
@@ -492,7 +492,7 @@ pub(crate) async fn instance_console(
     proxy_console(ws, target).await
 }
 
-/// `GET /v2/admin/legacy/vms/{smartos_uuid}/console` — operator console
+/// `GET /v1/admin/legacy/vms/{smartos_uuid}/console` — operator console
 /// for a discovered (non-managed) zone. Fleet-admin only.
 pub(crate) async fn legacy_vm_console(
     rqctx: RequestContext<ApiContext>,

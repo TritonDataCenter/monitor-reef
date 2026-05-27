@@ -6,7 +6,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-//! End-to-end tests for the `/v2/storage/clusters` surface
+//! End-to-end tests for the `/v1/storage/clusters` surface
 //! (Stage 3.3 + 3.4 CRUD, Stage 3.5 health probe + forwarder gate).
 //!
 //! Forwarder tests pointed at a real mantad endpoint live elsewhere

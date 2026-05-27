@@ -4,7 +4,7 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! `/v2/operations` HTTP handlers.
+//! `/v1/operations` HTTP handlers.
 //!
 //! The operator-visible projection of `tritond-saga`'s catalog.
 //! Reads from the SecStore via `SagaExecutor::list_sagas` /

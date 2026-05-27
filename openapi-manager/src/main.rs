@@ -98,7 +98,7 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
             title: "Triton Cloud Control Plane",
             metadata: ManagedApiMetadata {
                 description: Some(
-                    "Triton Cloud control-plane API. Phase 0 surface (`/v2/health`); subsequent phases add silos, instances, VPCs, audit, secrets, and the rest of DESIGN.md §14.",
+                    "Triton Cloud control-plane API. Phase 0 surface (`/v1/health`); subsequent phases add silos, instances, VPCs, audit, secrets, and the rest of DESIGN.md §14.",
                 ),
                 ..ManagedApiMetadata::default()
             },

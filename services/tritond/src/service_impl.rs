@@ -821,6 +821,13 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::ssh_keys::create_my_ssh_key(rqctx, body).await
     }
 
+    async fn delete_ssh_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SshKeyPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        crate::handlers::ssh_keys::delete_ssh_key(rqctx, path).await
+    }
+
     async fn get_ssh_key(
         rqctx: RequestContext<Self::Context>,
         path: Path<SshKeyPath>,
@@ -828,12 +835,6 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::ssh_keys::get_ssh_key(rqctx, path).await
     }
 
-    async fn delete_ssh_key(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<SshKeyPath>,
-    ) -> Result<HttpResponseDeleted, HttpError> {
-        crate::handlers::ssh_keys::delete_ssh_key(rqctx, path).await
-    }
     async fn list_meta(
         rqctx: RequestContext<Self::Context>,
         path: Path<tritond_api::MetaScopePath>,
@@ -984,18 +985,18 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::images::create_my_image(rqctx, body).await
     }
 
-    async fn get_image(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<ImagePath>,
-    ) -> Result<HttpResponseOk<Image>, HttpError> {
-        crate::handlers::images::get_image(rqctx, path).await
-    }
-
     async fn delete_image(
         rqctx: RequestContext<Self::Context>,
         path: Path<ImagePath>,
     ) -> Result<HttpResponseDeleted, HttpError> {
         crate::handlers::images::delete_image(rqctx, path).await
+    }
+
+    async fn get_image(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ImagePath>,
+    ) -> Result<HttpResponseOk<Image>, HttpError> {
+        crate::handlers::images::get_image(rqctx, path).await
     }
 
     async fn put_project_quota(
@@ -1901,7 +1902,7 @@ pub(crate) fn mint_token_pair(
     })
 }
 
-/// Parse a `/v2/config/{key}` path segment into a [`ConfigKey`], or
+/// Parse a `/v1/config/{key}` path segment into a [`ConfigKey`], or
 /// `404` for an unrecognised name.
 pub(crate) fn config_key_or_404(raw: &str) -> Result<ConfigKey, HttpError> {
     ConfigKey::from_wire(raw).ok_or_else(|| {
@@ -1961,7 +1962,7 @@ pub async fn start_server_with_context(
 
     let config_dropshot = ConfigDropshot {
         bind_address: parsed,
-        // The default 1 KB body cap is too small for `/v2/agent/register`,
+        // The default 1 KB body cap is too small for `/v1/agent/register`,
         // which carries the full SmartOS `sysinfo` JSON (tens of KB on a
         // production CN). 1 MB is plenty for any expected payload and
         // still bounds an abusive client.

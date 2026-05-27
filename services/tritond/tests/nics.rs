@@ -7,7 +7,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 //! End-to-end tests for the
-//! `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics`
+//! `/v1/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics`
 //! surface.
 //!
 //! Verifies the auto-create + cascade semantics introduced in slice 3

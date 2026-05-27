@@ -6,7 +6,7 @@
 
 //! Helpers for the storage-cluster forwarder endpoints.
 //!
-//! The `/v2/storage/clusters/{id}/...` surface forwards typed admin
+//! The `/v1/storage/clusters/{id}/...` surface forwards typed admin
 //! calls to a registered `mantad`. This module supplies:
 //!
 //! 1. `client_for` — look up the cluster record, refuse if its
@@ -361,7 +361,7 @@ pub(crate) fn objects_query_to(q: tritond_api::StorageObjectsQuery) -> mantad_cl
 /// * `404` when the cluster id is unknown.
 /// * `409 Conflict` when the cluster's `s3_endpoint` or presigner
 ///   credentials are not configured (the operator must call
-///   `POST /v2/storage/clusters/{id}/presigner` first).
+///   `POST /v1/storage/clusters/{id}/presigner` first).
 /// * `400 Bad Request` when sigv4 input validation rejects the
 ///   bucket/key/expires_secs (empty strings, expires_secs out of
 ///   range).
@@ -398,7 +398,7 @@ pub async fn mint_presigned_url(
             ClientErrorStatusCode::CONFLICT,
             format!(
                 "storage cluster {} has no s3_endpoint configured — set one via \
-                 POST /v2/storage/clusters/{{id}}/presigner",
+                 POST /v1/storage/clusters/{{id}}/presigner",
                 cluster.id
             ),
         )
@@ -447,7 +447,7 @@ fn presigner_unconfigured(id: Uuid) -> HttpError {
         ClientErrorStatusCode::CONFLICT,
         format!(
             "storage cluster {id} has no presigner configured — set one via \
-             POST /v2/storage/clusters/{{id}}/presigner"
+             POST /v1/storage/clusters/{{id}}/presigner"
         ),
     )
 }

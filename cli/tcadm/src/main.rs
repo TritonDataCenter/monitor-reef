@@ -2822,7 +2822,7 @@ async fn main() -> Result<()> {
             }
             PublicImageCommand::Get { image_id, json } => {
                 // Re-uses the silo_image_get helper which already
-                // calls the scope-agnostic /v2/images/{id} endpoint.
+                // calls the scope-agnostic /v1/images/{id} endpoint.
                 commands::silo_image_get(cli.endpoint, cli.api_key, Uuid::nil(), image_id, json)
                     .await
             }

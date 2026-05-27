@@ -119,7 +119,7 @@ pub struct ApiContext {
     /// `with_fdb_saga_executor`.
     pub saga: Arc<SagaExecutor>,
     /// v2p invalidations: single global ring drained by every CN's
-    /// `GET /v2/agent/peer-invalidations` long-poll. Per-CN filtering
+    /// `GET /v1/agent/peer-invalidations` long-poll. Per-CN filtering
     /// lands when the resolver-served-log does.
     pub peer_invalidations: Arc<crate::peer_invalidations::Ring>,
 }

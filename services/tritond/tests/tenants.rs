@@ -6,7 +6,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-//! End-to-end tests for the `/v2/silos/{silo_id}/tenants` surface,
+//! End-to-end tests for the `/v1/silos/{silo_id}/tenants` surface,
 //! exercised through the auth gate by minting a root-operator JWT
 //! and presenting it as a `Bearer` token. Mirrors the harness shape
 //! used in `silos.rs`.

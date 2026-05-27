@@ -9,7 +9,7 @@
 //! End-to-end tests for the per-source-IP login rate limiter.
 //!
 //! Strategy: build a tritond with a deliberately tight quota
-//! (`Quota::per_minute(N)` for small N), hammer `/v2/auth/login`
+//! (`Quota::per_minute(N)` for small N), hammer `/v1/auth/login`
 //! with bad credentials N times, and verify that the (N+1)th attempt
 //! comes back 429 with a `Retry-After` header — even when the (N+1)th
 //! attempt presents the *correct* password. The point is that the
@@ -65,7 +65,7 @@ async fn build_rate_limited_server() -> dropshot::HttpServer<ApiContext> {
 async fn rate_limit_throttles_after_quota_exhausted() {
     let server = build_rate_limited_server().await;
     let bind = server.local_addr();
-    let url = format!("http://{bind}/v2/auth/login");
+    let url = format!("http://{bind}/v1/auth/login");
     let http = reqwest::Client::new();
 
     for i in 0..QUOTA_PER_MIN {
@@ -140,7 +140,7 @@ async fn rate_limit_audits_throttle_event() {
         .await
         .unwrap();
     let bind = server.local_addr();
-    let url = format!("http://{bind}/v2/auth/login");
+    let url = format!("http://{bind}/v1/auth/login");
     let http = reqwest::Client::new();
 
     // First attempt: in quota, returns 401 (bad password).

@@ -6,7 +6,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-//! End-to-end tests for the `/v2/silos/{silo_id}/projects` surface
+//! End-to-end tests for the `/v1/silos/{silo_id}/projects` surface
 //! and the silo-scoped Cedar policy that gates it.
 //!
 //! Each test spins up a stub OIDC provider so we can mint federated
@@ -437,7 +437,7 @@ async fn cross_silo_get_returns_404_not_403() {
     let token = idp.mint_token("tritond", "alpha-tenant");
     let tenant = test.bearer_client(&token);
 
-    // GET /v2/silos/{alpha}/projects/{beta-project-id} — Cedar denies
+    // GET /v1/silos/{alpha}/projects/{beta-project-id} — Cedar denies
     // because alpha-tenant is not in beta. The handler returns 404
     // even though beta_project.id is real and would resolve.
     let err = tenant

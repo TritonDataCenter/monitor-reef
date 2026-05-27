@@ -320,7 +320,7 @@ async fn omitted_scope_field_defaults_to_full() {
 
     // Hit the wire directly with a body that omits `scope` entirely.
     let bind = test.bind();
-    let url = format!("http://{bind}/v2/auth/api-keys");
+    let url = format!("http://{bind}/v1/auth/api-keys");
     let raw = reqwest::Client::new()
         .post(&url)
         .header(

@@ -17,7 +17,7 @@
 //! * **Mutations.** Handlers that change persistent state call
 //!   [`AuditService::record_mutation`] after the write succeeds (or
 //!   fails) so the resource id and outcome are captured.
-//! * **Auth lifecycle.** `/v2/auth/login` and `/v2/auth/refresh`
+//! * **Auth lifecycle.** `/v1/auth/login` and `/v1/auth/refresh`
 //!   emit events with the username + outcome (success vs reason for
 //!   failure) so credential-stuffing patterns are visible to operators.
 //!

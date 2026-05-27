@@ -193,8 +193,8 @@ pub(crate) async fn get_instance_realized_meta(
 
 /// Agent-facing variant: same body shape as
 /// [`get_instance_realized_meta`], but the caller is a CN-bound
-/// agent API key (matches the auth shape of `/v2/agent/peer` /
-/// `/v2/agent/blueprints`). tritonagent's IMDS daemon calls this
+/// agent API key (matches the auth shape of `/v1/agent/peer` /
+/// `/v1/agent/blueprints`). tritonagent's IMDS daemon calls this
 /// to answer guest IMDSv2 requests — the tenant-member Cedar rule
 /// can't authorize a CN-bound key. The dataplane already enforces
 /// locality: the IMDS request arrives via the guest's vnic on

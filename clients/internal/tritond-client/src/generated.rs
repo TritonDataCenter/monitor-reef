@@ -37,13 +37,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Response body for `POST /v2/operations/{operation_id}/abandon`."]
+    #[doc = "Response body for `POST /v1/operations/{operation_id}/abandon`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Response body for `POST /v2/operations/{operation_id}/abandon`.\","]
+    #[doc = "  \"description\": \"Response body for `POST /v1/operations/{operation_id}/abandon`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"id\","]
@@ -387,13 +387,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Response body for `GET /v2/meta/{scope}/{scope_id}/affected?key=K` — the affected-instances reverse-index. Answers the question \"if I edit `key` at this scope, which instances does that change actually flow to, and which are shielded by a narrower override?\" See `IMDS_DESIGN.md` §1.5 for the precedence rules."]
+    #[doc = "Response body for `GET /v1/meta/{scope}/{scope_id}/affected?key=K` — the affected-instances reverse-index. Answers the question \"if I edit `key` at this scope, which instances does that change actually flow to, and which are shielded by a narrower override?\" See `IMDS_DESIGN.md` §1.5 for the precedence rules."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Response body for `GET /v2/meta/{scope}/{scope_id}/affected?key=K` — the affected-instances reverse-index. Answers the question \\\"if I edit `key` at this scope, which instances does that change actually flow to, and which are shielded by a narrower override?\\\" See `IMDS_DESIGN.md` §1.5 for the precedence rules.\","]
+    #[doc = "  \"description\": \"Response body for `GET /v1/meta/{scope}/{scope_id}/affected?key=K` — the affected-instances reverse-index. Answers the question \\\"if I edit `key` at this scope, which instances does that change actually flow to, and which are shielded by a narrower override?\\\" See `IMDS_DESIGN.md` §1.5 for the precedence rules.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"shadowed\","]
@@ -408,7 +408,7 @@ pub mod types {
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"value_at_scope\": {"]
-    #[doc = "      \"description\": \"The value stored at the request scope (`null` when the key is not set there). Returned for context — the UI doesn't have to make a separate `GET /v2/meta/.../entry` call.\","]
+    #[doc = "      \"description\": \"The value stored at the request scope (`null` when the key is not set there). Returned for context — the UI doesn't have to make a separate `GET /v1/meta/.../entry` call.\","]
     #[doc = "      \"oneOf\": ["]
     #[doc = "        {"]
     #[doc = "          \"type\": \"null\""]
@@ -439,7 +439,7 @@ pub mod types {
     pub struct AffectedInstancesResponse {
         #[doc = "Instances under the request scope where a narrower scope already overrides this key. Each row names the narrower scope so the UI can render \"tenant wins\" / \"project wins\" / \"instance wins\" at a glance."]
         pub shadowed: ::std::vec::Vec<ShadowedInstance>,
-        #[doc = "The value stored at the request scope (`null` when the key is not set there). Returned for context — the UI doesn't have to make a separate `GET /v2/meta/.../entry` call."]
+        #[doc = "The value stored at the request scope (`null` when the key is not set there). Returned for context — the UI doesn't have to make a separate `GET /v1/meta/.../entry` call."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub value_at_scope: ::std::option::Option<MetaValue>,
         #[doc = "Instances under the request scope where this scope's value is the realized winner (no narrower scope overrides it)."]
@@ -502,13 +502,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Response body for `GET /v2/agent/peer-invalidations`."]
+    #[doc = "Response body for `GET /v1/agent/peer-invalidations`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Response body for `GET /v2/agent/peer-invalidations`.\","]
+    #[doc = "  \"description\": \"Response body for `GET /v1/agent/peer-invalidations`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"invalidations\","]
@@ -546,13 +546,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Response body for `GET /v2/agent/peer`. Matches the on-wire shape of [`proteus_api::peer::PeerEntry`] (guest MAC + underlay IPv6) plus a server-suggested TTL the agent should honour when calling [`proteus_api::peer::AddPeerEntryRequest`]."]
+    #[doc = "Response body for `GET /v1/agent/peer`. Matches the on-wire shape of [`proteus_api::peer::PeerEntry`] (guest MAC + underlay IPv6) plus a server-suggested TTL the agent should honour when calling [`proteus_api::peer::AddPeerEntryRequest`]."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Response body for `GET /v2/agent/peer`. Matches the on-wire shape of [`proteus_api::peer::PeerEntry`] (guest MAC + underlay IPv6) plus a server-suggested TTL the agent should honour when calling [`proteus_api::peer::AddPeerEntryRequest`].\","]
+    #[doc = "  \"description\": \"Response body for `GET /v1/agent/peer`. Matches the on-wire shape of [`proteus_api::peer::PeerEntry`] (guest MAC + underlay IPv6) plus a server-suggested TTL the agent should honour when calling [`proteus_api::peer::AddPeerEntryRequest`].\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"guest_mac\","]
@@ -641,13 +641,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `POST /v2/agent/status`.\n\n`payload` is opaque to tritond — agents pick the shape — but the Triton-classic shape is `{ vms, zpools, meminfo, diskinfo, boot_time, timestamp }`. Stored verbatim on the `Cn` record's `last_status` field; surfaced via `tcadm cn show`."]
+    #[doc = "Request body for `POST /v1/agent/status`.\n\n`payload` is opaque to tritond — agents pick the shape — but the Triton-classic shape is `{ vms, zpools, meminfo, diskinfo, boot_time, timestamp }`. Stored verbatim on the `Cn` record's `last_status` field; surfaced via `tcadm cn show`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/agent/status`.\\n\\n`payload` is opaque to tritond — agents pick the shape — but the Triton-classic shape is `{ vms, zpools, meminfo, diskinfo, boot_time, timestamp }`. Stored verbatim on the `Cn` record's `last_status` field; surfaced via `tcadm cn show`.\","]
+    #[doc = "  \"description\": \"Request body for `POST /v1/agent/status`.\\n\\n`payload` is opaque to tritond — agents pick the shape — but the Triton-classic shape is `{ vms, zpools, meminfo, diskinfo, boot_time, timestamp }`. Stored verbatim on the `Cn` record's `last_status` field; surfaced via `tcadm cn show`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"payload\""]
@@ -671,13 +671,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Response body for `POST /v2/auth/api-keys`.\n\n`secret` is the wire-form key. It is shown to the operator **once**; the server retains only a bcrypt hash."]
+    #[doc = "Response body for `POST /v1/auth/api-keys`.\n\n`secret` is the wire-form key. It is shown to the operator **once**; the server retains only a bcrypt hash."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Response body for `POST /v2/auth/api-keys`.\\n\\n`secret` is the wire-form key. It is shown to the operator **once**; the server retains only a bcrypt hash.\","]
+    #[doc = "  \"description\": \"Response body for `POST /v1/auth/api-keys`.\\n\\n`secret` is the wire-form key. It is shown to the operator **once**; the server retains only a bcrypt hash.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"created_at\","]
@@ -770,7 +770,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    {"]
-    #[doc = "      \"description\": \"Provisioning-agent scope: `agent_claim` and `agent_complete` only. A key with this scope cannot read tenant resources or audit events; it can only pull jobs from the queue and report outcomes. Used by the per-CN `tritonagent` to authenticate to tritond's `/v2/agent/*` surface.\","]
+    #[doc = "      \"description\": \"Provisioning-agent scope: `agent_claim` and `agent_complete` only. A key with this scope cannot read tenant resources or audit events; it can only pull jobs from the queue and report outcomes. Used by the per-CN `tritonagent` to authenticate to tritond's `/v1/agent/*` surface.\","]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"enum\": ["]
     #[doc = "        \"agent\""]
@@ -803,7 +803,7 @@ pub mod types {
         #[doc = "Audit chain reads only (`audit_list`, `audit_fetch`, `audit_verify`). Useful for compliance pipelines that should see \"who did what when\" but never the resources themselves."]
         #[serde(rename = "audit_only")]
         AuditOnly,
-        #[doc = "Provisioning-agent scope: `agent_claim` and `agent_complete` only. A key with this scope cannot read tenant resources or audit events; it can only pull jobs from the queue and report outcomes. Used by the per-CN `tritonagent` to authenticate to tritond's `/v2/agent/*` surface."]
+        #[doc = "Provisioning-agent scope: `agent_claim` and `agent_complete` only. A key with this scope cannot read tenant resources or audit events; it can only pull jobs from the queue and report outcomes. Used by the per-CN `tritonagent` to authenticate to tritond's `/v1/agent/*` surface."]
         #[serde(rename = "agent")]
         Agent,
     }
@@ -921,13 +921,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `POST /v2/cns/approve`.\n\nThe operator presents the claim code displayed on the CN's console (or syslog, or the `/var/lib/tritonagent/claim-code` file). Hyphens and case are normalized server-side."]
+    #[doc = "Request body for `POST /v1/cns/approve`.\n\nThe operator presents the claim code displayed on the CN's console (or syslog, or the `/var/lib/tritonagent/claim-code` file). Hyphens and case are normalized server-side."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/cns/approve`.\\n\\nThe operator presents the claim code displayed on the CN's console (or syslog, or the `/var/lib/tritonagent/claim-code` file). Hyphens and case are normalized server-side.\","]
+    #[doc = "  \"description\": \"Request body for `POST /v1/cns/approve`.\\n\\nThe operator presents the claim code displayed on the CN's console (or syslog, or the `/var/lib/tritonagent/claim-code` file). Hyphens and case are normalized server-side.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"code\""]
@@ -1076,13 +1076,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Response body for `GET /v2/audit/events`."]
+    #[doc = "Response body for `GET /v1/audit/events`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Response body for `GET /v2/audit/events`.\","]
+    #[doc = "  \"description\": \"Response body for `GET /v1/audit/events`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"events\""]
@@ -1127,13 +1127,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Response body for `GET /v2/audit/verify`."]
+    #[doc = "Response body for `GET /v1/audit/verify`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Response body for `GET /v2/audit/verify`.\","]
+    #[doc = "  \"description\": \"Response body for `GET /v1/audit/verify`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"outcome\""]
@@ -1393,13 +1393,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `POST /v2/agent/jobs/claim`.\n\n`claimed_by` is the agent's own identity — used by the store as the [`ProvisioningJob::claimed_by`] field, and rolled into audit events so concurrent agents can be told apart."]
+    #[doc = "Request body for `POST /v1/agent/jobs/claim`.\n\n`claimed_by` is the agent's own identity — used by the store as the [`ProvisioningJob::claimed_by`] field, and rolled into audit events so concurrent agents can be told apart."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/agent/jobs/claim`.\\n\\n`claimed_by` is the agent's own identity — used by the store as the [`ProvisioningJob::claimed_by`] field, and rolled into audit events so concurrent agents can be told apart.\","]
+    #[doc = "  \"description\": \"Request body for `POST /v1/agent/jobs/claim`.\\n\\n`claimed_by` is the agent's own identity — used by the store as the [`ProvisioningJob::claimed_by`] field, and rolled into audit events so concurrent agents can be told apart.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"claimed_by\""]
@@ -1425,13 +1425,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Response body for `POST /v2/agent/jobs/claim`.\n\n`job` is `Some(...)` when the queue had a Pending job and the claim succeeded; `None` when the queue is empty. The HTTP status is always `200 OK`; the agent reads the `job` field to decide whether to do work or sleep until the next poll."]
+    #[doc = "Response body for `POST /v1/agent/jobs/claim`.\n\n`job` is `Some(...)` when the queue had a Pending job and the claim succeeded; `None` when the queue is empty. The HTTP status is always `200 OK`; the agent reads the `job` field to decide whether to do work or sleep until the next poll."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Response body for `POST /v2/agent/jobs/claim`.\\n\\n`job` is `Some(...)` when the queue had a Pending job and the claim succeeded; `None` when the queue is empty. The HTTP status is always `200 OK`; the agent reads the `job` field to decide whether to do work or sleep until the next poll.\","]
+    #[doc = "  \"description\": \"Response body for `POST /v1/agent/jobs/claim`.\\n\\n`job` is `Some(...)` when the queue had a Pending job and the claim succeeded; `None` when the queue is empty. The HTTP status is always `200 OK`; the agent reads the `job` field to decide whether to do work or sleep until the next poll.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"job\": {"]
@@ -1595,7 +1595,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    {"]
-    #[doc = "      \"description\": \"Approved and active. The per-CN API key bound via [`ApiKey::bound_to_cn`] is the agent's credential for the rest of the `/v2/agent/*` surface.\","]
+    #[doc = "      \"description\": \"Approved and active. The per-CN API key bound via [`ApiKey::bound_to_cn`] is the agent's credential for the rest of the `/v1/agent/*` surface.\","]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"enum\": ["]
     #[doc = "        \"approved\""]
@@ -1629,7 +1629,7 @@ pub mod types {
         #[doc = "Self-registered; awaiting operator approval (or auto-approve window). Carries an active `claim_code` until approval or expiry."]
         #[serde(rename = "pending")]
         Pending,
-        #[doc = "Approved and active. The per-CN API key bound via [`ApiKey::bound_to_cn`] is the agent's credential for the rest of the `/v2/agent/*` surface."]
+        #[doc = "Approved and active. The per-CN API key bound via [`ApiKey::bound_to_cn`] is the agent's credential for the rest of the `/v1/agent/*` surface."]
         #[serde(rename = "approved")]
         Approved,
         #[doc = "Explicitly disabled by an operator. The bound API key is revoked and the record stays for audit visibility. A fresh registration from the same `server_uuid` re-arms the record back to `Pending` (awaiting approval) — i.e. \"re-enable with fresh credentials\"; the disable event remains in the audit chain."]
@@ -1802,13 +1802,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `POST /v2/agent/jobs/{job_id}/complete`."]
+    #[doc = "Request body for `POST /v1/agent/jobs/{job_id}/complete`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/agent/jobs/{job_id}/complete`.\","]
+    #[doc = "  \"description\": \"Request body for `POST /v1/agent/jobs/{job_id}/complete`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"outcome\""]
@@ -1924,13 +1924,13 @@ pub mod types {
         }
     }
 
-    #[doc = "One cluster-wide configuration key with its current value, default, description, and operational metadata. Returned by the `/v2/config` endpoints; consumed by `tcadm config` and the admin console."]
+    #[doc = "One cluster-wide configuration key with its current value, default, description, and operational metadata. Returned by the `/v1/config` endpoints; consumed by `tcadm config` and the admin console."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One cluster-wide configuration key with its current value, default, description, and operational metadata. Returned by the `/v2/config` endpoints; consumed by `tcadm config` and the admin console.\","]
+    #[doc = "  \"description\": \"One cluster-wide configuration key with its current value, default, description, and operational metadata. Returned by the `/v1/config` endpoints; consumed by `tcadm config` and the admin console.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"default\","]
@@ -2349,13 +2349,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `POST /v2/agent/dhcp-lease-activity`. A batch — the agent drains the event ring on each poll and forwards every DHCP request it found in one round-trip."]
+    #[doc = "Request body for `POST /v1/agent/dhcp-lease-activity`. A batch — the agent drains the event ring on each poll and forwards every DHCP request it found in one round-trip."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/agent/dhcp-lease-activity`. A batch — the agent drains the event ring on each poll and forwards every DHCP request it found in one round-trip.\","]
+    #[doc = "  \"description\": \"Request body for `POST /v1/agent/dhcp-lease-activity`. A batch — the agent drains the event ring on each poll and forwards every DHCP request it found in one round-trip.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"items\""]
@@ -2855,13 +2855,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Response from `POST /v2/cns/{server_uuid}/drain/preview`. Used by the operator console's `BlastRadiusCard` to show the actual migration plan + capacity / quorum signals before commit.\n\n`placeable` + `not_placeable` partition the instances currently hosted on the source CN. Iff `not_placeable` is empty the drain can proceed without operator intervention (capacity_ok = true)."]
+    #[doc = "Response from `POST /v1/cns/{server_uuid}/drain/preview`. Used by the operator console's `BlastRadiusCard` to show the actual migration plan + capacity / quorum signals before commit.\n\n`placeable` + `not_placeable` partition the instances currently hosted on the source CN. Iff `not_placeable` is empty the drain can proceed without operator intervention (capacity_ok = true)."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Response from `POST /v2/cns/{server_uuid}/drain/preview`. Used by the operator console's `BlastRadiusCard` to show the actual migration plan + capacity / quorum signals before commit.\\n\\n`placeable` + `not_placeable` partition the instances currently hosted on the source CN. Iff `not_placeable` is empty the drain can proceed without operator intervention (capacity_ok = true).\","]
+    #[doc = "  \"description\": \"Response from `POST /v1/cns/{server_uuid}/drain/preview`. Used by the operator console's `BlastRadiusCard` to show the actual migration plan + capacity / quorum signals before commit.\\n\\n`placeable` + `not_placeable` partition the instances currently hosted on the source CN. Iff `not_placeable` is empty the drain can proceed without operator intervention (capacity_ok = true).\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"capacity_ok\","]
@@ -3704,13 +3704,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Wire-safe view of an [`IdpConfig`] with the client secret redacted. Returned by `GET /v2/silos/{silo_id}/idp`."]
+    #[doc = "Wire-safe view of an [`IdpConfig`] with the client secret redacted. Returned by `GET /v1/silos/{silo_id}/idp`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Wire-safe view of an [`IdpConfig`] with the client secret redacted. Returned by `GET /v2/silos/{silo_id}/idp`.\","]
+    #[doc = "  \"description\": \"Wire-safe view of an [`IdpConfig`] with the client secret redacted. Returned by `GET /v1/silos/{silo_id}/idp`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"client_id\","]
@@ -5020,13 +5020,13 @@ pub mod types {
         },
     }
 
-    #[doc = "Outcome a worker reports when finishing a job.\n\nWire-stable: rides as the body of `POST /v2/agent/jobs/{id}/complete` when a real `tritonagent` is reporting back. The serde tag is `kind` and the case is snake_case — matches every other tagged enum on the wire (e.g. [`JobStatus`])."]
+    #[doc = "Outcome a worker reports when finishing a job.\n\nWire-stable: rides as the body of `POST /v1/agent/jobs/{id}/complete` when a real `tritonagent` is reporting back. The serde tag is `kind` and the case is snake_case — matches every other tagged enum on the wire (e.g. [`JobStatus`])."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Outcome a worker reports when finishing a job.\\n\\nWire-stable: rides as the body of `POST /v2/agent/jobs/{id}/complete` when a real `tritonagent` is reporting back. The serde tag is `kind` and the case is snake_case — matches every other tagged enum on the wire (e.g. [`JobStatus`]).\","]
+    #[doc = "  \"description\": \"Outcome a worker reports when finishing a job.\\n\\nWire-stable: rides as the body of `POST /v1/agent/jobs/{id}/complete` when a real `tritonagent` is reporting back. The serde tag is `kind` and the case is snake_case — matches every other tagged enum on the wire (e.g. [`JobStatus`]).\","]
     #[doc = "  \"oneOf\": ["]
     #[doc = "    {"]
     #[doc = "      \"type\": \"object\","]
@@ -5162,13 +5162,13 @@ pub mod types {
         Failed(::std::string::String),
     }
 
-    #[doc = "Per-CN summary returned by `GET /v2/admin/legacy/cns`.\n\nDistinct from [`CnView`]: this view rolls up the discovery classifier's per-CN counts (how many tritond-managed instances vs unmanaged legacy zones) so a fleet-admin operator can spot CNs that still have legacy zones to adopt."]
+    #[doc = "Per-CN summary returned by `GET /v1/admin/legacy/cns`.\n\nDistinct from [`CnView`]: this view rolls up the discovery classifier's per-CN counts (how many tritond-managed instances vs unmanaged legacy zones) so a fleet-admin operator can spot CNs that still have legacy zones to adopt."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Per-CN summary returned by `GET /v2/admin/legacy/cns`.\\n\\nDistinct from [`CnView`]: this view rolls up the discovery classifier's per-CN counts (how many tritond-managed instances vs unmanaged legacy zones) so a fleet-admin operator can spot CNs that still have legacy zones to adopt.\","]
+    #[doc = "  \"description\": \"Per-CN summary returned by `GET /v1/admin/legacy/cns`.\\n\\nDistinct from [`CnView`]: this view rolls up the discovery classifier's per-CN counts (how many tritond-managed instances vs unmanaged legacy zones) so a fleet-admin operator can spot CNs that still have legacy zones to adopt.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"hostname\","]
@@ -5320,13 +5320,13 @@ pub mod types {
         }
     }
 
-    #[doc = "A SmartOS zone observed on a registered CN that does not carry the tritond `internal_metadata` identity tags -- i.e. it pre-existed before tritonagent was installed on the CN, or was created by an operator running `vmadm create` directly.\n\nLegacy VMs live in their own FDB keyspace (`legacy_vm/...`) and are visible only to fleet-admin operators via `/v2/admin/legacy/vms`. They are NOT part of any tenant's workload tree until adopted (deferred Phase D)."]
+    #[doc = "A SmartOS zone observed on a registered CN that does not carry the tritond `internal_metadata` identity tags -- i.e. it pre-existed before tritonagent was installed on the CN, or was created by an operator running `vmadm create` directly.\n\nLegacy VMs live in their own FDB keyspace (`legacy_vm/...`) and are visible only to fleet-admin operators via `/v1/admin/legacy/vms`. They are NOT part of any tenant's workload tree until adopted (deferred Phase D)."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A SmartOS zone observed on a registered CN that does not carry the tritond `internal_metadata` identity tags -- i.e. it pre-existed before tritonagent was installed on the CN, or was created by an operator running `vmadm create` directly.\\n\\nLegacy VMs live in their own FDB keyspace (`legacy_vm/...`) and are visible only to fleet-admin operators via `/v2/admin/legacy/vms`. They are NOT part of any tenant's workload tree until adopted (deferred Phase D).\","]
+    #[doc = "  \"description\": \"A SmartOS zone observed on a registered CN that does not carry the tritond `internal_metadata` identity tags -- i.e. it pre-existed before tritonagent was installed on the CN, or was created by an operator running `vmadm create` directly.\\n\\nLegacy VMs live in their own FDB keyspace (`legacy_vm/...`) and are visible only to fleet-admin operators via `/v1/admin/legacy/vms`. They are NOT part of any tenant's workload tree until adopted (deferred Phase D).\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"first_seen_at\","]
@@ -5611,13 +5611,13 @@ pub mod types {
         Failed(::std::string::String),
     }
 
-    #[doc = "Request body for `POST /v2/auth/login`.\n\n`password` is a [`RedactedString`] so a stray `Debug` of this struct does not print the credential and so the in-memory copy is zeroed when the value drops."]
+    #[doc = "Request body for `POST /v1/auth/login`.\n\n`password` is a [`RedactedString`] so a stray `Debug` of this struct does not print the credential and so the in-memory copy is zeroed when the value drops."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/auth/login`.\\n\\n`password` is a [`RedactedString`] so a stray `Debug` of this struct does not print the credential and so the in-memory copy is zeroed when the value drops.\","]
+    #[doc = "  \"description\": \"Request body for `POST /v1/auth/login`.\\n\\n`password` is a [`RedactedString`] so a stray `Debug` of this struct does not print the credential and so the in-memory copy is zeroed when the value drops.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"password\","]
@@ -6361,13 +6361,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Response body for `POST .../instances/{instance_id}/migrate` when the action is `Begin`. The operation id is the Steno saga id; clients poll `GET /v2/operations/{operation_id}` for saga-level progress and `GET /v2/migrations/{migration_id}` for the migration-specific timeline."]
+    #[doc = "Response body for `POST .../instances/{instance_id}/migrate` when the action is `Begin`. The operation id is the Steno saga id; clients poll `GET /v1/operations/{operation_id}` for saga-level progress and `GET /v1/migrations/{migration_id}` for the migration-specific timeline."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Response body for `POST .../instances/{instance_id}/migrate` when the action is `Begin`. The operation id is the Steno saga id; clients poll `GET /v2/operations/{operation_id}` for saga-level progress and `GET /v2/migrations/{migration_id}` for the migration-specific timeline.\","]
+    #[doc = "  \"description\": \"Response body for `POST .../instances/{instance_id}/migrate` when the action is `Begin`. The operation id is the Steno saga id; clients poll `GET /v1/operations/{operation_id}` for saga-level progress and `GET /v1/migrations/{migration_id}` for the migration-specific timeline.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"migration_id\","]
@@ -6400,13 +6400,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Operator-initiated action against a migration record. The HTTP handler at `POST /v2/instances/{id}/actions/migrate` (LM-1 task #16 / LM-5) dispatches on this enum; `Begin` starts a saga, the others address an existing migration."]
+    #[doc = "Operator-initiated action against a migration record. The HTTP handler at `POST /v1/instances/{id}/actions/migrate` (LM-1 task #16 / LM-5) dispatches on this enum; `Begin` starts a saga, the others address an existing migration."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Operator-initiated action against a migration record. The HTTP handler at `POST /v2/instances/{id}/actions/migrate` (LM-1 task #16 / LM-5) dispatches on this enum; `Begin` starts a saga, the others address an existing migration.\","]
+    #[doc = "  \"description\": \"Operator-initiated action against a migration record. The HTTP handler at `POST /v1/instances/{id}/actions/migrate` (LM-1 task #16 / LM-5) dispatches on this enum; `Begin` starts a saga, the others address an existing migration.\","]
     #[doc = "  \"type\": \"string\","]
     #[doc = "  \"enum\": ["]
     #[doc = "    \"begin\","]
@@ -7262,13 +7262,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `POST /v2/agent/network-realization`.\n\nAgents report one `(resource, realizer)` row at a time. Tritond validates the resource exists and then lets the store enforce monotonic generation reporting for that tuple."]
+    #[doc = "Request body for `POST /v1/agent/network-realization`.\n\nAgents report one `(resource, realizer)` row at a time. Tritond validates the resource exists and then lets the store enforce monotonic generation reporting for that tuple."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/agent/network-realization`.\\n\\nAgents report one `(resource, realizer)` row at a time. Tritond validates the resource exists and then lets the store enforce monotonic generation reporting for that tuple.\","]
+    #[doc = "  \"description\": \"Request body for `POST /v1/agent/network-realization`.\\n\\nAgents report one `(resource, realizer)` row at a time. Tritond validates the resource exists and then lets the store enforce monotonic generation reporting for that tuple.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"generation\","]
@@ -7613,13 +7613,13 @@ pub mod types {
         EdgeCluster(::uuid::Uuid),
     }
 
-    #[doc = "Request body for `POST /v2/auth/api-keys`.\n\n`scope` defaults to [`ApiKeyScope::Full`] when omitted on the wire — preserves the pre-scope behaviour where every minted key has the full permissions of the owning user. Operators who want a least-privilege key (e.g. for a CI pipeline that only reads audit logs) pass `scope: \"read_only\"` or `scope: \"audit_only\"` at create time."]
+    #[doc = "Request body for `POST /v1/auth/api-keys`.\n\n`scope` defaults to [`ApiKeyScope::Full`] when omitted on the wire — preserves the pre-scope behaviour where every minted key has the full permissions of the owning user. Operators who want a least-privilege key (e.g. for a CI pipeline that only reads audit logs) pass `scope: \"read_only\"` or `scope: \"audit_only\"` at create time."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/auth/api-keys`.\\n\\n`scope` defaults to [`ApiKeyScope::Full`] when omitted on the wire — preserves the pre-scope behaviour where every minted key has the full permissions of the owning user. Operators who want a least-privilege key (e.g. for a CI pipeline that only reads audit logs) pass `scope: \\\"read_only\\\"` or `scope: \\\"audit_only\\\"` at create time.\","]
+    #[doc = "  \"description\": \"Request body for `POST /v1/auth/api-keys`.\\n\\n`scope` defaults to [`ApiKeyScope::Full`] when omitted on the wire — preserves the pre-scope behaviour where every minted key has the full permissions of the owning user. Operators who want a least-privilege key (e.g. for a CI pipeline that only reads audit logs) pass `scope: \\\"read_only\\\"` or `scope: \\\"audit_only\\\"` at create time.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"description\""]
@@ -7655,13 +7655,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `PUT /v2/.../vpcs/{vpc_id}/dhcp/pool`."]
+    #[doc = "Request body for `PUT /v1/.../vpcs/{vpc_id}/dhcp/pool`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `PUT /v2/.../vpcs/{vpc_id}/dhcp/pool`.\","]
+    #[doc = "  \"description\": \"Request body for `PUT /v1/.../vpcs/{vpc_id}/dhcp/pool`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"lease_seconds_default\""]
@@ -7707,13 +7707,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `POST /v2/.../vpcs/{vpc_id}/dhcp/reservations`."]
+    #[doc = "Request body for `POST /v1/.../vpcs/{vpc_id}/dhcp/reservations`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/.../vpcs/{vpc_id}/dhcp/reservations`.\","]
+    #[doc = "  \"description\": \"Request body for `POST /v1/.../vpcs/{vpc_id}/dhcp/reservations`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"ipv4\","]
@@ -7933,13 +7933,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `POST /v2/tenants/{tenant_id}/idp`. tritond **eagerly** fetches the IdP's discovery document on this call; a 4xx/5xx return means the IdP isn't reachable or doesn't speak OIDC, and the config is not persisted."]
+    #[doc = "Request body for `POST /v1/tenants/{tenant_id}/idp`. tritond **eagerly** fetches the IdP's discovery document on this call; a 4xx/5xx return means the IdP isn't reachable or doesn't speak OIDC, and the config is not persisted."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/tenants/{tenant_id}/idp`. tritond **eagerly** fetches the IdP's discovery document on this call; a 4xx/5xx return means the IdP isn't reachable or doesn't speak OIDC, and the config is not persisted.\","]
+    #[doc = "  \"description\": \"Request body for `POST /v1/tenants/{tenant_id}/idp`. tritond **eagerly** fetches the IdP's discovery document on this call; a 4xx/5xx return means the IdP isn't reachable or doesn't speak OIDC, and the config is not persisted.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"client_id\","]
@@ -8084,13 +8084,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `POST /v2/silos/{silo_id}/image-bundles`. (Bundle ingest stays silo-scoped through slice F; multi-scope bundle ingest is a future concern.)\n\n`bundle_url` points at a tritond image bundle (an uncompressed tar with `manifest.json` + `content.zfs.gz`, produced by the `tritonimg-build` CLI). tritond fetches the bundle once at registration time, validates the manifest, re-hashes the content against the manifest's claimed sha256, and populates the Image record's `name`, `version`, `os`, `size_bytes`, `sha256`, and `compatibility` from the manifest. Operators don't pass any of those fields by hand — the bundle is the source of truth.\n\nThe bundle URL is also recorded as the Image's `source_url` so the per-CN agent fetches the same bundle at provision time (extracts manifest, sha256-verifies content, ZFS- receives)."]
+    #[doc = "Request body for `POST /v1/silos/{silo_id}/image-bundles`. (Bundle ingest stays silo-scoped through slice F; multi-scope bundle ingest is a future concern.)\n\n`bundle_url` points at a tritond image bundle (an uncompressed tar with `manifest.json` + `content.zfs.gz`, produced by the `tritonimg-build` CLI). tritond fetches the bundle once at registration time, validates the manifest, re-hashes the content against the manifest's claimed sha256, and populates the Image record's `name`, `version`, `os`, `size_bytes`, `sha256`, and `compatibility` from the manifest. Operators don't pass any of those fields by hand — the bundle is the source of truth.\n\nThe bundle URL is also recorded as the Image's `source_url` so the per-CN agent fetches the same bundle at provision time (extracts manifest, sha256-verifies content, ZFS- receives)."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/silos/{silo_id}/image-bundles`. (Bundle ingest stays silo-scoped through slice F; multi-scope bundle ingest is a future concern.)\\n\\n`bundle_url` points at a tritond image bundle (an uncompressed tar with `manifest.json` + `content.zfs.gz`, produced by the `tritonimg-build` CLI). tritond fetches the bundle once at registration time, validates the manifest, re-hashes the content against the manifest's claimed sha256, and populates the Image record's `name`, `version`, `os`, `size_bytes`, `sha256`, and `compatibility` from the manifest. Operators don't pass any of those fields by hand — the bundle is the source of truth.\\n\\nThe bundle URL is also recorded as the Image's `source_url` so the per-CN agent fetches the same bundle at provision time (extracts manifest, sha256-verifies content, ZFS- receives).\","]
+    #[doc = "  \"description\": \"Request body for `POST /v1/silos/{silo_id}/image-bundles`. (Bundle ingest stays silo-scoped through slice F; multi-scope bundle ingest is a future concern.)\\n\\n`bundle_url` points at a tritond image bundle (an uncompressed tar with `manifest.json` + `content.zfs.gz`, produced by the `tritonimg-build` CLI). tritond fetches the bundle once at registration time, validates the manifest, re-hashes the content against the manifest's claimed sha256, and populates the Image record's `name`, `version`, `os`, `size_bytes`, `sha256`, and `compatibility` from the manifest. Operators don't pass any of those fields by hand — the bundle is the source of truth.\\n\\nThe bundle URL is also recorded as the Image's `source_url` so the per-CN agent fetches the same bundle at provision time (extracts manifest, sha256-verifies content, ZFS- receives).\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"bundle_url\""]
@@ -8116,13 +8116,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `POST /v2/silos/{silo_id}/images/from-imgapi`.\n\nThe IMGAPI v2 manifest is the canonical Joyent / Triton image wire format. Operators (and the `tcadm image fetch-nocloud` pipeline once it lands) upload the binary blob to Manta out of band, then POST this body to register the image with tritond. tritond derives every `Image` field from the manifest plus the operator-supplied integrity metadata.\n\n## Why we carry our own sha256\n\nIMGAPI's `files[].sha1` is the spec-mandated digest; our per-CN agent verifies SHA-256 for defense-in-depth (the existing bundle ingest path uses SHA-256 too). The publisher computes both digests during the same streaming hash on the way to Manta and supplies both, so the agent's existing verifier needs no SHA-1 path.\n\n## URL derivation\n\n`manta_url` is the public HTTPS URL the per-CN agent will fetch the blob from. Conventionally `<imgapi-blob-manta prefix>/<uuid>/file`, but tritond does not enforce a layout — operators may host blobs anywhere HTTPS-reachable. The agent re-hashes the bytes against `sha256` regardless."]
+    #[doc = "Request body for `POST /v1/silos/{silo_id}/images/from-imgapi`.\n\nThe IMGAPI v2 manifest is the canonical Joyent / Triton image wire format. Operators (and the `tcadm image fetch-nocloud` pipeline once it lands) upload the binary blob to Manta out of band, then POST this body to register the image with tritond. tritond derives every `Image` field from the manifest plus the operator-supplied integrity metadata.\n\n## Why we carry our own sha256\n\nIMGAPI's `files[].sha1` is the spec-mandated digest; our per-CN agent verifies SHA-256 for defense-in-depth (the existing bundle ingest path uses SHA-256 too). The publisher computes both digests during the same streaming hash on the way to Manta and supplies both, so the agent's existing verifier needs no SHA-1 path.\n\n## URL derivation\n\n`manta_url` is the public HTTPS URL the per-CN agent will fetch the blob from. Conventionally `<imgapi-blob-manta prefix>/<uuid>/file`, but tritond does not enforce a layout — operators may host blobs anywhere HTTPS-reachable. The agent re-hashes the bytes against `sha256` regardless."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/silos/{silo_id}/images/from-imgapi`.\\n\\nThe IMGAPI v2 manifest is the canonical Joyent / Triton image wire format. Operators (and the `tcadm image fetch-nocloud` pipeline once it lands) upload the binary blob to Manta out of band, then POST this body to register the image with tritond. tritond derives every `Image` field from the manifest plus the operator-supplied integrity metadata.\\n\\n## Why we carry our own sha256\\n\\nIMGAPI's `files[].sha1` is the spec-mandated digest; our per-CN agent verifies SHA-256 for defense-in-depth (the existing bundle ingest path uses SHA-256 too). The publisher computes both digests during the same streaming hash on the way to Manta and supplies both, so the agent's existing verifier needs no SHA-1 path.\\n\\n## URL derivation\\n\\n`manta_url` is the public HTTPS URL the per-CN agent will fetch the blob from. Conventionally `<imgapi-blob-manta prefix>/<uuid>/file`, but tritond does not enforce a layout — operators may host blobs anywhere HTTPS-reachable. The agent re-hashes the bytes against `sha256` regardless.\","]
+    #[doc = "  \"description\": \"Request body for `POST /v1/silos/{silo_id}/images/from-imgapi`.\\n\\nThe IMGAPI v2 manifest is the canonical Joyent / Triton image wire format. Operators (and the `tcadm image fetch-nocloud` pipeline once it lands) upload the binary blob to Manta out of band, then POST this body to register the image with tritond. tritond derives every `Image` field from the manifest plus the operator-supplied integrity metadata.\\n\\n## Why we carry our own sha256\\n\\nIMGAPI's `files[].sha1` is the spec-mandated digest; our per-CN agent verifies SHA-256 for defense-in-depth (the existing bundle ingest path uses SHA-256 too). The publisher computes both digests during the same streaming hash on the way to Manta and supplies both, so the agent's existing verifier needs no SHA-1 path.\\n\\n## URL derivation\\n\\n`manta_url` is the public HTTPS URL the per-CN agent will fetch the blob from. Conventionally `<imgapi-blob-manta prefix>/<uuid>/file`, but tritond does not enforce a layout — operators may host blobs anywhere HTTPS-reachable. The agent re-hashes the bytes against `sha256` regardless.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"manifest\","]
@@ -8624,13 +8624,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Body of `POST /v2/storage/clusters`."]
+    #[doc = "Body of `POST /v1/storage/clusters`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Body of `POST /v2/storage/clusters`.\","]
+    #[doc = "  \"description\": \"Body of `POST /v1/storage/clusters`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"admin_token\","]
@@ -8940,13 +8940,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `POST /v2/cns/auto-approve`.\n\nOpens (or replaces) the global auto-approve window. Bounded by both wall-time and a remaining-count budget so a forgotten window can't stay open forever; tritond clamps `duration_secs` to the 24h hard cap server-side."]
+    #[doc = "Request body for `POST /v1/cns/auto-approve`.\n\nOpens (or replaces) the global auto-approve window. Bounded by both wall-time and a remaining-count budget so a forgotten window can't stay open forever; tritond clamps `duration_secs` to the 24h hard cap server-side."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/cns/auto-approve`.\\n\\nOpens (or replaces) the global auto-approve window. Bounded by both wall-time and a remaining-count budget so a forgotten window can't stay open forever; tritond clamps `duration_secs` to the 24h hard cap server-side.\","]
+    #[doc = "  \"description\": \"Request body for `POST /v1/cns/auto-approve`.\\n\\nOpens (or replaces) the global auto-approve window. Bounded by both wall-time and a remaining-count budget so a forgotten window can't stay open forever; tritond clamps `duration_secs` to the 24h hard cap server-side.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"duration_secs\""]
@@ -8986,13 +8986,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Detail view: the summary plus the persisted DAG + event log. Used by `GET /v2/operations/{operation_id}` and rendered by `tcadm operations get` / adminUI Operations detail panel."]
+    #[doc = "Detail view: the summary plus the persisted DAG + event log. Used by `GET /v1/operations/{operation_id}` and rendered by `tcadm operations get` / adminUI Operations detail panel."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Detail view: the summary plus the persisted DAG + event log. Used by `GET /v2/operations/{operation_id}` and rendered by `tcadm operations get` / adminUI Operations detail panel.\","]
+    #[doc = "  \"description\": \"Detail view: the summary plus the persisted DAG + event log. Used by `GET /v1/operations/{operation_id}` and rendered by `tcadm operations get` / adminUI Operations detail panel.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"adopt_generation\","]
@@ -9198,13 +9198,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Public state of a long-running operation (RFD 00004 D-Sg-13). String values are stable on the wire.\n\nThe list endpoint (`GET /v2/operations`) projects coarse state — Pending / Running / Unwinding / Done / Stuck — derived from the saga record alone (cheap). The detail endpoint (`GET /v2/operations/{id}`) refines `Done` into one of `Succeeded` / `Failed` / `Unwound` by walking the persisted node-event log. Operators reading a row in the list see the coarse view; expanding the row reveals the refined outcome."]
+    #[doc = "Public state of a long-running operation (RFD 00004 D-Sg-13). String values are stable on the wire.\n\nThe list endpoint (`GET /v1/operations`) projects coarse state — Pending / Running / Unwinding / Done / Stuck — derived from the saga record alone (cheap). The detail endpoint (`GET /v1/operations/{id}`) refines `Done` into one of `Succeeded` / `Failed` / `Unwound` by walking the persisted node-event log. Operators reading a row in the list see the coarse view; expanding the row reveals the refined outcome."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Public state of a long-running operation (RFD 00004 D-Sg-13). String values are stable on the wire.\\n\\nThe list endpoint (`GET /v2/operations`) projects coarse state — Pending / Running / Unwinding / Done / Stuck — derived from the saga record alone (cheap). The detail endpoint (`GET /v2/operations/{id}`) refines `Done` into one of `Succeeded` / `Failed` / `Unwound` by walking the persisted node-event log. Operators reading a row in the list see the coarse view; expanding the row reveals the refined outcome.\","]
+    #[doc = "  \"description\": \"Public state of a long-running operation (RFD 00004 D-Sg-13). String values are stable on the wire.\\n\\nThe list endpoint (`GET /v1/operations`) projects coarse state — Pending / Running / Unwinding / Done / Stuck — derived from the saga record alone (cheap). The detail endpoint (`GET /v1/operations/{id}`) refines `Done` into one of `Succeeded` / `Failed` / `Unwound` by walking the persisted node-event log. Operators reading a row in the list see the coarse view; expanding the row reveals the refined outcome.\","]
     #[doc = "  \"oneOf\": ["]
     #[doc = "    {"]
     #[doc = "      \"description\": \"Saga has been created and the record is durable, but no action body has reported a `started` event yet. Brief window between `saga_create` and the first action's first log line.\","]
@@ -9459,13 +9459,13 @@ pub mod types {
         }
     }
 
-    #[doc = "One operation as it appears in `GET /v2/operations`. Minimal shape suitable for an adminUI list view; clients fetch the detail surface for the full DAG / event log."]
+    #[doc = "One operation as it appears in `GET /v1/operations`. Minimal shape suitable for an adminUI list view; clients fetch the detail surface for the full DAG / event log."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One operation as it appears in `GET /v2/operations`. Minimal shape suitable for an adminUI list view; clients fetch the detail surface for the full DAG / event log.\","]
+    #[doc = "  \"description\": \"One operation as it appears in `GET /v1/operations`. Minimal shape suitable for an adminUI list view; clients fetch the detail surface for the full DAG / event log.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"creator_sec\","]
@@ -9820,13 +9820,13 @@ pub mod types {
         ServerError { message: ::std::string::String },
     }
 
-    #[doc = "Body of `POST /v2/storage/clusters/{id}/s3/presign/get`. Same shape as the PUT request — kept as a distinct type for audit and API-doc clarity."]
+    #[doc = "Body of `POST /v1/storage/clusters/{id}/s3/presign/get`. Same shape as the PUT request — kept as a distinct type for audit and API-doc clarity."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Body of `POST /v2/storage/clusters/{id}/s3/presign/get`. Same shape as the PUT request — kept as a distinct type for audit and API-doc clarity.\","]
+    #[doc = "  \"description\": \"Body of `POST /v1/storage/clusters/{id}/s3/presign/get`. Same shape as the PUT request — kept as a distinct type for audit and API-doc clarity.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"bucket\","]
@@ -9864,13 +9864,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Body of `POST /v2/storage/clusters/{id}/s3/presign/put`."]
+    #[doc = "Body of `POST /v1/storage/clusters/{id}/s3/presign/put`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Body of `POST /v2/storage/clusters/{id}/s3/presign/put`.\","]
+    #[doc = "  \"description\": \"Body of `POST /v1/storage/clusters/{id}/s3/presign/put`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"bucket\","]
@@ -10018,13 +10018,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Materialised view of everything the agent needs to act on a claimed [`ProvisioningJob`]. Returned by `GET /v2/agent/jobs/{job_id}/blueprint`.\n\nThe shape is intentionally a flat bundle: instance + image + nics + subnets + disks + ssh public keys, all in one response. That lets the agent issue exactly one round-trip per claimed job, and keeps the queue payload itself opaque to the agent's needs (a Provision job will eventually want different fields than a hypothetical Migrate or Resize, and embedding everything in the [`ProvisioningJob`] would force lockstep schema migration).\n\nTritond's `Instance::id` is the canonical identity reused downstream: the agent passes it as the SmartOS zone UUID at `vmadm create`, so subsequent Stop/Restart jobs can address the zone by the same id without a separate mapping table.\n\nOptional fields reflect the per-`JobKind` shape:\n\n* `Provision` — `instance`, `image`, `nics`, `disks`, and any `ssh_public_keys` are populated. `subnets` carries the referenced subnet records so the agent can derive static guest network metadata without relying on dataplane DHCP. The agent has everything it needs to call `vmadm create`. * `Stop` / `Restart` — `instance` populated, others may be empty. The agent only needs `instance.id` to call `vmadm stop` / `vmadm reboot`."]
+    #[doc = "Materialised view of everything the agent needs to act on a claimed [`ProvisioningJob`]. Returned by `GET /v1/agent/jobs/{job_id}/blueprint`.\n\nThe shape is intentionally a flat bundle: instance + image + nics + subnets + disks + ssh public keys, all in one response. That lets the agent issue exactly one round-trip per claimed job, and keeps the queue payload itself opaque to the agent's needs (a Provision job will eventually want different fields than a hypothetical Migrate or Resize, and embedding everything in the [`ProvisioningJob`] would force lockstep schema migration).\n\nTritond's `Instance::id` is the canonical identity reused downstream: the agent passes it as the SmartOS zone UUID at `vmadm create`, so subsequent Stop/Restart jobs can address the zone by the same id without a separate mapping table.\n\nOptional fields reflect the per-`JobKind` shape:\n\n* `Provision` — `instance`, `image`, `nics`, `disks`, and any `ssh_public_keys` are populated. `subnets` carries the referenced subnet records so the agent can derive static guest network metadata without relying on dataplane DHCP. The agent has everything it needs to call `vmadm create`. * `Stop` / `Restart` — `instance` populated, others may be empty. The agent only needs `instance.id` to call `vmadm stop` / `vmadm reboot`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Materialised view of everything the agent needs to act on a claimed [`ProvisioningJob`]. Returned by `GET /v2/agent/jobs/{job_id}/blueprint`.\\n\\nThe shape is intentionally a flat bundle: instance + image + nics + subnets + disks + ssh public keys, all in one response. That lets the agent issue exactly one round-trip per claimed job, and keeps the queue payload itself opaque to the agent's needs (a Provision job will eventually want different fields than a hypothetical Migrate or Resize, and embedding everything in the [`ProvisioningJob`] would force lockstep schema migration).\\n\\nTritond's `Instance::id` is the canonical identity reused downstream: the agent passes it as the SmartOS zone UUID at `vmadm create`, so subsequent Stop/Restart jobs can address the zone by the same id without a separate mapping table.\\n\\nOptional fields reflect the per-`JobKind` shape:\\n\\n* `Provision` — `instance`, `image`, `nics`, `disks`, and any `ssh_public_keys` are populated. `subnets` carries the referenced subnet records so the agent can derive static guest network metadata without relying on dataplane DHCP. The agent has everything it needs to call `vmadm create`. * `Stop` / `Restart` — `instance` populated, others may be empty. The agent only needs `instance.id` to call `vmadm stop` / `vmadm reboot`.\","]
+    #[doc = "  \"description\": \"Materialised view of everything the agent needs to act on a claimed [`ProvisioningJob`]. Returned by `GET /v1/agent/jobs/{job_id}/blueprint`.\\n\\nThe shape is intentionally a flat bundle: instance + image + nics + subnets + disks + ssh public keys, all in one response. That lets the agent issue exactly one round-trip per claimed job, and keeps the queue payload itself opaque to the agent's needs (a Provision job will eventually want different fields than a hypothetical Migrate or Resize, and embedding everything in the [`ProvisioningJob`] would force lockstep schema migration).\\n\\nTritond's `Instance::id` is the canonical identity reused downstream: the agent passes it as the SmartOS zone UUID at `vmadm create`, so subsequent Stop/Restart jobs can address the zone by the same id without a separate mapping table.\\n\\nOptional fields reflect the per-`JobKind` shape:\\n\\n* `Provision` — `instance`, `image`, `nics`, `disks`, and any `ssh_public_keys` are populated. `subnets` carries the referenced subnet records so the agent can derive static guest network metadata without relying on dataplane DHCP. The agent has everything it needs to call `vmadm create`. * `Stop` / `Restart` — `instance` populated, others may be empty. The agent only needs `instance.id` to call `vmadm stop` / `vmadm reboot`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"job_id\","]
@@ -10704,13 +10704,13 @@ pub mod types {
         EdgeCluster(::uuid::Uuid),
     }
 
-    #[doc = "Request body for `POST /v2/auth/refresh`."]
+    #[doc = "Request body for `POST /v1/auth/refresh`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/auth/refresh`.\","]
+    #[doc = "  \"description\": \"Request body for `POST /v1/auth/refresh`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"refresh_token\""]
@@ -10736,13 +10736,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `POST /v2/agent/register`. Anonymous endpoint (no auth header required); the agent has no credentials yet at this point in its lifecycle."]
+    #[doc = "Request body for `POST /v1/agent/register`. Anonymous endpoint (no auth header required); the agent has no credentials yet at this point in its lifecycle."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/agent/register`. Anonymous endpoint (no auth header required); the agent has no credentials yet at this point in its lifecycle.\","]
+    #[doc = "  \"description\": \"Request body for `POST /v1/agent/register`. Anonymous endpoint (no auth header required); the agent has no credentials yet at this point in its lifecycle.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"hostname\","]
@@ -10815,13 +10815,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Response body for `POST /v2/agent/register`.\n\nThe agent gets back its `poll_token` — needed for every subsequent call to `GET /v2/agent/register/status` — plus, when in Pending state, the `claim_code` it must display on the console for the operator to pair."]
+    #[doc = "Response body for `POST /v1/agent/register`.\n\nThe agent gets back its `poll_token` — needed for every subsequent call to `GET /v1/agent/register/status` — plus, when in Pending state, the `claim_code` it must display on the console for the operator to pair."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Response body for `POST /v2/agent/register`.\\n\\nThe agent gets back its `poll_token` — needed for every subsequent call to `GET /v2/agent/register/status` — plus, when in Pending state, the `claim_code` it must display on the console for the operator to pair.\","]
+    #[doc = "  \"description\": \"Response body for `POST /v1/agent/register`.\\n\\nThe agent gets back its `poll_token` — needed for every subsequent call to `GET /v1/agent/register/status` — plus, when in Pending state, the `claim_code` it must display on the console for the operator to pair.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"poll_token\","]
@@ -10877,13 +10877,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Response body for `GET /v2/agent/register/status`.\n\n`api_key` is populated exactly once — on the first call after the operator approves (or auto-approve fires). Subsequent calls return `state = Approved` with `api_key = None`. The agent persists the key locally on receipt; if the agent loses the key file, an operator must `tcadm cn disable` and re-approve."]
+    #[doc = "Response body for `GET /v1/agent/register/status`.\n\n`api_key` is populated exactly once — on the first call after the operator approves (or auto-approve fires). Subsequent calls return `state = Approved` with `api_key = None`. The agent persists the key locally on receipt; if the agent loses the key file, an operator must `tcadm cn disable` and re-approve."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Response body for `GET /v2/agent/register/status`.\\n\\n`api_key` is populated exactly once — on the first call after the operator approves (or auto-approve fires). Subsequent calls return `state = Approved` with `api_key = None`. The agent persists the key locally on receipt; if the agent loses the key file, an operator must `tcadm cn disable` and re-approve.\","]
+    #[doc = "  \"description\": \"Response body for `GET /v1/agent/register/status`.\\n\\n`api_key` is populated exactly once — on the first call after the operator approves (or auto-approve fires). Subsequent calls return `state = Approved` with `api_key = None`. The agent persists the key locally on receipt; if the agent loses the key file, an operator must `tcadm cn disable` and re-approve.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"state\""]
@@ -12154,13 +12154,13 @@ pub mod types {
         FloatingIp { floating_ip_id: ::uuid::Uuid },
     }
 
-    #[doc = "Request body for `POST /v2/cns/{server_uuid}/role`."]
+    #[doc = "Request body for `POST /v1/cns/{server_uuid}/role`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/cns/{server_uuid}/role`.\","]
+    #[doc = "  \"description\": \"Request body for `POST /v1/cns/{server_uuid}/role`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"role\""]
@@ -12186,13 +12186,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `PUT /v2/config/{key}`."]
+    #[doc = "Request body for `PUT /v1/config/{key}`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `PUT /v2/config/{key}`.\","]
+    #[doc = "  \"description\": \"Request body for `PUT /v1/config/{key}`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"value\""]
@@ -12219,13 +12219,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `PUT /v2/agent/instances/{instance_id}/meta`. The agent-facing variant of [`SetMetaRequest`]; the agent can only ever write `guest/*` keys at instance scope, so the visibility + writable flags are fixed server-side (`guest_visible: true`, `guest_writable: true`) and not under guest control. The agent (and therefore the guest VM speaking to it) only supplies the value."]
+    #[doc = "Request body for `PUT /v1/agent/instances/{instance_id}/meta`. The agent-facing variant of [`SetMetaRequest`]; the agent can only ever write `guest/*` keys at instance scope, so the visibility + writable flags are fixed server-side (`guest_visible: true`, `guest_writable: true`) and not under guest control. The agent (and therefore the guest VM speaking to it) only supplies the value."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `PUT /v2/agent/instances/{instance_id}/meta`. The agent-facing variant of [`SetMetaRequest`]; the agent can only ever write `guest/*` keys at instance scope, so the visibility + writable flags are fixed server-side (`guest_visible: true`, `guest_writable: true`) and not under guest control. The agent (and therefore the guest VM speaking to it) only supplies the value.\","]
+    #[doc = "  \"description\": \"Request body for `PUT /v1/agent/instances/{instance_id}/meta`. The agent-facing variant of [`SetMetaRequest`]; the agent can only ever write `guest/*` keys at instance scope, so the visibility + writable flags are fixed server-side (`guest_visible: true`, `guest_writable: true`) and not under guest control. The agent (and therefore the guest VM speaking to it) only supplies the value.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"value\""]
@@ -12249,13 +12249,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `PUT /v2/meta/{scope}/{scope_id}/entry`. `value` is required; the two flags are optional and default to the values from [`tritond_store::default_guest_visible`] (and `false` for `guest_writable`)."]
+    #[doc = "Request body for `PUT /v1/meta/{scope}/{scope_id}/entry`. `value` is required; the two flags are optional and default to the values from [`tritond_store::default_guest_visible`] (and `false` for `guest_writable`)."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `PUT /v2/meta/{scope}/{scope_id}/entry`. `value` is required; the two flags are optional and default to the values from [`tritond_store::default_guest_visible`] (and `false` for `guest_writable`).\","]
+    #[doc = "  \"description\": \"Request body for `PUT /v1/meta/{scope}/{scope_id}/entry`. `value` is required; the two flags are optional and default to the values from [`tritond_store::default_guest_visible`] (and `false` for `guest_writable`).\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"value\""]
@@ -12295,13 +12295,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Response body for `PUT /v2/meta/{scope}/{scope_id}/entry`. Carries the stored entry and the scope's new generation counter (the realized-view cache key on the agent side)."]
+    #[doc = "Response body for `PUT /v1/meta/{scope}/{scope_id}/entry`. Carries the stored entry and the scope's new generation counter (the realized-view cache key on the agent side)."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Response body for `PUT /v2/meta/{scope}/{scope_id}/entry`. Carries the stored entry and the scope's new generation counter (the realized-view cache key on the agent side).\","]
+    #[doc = "  \"description\": \"Response body for `PUT /v1/meta/{scope}/{scope_id}/entry`. Carries the stored entry and the scope's new generation counter (the realized-view cache key on the agent side).\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"entry\","]
@@ -12334,13 +12334,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Body of `POST /v2/storage/clusters/{id}/presigner`. Operator configures the IAM credential tritond signs presigned S3 URLs with. To clear the presigner, send empty strings — the handler treats empty as \"unset\". `s3_endpoint` is the data-plane URL (port 7443); leave `None` to keep the existing value during credential rotation."]
+    #[doc = "Body of `POST /v1/storage/clusters/{id}/presigner`. Operator configures the IAM credential tritond signs presigned S3 URLs with. To clear the presigner, send empty strings — the handler treats empty as \"unset\". `s3_endpoint` is the data-plane URL (port 7443); leave `None` to keep the existing value during credential rotation."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Body of `POST /v2/storage/clusters/{id}/presigner`. Operator configures the IAM credential tritond signs presigned S3 URLs with. To clear the presigner, send empty strings — the handler treats empty as \\\"unset\\\". `s3_endpoint` is the data-plane URL (port 7443); leave `None` to keep the existing value during credential rotation.\","]
+    #[doc = "  \"description\": \"Body of `POST /v1/storage/clusters/{id}/presigner`. Operator configures the IAM credential tritond signs presigned S3 URLs with. To clear the presigner, send empty strings — the handler treats empty as \\\"unset\\\". `s3_endpoint` is the data-plane URL (port 7443); leave `None` to keep the existing value during credential rotation.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"access_key_id\","]
@@ -12379,13 +12379,13 @@ pub mod types {
         }
     }
 
-    #[doc = "One row of the `shadowed` list returned by `GET /v2/meta/{scope}/{scope_id}/affected?key=K`. Carries the instance plus the scope that actually wins for it (a narrower scope's override, or `System` for a computed system key that shadows operator metadata)."]
+    #[doc = "One row of the `shadowed` list returned by `GET /v1/meta/{scope}/{scope_id}/affected?key=K`. Carries the instance plus the scope that actually wins for it (a narrower scope's override, or `System` for a computed system key that shadows operator metadata)."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One row of the `shadowed` list returned by `GET /v2/meta/{scope}/{scope_id}/affected?key=K`. Carries the instance plus the scope that actually wins for it (a narrower scope's override, or `System` for a computed system key that shadows operator metadata).\","]
+    #[doc = "  \"description\": \"One row of the `shadowed` list returned by `GET /v1/meta/{scope}/{scope_id}/affected?key=K`. Carries the instance plus the scope that actually wins for it (a narrower scope's override, or `System` for a computed system key that shadows operator metadata).\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"id\","]
@@ -13107,13 +13107,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Body for `POST /v2/storage/clusters/{id}/nodes`."]
+    #[doc = "Body for `POST /v1/storage/clusters/{id}/nodes`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Body for `POST /v2/storage/clusters/{id}/nodes`.\","]
+    #[doc = "  \"description\": \"Body for `POST /v1/storage/clusters/{id}/nodes`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"id\","]
@@ -13151,13 +13151,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Mirror of `mantad_client::types::Bucket`. Returned by `GET /v2/storage/clusters/{id}/buckets` (and per-bucket get)."]
+    #[doc = "Mirror of `mantad_client::types::Bucket`. Returned by `GET /v1/storage/clusters/{id}/buckets` (and per-bucket get)."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Mirror of `mantad_client::types::Bucket`. Returned by `GET /v2/storage/clusters/{id}/buckets` (and per-bucket get).\","]
+    #[doc = "  \"description\": \"Mirror of `mantad_client::types::Bucket`. Returned by `GET /v1/storage/clusters/{id}/buckets` (and per-bucket get).\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"created_at\","]
@@ -13216,13 +13216,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Operator-observed health of a registered storage cluster.\n\nPopulated by the `/v2/storage/clusters/{id}/health` endpoint, which runs a probe against the cluster's `/admin/v1/cluster` summary."]
+    #[doc = "Operator-observed health of a registered storage cluster.\n\nPopulated by the `/v1/storage/clusters/{id}/health` endpoint, which runs a probe against the cluster's `/admin/v1/cluster` summary."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Operator-observed health of a registered storage cluster.\\n\\nPopulated by the `/v2/storage/clusters/{id}/health` endpoint, which runs a probe against the cluster's `/admin/v1/cluster` summary.\","]
+    #[doc = "  \"description\": \"Operator-observed health of a registered storage cluster.\\n\\nPopulated by the `/v1/storage/clusters/{id}/health` endpoint, which runs a probe against the cluster's `/admin/v1/cluster` summary.\","]
     #[doc = "  \"oneOf\": ["]
     #[doc = "    {"]
     #[doc = "      \"description\": \"Last probe succeeded and all nodes were alive.\","]
@@ -13333,13 +13333,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Mirror of `mantad_client::types::ClusterSummary`. Returned by `GET /v2/storage/clusters/{id}/cluster`."]
+    #[doc = "Mirror of `mantad_client::types::ClusterSummary`. Returned by `GET /v1/storage/clusters/{id}/cluster`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Mirror of `mantad_client::types::ClusterSummary`. Returned by `GET /v2/storage/clusters/{id}/cluster`.\","]
+    #[doc = "  \"description\": \"Mirror of `mantad_client::types::ClusterSummary`. Returned by `GET /v1/storage/clusters/{id}/cluster`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"buckets\","]
@@ -13436,13 +13436,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Discriminator for the storage surface a registered cluster serves.\n\nEach surface has its own forwarder endpoint family (`/v2/storage/clusters/{id}/s3/*` etc.); attempting to call a surface's endpoint family on a cluster registered under a different surface returns a `409 Conflict`."]
+    #[doc = "Discriminator for the storage surface a registered cluster serves.\n\nEach surface has its own forwarder endpoint family (`/v1/storage/clusters/{id}/s3/*` etc.); attempting to call a surface's endpoint family on a cluster registered under a different surface returns a `409 Conflict`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Discriminator for the storage surface a registered cluster serves.\\n\\nEach surface has its own forwarder endpoint family (`/v2/storage/clusters/{id}/s3/*` etc.); attempting to call a surface's endpoint family on a cluster registered under a different surface returns a `409 Conflict`.\","]
+    #[doc = "  \"description\": \"Discriminator for the storage surface a registered cluster serves.\\n\\nEach surface has its own forwarder endpoint family (`/v1/storage/clusters/{id}/s3/*` etc.); attempting to call a surface's endpoint family on a cluster registered under a different surface returns a `409 Conflict`.\","]
     #[doc = "  \"oneOf\": ["]
     #[doc = "    {"]
     #[doc = "      \"description\": \"S3-compatible object surface (mantad / mantas3-cluster `/admin/v1/*`).\","]
@@ -13541,13 +13541,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Wire-side projection of [`StorageCluster`] that **redacts every secret field** (admin token, presigner secret access key). This is what `GET /v2/storage/clusters` and `GET /v2/storage/clusters/{id}` return."]
+    #[doc = "Wire-side projection of [`StorageCluster`] that **redacts every secret field** (admin token, presigner secret access key). This is what `GET /v1/storage/clusters` and `GET /v1/storage/clusters/{id}` return."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Wire-side projection of [`StorageCluster`] that **redacts every secret field** (admin token, presigner secret access key). This is what `GET /v2/storage/clusters` and `GET /v2/storage/clusters/{id}` return.\","]
+    #[doc = "  \"description\": \"Wire-side projection of [`StorageCluster`] that **redacts every secret field** (admin token, presigner secret access key). This is what `GET /v1/storage/clusters` and `GET /v1/storage/clusters/{id}` return.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"created_at\","]
@@ -13642,13 +13642,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Body for `POST /v2/storage/clusters/{id}/buckets`."]
+    #[doc = "Body for `POST /v1/storage/clusters/{id}/buckets`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Body for `POST /v2/storage/clusters/{id}/buckets`.\","]
+    #[doc = "  \"description\": \"Body for `POST /v1/storage/clusters/{id}/buckets`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"name\""]
@@ -13688,13 +13688,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Body for `POST /v2/storage/clusters/{id}/users`."]
+    #[doc = "Body for `POST /v1/storage/clusters/{id}/users`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Body for `POST /v2/storage/clusters/{id}/users`.\","]
+    #[doc = "  \"description\": \"Body for `POST /v1/storage/clusters/{id}/users`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"name\""]
@@ -13720,13 +13720,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Mirror of `mantad_client::types::Membership`. Returned by `GET /v2/storage/clusters/{id}/membership` and by every node-mutation endpoint (drain / undrain / reweight / add / remove) that mantad answers with the refreshed view."]
+    #[doc = "Mirror of `mantad_client::types::Membership`. Returned by `GET /v1/storage/clusters/{id}/membership` and by every node-mutation endpoint (drain / undrain / reweight / add / remove) that mantad answers with the refreshed view."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Mirror of `mantad_client::types::Membership`. Returned by `GET /v2/storage/clusters/{id}/membership` and by every node-mutation endpoint (drain / undrain / reweight / add / remove) that mantad answers with the refreshed view.\","]
+    #[doc = "  \"description\": \"Mirror of `mantad_client::types::Membership`. Returned by `GET /v1/storage/clusters/{id}/membership` and by every node-mutation endpoint (drain / undrain / reweight / add / remove) that mantad answers with the refreshed view.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"auto_membership\","]
@@ -13767,13 +13767,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Mirror of `mantad_client::types::Node`. Returned by `GET /v2/storage/clusters/{id}/nodes` (and the per-node lookup)."]
+    #[doc = "Mirror of `mantad_client::types::Node`. Returned by `GET /v1/storage/clusters/{id}/nodes` (and the per-node lookup)."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Mirror of `mantad_client::types::Node`. Returned by `GET /v2/storage/clusters/{id}/nodes` (and the per-node lookup).\","]
+    #[doc = "  \"description\": \"Mirror of `mantad_client::types::Node`. Returned by `GET /v1/storage/clusters/{id}/nodes` (and the per-node lookup).\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"alive\","]
@@ -13908,13 +13908,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Mirror of `mantad_client::types::ObjectsPage`. Paged `GET /v2/storage/clusters/{id}/buckets/{bucket}/objects` response."]
+    #[doc = "Mirror of `mantad_client::types::ObjectsPage`. Paged `GET /v1/storage/clusters/{id}/buckets/{bucket}/objects` response."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Mirror of `mantad_client::types::ObjectsPage`. Paged `GET /v2/storage/clusters/{id}/buckets/{bucket}/objects` response.\","]
+    #[doc = "  \"description\": \"Mirror of `mantad_client::types::ObjectsPage`. Paged `GET /v1/storage/clusters/{id}/buckets/{bucket}/objects` response.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"common_prefixes\","]
@@ -14008,13 +14008,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Body for `POST /v2/storage/clusters/{id}/nodes/{node_id}/reweight`."]
+    #[doc = "Body for `POST /v1/storage/clusters/{id}/nodes/{node_id}/reweight`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Body for `POST /v2/storage/clusters/{id}/nodes/{node_id}/reweight`.\","]
+    #[doc = "  \"description\": \"Body for `POST /v1/storage/clusters/{id}/nodes/{node_id}/reweight`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"factor\""]
@@ -30242,7 +30242,7 @@ pub mod types {
 }
 
 #[derive(Clone, Debug)]
-#[doc = "Client for Triton Cloud Control Plane\n\nTriton Cloud control-plane API. Phase 0 surface (`/v2/health`); subsequent phases add silos, instances, VPCs, audit, secrets, and the rest of DESIGN.md §14.\n\nVersion: 0.1.0"]
+#[doc = "Client for Triton Cloud Control Plane\n\nTriton Cloud control-plane API. Phase 0 surface (`/v1/health`); subsequent phases add silos, instances, VPCs, audit, secrets, and the rest of DESIGN.md §14.\n\nVersion: 0.1.0"]
 pub struct Client {
     pub(crate) baseurl: String,
     pub(crate) client: reqwest::Client,
@@ -30376,7 +30376,7 @@ impl Client {
         builder::ListInstancesV1::new(self)
     }
 
-    #[doc = "RFD 00007 `POST /v1/instances?tenant=&project=`. Create an\n\ninstance in the named tenant + project. Equivalent semantics to the v2 `POST /v2/tenants/{t}/projects/{p}/instances`; the only difference is the URL shape (scope as selectors, not path segments). The handler still validates that the resolved tenant / project exist and live in the principal's silo, surfacing cross-tenant 404 as before.\n\n`tenant` and `project` are required selectors at AP-2d. AP-3a swaps to a `NameOrId` newtype.\n\nSends a `POST` request to `/v1/instances`\n\nArguments:\n- `project`: Restrict to a single project.\n- `silo`: Restrict to a single silo (fleet-admin only).\n- `tenant`: Restrict to a single tenant.\n- `body`\n```ignore\nlet response = client.create_instance_v1()\n    .project(project)\n    .silo(silo)\n    .tenant(tenant)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "RFD 00007 `POST /v1/instances?tenant=&project=`. Create an\n\ninstance in the named tenant + project. Equivalent semantics to the v2 `POST /v1/tenants/{t}/projects/{p}/instances`; the only difference is the URL shape (scope as selectors, not path segments). The handler still validates that the resolved tenant / project exist and live in the principal's silo, surfacing cross-tenant 404 as before.\n\n`tenant` and `project` are required selectors at AP-2d. AP-3a swaps to a `NameOrId` newtype.\n\nSends a `POST` request to `/v1/instances`\n\nArguments:\n- `project`: Restrict to a single project.\n- `silo`: Restrict to a single silo (fleet-admin only).\n- `tenant`: Restrict to a single tenant.\n- `body`\n```ignore\nlet response = client.create_instance_v1()\n    .project(project)\n    .silo(silo)\n    .tenant(tenant)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_instance_v1(&self) -> builder::CreateInstanceV1<'_> {
         builder::CreateInstanceV1::new(self)
     }
@@ -30596,7 +30596,7 @@ impl Client {
         builder::ListVpcsV1::new(self)
     }
 
-    #[doc = "RFD 00007 `POST /v1/vpcs?tenant=&project=`. Create a VPC\n\nunder the named project. `silo=` is rejected at the customer surface; tenant + project are both required selectors. Body is the same `NewVpc` shape the /v2/ create handler accepted.\n\nSends a `POST` request to `/v1/vpcs`\n\nArguments:\n- `project`: Restrict to a single project.\n- `silo`: Restrict to a single silo (fleet-admin only).\n- `tenant`: Restrict to a single tenant.\n- `body`\n```ignore\nlet response = client.create_vpc_v1()\n    .project(project)\n    .silo(silo)\n    .tenant(tenant)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "RFD 00007 `POST /v1/vpcs?tenant=&project=`. Create a VPC\n\nunder the named project. `silo=` is rejected at the customer surface; tenant + project are both required selectors. Body is the same `NewVpc` shape the /v1/ create handler accepted.\n\nSends a `POST` request to `/v1/vpcs`\n\nArguments:\n- `project`: Restrict to a single project.\n- `silo`: Restrict to a single silo (fleet-admin only).\n- `tenant`: Restrict to a single tenant.\n- `body`\n```ignore\nlet response = client.create_vpc_v1()\n    .project(project)\n    .silo(silo)\n    .tenant(tenant)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_vpc_v1(&self) -> builder::CreateVpcV1<'_> {
         builder::CreateVpcV1::new(self)
     }
@@ -30606,232 +30606,232 @@ impl Client {
         builder::GetVpcV1::new(self)
     }
 
-    #[doc = "RFD 00007 `DELETE /v1/vpcs/{vpc_id}`. The handler enforces\n\nthe same dependency gate as the legacy /v2/ delete: subnets, firewall rules, NAT gateways, and route tables anchored on the VPC must be deleted first.\n\nSends a `DELETE` request to `/v1/vpcs/{vpc_id}`\n\n```ignore\nlet response = client.delete_vpc_v1()\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    #[doc = "RFD 00007 `DELETE /v1/vpcs/{vpc_id}`. The handler enforces\n\nthe same dependency gate as the legacy /v1/ delete: subnets, firewall rules, NAT gateways, and route tables anchored on the VPC must be deleted first.\n\nSends a `DELETE` request to `/v1/vpcs/{vpc_id}`\n\n```ignore\nlet response = client.delete_vpc_v1()\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
     pub fn delete_vpc_v1(&self) -> builder::DeleteVpcV1<'_> {
         builder::DeleteVpcV1::new(self)
     }
 
-    #[doc = "List CNs with their managed-vs-legacy zone counts. Fleet-admin\n\nonly. Supports the operator workflow of \"show me which CNs still have legacy zones I haven't adopted yet\".\n\nSends a `GET` request to `/v2/admin/legacy/cns`\n\n```ignore\nlet response = client.list_legacy_cns()\n    .send()\n    .await;\n```"]
+    #[doc = "List CNs with their managed-vs-legacy zone counts. Fleet-admin\n\nonly. Supports the operator workflow of \"show me which CNs still have legacy zones I haven't adopted yet\".\n\nSends a `GET` request to `/v1/admin/legacy/cns`\n\n```ignore\nlet response = client.list_legacy_cns()\n    .send()\n    .await;\n```"]
     pub fn list_legacy_cns(&self) -> builder::ListLegacyCns<'_> {
         builder::ListLegacyCns::new(self)
     }
 
-    #[doc = "List legacy VMs across the fleet, optionally filtered by host\n\nCN. Fleet-admin only.\n\nSends a `GET` request to `/v2/admin/legacy/vms`\n\nArguments:\n- `host_cn`: Restrict to legacy VMs hosted on the given CN.\n```ignore\nlet response = client.list_legacy_vms()\n    .host_cn(host_cn)\n    .send()\n    .await;\n```"]
+    #[doc = "List legacy VMs across the fleet, optionally filtered by host\n\nCN. Fleet-admin only.\n\nSends a `GET` request to `/v1/admin/legacy/vms`\n\nArguments:\n- `host_cn`: Restrict to legacy VMs hosted on the given CN.\n```ignore\nlet response = client.list_legacy_vms()\n    .host_cn(host_cn)\n    .send()\n    .await;\n```"]
     pub fn list_legacy_vms(&self) -> builder::ListLegacyVms<'_> {
         builder::ListLegacyVms::new(self)
     }
 
-    #[doc = "Read a single legacy VM by SmartOS zone uuid, including full\n\nNIC inventory. Fleet-admin only.\n\nSends a `GET` request to `/v2/admin/legacy/vms/{smartos_uuid}`\n\n```ignore\nlet response = client.get_legacy_vm()\n    .smartos_uuid(smartos_uuid)\n    .send()\n    .await;\n```"]
+    #[doc = "Read a single legacy VM by SmartOS zone uuid, including full\n\nNIC inventory. Fleet-admin only.\n\nSends a `GET` request to `/v1/admin/legacy/vms/{smartos_uuid}`\n\n```ignore\nlet response = client.get_legacy_vm()\n    .smartos_uuid(smartos_uuid)\n    .send()\n    .await;\n```"]
     pub fn get_legacy_vm(&self) -> builder::GetLegacyVm<'_> {
         builder::GetLegacyVm::new(self)
     }
 
-    #[doc = "Operator console for a discovered (non-tritond-managed) zone\n\naddressed by SmartOS zone uuid. Fleet-admin only — no tenant scoping. Serial only in practice for native zones; `kind=vnc` is honoured for bhyve / kvm zones. Not covered by the generated client.\n\nSends a `GET` request to `/v2/admin/legacy/vms/{smartos_uuid}/console`\n\nArguments:\n- `smartos_uuid`\n- `kind`: Which console to attach: `serial` or `vnc`.\n```ignore\nlet response = client.legacy_vm_console()\n    .smartos_uuid(smartos_uuid)\n    .kind(kind)\n    .send()\n    .await;\n```"]
+    #[doc = "Operator console for a discovered (non-tritond-managed) zone\n\naddressed by SmartOS zone uuid. Fleet-admin only — no tenant scoping. Serial only in practice for native zones; `kind=vnc` is honoured for bhyve / kvm zones. Not covered by the generated client.\n\nSends a `GET` request to `/v1/admin/legacy/vms/{smartos_uuid}/console`\n\nArguments:\n- `smartos_uuid`\n- `kind`: Which console to attach: `serial` or `vnc`.\n```ignore\nlet response = client.legacy_vm_console()\n    .smartos_uuid(smartos_uuid)\n    .kind(kind)\n    .send()\n    .await;\n```"]
     pub fn legacy_vm_console(&self) -> builder::LegacyVmConsole<'_> {
         builder::LegacyVmConsole::new(self)
     }
 
-    #[doc = "Materialise the Proteus per-port blueprint for a NIC. Auth:\n\nrequires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. The bound CN must have an in-progress claim for the port's instance.\n\nSends a `GET` request to `/v2/agent/blueprints/{port_id}`\n\n```ignore\nlet response = client.agent_port_blueprint()\n    .port_id(port_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Materialise the Proteus per-port blueprint for a NIC. Auth:\n\nrequires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. The bound CN must have an in-progress claim for the port's instance.\n\nSends a `GET` request to `/v1/agent/blueprints/{port_id}`\n\n```ignore\nlet response = client.agent_port_blueprint()\n    .port_id(port_id)\n    .send()\n    .await;\n```"]
     pub fn agent_port_blueprint(&self) -> builder::AgentPortBlueprint<'_> {
         builder::AgentPortBlueprint::new(self)
     }
 
-    #[doc = "Atomically claim the next Pending provisioning job\n\nReturns `200 OK` with `{\"job\": null}` when the queue is empty (the agent should sleep before its next poll), and `200 OK` with `{\"job\": {...}}` when a job was claimed and transitioned to `InProgress`. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].\n\nThe path is `/v2/agent/claim` rather than `/v2/agent/jobs/claim` because Dropshot's router cannot disambiguate a literal `claim` segment from a `{job_id}` path parameter at the same level.\n\nSends a `POST` request to `/v2/agent/claim`\n\n```ignore\nlet response = client.agent_claim_job()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Atomically claim the next Pending provisioning job\n\nReturns `200 OK` with `{\"job\": null}` when the queue is empty (the agent should sleep before its next poll), and `200 OK` with `{\"job\": {...}}` when a job was claimed and transitioned to `InProgress`. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].\n\nThe path is `/v1/agent/claim` rather than `/v1/agent/jobs/claim` because Dropshot's router cannot disambiguate a literal `claim` segment from a `{job_id}` path parameter at the same level.\n\nSends a `POST` request to `/v1/agent/claim`\n\n```ignore\nlet response = client.agent_claim_job()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn agent_claim_job(&self) -> builder::AgentClaimJob<'_> {
         builder::AgentClaimJob::new(self)
     }
 
-    #[doc = "Report DHCP request activity the kmod observed for guest ports\n\nAuth: requires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. State-sample traffic — the response is always `200 OK`; items for unknown ports or ports with no lease record yet are silently skipped.\n\nSends a `POST` request to `/v2/agent/dhcp-lease-activity`\n\n```ignore\nlet response = client.agent_report_dhcp_lease_activity()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Report DHCP request activity the kmod observed for guest ports\n\nAuth: requires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. State-sample traffic — the response is always `200 OK`; items for unknown ports or ports with no lease record yet are silently skipped.\n\nSends a `POST` request to `/v1/agent/dhcp-lease-activity`\n\n```ignore\nlet response = client.agent_report_dhcp_lease_activity()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn agent_report_dhcp_lease_activity(&self) -> builder::AgentReportDhcpLeaseActivity<'_> {
         builder::AgentReportDhcpLeaseActivity::new(self)
     }
 
-    #[doc = "Heartbeat from a bound agent. Lightweight ping — empty\n\nbody, just bumps `Cn.last_seen`. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`] AND a `bound_to_cn` value (the per-CN keys minted at approval). Unbound Agent keys (legacy operator-minted) get 403 since there's no CN to attribute the heartbeat to.\n\nSends a `POST` request to `/v2/agent/heartbeat`\n\n```ignore\nlet response = client.agent_heartbeat()\n    .send()\n    .await;\n```"]
+    #[doc = "Heartbeat from a bound agent. Lightweight ping — empty\n\nbody, just bumps `Cn.last_seen`. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`] AND a `bound_to_cn` value (the per-CN keys minted at approval). Unbound Agent keys (legacy operator-minted) get 403 since there's no CN to attribute the heartbeat to.\n\nSends a `POST` request to `/v1/agent/heartbeat`\n\n```ignore\nlet response = client.agent_heartbeat()\n    .send()\n    .await;\n```"]
     pub fn agent_heartbeat(&self) -> builder::AgentHeartbeat<'_> {
         builder::AgentHeartbeat::new(self)
     }
 
-    #[doc = "Agent-facing instance-scoped `guest/*` metadata writeback\n\nThe IMDSv2 listener in tritonagent forwards a guest VM's `PUT /triton/guest/<key>` through this endpoint. The server enforces:\n\n* the key must start with `guest/` (no other prefix); * scope is always Instance, instance_id is the URL path; * `guest_visible` and `guest_writable` are forced true (operator-set entries can flip these via the tenant-facing set_meta surface; the guest never controls them); * the calling agent is CN-bound (`Action::AgentBlueprint`); * the instance is currently placed on the agent's CN — already enforced by the IMDS dataplane (the request reaches the agent only via that instance's vnic).\n\nSends a `PUT` request to `/v2/agent/instances/{instance_id}/meta`\n\n```ignore\nlet response = client.agent_set_instance_guest_meta()\n    .instance_id(instance_id)\n    .key(key)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Agent-facing instance-scoped `guest/*` metadata writeback\n\nThe IMDSv2 listener in tritonagent forwards a guest VM's `PUT /triton/guest/<key>` through this endpoint. The server enforces:\n\n* the key must start with `guest/` (no other prefix); * scope is always Instance, instance_id is the URL path; * `guest_visible` and `guest_writable` are forced true (operator-set entries can flip these via the tenant-facing set_meta surface; the guest never controls them); * the calling agent is CN-bound (`Action::AgentBlueprint`); * the instance is currently placed on the agent's CN — already enforced by the IMDS dataplane (the request reaches the agent only via that instance's vnic).\n\nSends a `PUT` request to `/v1/agent/instances/{instance_id}/meta`\n\n```ignore\nlet response = client.agent_set_instance_guest_meta()\n    .instance_id(instance_id)\n    .key(key)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn agent_set_instance_guest_meta(&self) -> builder::AgentSetInstanceGuestMeta<'_> {
         builder::AgentSetInstanceGuestMeta::new(self)
     }
 
-    #[doc = "Agent-facing realized metadata view for one instance. Same\n\nbody as [`Self::get_instance_realized_meta`] but auth is the CN-bound `Action::AgentBlueprint` scope (matches [`Self::agent_peer_resolve`]). The tenant-facing endpoint requires tenant-member Cedar, which a CN-bound API key cannot satisfy — but tritonagent's IMDS daemon needs to read the realized view to answer guest IMDSv2 requests. The dataplane already enforces locality: the IMDS request arrives via the guest's vnic on this CN, so any instance the agent asks about is one currently placed on the agent's CN.\n\nSends a `GET` request to `/v2/agent/instances/{instance_id}/realized-meta`\n\n```ignore\nlet response = client.agent_get_instance_realized_meta()\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Agent-facing realized metadata view for one instance. Same\n\nbody as [`Self::get_instance_realized_meta`] but auth is the CN-bound `Action::AgentBlueprint` scope (matches [`Self::agent_peer_resolve`]). The tenant-facing endpoint requires tenant-member Cedar, which a CN-bound API key cannot satisfy — but tritonagent's IMDS daemon needs to read the realized view to answer guest IMDSv2 requests. The dataplane already enforces locality: the IMDS request arrives via the guest's vnic on this CN, so any instance the agent asks about is one currently placed on the agent's CN.\n\nSends a `GET` request to `/v1/agent/instances/{instance_id}/realized-meta`\n\n```ignore\nlet response = client.agent_get_instance_realized_meta()\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
     pub fn agent_get_instance_realized_meta(&self) -> builder::AgentGetInstanceRealizedMeta<'_> {
         builder::AgentGetInstanceRealizedMeta::new(self)
     }
 
-    #[doc = "Materialise the full blueprint the agent needs to act on\n\na claimed job — instance + image + NICs + disks + authorised SSH public keys, all in one response. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].\n\nSends a `GET` request to `/v2/agent/jobs/{job_id}/blueprint`\n\n```ignore\nlet response = client.agent_job_blueprint()\n    .job_id(job_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Materialise the full blueprint the agent needs to act on\n\na claimed job — instance + image + NICs + disks + authorised SSH public keys, all in one response. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].\n\nSends a `GET` request to `/v1/agent/jobs/{job_id}/blueprint`\n\n```ignore\nlet response = client.agent_job_blueprint()\n    .job_id(job_id)\n    .send()\n    .await;\n```"]
     pub fn agent_job_blueprint(&self) -> builder::AgentJobBlueprint<'_> {
         builder::AgentJobBlueprint::new(self)
     }
 
-    #[doc = "Mark a previously-claimed provisioning job terminal\n\n`outcome` is `Completed` for success or `Failed { reason }` for an agent-side abort. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].\n\nSends a `POST` request to `/v2/agent/jobs/{job_id}/complete`\n\n```ignore\nlet response = client.agent_complete_job()\n    .job_id(job_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Mark a previously-claimed provisioning job terminal\n\n`outcome` is `Completed` for success or `Failed { reason }` for an agent-side abort. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].\n\nSends a `POST` request to `/v1/agent/jobs/{job_id}/complete`\n\n```ignore\nlet response = client.agent_complete_job()\n    .job_id(job_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn agent_complete_job(&self) -> builder::AgentCompleteJob<'_> {
         builder::AgentCompleteJob::new(self)
     }
 
-    #[doc = "Ingest a batch of log lines from a registered agent\n\nAuth: requires an API key with [`tritond_store::ApiKeyScope::Agent`]. Batches larger than [`tritond_logs::LogBatch::MAX_LINES`] are rejected with `413 Payload Too Large`.\n\nSends a `POST` request to `/v2/agent/logs`\n\n```ignore\nlet response = client.agent_logs_ingest()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Ingest a batch of log lines from a registered agent\n\nAuth: requires an API key with [`tritond_store::ApiKeyScope::Agent`]. Batches larger than [`tritond_logs::LogBatch::MAX_LINES`] are rejected with `413 Payload Too Large`.\n\nSends a `POST` request to `/v1/agent/logs`\n\n```ignore\nlet response = client.agent_logs_ingest()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn agent_logs_ingest(&self) -> builder::AgentLogsIngest<'_> {
         builder::AgentLogsIngest::new(self)
     }
 
-    #[doc = "Ingest a batch of metric samples from a registered agent\n\nAuth: requires an API key with [`tritond_store::ApiKeyScope::Agent`]. Batches larger than [`tritond_metrics::SampleBatch::MAX_SAMPLES`] are rejected with `413 Payload Too Large`.\n\nSends a `POST` request to `/v2/agent/metrics`\n\n```ignore\nlet response = client.agent_metrics_ingest()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Ingest a batch of metric samples from a registered agent\n\nAuth: requires an API key with [`tritond_store::ApiKeyScope::Agent`]. Batches larger than [`tritond_metrics::SampleBatch::MAX_SAMPLES`] are rejected with `413 Payload Too Large`.\n\nSends a `POST` request to `/v1/agent/metrics`\n\n```ignore\nlet response = client.agent_metrics_ingest()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn agent_metrics_ingest(&self) -> builder::AgentMetricsIngest<'_> {
         builder::AgentMetricsIngest::new(self)
     }
 
-    #[doc = "Report realized network state for a single resource. Auth:\n\nrequires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. Backward generation reports for the same `(resource, realizer)` are rejected with `409 Conflict`.\n\nSends a `POST` request to `/v2/agent/network-realization`\n\n```ignore\nlet response = client.agent_report_network_realization()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Report realized network state for a single resource. Auth:\n\nrequires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. Backward generation reports for the same `(resource, realizer)` are rejected with `409 Conflict`.\n\nSends a `POST` request to `/v1/agent/network-realization`\n\n```ignore\nlet response = client.agent_report_network_realization()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn agent_report_network_realization(&self) -> builder::AgentReportNetworkRealization<'_> {
         builder::AgentReportNetworkRealization::new(self)
     }
 
-    #[doc = "Resolve one in-VPC peer (`vni`, `ip`) -> guest MAC + host\n\nunderlay. The bound CN agent calls this on every v2p cache miss; tritond walks the NIC table, finds the NIC that owns the IP, looks up its host CN, and returns the CN's underlay address. Returns 404 when no realized NIC owns the IP. See `PROTEUS_PLAN.md` §11.7.1.\n\nSends a `GET` request to `/v2/agent/peer`\n\nArguments:\n- `ip`: Peer IP as a string. v4 and v6 both accepted; the resolver parses and dispatches by family.\n- `vni`: VNI of the target VPC. Required so the lookup is bounded to one tenant's address space (peers are NOT globally unique).\n```ignore\nlet response = client.agent_peer_resolve()\n    .ip(ip)\n    .vni(vni)\n    .send()\n    .await;\n```"]
+    #[doc = "Resolve one in-VPC peer (`vni`, `ip`) -> guest MAC + host\n\nunderlay. The bound CN agent calls this on every v2p cache miss; tritond walks the NIC table, finds the NIC that owns the IP, looks up its host CN, and returns the CN's underlay address. Returns 404 when no realized NIC owns the IP. See `PROTEUS_PLAN.md` §11.7.1.\n\nSends a `GET` request to `/v1/agent/peer`\n\nArguments:\n- `ip`: Peer IP as a string. v4 and v6 both accepted; the resolver parses and dispatches by family.\n- `vni`: VNI of the target VPC. Required so the lookup is bounded to one tenant's address space (peers are NOT globally unique).\n```ignore\nlet response = client.agent_peer_resolve()\n    .ip(ip)\n    .vni(vni)\n    .send()\n    .await;\n```"]
     pub fn agent_peer_resolve(&self) -> builder::AgentPeerResolve<'_> {
         builder::AgentPeerResolve::new(self)
     }
 
-    #[doc = "Pull pending v2p invalidations for this CN, strictly after\n\nthe supplied `since` cursor. The bound CN agent polls this on a fixed cadence (default ~10s) and applies each entry via `InvalidatePeerEntry` on every local port that might have cached it. Phase A v1: tritond broadcasts NIC-teardown invalidations to all CNs; Phase B adds per-CN filtering by tracking which CNs have queried `/v2/agent/peer`. See `PROTEUS_PLAN.md` §11.7.1.\n\nSends a `GET` request to `/v2/agent/peer-invalidations`\n\nArguments:\n- `since`: Last sequence number the agent has applied. `0` on first call after agent start.\n```ignore\nlet response = client.agent_peer_invalidations()\n    .since(since)\n    .send()\n    .await;\n```"]
+    #[doc = "Pull pending v2p invalidations for this CN, strictly after\n\nthe supplied `since` cursor. The bound CN agent polls this on a fixed cadence (default ~10s) and applies each entry via `InvalidatePeerEntry` on every local port that might have cached it. Phase A v1: tritond broadcasts NIC-teardown invalidations to all CNs; Phase B adds per-CN filtering by tracking which CNs have queried `/v1/agent/peer`. See `PROTEUS_PLAN.md` §11.7.1.\n\nSends a `GET` request to `/v1/agent/peer-invalidations`\n\nArguments:\n- `since`: Last sequence number the agent has applied. `0` on first call after agent start.\n```ignore\nlet response = client.agent_peer_invalidations()\n    .since(since)\n    .send()\n    .await;\n```"]
     pub fn agent_peer_invalidations(&self) -> builder::AgentPeerInvalidations<'_> {
         builder::AgentPeerInvalidations::new(self)
     }
 
-    #[doc = "Self-register a compute node. Anonymous endpoint (no API\n\nkey needed) — the agent has none until approval completes. Tritond creates a [`CnState::Pending`] record with a fresh claim code unless the global auto-approve window is open, in which case the record is created directly Approved and the agent will retrieve its API key on the very next `/register/status` long-poll.\n\nIdempotent on `server_uuid`: re-registration of a Pending record rotates the claim code; re-registration of an Approved record refreshes sysinfo without re-minting credentials.\n\nSends a `POST` request to `/v2/agent/register`\n\n```ignore\nlet response = client.agent_register()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Self-register a compute node. Anonymous endpoint (no API\n\nkey needed) — the agent has none until approval completes. Tritond creates a [`CnState::Pending`] record with a fresh claim code unless the global auto-approve window is open, in which case the record is created directly Approved and the agent will retrieve its API key on the very next `/register/status` long-poll.\n\nIdempotent on `server_uuid`: re-registration of a Pending record rotates the claim code; re-registration of an Approved record refreshes sysinfo without re-minting credentials.\n\nSends a `POST` request to `/v1/agent/register`\n\n```ignore\nlet response = client.agent_register()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn agent_register(&self) -> builder::AgentRegister<'_> {
         builder::AgentRegister::new(self)
     }
 
-    #[doc = "Long-poll for the per-CN API key. Anonymous endpoint\n\nauthenticated only by holding the `poll_token` returned at registration. Tritond holds the connection open for up to ~30s waiting for state to flip from Pending to Approved (or for the auto-approve credential to be wired up); on timeout the agent re-polls.\n\nThe `api_key` field is populated **once** — on the first successful retrieval after approval. Subsequent calls return `state = Approved` with `api_key = None`.\n\nSends a `GET` request to `/v2/agent/register/status`\n\n```ignore\nlet response = client.agent_register_status()\n    .poll_token(poll_token)\n    .send()\n    .await;\n```"]
+    #[doc = "Long-poll for the per-CN API key. Anonymous endpoint\n\nauthenticated only by holding the `poll_token` returned at registration. Tritond holds the connection open for up to ~30s waiting for state to flip from Pending to Approved (or for the auto-approve credential to be wired up); on timeout the agent re-polls.\n\nThe `api_key` field is populated **once** — on the first successful retrieval after approval. Subsequent calls return `state = Approved` with `api_key = None`.\n\nSends a `GET` request to `/v1/agent/register/status`\n\n```ignore\nlet response = client.agent_register_status()\n    .poll_token(poll_token)\n    .send()\n    .await;\n```"]
     pub fn agent_register_status(&self) -> builder::AgentRegisterStatus<'_> {
         builder::AgentRegisterStatus::new(self)
     }
 
-    #[doc = "Full status sample from a bound agent. Replaces\n\n`Cn.last_status` and bumps `last_seen`. Same auth shape as `agent_heartbeat`.\n\nSends a `POST` request to `/v2/agent/status`\n\n```ignore\nlet response = client.agent_status()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Full status sample from a bound agent. Replaces\n\n`Cn.last_status` and bumps `last_seen`. Same auth shape as `agent_heartbeat`.\n\nSends a `POST` request to `/v1/agent/status`\n\n```ignore\nlet response = client.agent_status()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn agent_status(&self) -> builder::AgentStatus<'_> {
         builder::AgentStatus::new(self)
     }
 
-    #[doc = "Page through audit events. Returns at most `limit` events with\n\n`seq > after_seq` plus the current chain head.\n\nSends a `GET` request to `/v2/audit/events`\n\nArguments:\n- `after_seq`: Return events with `seq > after_seq`. Default 0 (start of chain).\n- `limit`: Maximum events to return. Default 100, max 1000.\n```ignore\nlet response = client.list_audit_events()\n    .after_seq(after_seq)\n    .limit(limit)\n    .send()\n    .await;\n```"]
+    #[doc = "Page through audit events. Returns at most `limit` events with\n\n`seq > after_seq` plus the current chain head.\n\nSends a `GET` request to `/v1/audit/events`\n\nArguments:\n- `after_seq`: Return events with `seq > after_seq`. Default 0 (start of chain).\n- `limit`: Maximum events to return. Default 100, max 1000.\n```ignore\nlet response = client.list_audit_events()\n    .after_seq(after_seq)\n    .limit(limit)\n    .send()\n    .await;\n```"]
     pub fn list_audit_events(&self) -> builder::ListAuditEvents<'_> {
         builder::ListAuditEvents::new(self)
     }
 
-    #[doc = "Fetch a single audit event by sequence number\n\nSends a `GET` request to `/v2/audit/events/{seq}`\n\n```ignore\nlet response = client.get_audit_event()\n    .seq(seq)\n    .send()\n    .await;\n```"]
+    #[doc = "Fetch a single audit event by sequence number\n\nSends a `GET` request to `/v1/audit/events/{seq}`\n\n```ignore\nlet response = client.get_audit_event()\n    .seq(seq)\n    .send()\n    .await;\n```"]
     pub fn get_audit_event(&self) -> builder::GetAuditEvent<'_> {
         builder::GetAuditEvent::new(self)
     }
 
-    #[doc = "Walk the audit chain in `[from, to]` and recompute hashes\n\nReturns the first divergence (if any) plus the current head. Cheap on small ranges; auditors typically walk the entire chain once per export.\n\nSends a `GET` request to `/v2/audit/verify`\n\nArguments:\n- `from`: First seq to walk. Default 0.\n- `to`: Last seq to walk. Default = current chain head.\n```ignore\nlet response = client.verify_audit_chain()\n    .from(from)\n    .to(to)\n    .send()\n    .await;\n```"]
+    #[doc = "Walk the audit chain in `[from, to]` and recompute hashes\n\nReturns the first divergence (if any) plus the current head. Cheap on small ranges; auditors typically walk the entire chain once per export.\n\nSends a `GET` request to `/v1/audit/verify`\n\nArguments:\n- `from`: First seq to walk. Default 0.\n- `to`: Last seq to walk. Default = current chain head.\n```ignore\nlet response = client.verify_audit_chain()\n    .from(from)\n    .to(to)\n    .send()\n    .await;\n```"]
     pub fn verify_audit_chain(&self) -> builder::VerifyAuditChain<'_> {
         builder::VerifyAuditChain::new(self)
     }
 
-    #[doc = "List the calling user's API keys. The plaintext secret is never\n\nreturned by this endpoint.\n\nSends a `GET` request to `/v2/auth/api-keys`\n\n```ignore\nlet response = client.list_api_keys()\n    .send()\n    .await;\n```"]
+    #[doc = "List the calling user's API keys. The plaintext secret is never\n\nreturned by this endpoint.\n\nSends a `GET` request to `/v1/auth/api-keys`\n\n```ignore\nlet response = client.list_api_keys()\n    .send()\n    .await;\n```"]
     pub fn list_api_keys(&self) -> builder::ListApiKeys<'_> {
         builder::ListApiKeys::new(self)
     }
 
-    #[doc = "Create a long-lived API key for the calling user. The plaintext\n\nsecret is included in the response **once** and never shown again.\n\nSends a `POST` request to `/v2/auth/api-keys`\n\n```ignore\nlet response = client.create_api_key()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Create a long-lived API key for the calling user. The plaintext\n\nsecret is included in the response **once** and never shown again.\n\nSends a `POST` request to `/v1/auth/api-keys`\n\n```ignore\nlet response = client.create_api_key()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_api_key(&self) -> builder::CreateApiKey<'_> {
         builder::CreateApiKey::new(self)
     }
 
-    #[doc = "Delete one of the calling user's API keys. Returns 404 if the\n\nid does not belong to the calling user.\n\nSends a `DELETE` request to `/v2/auth/api-keys/{api_key_id}`\n\n```ignore\nlet response = client.delete_api_key()\n    .api_key_id(api_key_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Delete one of the calling user's API keys. Returns 404 if the\n\nid does not belong to the calling user.\n\nSends a `DELETE` request to `/v1/auth/api-keys/{api_key_id}`\n\n```ignore\nlet response = client.delete_api_key()\n    .api_key_id(api_key_id)\n    .send()\n    .await;\n```"]
     pub fn delete_api_key(&self) -> builder::DeleteApiKey<'_> {
         builder::DeleteApiKey::new(self)
     }
 
-    #[doc = "List the calling user's `User`-scoped images. Returns\n\nonly the caller's own images; the bound user_id is resolved from the authenticated principal.\n\nSends a `GET` request to `/v2/auth/images`\n\n```ignore\nlet response = client.list_my_images()\n    .send()\n    .await;\n```"]
+    #[doc = "List the calling user's `User`-scoped images. Returns\n\nonly the caller's own images; the bound user_id is resolved from the authenticated principal.\n\nSends a `GET` request to `/v1/auth/images`\n\n```ignore\nlet response = client.list_my_images()\n    .send()\n    .await;\n```"]
     pub fn list_my_images(&self) -> builder::ListMyImages<'_> {
         builder::ListMyImages::new(self)
     }
 
-    #[doc = "Register a `User`-scoped image owned by the caller\n\nSends a `POST` request to `/v2/auth/images`\n\n```ignore\nlet response = client.create_my_image()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Register a `User`-scoped image owned by the caller\n\nSends a `POST` request to `/v1/auth/images`\n\n```ignore\nlet response = client.create_my_image()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_my_image(&self) -> builder::CreateMyImage<'_> {
         builder::CreateMyImage::new(self)
     }
 
-    #[doc = "Exchange username + password for an access/refresh token pair\n\nReturns 401 if credentials are invalid.\n\nSends a `POST` request to `/v2/auth/login`\n\n```ignore\nlet response = client.login()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Exchange username + password for an access/refresh token pair\n\nReturns 401 if credentials are invalid.\n\nSends a `POST` request to `/v1/auth/login`\n\n```ignore\nlet response = client.login()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn login(&self) -> builder::Login<'_> {
         builder::Login::new(self)
     }
 
-    #[doc = "Exchange a valid refresh token for a fresh access/refresh pair\n\nReturns 401 if the refresh token is invalid or expired.\n\nSends a `POST` request to `/v2/auth/refresh`\n\n```ignore\nlet response = client.refresh()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Exchange a valid refresh token for a fresh access/refresh pair\n\nReturns 401 if the refresh token is invalid or expired.\n\nSends a `POST` request to `/v1/auth/refresh`\n\n```ignore\nlet response = client.refresh()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn refresh(&self) -> builder::Refresh<'_> {
         builder::Refresh::new(self)
     }
 
-    #[doc = "List the calling user's `User`-scoped SSH keys. Returns\n\nonly the caller's own keys; the bound user_id is resolved from the authenticated principal.\n\nSends a `GET` request to `/v2/auth/ssh-keys`\n\n```ignore\nlet response = client.list_my_ssh_keys()\n    .send()\n    .await;\n```"]
+    #[doc = "List the calling user's `User`-scoped SSH keys. Returns\n\nonly the caller's own keys; the bound user_id is resolved from the authenticated principal.\n\nSends a `GET` request to `/v1/auth/ssh-keys`\n\n```ignore\nlet response = client.list_my_ssh_keys()\n    .send()\n    .await;\n```"]
     pub fn list_my_ssh_keys(&self) -> builder::ListMySshKeys<'_> {
         builder::ListMySshKeys::new(self)
     }
 
-    #[doc = "Register a `User`-scoped SSH key owned by the caller\n\nSends a `POST` request to `/v2/auth/ssh-keys`\n\n```ignore\nlet response = client.create_my_ssh_key()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Register a `User`-scoped SSH key owned by the caller\n\nSends a `POST` request to `/v1/auth/ssh-keys`\n\n```ignore\nlet response = client.create_my_ssh_key()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_my_ssh_key(&self) -> builder::CreateMySshKey<'_> {
         builder::CreateMySshKey::new(self)
     }
 
-    #[doc = "Approve a Pending compute node by claim code. Mints the\n\nper-CN API key inside the same transaction that flips state; the plaintext is delivered to the agent via its long-poll on `/register/status`. Per-source-IP rate-limited.\n\nReturns 404 for unknown / expired / already-approved codes (conflated to defeat enumeration). Returns 429 when the per-IP bucket is drained.\n\nThe path is `/v2/cn-approvals` rather than nested under `/v2/cns/...` because Dropshot's router cannot disambiguate a literal `approve` segment from the `{server_uuid}` parameter at the same level.\n\nSends a `POST` request to `/v2/cn-approvals`\n\n```ignore\nlet response = client.approve_cn()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Approve a Pending compute node by claim code. Mints the\n\nper-CN API key inside the same transaction that flips state; the plaintext is delivered to the agent via its long-poll on `/register/status`. Per-source-IP rate-limited.\n\nReturns 404 for unknown / expired / already-approved codes (conflated to defeat enumeration). Returns 429 when the per-IP bucket is drained.\n\nThe path is `/v1/cn-approvals` rather than nested under `/v1/cns/...` because Dropshot's router cannot disambiguate a literal `approve` segment from the `{server_uuid}` parameter at the same level.\n\nSends a `POST` request to `/v1/cn-approvals`\n\n```ignore\nlet response = client.approve_cn()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn approve_cn(&self) -> builder::ApproveCn<'_> {
         builder::ApproveCn::new(self)
     }
 
-    #[doc = "Read the current auto-approve window, if open\n\nReturns `200 OK` with `null` when no window is open.\n\nPath lives at `/v2/cn-auto-approve` rather than nested under `/v2/cns/...` for the same reason as `/v2/cn-approvals`: a literal `auto-approve` segment cannot coexist with the `{server_uuid}` parameter on Dropshot's router.\n\nSends a `GET` request to `/v2/cn-auto-approve`\n\n```ignore\nlet response = client.get_auto_approve_window()\n    .send()\n    .await;\n```"]
+    #[doc = "Read the current auto-approve window, if open\n\nReturns `200 OK` with `null` when no window is open.\n\nPath lives at `/v1/cn-auto-approve` rather than nested under `/v1/cns/...` for the same reason as `/v1/cn-approvals`: a literal `auto-approve` segment cannot coexist with the `{server_uuid}` parameter on Dropshot's router.\n\nSends a `GET` request to `/v1/cn-auto-approve`\n\n```ignore\nlet response = client.get_auto_approve_window()\n    .send()\n    .await;\n```"]
     pub fn get_auto_approve_window(&self) -> builder::GetAutoApproveWindow<'_> {
         builder::GetAutoApproveWindow::new(self)
     }
 
-    #[doc = "Open (or replace) the auto-approve window. While the\n\nwindow is open, new self-registrations are promoted to Approved without operator action. Server-side cap: `duration_secs` is clamped to 24h.\n\nSends a `POST` request to `/v2/cn-auto-approve`\n\n```ignore\nlet response = client.open_auto_approve_window()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Open (or replace) the auto-approve window. While the\n\nwindow is open, new self-registrations are promoted to Approved without operator action. Server-side cap: `duration_secs` is clamped to 24h.\n\nSends a `POST` request to `/v1/cn-auto-approve`\n\n```ignore\nlet response = client.open_auto_approve_window()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn open_auto_approve_window(&self) -> builder::OpenAutoApproveWindow<'_> {
         builder::OpenAutoApproveWindow::new(self)
     }
 
-    #[doc = "Close the auto-approve window. Idempotent; no-op when no\n\nwindow is open.\n\nSends a `DELETE` request to `/v2/cn-auto-approve`\n\n```ignore\nlet response = client.close_auto_approve_window()\n    .send()\n    .await;\n```"]
+    #[doc = "Close the auto-approve window. Idempotent; no-op when no\n\nwindow is open.\n\nSends a `DELETE` request to `/v1/cn-auto-approve`\n\n```ignore\nlet response = client.close_auto_approve_window()\n    .send()\n    .await;\n```"]
     pub fn close_auto_approve_window(&self) -> builder::CloseAutoApproveWindow<'_> {
         builder::CloseAutoApproveWindow::new(self)
     }
 
-    #[doc = "Disable a compute node. Revokes the bound API key and\n\nflips state to Disabled. The record is retained for audit visibility; a second call is idempotent.\n\nSends a `POST` request to `/v2/cns/{server_uuid}/disable`\n\n```ignore\nlet response = client.disable_cn()\n    .server_uuid(server_uuid)\n    .send()\n    .await;\n```"]
+    #[doc = "Disable a compute node. Revokes the bound API key and\n\nflips state to Disabled. The record is retained for audit visibility; a second call is idempotent.\n\nSends a `POST` request to `/v1/cns/{server_uuid}/disable`\n\n```ignore\nlet response = client.disable_cn()\n    .server_uuid(server_uuid)\n    .send()\n    .await;\n```"]
     pub fn disable_cn(&self) -> builder::DisableCn<'_> {
         builder::DisableCn::new(self)
     }
 
-    #[doc = "Dry-run the drain plan for one CN. For each instance currently\n\nhosted on this CN the placement engine picks a candidate target (excluding the source CN); the response partitions into `placeable` (a target was found) and `not_placeable` (no eligible CN). Also surfaces a quorum heuristic so the operator can spot vault / etcd / fdb / etc. members before committing the drain. Read-only — no reservations are written.\n\nUsed by the operator console's BlastRadiusCard on Compute Node detail (admin v3 design) to show \"12 instances would migrate to: monroe-r2-s01 × 7, monroe-r2-s02 × 5; capacity OK; quorum at risk: vault-primary\" before the operator commits.\n\nSends a `POST` request to `/v2/cns/{server_uuid}/drain/preview`\n\n```ignore\nlet response = client.drain_preview()\n    .server_uuid(server_uuid)\n    .send()\n    .await;\n```"]
+    #[doc = "Dry-run the drain plan for one CN. For each instance currently\n\nhosted on this CN the placement engine picks a candidate target (excluding the source CN); the response partitions into `placeable` (a target was found) and `not_placeable` (no eligible CN). Also surfaces a quorum heuristic so the operator can spot vault / etcd / fdb / etc. members before committing the drain. Read-only — no reservations are written.\n\nUsed by the operator console's BlastRadiusCard on Compute Node detail (admin v3 design) to show \"12 instances would migrate to: monroe-r2-s01 × 7, monroe-r2-s02 × 5; capacity OK; quorum at risk: vault-primary\" before the operator commits.\n\nSends a `POST` request to `/v1/cns/{server_uuid}/drain/preview`\n\n```ignore\nlet response = client.drain_preview()\n    .server_uuid(server_uuid)\n    .send()\n    .await;\n```"]
     pub fn drain_preview(&self) -> builder::DrainPreview<'_> {
         builder::DrainPreview::new(self)
     }
 
-    #[doc = "Range query for the per-CN metrics dashboard (NodeDetail\n\npage's Metrics tab). Returns one series per CPU mode for the requested CN's global zone -- host services + kernel time not charged to a tenant zone. Mirrors the legacy cmon `/v1/discover` -> per-CN scrape pattern, just typed.\n\nAuth: requires fleet-read access to the CN (same scope as `get_cn`). No tenant filter -- per-CN samples are operator surface.\n\nSends a `GET` request to `/v2/cns/{server_uuid}/metrics`\n\nArguments:\n- `server_uuid`\n- `range`: Short range identifier (e.g. `1h`).\n- `schema`: Schema name. Defaults to `triton.cpu_per_zone`.\n```ignore\nlet response = client.cn_metrics_range()\n    .server_uuid(server_uuid)\n    .range(range)\n    .schema(schema)\n    .send()\n    .await;\n```"]
+    #[doc = "Range query for the per-CN metrics dashboard (NodeDetail\n\npage's Metrics tab). Returns one series per CPU mode for the requested CN's global zone -- host services + kernel time not charged to a tenant zone. Mirrors the legacy cmon `/v1/discover` -> per-CN scrape pattern, just typed.\n\nAuth: requires fleet-read access to the CN (same scope as `get_cn`). No tenant filter -- per-CN samples are operator surface.\n\nSends a `GET` request to `/v1/cns/{server_uuid}/metrics`\n\nArguments:\n- `server_uuid`\n- `range`: Short range identifier (e.g. `1h`).\n- `schema`: Schema name. Defaults to `triton.cpu_per_zone`.\n```ignore\nlet response = client.cn_metrics_range()\n    .server_uuid(server_uuid)\n    .range(range)\n    .schema(schema)\n    .send()\n    .await;\n```"]
     pub fn cn_metrics_range(&self) -> builder::CnMetricsRange<'_> {
         builder::CnMetricsRange::new(self)
     }
 
-    #[doc = "Set the placement role for a compute node. Operator-only\n\nSends a `POST` request to `/v2/cns/{server_uuid}/role`\n\n```ignore\nlet response = client.set_cn_role()\n    .server_uuid(server_uuid)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Set the placement role for a compute node. Operator-only\n\nSends a `POST` request to `/v1/cns/{server_uuid}/role`\n\n```ignore\nlet response = client.set_cn_role()\n    .server_uuid(server_uuid)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn set_cn_role(&self) -> builder::SetCnRole<'_> {
         builder::SetCnRole::new(self)
     }
 
-    #[doc = "List every cluster-wide configuration key with its current\n\nvalue, built-in default, description, restart requirement, and whether an environment variable is currently overriding it at boot. Fleet-admin only.\n\nSends a `GET` request to `/v2/config`\n\n```ignore\nlet response = client.list_config()\n    .send()\n    .await;\n```"]
+    #[doc = "List every cluster-wide configuration key with its current\n\nvalue, built-in default, description, restart requirement, and whether an environment variable is currently overriding it at boot. Fleet-admin only.\n\nSends a `GET` request to `/v1/config`\n\n```ignore\nlet response = client.list_config()\n    .send()\n    .await;\n```"]
     pub fn list_config(&self) -> builder::ListConfig<'_> {
         builder::ListConfig::new(self)
     }
 
-    #[doc = "Read one configuration key. Returns `404` for an unknown key\n\nFleet-admin only.\n\nSends a `GET` request to `/v2/config/{key}`\n\nArguments:\n- `key`: Dotted key name, e.g. `sweeper.interval_secs`.\n```ignore\nlet response = client.get_config()\n    .key(key)\n    .send()\n    .await;\n```"]
+    #[doc = "Read one configuration key. Returns `404` for an unknown key\n\nFleet-admin only.\n\nSends a `GET` request to `/v1/config/{key}`\n\nArguments:\n- `key`: Dotted key name, e.g. `sweeper.interval_secs`.\n```ignore\nlet response = client.get_config()\n    .key(key)\n    .send()\n    .await;\n```"]
     pub fn get_config(&self) -> builder::GetConfig<'_> {
         builder::GetConfig::new(self)
     }
 
-    #[doc = "Set one configuration key. Returns `404` for an unknown key\n\n`400` for an ill-typed value, the updated entry otherwise. The new value is persisted to FoundationDB and takes effect on the next `tritond` restart. Fleet-admin only; the change is recorded in the audit log.\n\nSends a `PUT` request to `/v2/config/{key}`\n\nArguments:\n- `key`: Dotted key name, e.g. `sweeper.interval_secs`.\n- `body`\n```ignore\nlet response = client.set_config()\n    .key(key)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Set one configuration key. Returns `404` for an unknown key\n\n`400` for an ill-typed value, the updated entry otherwise. The new value is persisted to FoundationDB and takes effect on the next `tritond` restart. Fleet-admin only; the change is recorded in the audit log.\n\nSends a `PUT` request to `/v1/config/{key}`\n\nArguments:\n- `key`: Dotted key name, e.g. `sweeper.interval_secs`.\n- `body`\n```ignore\nlet response = client.set_config()\n    .key(key)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn set_config(&self) -> builder::SetConfig<'_> {
         builder::SetConfig::new(self)
     }
 
-    #[doc = "Reset one configuration key to its built-in default. Returns\n\n`404` for an unknown key, the (default-valued) entry otherwise. Persisted to FoundationDB; takes effect on the next restart. Fleet-admin only; recorded in the audit log.\n\nSends a `DELETE` request to `/v2/config/{key}`\n\nArguments:\n- `key`: Dotted key name, e.g. `sweeper.interval_secs`.\n```ignore\nlet response = client.reset_config()\n    .key(key)\n    .send()\n    .await;\n```"]
+    #[doc = "Reset one configuration key to its built-in default. Returns\n\n`404` for an unknown key, the (default-valued) entry otherwise. Persisted to FoundationDB; takes effect on the next restart. Fleet-admin only; recorded in the audit log.\n\nSends a `DELETE` request to `/v1/config/{key}`\n\nArguments:\n- `key`: Dotted key name, e.g. `sweeper.interval_secs`.\n```ignore\nlet response = client.reset_config()\n    .key(key)\n    .send()\n    .await;\n```"]
     pub fn reset_config(&self) -> builder::ResetConfig<'_> {
         builder::ResetConfig::new(self)
     }
 
-    #[doc = "Liveness check. Returns service status and version string\n\nSends a `GET` request to `/v2/health`\n\n```ignore\nlet response = client.health()\n    .send()\n    .await;\n```"]
+    #[doc = "Liveness check. Returns service status and version string\n\nSends a `GET` request to `/v1/health`\n\n```ignore\nlet response = client.health()\n    .send()\n    .await;\n```"]
     pub fn health(&self) -> builder::Health<'_> {
         builder::Health::new(self)
     }
@@ -30841,7 +30841,7 @@ impl Client {
         builder::ListPublicImages::new(self)
     }
 
-    #[doc = "Create a `Public` image. Root-only via Cedar\n\nReturns 400 if `sha256` is not 64 lowercase hex chars or if `size_bytes` is zero. Returns 409 if the name is already in use among Public images.\n\nSends a `POST` request to `/v2/images`\n\n```ignore\nlet response = client.create_public_image()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Create a `Public` image. Root-only via Cedar\n\nReturns 400 if `sha256` is not 64 lowercase hex chars or if `size_bytes` is zero. Returns 409 if the name is already in use among Public images.\n\nSends a `POST` request to `/v1/images`\n\n```ignore\nlet response = client.create_public_image()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_public_image(&self) -> builder::CreatePublicImage<'_> {
         builder::CreatePublicImage::new(self)
     }
@@ -30851,137 +30851,137 @@ impl Client {
         builder::GetImage::new(self)
     }
 
-    #[doc = "Delete an image by id. Returns 404 when the image does\n\nnot exist OR the principal lacks ownership for the image's scope: * `Public` — root only. * `Silo` / `Tenant` / `Project` — any tenant member of the resolved tenant (Phase 0 = same-tenant access). * `User` — only the owning user (or root).\n\nSends a `DELETE` request to `/v2/images/{image_id}`\n\n```ignore\nlet response = client.delete_image()\n    .image_id(image_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Delete an image by id. Returns 404 when the image does\n\nnot exist OR the principal lacks ownership for the image's scope: * `Public` — root only. * `Silo` / `Tenant` / `Project` — any tenant member of the resolved tenant (Phase 0 = same-tenant access). * `User` — only the owning user (or root).\n\nSends a `DELETE` request to `/v1/images/{image_id}`\n\n```ignore\nlet response = client.delete_image()\n    .image_id(image_id)\n    .send()\n    .await;\n```"]
     pub fn delete_image(&self) -> builder::DeleteImage<'_> {
         builder::DeleteImage::new(self)
     }
 
-    #[doc = "Per-instance migration history (newest first). Includes\n\nterminal records so an operator can see the VM's full migration timeline.\n\nSends a `GET` request to `/v2/instances/{instance_id}/migrations`\n\n```ignore\nlet response = client.list_instance_migrations()\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Per-instance migration history (newest first). Includes\n\nterminal records so an operator can see the VM's full migration timeline.\n\nSends a `GET` request to `/v1/instances/{instance_id}/migrations`\n\n```ignore\nlet response = client.list_instance_migrations()\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
     pub fn list_instance_migrations(&self) -> builder::ListInstanceMigrations<'_> {
         builder::ListInstanceMigrations::new(self)
     }
 
-    #[doc = "The full realized metadata view for one instance: the\n\nprecedence merge of the four stored scopes (Silo < Tenant < Project < Instance) with the computed system keys (`meta-data/*`, `triton/system/*`) layered on top, each leaf tagged with the scope it came from. See `IMDS_DESIGN.md` §1.5. RBAC: tenant-member of the instance's owning tenant.\n\nSends a `GET` request to `/v2/instances/{instance_id}/realized-meta`\n\n```ignore\nlet response = client.get_instance_realized_meta()\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
+    #[doc = "The full realized metadata view for one instance: the\n\nprecedence merge of the four stored scopes (Silo < Tenant < Project < Instance) with the computed system keys (`meta-data/*`, `triton/system/*`) layered on top, each leaf tagged with the scope it came from. See `IMDS_DESIGN.md` §1.5. RBAC: tenant-member of the instance's owning tenant.\n\nSends a `GET` request to `/v1/instances/{instance_id}/realized-meta`\n\n```ignore\nlet response = client.get_instance_realized_meta()\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
     pub fn get_instance_realized_meta(&self) -> builder::GetInstanceRealizedMeta<'_> {
         builder::GetInstanceRealizedMeta::new(self)
     }
 
-    #[doc = "List every metadata entry stored at one scope. RBAC: silo-member\n\nfor `scope=silo`; tenant-member (of the scope's owning tenant) for `scope=tenant|project|instance`.\n\nSends a `GET` request to `/v2/meta/{scope}/{scope_id}`\n\n```ignore\nlet response = client.list_meta()\n    .scope(scope)\n    .scope_id(scope_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List every metadata entry stored at one scope. RBAC: silo-member\n\nfor `scope=silo`; tenant-member (of the scope's owning tenant) for `scope=tenant|project|instance`.\n\nSends a `GET` request to `/v1/meta/{scope}/{scope_id}`\n\n```ignore\nlet response = client.list_meta()\n    .scope(scope)\n    .scope_id(scope_id)\n    .send()\n    .await;\n```"]
     pub fn list_meta(&self) -> builder::ListMeta<'_> {
         builder::ListMeta::new(self)
     }
 
-    #[doc = "The affected-instances reverse-index for one (scope, key) pair\n\nWalks every instance under the request scope and partitions them by whether the request scope's value wins for that instance or a narrower scope's value shadows it. RBAC: same as [`Self::list_meta`] at the request scope.\n\nUsed by the operator console's IMDS authoring surface to answer \"if I edit here, what changes?\" *before* the operator commits — see `IMDS_DESIGN.md` §1.5 and the admin v3 design chat.\n\nSends a `GET` request to `/v2/meta/{scope}/{scope_id}/affected`\n\n```ignore\nlet response = client.get_affected_instances()\n    .scope(scope)\n    .scope_id(scope_id)\n    .key(key)\n    .send()\n    .await;\n```"]
+    #[doc = "The affected-instances reverse-index for one (scope, key) pair\n\nWalks every instance under the request scope and partitions them by whether the request scope's value wins for that instance or a narrower scope's value shadows it. RBAC: same as [`Self::list_meta`] at the request scope.\n\nUsed by the operator console's IMDS authoring surface to answer \"if I edit here, what changes?\" *before* the operator commits — see `IMDS_DESIGN.md` §1.5 and the admin v3 design chat.\n\nSends a `GET` request to `/v1/meta/{scope}/{scope_id}/affected`\n\n```ignore\nlet response = client.get_affected_instances()\n    .scope(scope)\n    .scope_id(scope_id)\n    .key(key)\n    .send()\n    .await;\n```"]
     pub fn get_affected_instances(&self) -> builder::GetAffectedInstances<'_> {
         builder::GetAffectedInstances::new(self)
     }
 
-    #[doc = "Read one metadata entry by key (query parameter). The key may\n\ncontain `/` (`config/ntp-servers`, `state/active-color`, …), hence the query-string placement.\n\nSends a `GET` request to `/v2/meta/{scope}/{scope_id}/entry`\n\n```ignore\nlet response = client.get_meta()\n    .scope(scope)\n    .scope_id(scope_id)\n    .key(key)\n    .send()\n    .await;\n```"]
+    #[doc = "Read one metadata entry by key (query parameter). The key may\n\ncontain `/` (`config/ntp-servers`, `state/active-color`, …), hence the query-string placement.\n\nSends a `GET` request to `/v1/meta/{scope}/{scope_id}/entry`\n\n```ignore\nlet response = client.get_meta()\n    .scope(scope)\n    .scope_id(scope_id)\n    .key(key)\n    .send()\n    .await;\n```"]
     pub fn get_meta(&self) -> builder::GetMeta<'_> {
         builder::GetMeta::new(self)
     }
 
-    #[doc = "Upsert one metadata entry. Returns the stored entry plus the\n\nscope's new generation counter (the realized-view cache key). Validation per `tritond_store::validate_meta_entry`: namespace + scope + value-type + byte-cap rules; `guest_writable=true` is only accepted on `guest/*` keys at instance scope.\n\nSends a `PUT` request to `/v2/meta/{scope}/{scope_id}/entry`\n\n```ignore\nlet response = client.set_meta()\n    .scope(scope)\n    .scope_id(scope_id)\n    .key(key)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Upsert one metadata entry. Returns the stored entry plus the\n\nscope's new generation counter (the realized-view cache key). Validation per `tritond_store::validate_meta_entry`: namespace + scope + value-type + byte-cap rules; `guest_writable=true` is only accepted on `guest/*` keys at instance scope.\n\nSends a `PUT` request to `/v1/meta/{scope}/{scope_id}/entry`\n\n```ignore\nlet response = client.set_meta()\n    .scope(scope)\n    .scope_id(scope_id)\n    .key(key)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn set_meta(&self) -> builder::SetMeta<'_> {
         builder::SetMeta::new(self)
     }
 
-    #[doc = "Delete one metadata entry. 404 if the key is absent (no\n\ngeneration bump in that case).\n\nSends a `DELETE` request to `/v2/meta/{scope}/{scope_id}/entry`\n\n```ignore\nlet response = client.delete_meta()\n    .scope(scope)\n    .scope_id(scope_id)\n    .key(key)\n    .send()\n    .await;\n```"]
+    #[doc = "Delete one metadata entry. 404 if the key is absent (no\n\ngeneration bump in that case).\n\nSends a `DELETE` request to `/v1/meta/{scope}/{scope_id}/entry`\n\n```ignore\nlet response = client.delete_meta()\n    .scope(scope)\n    .scope_id(scope_id)\n    .key(key)\n    .send()\n    .await;\n```"]
     pub fn delete_meta(&self) -> builder::DeleteMeta<'_> {
         builder::DeleteMeta::new(self)
     }
 
-    #[doc = "List recent live-migration records across the fleet\n\nnewest-first, paged by id cursor. Operator-only at LM-1; per-tenant scoping is a follow-up once the per-instance route below covers the customer-facing view.\n\nSends a `GET` request to `/v2/migrations`\n\nArguments:\n- `after_id`: Continuation token: return migrations strictly after this id in the global newest-first ordering. `None` for the first page.\n- `limit`: Maximum number of items to return. Defaults to 50 if absent; the server caps the maximum to bound response size.\n```ignore\nlet response = client.list_migrations()\n    .after_id(after_id)\n    .limit(limit)\n    .send()\n    .await;\n```"]
+    #[doc = "List recent live-migration records across the fleet\n\nnewest-first, paged by id cursor. Operator-only at LM-1; per-tenant scoping is a follow-up once the per-instance route below covers the customer-facing view.\n\nSends a `GET` request to `/v1/migrations`\n\nArguments:\n- `after_id`: Continuation token: return migrations strictly after this id in the global newest-first ordering. `None` for the first page.\n- `limit`: Maximum number of items to return. Defaults to 50 if absent; the server caps the maximum to bound response size.\n```ignore\nlet response = client.list_migrations()\n    .after_id(after_id)\n    .limit(limit)\n    .send()\n    .await;\n```"]
     pub fn list_migrations(&self) -> builder::ListMigrations<'_> {
         builder::ListMigrations::new(self)
     }
 
-    #[doc = "One migration by id\n\nSends a `GET` request to `/v2/migrations/{migration_id}`\n\n```ignore\nlet response = client.get_migration()\n    .migration_id(migration_id)\n    .send()\n    .await;\n```"]
+    #[doc = "One migration by id\n\nSends a `GET` request to `/v1/migrations/{migration_id}`\n\n```ignore\nlet response = client.get_migration()\n    .migration_id(migration_id)\n    .send()\n    .await;\n```"]
     pub fn get_migration(&self) -> builder::GetMigration<'_> {
         builder::GetMigration::new(self)
     }
 
-    #[doc = "Page the per-migration progress event log. Operators poll\n\nthis from the adminUI / `tcadm migrations get --watch` by passing the highest `seq` they've already seen as `after_seq`.\n\nSends a `GET` request to `/v2/migrations/{migration_id}/progress`\n\nArguments:\n- `migration_id`\n- `after_seq`: Return only events whose `seq` is greater than this value. `None` (or `0`) returns from the beginning.\n- `limit`: Maximum number of events to return. Defaults to 200; the server caps the maximum to bound response size.\n```ignore\nlet response = client.list_migration_progress()\n    .migration_id(migration_id)\n    .after_seq(after_seq)\n    .limit(limit)\n    .send()\n    .await;\n```"]
+    #[doc = "Page the per-migration progress event log. Operators poll\n\nthis from the adminUI / `tcadm migrations get --watch` by passing the highest `seq` they've already seen as `after_seq`.\n\nSends a `GET` request to `/v1/migrations/{migration_id}/progress`\n\nArguments:\n- `migration_id`\n- `after_seq`: Return only events whose `seq` is greater than this value. `None` (or `0`) returns from the beginning.\n- `limit`: Maximum number of events to return. Defaults to 200; the server caps the maximum to bound response size.\n```ignore\nlet response = client.list_migration_progress()\n    .migration_id(migration_id)\n    .after_seq(after_seq)\n    .limit(limit)\n    .send()\n    .await;\n```"]
     pub fn list_migration_progress(&self) -> builder::ListMigrationProgress<'_> {
         builder::ListMigrationProgress::new(self)
     }
 
-    #[doc = "List long-running operations (RFD 00004 SG-4). Returns\n\nevery saga the SecStore knows about — `Running`, `Stuck`, and `Done` alike. Continuation pagination via the `after_id` query parameter. Operator-only at SG-4; SG-4b will add tenant scoping once the catalog has tenant-scoped sagas with resource references.\n\nSends a `GET` request to `/v2/operations`\n\nArguments:\n- `after_id`: Continuation token: return operations strictly after this id. `None` for the first page.\n- `limit`: Maximum number of items to return. Defaults to 50 if absent; the server caps the maximum to bound response size.\n- `resource_id`: Resource id to filter by. Must be paired with `resource_scope`.\n- `resource_scope`: Resource scope to filter by (e.g. `instance`, `cn`, `tenant`). Must be paired with `resource_id`.\n```ignore\nlet response = client.list_operations()\n    .after_id(after_id)\n    .limit(limit)\n    .resource_id(resource_id)\n    .resource_scope(resource_scope)\n    .send()\n    .await;\n```"]
+    #[doc = "List long-running operations (RFD 00004 SG-4). Returns\n\nevery saga the SecStore knows about — `Running`, `Stuck`, and `Done` alike. Continuation pagination via the `after_id` query parameter. Operator-only at SG-4; SG-4b will add tenant scoping once the catalog has tenant-scoped sagas with resource references.\n\nSends a `GET` request to `/v1/operations`\n\nArguments:\n- `after_id`: Continuation token: return operations strictly after this id. `None` for the first page.\n- `limit`: Maximum number of items to return. Defaults to 50 if absent; the server caps the maximum to bound response size.\n- `resource_id`: Resource id to filter by. Must be paired with `resource_scope`.\n- `resource_scope`: Resource scope to filter by (e.g. `instance`, `cn`, `tenant`). Must be paired with `resource_id`.\n```ignore\nlet response = client.list_operations()\n    .after_id(after_id)\n    .limit(limit)\n    .resource_id(resource_id)\n    .resource_scope(resource_scope)\n    .send()\n    .await;\n```"]
     pub fn list_operations(&self) -> builder::ListOperations<'_> {
         builder::ListOperations::new(self)
     }
 
-    #[doc = "Detail view for a single operation: summary + persisted DAG\n\n+ fence fields. Used by `tcadm operations get` and the adminUI Operations detail panel.\n\nSends a `GET` request to `/v2/operations/{operation_id}`\n\n```ignore\nlet response = client.get_operation()\n    .operation_id(operation_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Detail view for a single operation: summary + persisted DAG\n\n+ fence fields. Used by `tcadm operations get` and the adminUI Operations detail panel.\n\nSends a `GET` request to `/v1/operations/{operation_id}`\n\n```ignore\nlet response = client.get_operation()\n    .operation_id(operation_id)\n    .send()\n    .await;\n```"]
     pub fn get_operation(&self) -> builder::GetOperation<'_> {
         builder::GetOperation::new(self)
     }
 
-    #[doc = "Operator-initiated unwind (RFD 00004 D-Sg-12). Injects an\n\nerror at every pending node of the saga so the next node the saga reaches fails, triggering the catalog's own undos in reverse. Any currently-running action body completes its natural outcome first; there is no preemption of in-flight work.\n\nReturns the count of nodes poked. Operator-only.\n\nSends a `POST` request to `/v2/operations/{operation_id}/abandon`\n\n```ignore\nlet response = client.abandon_operation()\n    .operation_id(operation_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Operator-initiated unwind (RFD 00004 D-Sg-12). Injects an\n\nerror at every pending node of the saga so the next node the saga reaches fails, triggering the catalog's own undos in reverse. Any currently-running action body completes its natural outcome first; there is no preemption of in-flight work.\n\nReturns the count of nodes poked. Operator-only.\n\nSends a `POST` request to `/v1/operations/{operation_id}/abandon`\n\n```ignore\nlet response = client.abandon_operation()\n    .operation_id(operation_id)\n    .send()\n    .await;\n```"]
     pub fn abandon_operation(&self) -> builder::AbandonOperation<'_> {
         builder::AbandonOperation::new(self)
     }
 
-    #[doc = "List every silo, sorted by `name`. Phase 0 has no per-operator\n\nsilo visibility filter so this returns the full set.\n\nSends a `GET` request to `/v2/silos`\n\n```ignore\nlet response = client.list_silos()\n    .send()\n    .await;\n```"]
+    #[doc = "List every silo, sorted by `name`. Phase 0 has no per-operator\n\nsilo visibility filter so this returns the full set.\n\nSends a `GET` request to `/v1/silos`\n\n```ignore\nlet response = client.list_silos()\n    .send()\n    .await;\n```"]
     pub fn list_silos(&self) -> builder::ListSilos<'_> {
         builder::ListSilos::new(self)
     }
 
-    #[doc = "Create a silo. Returns 201 with the created silo\n\nFails with 409 if a silo with the requested name already exists.\n\nSends a `POST` request to `/v2/silos`\n\n```ignore\nlet response = client.create_silo()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Create a silo. Returns 201 with the created silo\n\nFails with 409 if a silo with the requested name already exists.\n\nSends a `POST` request to `/v1/silos`\n\n```ignore\nlet response = client.create_silo()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_silo(&self) -> builder::CreateSilo<'_> {
         builder::CreateSilo::new(self)
     }
 
-    #[doc = "Look up a silo by id. Returns 404 if no such silo exists\n\nSends a `GET` request to `/v2/silos/{silo_id}`\n\n```ignore\nlet response = client.get_silo()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Look up a silo by id. Returns 404 if no such silo exists\n\nSends a `GET` request to `/v1/silos/{silo_id}`\n\n```ignore\nlet response = client.get_silo()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
     pub fn get_silo(&self) -> builder::GetSilo<'_> {
         builder::GetSilo::new(self)
     }
 
-    #[doc = "Register an image from a tritond image bundle (silo-scoped\n\nonly). tritond fetches the bundle once at registration, validates the manifest, re-hashes the content, and populates every Image-record field from the manifest. The returned `Image` carries `compatibility = Some(...)` so the per-CN agent enforces brand + min_smartos_platform gates at provision time. Returns 400 on a malformed bundle or sha256 mismatch, 502 if `bundle_url` is unreachable, 409 on a name or content collision within the silo.\n\nThe path is `/v2/silos/{silo_id}/image-bundles` rather than `/v2/silos/{silo_id}/images/from-bundle` because Dropshot's router cannot disambiguate a literal `from-bundle` segment from a sibling `{image_id}` parameter at the same level.\n\nSends a `POST` request to `/v2/silos/{silo_id}/image-bundles`\n\n```ignore\nlet response = client.create_silo_image_from_bundle()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Register an image from a tritond image bundle (silo-scoped\n\nonly). tritond fetches the bundle once at registration, validates the manifest, re-hashes the content, and populates every Image-record field from the manifest. The returned `Image` carries `compatibility = Some(...)` so the per-CN agent enforces brand + min_smartos_platform gates at provision time. Returns 400 on a malformed bundle or sha256 mismatch, 502 if `bundle_url` is unreachable, 409 on a name or content collision within the silo.\n\nThe path is `/v1/silos/{silo_id}/image-bundles` rather than `/v1/silos/{silo_id}/images/from-bundle` because Dropshot's router cannot disambiguate a literal `from-bundle` segment from a sibling `{image_id}` parameter at the same level.\n\nSends a `POST` request to `/v1/silos/{silo_id}/image-bundles`\n\n```ignore\nlet response = client.create_silo_image_from_bundle()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_silo_image_from_bundle(&self) -> builder::CreateSiloImageFromBundle<'_> {
         builder::CreateSiloImageFromBundle::new(self)
     }
 
-    #[doc = "List the images whose scope is exactly `Silo { silo_id }`\n\n(does NOT include Public — use `/v2/tenants/{tenant_id}/images` for the unioned tenant view).\n\nSends a `GET` request to `/v2/silos/{silo_id}/images`\n\n```ignore\nlet response = client.list_silo_images()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List the images whose scope is exactly `Silo { silo_id }`\n\n(does NOT include Public — use `/v1/tenants/{tenant_id}/images` for the unioned tenant view).\n\nSends a `GET` request to `/v1/silos/{silo_id}/images`\n\n```ignore\nlet response = client.list_silo_images()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
     pub fn list_silo_images(&self) -> builder::ListSiloImages<'_> {
         builder::ListSiloImages::new(self)
     }
 
-    #[doc = "Register a `Silo`-scoped image\n\nSends a `POST` request to `/v2/silos/{silo_id}/images`\n\n```ignore\nlet response = client.create_silo_image()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Register a `Silo`-scoped image\n\nSends a `POST` request to `/v1/silos/{silo_id}/images`\n\n```ignore\nlet response = client.create_silo_image()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_silo_image(&self) -> builder::CreateSiloImage<'_> {
         builder::CreateSiloImage::new(self)
     }
 
-    #[doc = "Register a `Silo`-scoped image from an IMGAPI v2\n\nmanifest. The operator (or `tcadm image fetch-nocloud`) uploads the blob to Manta first, then POSTs the manifest + the public Manta URL + the SHA-256 of the bytes here. tritond derives every Image-record field from the manifest and persists `manta_url` as `source_url`. The per-CN agent then uses the existing source_url / sha256 fetch + verify path at provision time.\n\nReturns 400 on a manifest validation failure, sha256 shape error, or `files[]` count mismatch; 409 on a uuid or content collision within the silo.\n\nPath is `/imgapi-images` (sibling resource) to mirror the `image-bundles` precedent and sidestep any Dropshot literal-vs-`{image_id}` ambiguity at `/v2/silos/{silo_id}/images/...`.\n\nSends a `POST` request to `/v2/silos/{silo_id}/imgapi-images`\n\n```ignore\nlet response = client.create_silo_image_from_imgapi()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Register a `Silo`-scoped image from an IMGAPI v2\n\nmanifest. The operator (or `tcadm image fetch-nocloud`) uploads the blob to Manta first, then POSTs the manifest + the public Manta URL + the SHA-256 of the bytes here. tritond derives every Image-record field from the manifest and persists `manta_url` as `source_url`. The per-CN agent then uses the existing source_url / sha256 fetch + verify path at provision time.\n\nReturns 400 on a manifest validation failure, sha256 shape error, or `files[]` count mismatch; 409 on a uuid or content collision within the silo.\n\nPath is `/imgapi-images` (sibling resource) to mirror the `image-bundles` precedent and sidestep any Dropshot literal-vs-`{image_id}` ambiguity at `/v1/silos/{silo_id}/images/...`.\n\nSends a `POST` request to `/v1/silos/{silo_id}/imgapi-images`\n\n```ignore\nlet response = client.create_silo_image_from_imgapi()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_silo_image_from_imgapi(&self) -> builder::CreateSiloImageFromImgapi<'_> {
         builder::CreateSiloImageFromImgapi::new(self)
     }
 
-    #[doc = "List the SSH keys whose scope is exactly `Silo { silo_id }`\n\n(does NOT include Public — use `/v2/tenants/{tenant_id}/ssh-keys` for the unioned tenant view).\n\nSends a `GET` request to `/v2/silos/{silo_id}/ssh-keys`\n\n```ignore\nlet response = client.list_silo_ssh_keys()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List the SSH keys whose scope is exactly `Silo { silo_id }`\n\n(does NOT include Public — use `/v1/tenants/{tenant_id}/ssh-keys` for the unioned tenant view).\n\nSends a `GET` request to `/v1/silos/{silo_id}/ssh-keys`\n\n```ignore\nlet response = client.list_silo_ssh_keys()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
     pub fn list_silo_ssh_keys(&self) -> builder::ListSiloSshKeys<'_> {
         builder::ListSiloSshKeys::new(self)
     }
 
-    #[doc = "Register a `Silo`-scoped SSH key. The server parses\n\n`public_key` as openssh format and computes the SHA-256 fingerprint. Returns 400 if the key cannot be parsed, 409 if the name or fingerprint is already in use within the silo.\n\nSends a `POST` request to `/v2/silos/{silo_id}/ssh-keys`\n\n```ignore\nlet response = client.create_silo_ssh_key()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Register a `Silo`-scoped SSH key. The server parses\n\n`public_key` as openssh format and computes the SHA-256 fingerprint. Returns 400 if the key cannot be parsed, 409 if the name or fingerprint is already in use within the silo.\n\nSends a `POST` request to `/v1/silos/{silo_id}/ssh-keys`\n\n```ignore\nlet response = client.create_silo_ssh_key()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_silo_ssh_key(&self) -> builder::CreateSiloSshKey<'_> {
         builder::CreateSiloSshKey::new(self)
     }
 
-    #[doc = "List the tenants in a silo. Operator-facing surface; root\n\ncan administer tenants directly.\n\nSends a `GET` request to `/v2/silos/{silo_id}/tenants`\n\n```ignore\nlet response = client.list_silo_tenants()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List the tenants in a silo. Operator-facing surface; root\n\ncan administer tenants directly.\n\nSends a `GET` request to `/v1/silos/{silo_id}/tenants`\n\n```ignore\nlet response = client.list_silo_tenants()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
     pub fn list_silo_tenants(&self) -> builder::ListSiloTenants<'_> {
         builder::ListSiloTenants::new(self)
     }
 
-    #[doc = "Create a tenant in a silo. Returns 409 if the tenant name is\n\nalready in use within the silo, 404 if the silo does not exist.\n\nSends a `POST` request to `/v2/silos/{silo_id}/tenants`\n\n```ignore\nlet response = client.create_silo_tenant()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Create a tenant in a silo. Returns 409 if the tenant name is\n\nalready in use within the silo, 404 if the silo does not exist.\n\nSends a `POST` request to `/v1/silos/{silo_id}/tenants`\n\n```ignore\nlet response = client.create_silo_tenant()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_silo_tenant(&self) -> builder::CreateSiloTenant<'_> {
         builder::CreateSiloTenant::new(self)
     }
 
-    #[doc = "Read a single tenant. Returns 404 when the tenant does not\n\nexist or belongs to a different silo (cross-silo probes do not learn that the resource exists).\n\nSends a `GET` request to `/v2/silos/{silo_id}/tenants/{tenant_id}`\n\n```ignore\nlet response = client.get_silo_tenant()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Read a single tenant. Returns 404 when the tenant does not\n\nexist or belongs to a different silo (cross-silo probes do not learn that the resource exists).\n\nSends a `GET` request to `/v1/silos/{silo_id}/tenants/{tenant_id}`\n\n```ignore\nlet response = client.get_silo_tenant()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
     pub fn get_silo_tenant(&self) -> builder::GetSiloTenant<'_> {
         builder::GetSiloTenant::new(self)
     }
 
-    #[doc = "Delete a tenant. Returns 404 when the tenant does not exist\n\nor belongs to a different silo. Phase-0 deletion is permissive (does not check for child projects); the block-on-children guard belongs in a future cleanup.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/tenants/{tenant_id}`\n\n```ignore\nlet response = client.delete_silo_tenant()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Delete a tenant. Returns 404 when the tenant does not exist\n\nor belongs to a different silo. Phase-0 deletion is permissive (does not check for child projects); the block-on-children guard belongs in a future cleanup.\n\nSends a `DELETE` request to `/v1/silos/{silo_id}/tenants/{tenant_id}`\n\n```ignore\nlet response = client.delete_silo_tenant()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
     pub fn delete_silo_tenant(&self) -> builder::DeleteSiloTenant<'_> {
         builder::DeleteSiloTenant::new(self)
     }
@@ -30991,7 +30991,7 @@ impl Client {
         builder::ListPublicSshKeys::new(self)
     }
 
-    #[doc = "Create a `Public` SSH key. Root-only via Cedar\n\nReturns 400 if the key cannot be parsed as openssh, 409 if the name or fingerprint is already in use among Public keys.\n\nSends a `POST` request to `/v2/ssh-keys`\n\n```ignore\nlet response = client.create_public_ssh_key()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Create a `Public` SSH key. Root-only via Cedar\n\nReturns 400 if the key cannot be parsed as openssh, 409 if the name or fingerprint is already in use among Public keys.\n\nSends a `POST` request to `/v1/ssh-keys`\n\n```ignore\nlet response = client.create_public_ssh_key()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_public_ssh_key(&self) -> builder::CreatePublicSshKey<'_> {
         builder::CreatePublicSshKey::new(self)
     }
@@ -31001,395 +31001,395 @@ impl Client {
         builder::GetSshKey::new(self)
     }
 
-    #[doc = "Delete an SSH key by id. Returns 404 when the key does\n\nnot exist OR the principal lacks ownership for the key's scope: * `Public` — root only. * `Silo` / `Tenant` / `Project` — any tenant member of the resolved tenant (Phase 0 = same-tenant access). * `User` — only the owning user (or root).\n\nSends a `DELETE` request to `/v2/ssh-keys/{key_id}`\n\n```ignore\nlet response = client.delete_ssh_key()\n    .key_id(key_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Delete an SSH key by id. Returns 404 when the key does\n\nnot exist OR the principal lacks ownership for the key's scope: * `Public` — root only. * `Silo` / `Tenant` / `Project` — any tenant member of the resolved tenant (Phase 0 = same-tenant access). * `User` — only the owning user (or root).\n\nSends a `DELETE` request to `/v1/ssh-keys/{key_id}`\n\n```ignore\nlet response = client.delete_ssh_key()\n    .key_id(key_id)\n    .send()\n    .await;\n```"]
     pub fn delete_ssh_key(&self) -> builder::DeleteSshKey<'_> {
         builder::DeleteSshKey::new(self)
     }
 
-    #[doc = "List every registered manta-storage cluster, sorted by name\n\nOperator surface (root-only via Cedar root-allows-all).\n\nSends a `GET` request to `/v2/storage/clusters`\n\n```ignore\nlet response = client.list_storage_clusters()\n    .send()\n    .await;\n```"]
+    #[doc = "List every registered manta-storage cluster, sorted by name\n\nOperator surface (root-only via Cedar root-allows-all).\n\nSends a `GET` request to `/v1/storage/clusters`\n\n```ignore\nlet response = client.list_storage_clusters()\n    .send()\n    .await;\n```"]
     pub fn list_storage_clusters(&self) -> builder::ListStorageClusters<'_> {
         builder::ListStorageClusters::new(self)
     }
 
-    #[doc = "Register a new storage cluster (mantad / mantafs / manta-block)\n\nThe bearer token submitted in the body is held server-side and never returned by any GET — see [`StorageClusterView`] for the redacted wire shape.\n\nSends a `POST` request to `/v2/storage/clusters`\n\n```ignore\nlet response = client.create_storage_cluster()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Register a new storage cluster (mantad / mantafs / manta-block)\n\nThe bearer token submitted in the body is held server-side and never returned by any GET — see [`StorageClusterView`] for the redacted wire shape.\n\nSends a `POST` request to `/v1/storage/clusters`\n\n```ignore\nlet response = client.create_storage_cluster()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_storage_cluster(&self) -> builder::CreateStorageCluster<'_> {
         builder::CreateStorageCluster::new(self)
     }
 
-    #[doc = "Read a single registered storage cluster by id\n\nSends a `GET` request to `/v2/storage/clusters/{id}`\n\n```ignore\nlet response = client.get_storage_cluster()\n    .id(id)\n    .send()\n    .await;\n```"]
+    #[doc = "Read a single registered storage cluster by id\n\nSends a `GET` request to `/v1/storage/clusters/{id}`\n\n```ignore\nlet response = client.get_storage_cluster()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn get_storage_cluster(&self) -> builder::GetStorageCluster<'_> {
         builder::GetStorageCluster::new(self)
     }
 
-    #[doc = "Drop a storage cluster registration. Idempotent\n\nSends a `DELETE` request to `/v2/storage/clusters/{id}`\n\n```ignore\nlet response = client.delete_storage_cluster()\n    .id(id)\n    .send()\n    .await;\n```"]
+    #[doc = "Drop a storage cluster registration. Idempotent\n\nSends a `DELETE` request to `/v1/storage/clusters/{id}`\n\n```ignore\nlet response = client.delete_storage_cluster()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn delete_storage_cluster(&self) -> builder::DeleteStorageCluster<'_> {
         builder::DeleteStorageCluster::new(self)
     }
 
-    #[doc = "`DELETE /admin/v1/access-keys/{access_key_id}`. Note that the\n\nAKID alone identifies the key — there's no per-user nesting here, mirroring mantad's surface.\n\nSends a `DELETE` request to `/v2/storage/clusters/{id}/access-keys/{access_key_id}`\n\n```ignore\nlet response = client.delete_storage_cluster_access_key()\n    .id(id)\n    .access_key_id(access_key_id)\n    .send()\n    .await;\n```"]
+    #[doc = "`DELETE /admin/v1/access-keys/{access_key_id}`. Note that the\n\nAKID alone identifies the key — there's no per-user nesting here, mirroring mantad's surface.\n\nSends a `DELETE` request to `/v1/storage/clusters/{id}/access-keys/{access_key_id}`\n\n```ignore\nlet response = client.delete_storage_cluster_access_key()\n    .id(id)\n    .access_key_id(access_key_id)\n    .send()\n    .await;\n```"]
     pub fn delete_storage_cluster_access_key(&self) -> builder::DeleteStorageClusterAccessKey<'_> {
         builder::DeleteStorageClusterAccessKey::new(self)
     }
 
-    #[doc = "`GET /admin/v1/buckets` — all buckets in the cluster\n\n`?stats=true` forwards `?stats=1` to mantad and includes per-bucket object counts + total bytes (a more expensive scan).\n\nSends a `GET` request to `/v2/storage/clusters/{id}/buckets`\n\n```ignore\nlet response = client.list_storage_cluster_buckets()\n    .id(id)\n    .stats(stats)\n    .send()\n    .await;\n```"]
+    #[doc = "`GET /admin/v1/buckets` — all buckets in the cluster\n\n`?stats=true` forwards `?stats=1` to mantad and includes per-bucket object counts + total bytes (a more expensive scan).\n\nSends a `GET` request to `/v1/storage/clusters/{id}/buckets`\n\n```ignore\nlet response = client.list_storage_cluster_buckets()\n    .id(id)\n    .stats(stats)\n    .send()\n    .await;\n```"]
     pub fn list_storage_cluster_buckets(&self) -> builder::ListStorageClusterBuckets<'_> {
         builder::ListStorageClusterBuckets::new(self)
     }
 
-    #[doc = "`POST /admin/v1/buckets` — create a bucket\n\nSends a `POST` request to `/v2/storage/clusters/{id}/buckets`\n\n```ignore\nlet response = client.create_storage_cluster_bucket()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "`POST /admin/v1/buckets` — create a bucket\n\nSends a `POST` request to `/v1/storage/clusters/{id}/buckets`\n\n```ignore\nlet response = client.create_storage_cluster_bucket()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_storage_cluster_bucket(&self) -> builder::CreateStorageClusterBucket<'_> {
         builder::CreateStorageClusterBucket::new(self)
     }
 
-    #[doc = "`GET /admin/v1/buckets/{bucket}` — bucket detail\n\nSends a `GET` request to `/v2/storage/clusters/{id}/buckets/{bucket}`\n\n```ignore\nlet response = client.get_storage_cluster_bucket()\n    .id(id)\n    .bucket(bucket)\n    .send()\n    .await;\n```"]
+    #[doc = "`GET /admin/v1/buckets/{bucket}` — bucket detail\n\nSends a `GET` request to `/v1/storage/clusters/{id}/buckets/{bucket}`\n\n```ignore\nlet response = client.get_storage_cluster_bucket()\n    .id(id)\n    .bucket(bucket)\n    .send()\n    .await;\n```"]
     pub fn get_storage_cluster_bucket(&self) -> builder::GetStorageClusterBucket<'_> {
         builder::GetStorageClusterBucket::new(self)
     }
 
-    #[doc = "`DELETE /admin/v1/buckets/{bucket}` — delete an empty bucket\n\nSends a `DELETE` request to `/v2/storage/clusters/{id}/buckets/{bucket}`\n\n```ignore\nlet response = client.delete_storage_cluster_bucket()\n    .id(id)\n    .bucket(bucket)\n    .send()\n    .await;\n```"]
+    #[doc = "`DELETE /admin/v1/buckets/{bucket}` — delete an empty bucket\n\nSends a `DELETE` request to `/v1/storage/clusters/{id}/buckets/{bucket}`\n\n```ignore\nlet response = client.delete_storage_cluster_bucket()\n    .id(id)\n    .bucket(bucket)\n    .send()\n    .await;\n```"]
     pub fn delete_storage_cluster_bucket(&self) -> builder::DeleteStorageClusterBucket<'_> {
         builder::DeleteStorageClusterBucket::new(self)
     }
 
-    #[doc = "`GET /admin/v1/buckets/{bucket}/objects` — paged object listing\n\nSends a `GET` request to `/v2/storage/clusters/{id}/buckets/{bucket}/objects`\n\n```ignore\nlet response = client.list_storage_cluster_objects()\n    .id(id)\n    .bucket(bucket)\n    .continuation_token(continuation_token)\n    .delimiter(delimiter)\n    .max_keys(max_keys)\n    .prefix(prefix)\n    .send()\n    .await;\n```"]
+    #[doc = "`GET /admin/v1/buckets/{bucket}/objects` — paged object listing\n\nSends a `GET` request to `/v1/storage/clusters/{id}/buckets/{bucket}/objects`\n\n```ignore\nlet response = client.list_storage_cluster_objects()\n    .id(id)\n    .bucket(bucket)\n    .continuation_token(continuation_token)\n    .delimiter(delimiter)\n    .max_keys(max_keys)\n    .prefix(prefix)\n    .send()\n    .await;\n```"]
     pub fn list_storage_cluster_objects(&self) -> builder::ListStorageClusterObjects<'_> {
         builder::ListStorageClusterObjects::new(self)
     }
 
-    #[doc = "`GET /admin/v1/cluster` — cluster summary\n\nSends a `GET` request to `/v2/storage/clusters/{id}/cluster`\n\n```ignore\nlet response = client.get_storage_cluster_summary()\n    .id(id)\n    .send()\n    .await;\n```"]
+    #[doc = "`GET /admin/v1/cluster` — cluster summary\n\nSends a `GET` request to `/v1/storage/clusters/{id}/cluster`\n\n```ignore\nlet response = client.get_storage_cluster_summary()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn get_storage_cluster_summary(&self) -> builder::GetStorageClusterSummary<'_> {
         builder::GetStorageClusterSummary::new(self)
     }
 
-    #[doc = "Trigger an out-of-band health probe against the cluster's\n\n`/admin/v1/cluster` summary, persist the observed status to `last_observed_at`, and return the refreshed view. POST because it actively mutates state.\n\nSends a `POST` request to `/v2/storage/clusters/{id}/health`\n\n```ignore\nlet response = client.probe_storage_cluster_health()\n    .id(id)\n    .send()\n    .await;\n```"]
+    #[doc = "Trigger an out-of-band health probe against the cluster's\n\n`/admin/v1/cluster` summary, persist the observed status to `last_observed_at`, and return the refreshed view. POST because it actively mutates state.\n\nSends a `POST` request to `/v1/storage/clusters/{id}/health`\n\n```ignore\nlet response = client.probe_storage_cluster_health()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn probe_storage_cluster_health(&self) -> builder::ProbeStorageClusterHealth<'_> {
         builder::ProbeStorageClusterHealth::new(self)
     }
 
-    #[doc = "`GET /admin/v1/membership` — current membership view\n\nSends a `GET` request to `/v2/storage/clusters/{id}/membership`\n\n```ignore\nlet response = client.get_storage_cluster_membership()\n    .id(id)\n    .send()\n    .await;\n```"]
+    #[doc = "`GET /admin/v1/membership` — current membership view\n\nSends a `GET` request to `/v1/storage/clusters/{id}/membership`\n\n```ignore\nlet response = client.get_storage_cluster_membership()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn get_storage_cluster_membership(&self) -> builder::GetStorageClusterMembership<'_> {
         builder::GetStorageClusterMembership::new(self)
     }
 
-    #[doc = "`GET /admin/v1/nodes` — list all nodes\n\nSends a `GET` request to `/v2/storage/clusters/{id}/nodes`\n\n```ignore\nlet response = client.list_storage_cluster_nodes()\n    .id(id)\n    .send()\n    .await;\n```"]
+    #[doc = "`GET /admin/v1/nodes` — list all nodes\n\nSends a `GET` request to `/v1/storage/clusters/{id}/nodes`\n\n```ignore\nlet response = client.list_storage_cluster_nodes()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn list_storage_cluster_nodes(&self) -> builder::ListStorageClusterNodes<'_> {
         builder::ListStorageClusterNodes::new(self)
     }
 
-    #[doc = "`POST /admin/v1/nodes` — register a peer\n\nSends a `POST` request to `/v2/storage/clusters/{id}/nodes`\n\n```ignore\nlet response = client.add_storage_cluster_node()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "`POST /admin/v1/nodes` — register a peer\n\nSends a `POST` request to `/v1/storage/clusters/{id}/nodes`\n\n```ignore\nlet response = client.add_storage_cluster_node()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn add_storage_cluster_node(&self) -> builder::AddStorageClusterNode<'_> {
         builder::AddStorageClusterNode::new(self)
     }
 
-    #[doc = "`GET /admin/v1/nodes/{node_id}` — single-node detail\n\nSends a `GET` request to `/v2/storage/clusters/{id}/nodes/{node_id}`\n\nArguments:\n- `id`\n- `node_id`: Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.\n```ignore\nlet response = client.get_storage_cluster_node()\n    .id(id)\n    .node_id(node_id)\n    .send()\n    .await;\n```"]
+    #[doc = "`GET /admin/v1/nodes/{node_id}` — single-node detail\n\nSends a `GET` request to `/v1/storage/clusters/{id}/nodes/{node_id}`\n\nArguments:\n- `id`\n- `node_id`: Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.\n```ignore\nlet response = client.get_storage_cluster_node()\n    .id(id)\n    .node_id(node_id)\n    .send()\n    .await;\n```"]
     pub fn get_storage_cluster_node(&self) -> builder::GetStorageClusterNode<'_> {
         builder::GetStorageClusterNode::new(self)
     }
 
-    #[doc = "`DELETE /admin/v1/nodes/{node_id}` — drop a peer\n\nSends a `DELETE` request to `/v2/storage/clusters/{id}/nodes/{node_id}`\n\nArguments:\n- `id`\n- `node_id`: Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.\n```ignore\nlet response = client.remove_storage_cluster_node()\n    .id(id)\n    .node_id(node_id)\n    .send()\n    .await;\n```"]
+    #[doc = "`DELETE /admin/v1/nodes/{node_id}` — drop a peer\n\nSends a `DELETE` request to `/v1/storage/clusters/{id}/nodes/{node_id}`\n\nArguments:\n- `id`\n- `node_id`: Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.\n```ignore\nlet response = client.remove_storage_cluster_node()\n    .id(id)\n    .node_id(node_id)\n    .send()\n    .await;\n```"]
     pub fn remove_storage_cluster_node(&self) -> builder::RemoveStorageClusterNode<'_> {
         builder::RemoveStorageClusterNode::new(self)
     }
 
-    #[doc = "`POST /admin/v1/nodes/{node_id}/drain`\n\nSends a `POST` request to `/v2/storage/clusters/{id}/nodes/{node_id}/drain`\n\nArguments:\n- `id`\n- `node_id`: Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.\n```ignore\nlet response = client.drain_storage_cluster_node()\n    .id(id)\n    .node_id(node_id)\n    .send()\n    .await;\n```"]
+    #[doc = "`POST /admin/v1/nodes/{node_id}/drain`\n\nSends a `POST` request to `/v1/storage/clusters/{id}/nodes/{node_id}/drain`\n\nArguments:\n- `id`\n- `node_id`: Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.\n```ignore\nlet response = client.drain_storage_cluster_node()\n    .id(id)\n    .node_id(node_id)\n    .send()\n    .await;\n```"]
     pub fn drain_storage_cluster_node(&self) -> builder::DrainStorageClusterNode<'_> {
         builder::DrainStorageClusterNode::new(self)
     }
 
-    #[doc = "`POST /admin/v1/nodes/{node_id}/reweight`\n\nSends a `POST` request to `/v2/storage/clusters/{id}/nodes/{node_id}/reweight`\n\nArguments:\n- `id`\n- `node_id`: Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.\n- `body`\n```ignore\nlet response = client.reweight_storage_cluster_node()\n    .id(id)\n    .node_id(node_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "`POST /admin/v1/nodes/{node_id}/reweight`\n\nSends a `POST` request to `/v1/storage/clusters/{id}/nodes/{node_id}/reweight`\n\nArguments:\n- `id`\n- `node_id`: Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.\n- `body`\n```ignore\nlet response = client.reweight_storage_cluster_node()\n    .id(id)\n    .node_id(node_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn reweight_storage_cluster_node(&self) -> builder::ReweightStorageClusterNode<'_> {
         builder::ReweightStorageClusterNode::new(self)
     }
 
-    #[doc = "`POST /admin/v1/nodes/{node_id}/undrain`\n\nSends a `POST` request to `/v2/storage/clusters/{id}/nodes/{node_id}/undrain`\n\nArguments:\n- `id`\n- `node_id`: Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.\n```ignore\nlet response = client.undrain_storage_cluster_node()\n    .id(id)\n    .node_id(node_id)\n    .send()\n    .await;\n```"]
+    #[doc = "`POST /admin/v1/nodes/{node_id}/undrain`\n\nSends a `POST` request to `/v1/storage/clusters/{id}/nodes/{node_id}/undrain`\n\nArguments:\n- `id`\n- `node_id`: Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.\n```ignore\nlet response = client.undrain_storage_cluster_node()\n    .id(id)\n    .node_id(node_id)\n    .send()\n    .await;\n```"]
     pub fn undrain_storage_cluster_node(&self) -> builder::UndrainStorageClusterNode<'_> {
         builder::UndrainStorageClusterNode::new(self)
     }
 
-    #[doc = "Configure (or rotate) the per-cluster presigner identity\n\n`s3_endpoint` updates the cluster's data-plane URL; pass `None` to leave it unchanged. Empty `access_key_id` + `secret_access_key` clear the presigner. Mismatched (one empty, one set) → 409.\n\nSends a `POST` request to `/v2/storage/clusters/{id}/presigner`\n\n```ignore\nlet response = client.set_storage_cluster_presigner()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Configure (or rotate) the per-cluster presigner identity\n\n`s3_endpoint` updates the cluster's data-plane URL; pass `None` to leave it unchanged. Empty `access_key_id` + `secret_access_key` clear the presigner. Mismatched (one empty, one set) → 409.\n\nSends a `POST` request to `/v1/storage/clusters/{id}/presigner`\n\n```ignore\nlet response = client.set_storage_cluster_presigner()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn set_storage_cluster_presigner(&self) -> builder::SetStorageClusterPresigner<'_> {
         builder::SetStorageClusterPresigner::new(self)
     }
 
-    #[doc = "Mint a single-shot presigned GET URL (downloads or shareable\n\nlinks).\n\nSends a `POST` request to `/v2/storage/clusters/{id}/s3/presign/get`\n\n```ignore\nlet response = client.presign_storage_cluster_object_get()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Mint a single-shot presigned GET URL (downloads or shareable\n\nlinks).\n\nSends a `POST` request to `/v1/storage/clusters/{id}/s3/presign/get`\n\n```ignore\nlet response = client.presign_storage_cluster_object_get()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn presign_storage_cluster_object_get(
         &self,
     ) -> builder::PresignStorageClusterObjectGet<'_> {
         builder::PresignStorageClusterObjectGet::new(self)
     }
 
-    #[doc = "Mint a single-shot presigned PUT URL (uploads < 5 MB)\n\nReturns 409 when the cluster has no presigner configured.\n\nSends a `POST` request to `/v2/storage/clusters/{id}/s3/presign/put`\n\n```ignore\nlet response = client.presign_storage_cluster_object_put()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Mint a single-shot presigned PUT URL (uploads < 5 MB)\n\nReturns 409 when the cluster has no presigner configured.\n\nSends a `POST` request to `/v1/storage/clusters/{id}/s3/presign/put`\n\n```ignore\nlet response = client.presign_storage_cluster_object_put()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn presign_storage_cluster_object_put(
         &self,
     ) -> builder::PresignStorageClusterObjectPut<'_> {
         builder::PresignStorageClusterObjectPut::new(self)
     }
 
-    #[doc = "`GET /admin/v1/users`\n\nSends a `GET` request to `/v2/storage/clusters/{id}/users`\n\n```ignore\nlet response = client.list_storage_cluster_users()\n    .id(id)\n    .send()\n    .await;\n```"]
+    #[doc = "`GET /admin/v1/users`\n\nSends a `GET` request to `/v1/storage/clusters/{id}/users`\n\n```ignore\nlet response = client.list_storage_cluster_users()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn list_storage_cluster_users(&self) -> builder::ListStorageClusterUsers<'_> {
         builder::ListStorageClusterUsers::new(self)
     }
 
-    #[doc = "`POST /admin/v1/users`\n\nSends a `POST` request to `/v2/storage/clusters/{id}/users`\n\n```ignore\nlet response = client.create_storage_cluster_user()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "`POST /admin/v1/users`\n\nSends a `POST` request to `/v1/storage/clusters/{id}/users`\n\n```ignore\nlet response = client.create_storage_cluster_user()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_storage_cluster_user(&self) -> builder::CreateStorageClusterUser<'_> {
         builder::CreateStorageClusterUser::new(self)
     }
 
-    #[doc = "`GET /admin/v1/users/{user}`\n\nSends a `GET` request to `/v2/storage/clusters/{id}/users/{user}`\n\n```ignore\nlet response = client.get_storage_cluster_user()\n    .id(id)\n    .user(user)\n    .send()\n    .await;\n```"]
+    #[doc = "`GET /admin/v1/users/{user}`\n\nSends a `GET` request to `/v1/storage/clusters/{id}/users/{user}`\n\n```ignore\nlet response = client.get_storage_cluster_user()\n    .id(id)\n    .user(user)\n    .send()\n    .await;\n```"]
     pub fn get_storage_cluster_user(&self) -> builder::GetStorageClusterUser<'_> {
         builder::GetStorageClusterUser::new(self)
     }
 
-    #[doc = "`DELETE /admin/v1/users/{user}`\n\nSends a `DELETE` request to `/v2/storage/clusters/{id}/users/{user}`\n\n```ignore\nlet response = client.delete_storage_cluster_user()\n    .id(id)\n    .user(user)\n    .send()\n    .await;\n```"]
+    #[doc = "`DELETE /admin/v1/users/{user}`\n\nSends a `DELETE` request to `/v1/storage/clusters/{id}/users/{user}`\n\n```ignore\nlet response = client.delete_storage_cluster_user()\n    .id(id)\n    .user(user)\n    .send()\n    .await;\n```"]
     pub fn delete_storage_cluster_user(&self) -> builder::DeleteStorageClusterUser<'_> {
         builder::DeleteStorageClusterUser::new(self)
     }
 
-    #[doc = "`GET /admin/v1/users/{user}/access-keys`\n\nSends a `GET` request to `/v2/storage/clusters/{id}/users/{user}/access-keys`\n\n```ignore\nlet response = client.list_storage_cluster_access_keys()\n    .id(id)\n    .user(user)\n    .send()\n    .await;\n```"]
+    #[doc = "`GET /admin/v1/users/{user}/access-keys`\n\nSends a `GET` request to `/v1/storage/clusters/{id}/users/{user}/access-keys`\n\n```ignore\nlet response = client.list_storage_cluster_access_keys()\n    .id(id)\n    .user(user)\n    .send()\n    .await;\n```"]
     pub fn list_storage_cluster_access_keys(&self) -> builder::ListStorageClusterAccessKeys<'_> {
         builder::ListStorageClusterAccessKeys::new(self)
     }
 
-    #[doc = "`POST /admin/v1/users/{user}/access-keys` — secret returned\n\nonce on the response. Caller must capture it; mantad does not retain the cleartext.\n\nSends a `POST` request to `/v2/storage/clusters/{id}/users/{user}/access-keys`\n\n```ignore\nlet response = client.create_storage_cluster_access_key()\n    .id(id)\n    .user(user)\n    .send()\n    .await;\n```"]
+    #[doc = "`POST /admin/v1/users/{user}/access-keys` — secret returned\n\nonce on the response. Caller must capture it; mantad does not retain the cleartext.\n\nSends a `POST` request to `/v1/storage/clusters/{id}/users/{user}/access-keys`\n\n```ignore\nlet response = client.create_storage_cluster_access_key()\n    .id(id)\n    .user(user)\n    .send()\n    .await;\n```"]
     pub fn create_storage_cluster_access_key(&self) -> builder::CreateStorageClusterAccessKey<'_> {
         builder::CreateStorageClusterAccessKey::new(self)
     }
 
-    #[doc = "`GET /admin/v1/users/{user}/policies` — list attached policy\n\nnames. Returns a Vec<String> verbatim from mantad.\n\nSends a `GET` request to `/v2/storage/clusters/{id}/users/{user}/policies`\n\n```ignore\nlet response = client.list_storage_cluster_user_policies()\n    .id(id)\n    .user(user)\n    .send()\n    .await;\n```"]
+    #[doc = "`GET /admin/v1/users/{user}/policies` — list attached policy\n\nnames. Returns a Vec<String> verbatim from mantad.\n\nSends a `GET` request to `/v1/storage/clusters/{id}/users/{user}/policies`\n\n```ignore\nlet response = client.list_storage_cluster_user_policies()\n    .id(id)\n    .user(user)\n    .send()\n    .await;\n```"]
     pub fn list_storage_cluster_user_policies(
         &self,
     ) -> builder::ListStorageClusterUserPolicies<'_> {
         builder::ListStorageClusterUserPolicies::new(self)
     }
 
-    #[doc = "`GET /admin/v1/users/{user}/policies/{policy}` — raw policy JSON\n\nSends a `GET` request to `/v2/storage/clusters/{id}/users/{user}/policies/{policy}`\n\n```ignore\nlet response = client.get_storage_cluster_user_policy()\n    .id(id)\n    .user(user)\n    .policy(policy)\n    .send()\n    .await;\n```"]
+    #[doc = "`GET /admin/v1/users/{user}/policies/{policy}` — raw policy JSON\n\nSends a `GET` request to `/v1/storage/clusters/{id}/users/{user}/policies/{policy}`\n\n```ignore\nlet response = client.get_storage_cluster_user_policy()\n    .id(id)\n    .user(user)\n    .policy(policy)\n    .send()\n    .await;\n```"]
     pub fn get_storage_cluster_user_policy(&self) -> builder::GetStorageClusterUserPolicy<'_> {
         builder::GetStorageClusterUserPolicy::new(self)
     }
 
-    #[doc = "`PUT /admin/v1/users/{user}/policies/{policy}` — upsert a JSON\n\npolicy doc. Body is the raw policy document; mantad does not validate schema beyond \"is JSON\".\n\nSends a `PUT` request to `/v2/storage/clusters/{id}/users/{user}/policies/{policy}`\n\n```ignore\nlet response = client.put_storage_cluster_user_policy()\n    .id(id)\n    .user(user)\n    .policy(policy)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "`PUT /admin/v1/users/{user}/policies/{policy}` — upsert a JSON\n\npolicy doc. Body is the raw policy document; mantad does not validate schema beyond \"is JSON\".\n\nSends a `PUT` request to `/v1/storage/clusters/{id}/users/{user}/policies/{policy}`\n\n```ignore\nlet response = client.put_storage_cluster_user_policy()\n    .id(id)\n    .user(user)\n    .policy(policy)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn put_storage_cluster_user_policy(&self) -> builder::PutStorageClusterUserPolicy<'_> {
         builder::PutStorageClusterUserPolicy::new(self)
     }
 
-    #[doc = "`DELETE /admin/v1/users/{user}/policies/{policy}`\n\nSends a `DELETE` request to `/v2/storage/clusters/{id}/users/{user}/policies/{policy}`\n\n```ignore\nlet response = client.delete_storage_cluster_user_policy()\n    .id(id)\n    .user(user)\n    .policy(policy)\n    .send()\n    .await;\n```"]
+    #[doc = "`DELETE /admin/v1/users/{user}/policies/{policy}`\n\nSends a `DELETE` request to `/v1/storage/clusters/{id}/users/{user}/policies/{policy}`\n\n```ignore\nlet response = client.delete_storage_cluster_user_policy()\n    .id(id)\n    .user(user)\n    .policy(policy)\n    .send()\n    .await;\n```"]
     pub fn delete_storage_cluster_user_policy(
         &self,
     ) -> builder::DeleteStorageClusterUserPolicy<'_> {
         builder::DeleteStorageClusterUserPolicy::new(self)
     }
 
-    #[doc = "Read the OIDC IdP config for a tenant. The client secret is\n\nnever returned. 404 when no IdP is configured.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/idp`\n\n```ignore\nlet response = client.get_tenant_idp()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Read the OIDC IdP config for a tenant. The client secret is\n\nnever returned. 404 when no IdP is configured.\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/idp`\n\n```ignore\nlet response = client.get_tenant_idp()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
     pub fn get_tenant_idp(&self) -> builder::GetTenantIdp<'_> {
         builder::GetTenantIdp::new(self)
     }
 
-    #[doc = "Configure the OIDC identity provider for a tenant. Returns\n\n502 if the discovery document cannot be fetched, 404 if the tenant does not exist, 409 if a different tenant already claims the same `issuer_url`, otherwise 201 with the redacted view of what was persisted.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/idp`\n\n```ignore\nlet response = client.put_tenant_idp()\n    .tenant_id(tenant_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Configure the OIDC identity provider for a tenant. Returns\n\n502 if the discovery document cannot be fetched, 404 if the tenant does not exist, 409 if a different tenant already claims the same `issuer_url`, otherwise 201 with the redacted view of what was persisted.\n\nSends a `POST` request to `/v1/tenants/{tenant_id}/idp`\n\n```ignore\nlet response = client.put_tenant_idp()\n    .tenant_id(tenant_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn put_tenant_idp(&self) -> builder::PutTenantIdp<'_> {
         builder::PutTenantIdp::new(self)
     }
 
-    #[doc = "Remove the OIDC IdP config for a tenant. Federated users\n\nin that tenant will fail to authenticate until a new config is posted.\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/idp`\n\n```ignore\nlet response = client.delete_tenant_idp()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Remove the OIDC IdP config for a tenant. Federated users\n\nin that tenant will fail to authenticate until a new config is posted.\n\nSends a `DELETE` request to `/v1/tenants/{tenant_id}/idp`\n\n```ignore\nlet response = client.delete_tenant_idp()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
     pub fn delete_tenant_idp(&self) -> builder::DeleteTenantIdp<'_> {
         builder::DeleteTenantIdp::new(self)
     }
 
-    #[doc = "List images visible to the tenant: Public + Silo (of\n\ntenant's silo) + Tenant.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/images`\n\n```ignore\nlet response = client.list_tenant_images()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List images visible to the tenant: Public + Silo (of\n\ntenant's silo) + Tenant.\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/images`\n\n```ignore\nlet response = client.list_tenant_images()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
     pub fn list_tenant_images(&self) -> builder::ListTenantImages<'_> {
         builder::ListTenantImages::new(self)
     }
 
-    #[doc = "Register a `Tenant`-scoped image\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/images`\n\n```ignore\nlet response = client.create_tenant_image()\n    .tenant_id(tenant_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Register a `Tenant`-scoped image\n\nSends a `POST` request to `/v1/tenants/{tenant_id}/images`\n\n```ignore\nlet response = client.create_tenant_image()\n    .tenant_id(tenant_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_tenant_image(&self) -> builder::CreateTenantImage<'_> {
         builder::CreateTenantImage::new(self)
     }
 
-    #[doc = "List the projects inside a tenant\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects`\n\n```ignore\nlet response = client.list_tenant_projects()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List the projects inside a tenant\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects`\n\n```ignore\nlet response = client.list_tenant_projects()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
     pub fn list_tenant_projects(&self) -> builder::ListTenantProjects<'_> {
         builder::ListTenantProjects::new(self)
     }
 
-    #[doc = "Create a project in a tenant. Returns 409 if the project\n\nname is already in use within that tenant.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects`\n\n```ignore\nlet response = client.create_tenant_project()\n    .tenant_id(tenant_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Create a project in a tenant. Returns 409 if the project\n\nname is already in use within that tenant.\n\nSends a `POST` request to `/v1/tenants/{tenant_id}/projects`\n\n```ignore\nlet response = client.create_tenant_project()\n    .tenant_id(tenant_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_tenant_project(&self) -> builder::CreateTenantProject<'_> {
         builder::CreateTenantProject::new(self)
     }
 
-    #[doc = "Read a single project. Returns 404 when the project does not\n\nexist or belongs to a different tenant (cross-tenant probes do not learn that other tenants exist).\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}`\n\n```ignore\nlet response = client.get_tenant_project()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Read a single project. Returns 404 when the project does not\n\nexist or belongs to a different tenant (cross-tenant probes do not learn that other tenants exist).\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}`\n\n```ignore\nlet response = client.get_tenant_project()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
     pub fn get_tenant_project(&self) -> builder::GetTenantProject<'_> {
         builder::GetTenantProject::new(self)
     }
 
-    #[doc = "Delete a project. Returns 404 when the project does not exist\n\nor belongs to a different tenant.\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}`\n\n```ignore\nlet response = client.delete_tenant_project()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Delete a project. Returns 404 when the project does not exist\n\nor belongs to a different tenant.\n\nSends a `DELETE` request to `/v1/tenants/{tenant_id}/projects/{project_id}`\n\n```ignore\nlet response = client.delete_tenant_project()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
     pub fn delete_tenant_project(&self) -> builder::DeleteTenantProject<'_> {
         builder::DeleteTenantProject::new(self)
     }
 
-    #[doc = "List FloatingIps owned by a project\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips`\n\n```ignore\nlet response = client.list_project_floating_ips()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List FloatingIps owned by a project\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/floating-ips`\n\n```ignore\nlet response = client.list_project_floating_ips()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
     pub fn list_project_floating_ips(&self) -> builder::ListProjectFloatingIps<'_> {
         builder::ListProjectFloatingIps::new(self)
     }
 
-    #[doc = "Read a single FloatingIp. Returns 404 if the FloatingIp\n\ndoes not exist or belongs to a different tenant or project.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}`\n\n```ignore\nlet response = client.get_project_floating_ip()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Read a single FloatingIp. Returns 404 if the FloatingIp\n\ndoes not exist or belongs to a different tenant or project.\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}`\n\n```ignore\nlet response = client.get_project_floating_ip()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .send()\n    .await;\n```"]
     pub fn get_project_floating_ip(&self) -> builder::GetProjectFloatingIp<'_> {
         builder::GetProjectFloatingIp::new(self)
     }
 
-    #[doc = "Atomically attach a FloatingIp to a NIC, replacing any\n\nexisting attachment. The target NIC must live in the same tenant + project as the FloatingIp; mismatch surfaces as 404.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach`\n\n```ignore\nlet response = client.attach_project_floating_ip()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Atomically attach a FloatingIp to a NIC, replacing any\n\nexisting attachment. The target NIC must live in the same tenant + project as the FloatingIp; mismatch surfaces as 404.\n\nSends a `POST` request to `/v1/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach`\n\n```ignore\nlet response = client.attach_project_floating_ip()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn attach_project_floating_ip(&self) -> builder::AttachProjectFloatingIp<'_> {
         builder::AttachProjectFloatingIp::new(self)
     }
 
-    #[doc = "Detach a FloatingIp from its current NIC. Idempotent — a\n\ndetach on an already-detached FloatingIp is a no-op that returns the current record.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach`\n\n```ignore\nlet response = client.detach_project_floating_ip()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Detach a FloatingIp from its current NIC. Idempotent — a\n\ndetach on an already-detached FloatingIp is a no-op that returns the current record.\n\nSends a `POST` request to `/v1/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach`\n\n```ignore\nlet response = client.detach_project_floating_ip()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .send()\n    .await;\n```"]
     pub fn detach_project_floating_ip(&self) -> builder::DetachProjectFloatingIp<'_> {
         builder::DetachProjectFloatingIp::new(self)
     }
 
-    #[doc = "List images visible to the project: Public + Silo (of\n\nproject's silo) + Tenant (of project's tenant) + Project. This is the practical \"what can a project member launch from?\" query.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/images`\n\n```ignore\nlet response = client.list_project_images()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List images visible to the project: Public + Silo (of\n\nproject's silo) + Tenant (of project's tenant) + Project. This is the practical \"what can a project member launch from?\" query.\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/images`\n\n```ignore\nlet response = client.list_project_images()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
     pub fn list_project_images(&self) -> builder::ListProjectImages<'_> {
         builder::ListProjectImages::new(self)
     }
 
-    #[doc = "Register a `Project`-scoped image\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/images`\n\n```ignore\nlet response = client.create_project_image()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Register a `Project`-scoped image\n\nSends a `POST` request to `/v1/tenants/{tenant_id}/projects/{project_id}/images`\n\n```ignore\nlet response = client.create_project_image()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_project_image(&self) -> builder::CreateProjectImage<'_> {
         builder::CreateProjectImage::new(self)
     }
 
-    #[doc = "Browser-facing serial / VNC console for a managed instance\n\nAuthorises via the `instance_console` Cedar action; only valid while the instance is Running. `?kind=vnc` is refused for brands without a framebuffer (anything but `bhyve` / `kvm`). Not covered by the generated client (`#[channel]` endpoints are consumed by the hand-rolled admin-backend proxy).\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/console`\n\nArguments:\n- `tenant_id`\n- `project_id`\n- `instance_id`\n- `kind`: Which console to attach: `serial` or `vnc`.\n```ignore\nlet response = client.instance_console()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .kind(kind)\n    .send()\n    .await;\n```"]
+    #[doc = "Browser-facing serial / VNC console for a managed instance\n\nAuthorises via the `instance_console` Cedar action; only valid while the instance is Running. `?kind=vnc` is refused for brands without a framebuffer (anything but `bhyve` / `kvm`). Not covered by the generated client (`#[channel]` endpoints are consumed by the hand-rolled admin-backend proxy).\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/console`\n\nArguments:\n- `tenant_id`\n- `project_id`\n- `instance_id`\n- `kind`: Which console to attach: `serial` or `vnc`.\n```ignore\nlet response = client.instance_console()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .kind(kind)\n    .send()\n    .await;\n```"]
     pub fn instance_console(&self) -> builder::InstanceConsole<'_> {
         builder::InstanceConsole::new(self)
     }
 
-    #[doc = "Tail the most recent log lines for one source on one VM\n\nPagination via `before_seq` -- pass the smallest `seq` from the previous response to fetch older lines.\n\nAuth: requires a tenant-scoped credential with read access to the named instance (same envelope as `get_project_instance`).\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/logs/{source}`\n\nArguments:\n- `tenant_id`\n- `project_id`\n- `instance_id`\n- `source`: URL-safe source name. `console` or `platform`.\n- `before_seq`\n- `lines`\n```ignore\nlet response = client.instance_logs_tail()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .source(source)\n    .before_seq(before_seq)\n    .lines(lines)\n    .send()\n    .await;\n```"]
+    #[doc = "Tail the most recent log lines for one source on one VM\n\nPagination via `before_seq` -- pass the smallest `seq` from the previous response to fetch older lines.\n\nAuth: requires a tenant-scoped credential with read access to the named instance (same envelope as `get_project_instance`).\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/logs/{source}`\n\nArguments:\n- `tenant_id`\n- `project_id`\n- `instance_id`\n- `source`: URL-safe source name. `console` or `platform`.\n- `before_seq`\n- `lines`\n```ignore\nlet response = client.instance_logs_tail()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .source(source)\n    .before_seq(before_seq)\n    .lines(lines)\n    .send()\n    .await;\n```"]
     pub fn instance_logs_tail(&self) -> builder::InstanceLogsTail<'_> {
         builder::InstanceLogsTail::new(self)
     }
 
-    #[doc = "Range query for the per-instance metrics chart on the VM\n\ndetail view. Returns one numeric series per distinct `series` identity field encountered in the requested window. Counter datums are emitted as per-bucket deltas; gauges as last-value per bucket.\n\nAuth: requires a tenant-scoped credential with read access to the named instance.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/metrics`\n\nArguments:\n- `tenant_id`\n- `project_id`\n- `instance_id`\n- `range`: Short range identifier (e.g. `1h`).\n- `schema`: Schema name. Defaults to `triton.cpu_per_zone`.\n```ignore\nlet response = client.instance_metrics_range()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .range(range)\n    .schema(schema)\n    .send()\n    .await;\n```"]
+    #[doc = "Range query for the per-instance metrics chart on the VM\n\ndetail view. Returns one numeric series per distinct `series` identity field encountered in the requested window. Counter datums are emitted as per-bucket deltas; gauges as last-value per bucket.\n\nAuth: requires a tenant-scoped credential with read access to the named instance.\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/metrics`\n\nArguments:\n- `tenant_id`\n- `project_id`\n- `instance_id`\n- `range`: Short range identifier (e.g. `1h`).\n- `schema`: Schema name. Defaults to `triton.cpu_per_zone`.\n```ignore\nlet response = client.instance_metrics_range()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .range(range)\n    .schema(schema)\n    .send()\n    .await;\n```"]
     pub fn instance_metrics_range(&self) -> builder::InstanceMetricsRange<'_> {
         builder::InstanceMetricsRange::new(self)
     }
 
-    #[doc = "Start a live migration of a running instance (LM-5)\n\nThe body's `action` dispatches between begin / estimate / pause / switch / abort / rollback / finalize / sync. LM-5 ships `action=Begin` only; the others return 501 until LM-6 / LM-8 wire the sub-sagas. Begin creates a `MigrationRecord` (atomic active-key guard against concurrent migrations of the same VM), kicks off the `migrate-instance` saga, and returns 202 with the migration id + the saga id (operation id).\n\nTenant-scoped: any project member can migrate their own instances. Operator-only fields (`target_server_uuid` to force a specific target CN, cross-tenant target) gate behind the `root-allows-all` Cedar rule.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/migrate`\n\n```ignore\nlet response = client.migrate_project_instance()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Start a live migration of a running instance (LM-5)\n\nThe body's `action` dispatches between begin / estimate / pause / switch / abort / rollback / finalize / sync. LM-5 ships `action=Begin` only; the others return 501 until LM-6 / LM-8 wire the sub-sagas. Begin creates a `MigrationRecord` (atomic active-key guard against concurrent migrations of the same VM), kicks off the `migrate-instance` saga, and returns 202 with the migration id + the saga id (operation id).\n\nTenant-scoped: any project member can migrate their own instances. Operator-only fields (`target_server_uuid` to force a specific target CN, cross-tenant target) gate behind the `root-allows-all` Cedar rule.\n\nSends a `POST` request to `/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/migrate`\n\n```ignore\nlet response = client.migrate_project_instance()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn migrate_project_instance(&self) -> builder::MigrateProjectInstance<'_> {
         builder::MigrateProjectInstance::new(self)
     }
 
-    #[doc = "Read a project's quota. Returns 404 when the project does\n\nnot exist, lives in a different tenant, or has no quota set (no record means \"unlimited\").\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/quota`\n\n```ignore\nlet response = client.get_project_quota()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Read a project's quota. Returns 404 when the project does\n\nnot exist, lives in a different tenant, or has no quota set (no record means \"unlimited\").\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/quota`\n\n```ignore\nlet response = client.get_project_quota()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
     pub fn get_project_quota(&self) -> builder::GetProjectQuota<'_> {
         builder::GetProjectQuota::new(self)
     }
 
-    #[doc = "Set (or replace) the resource quota on a project. Returns\n\n404 when the project does not exist or belongs to a different tenant. The server assigns `updated_at`. Quotas are not enforced in Phase 0; the record is stored for the eventual instance-create flow to consult.\n\nSends a `PUT` request to `/v2/tenants/{tenant_id}/projects/{project_id}/quota`\n\n```ignore\nlet response = client.put_project_quota()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Set (or replace) the resource quota on a project. Returns\n\n404 when the project does not exist or belongs to a different tenant. The server assigns `updated_at`. Quotas are not enforced in Phase 0; the record is stored for the eventual instance-create flow to consult.\n\nSends a `PUT` request to `/v1/tenants/{tenant_id}/projects/{project_id}/quota`\n\n```ignore\nlet response = client.put_project_quota()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn put_project_quota(&self) -> builder::PutProjectQuota<'_> {
         builder::PutProjectQuota::new(self)
     }
 
-    #[doc = "Remove a project's quota (project becomes unlimited)\n\nReturns 404 when the project does not exist, lives in a different tenant, or had no quota set.\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/quota`\n\n```ignore\nlet response = client.delete_project_quota()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Remove a project's quota (project becomes unlimited)\n\nReturns 404 when the project does not exist, lives in a different tenant, or had no quota set.\n\nSends a `DELETE` request to `/v1/tenants/{tenant_id}/projects/{project_id}/quota`\n\n```ignore\nlet response = client.delete_project_quota()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
     pub fn delete_project_quota(&self) -> builder::DeleteProjectQuota<'_> {
         builder::DeleteProjectQuota::new(self)
     }
 
-    #[doc = "List SSH keys visible to the project: Public + Silo (of\n\nproject's silo) + Tenant (of project's tenant) + Project.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/ssh-keys`\n\n```ignore\nlet response = client.list_project_ssh_keys()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List SSH keys visible to the project: Public + Silo (of\n\nproject's silo) + Tenant (of project's tenant) + Project.\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/ssh-keys`\n\n```ignore\nlet response = client.list_project_ssh_keys()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
     pub fn list_project_ssh_keys(&self) -> builder::ListProjectSshKeys<'_> {
         builder::ListProjectSshKeys::new(self)
     }
 
-    #[doc = "Register a `Project`-scoped SSH key\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/ssh-keys`\n\n```ignore\nlet response = client.create_project_ssh_key()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Register a `Project`-scoped SSH key\n\nSends a `POST` request to `/v1/tenants/{tenant_id}/projects/{project_id}/ssh-keys`\n\n```ignore\nlet response = client.create_project_ssh_key()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_project_ssh_key(&self) -> builder::CreateProjectSshKey<'_> {
         builder::CreateProjectSshKey::new(self)
     }
 
-    #[doc = "List the VPCs inside a project. Returns 404 when the tenant or\n\nproject does not exist (or the project belongs to a different tenant).\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs`\n\n```ignore\nlet response = client.list_project_vpcs()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List the VPCs inside a project. Returns 404 when the tenant or\n\nproject does not exist (or the project belongs to a different tenant).\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs`\n\n```ignore\nlet response = client.list_project_vpcs()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
     pub fn list_project_vpcs(&self) -> builder::ListProjectVpcs<'_> {
         builder::ListProjectVpcs::new(self)
     }
 
-    #[doc = "Read a single VPC. Returns 404 when the VPC does not exist or\n\nbelongs to a different tenant or project (cross-tenant probes do not learn that the resource exists).\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}`\n\n```ignore\nlet response = client.get_project_vpc()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Read a single VPC. Returns 404 when the VPC does not exist or\n\nbelongs to a different tenant or project (cross-tenant probes do not learn that the resource exists).\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}`\n\n```ignore\nlet response = client.get_project_vpc()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
     pub fn get_project_vpc(&self) -> builder::GetProjectVpc<'_> {
         builder::GetProjectVpc::new(self)
     }
 
-    #[doc = "List active DHCP leases for a VPC. Each entry was written when\n\ntritond pre-assigned an IP to a NIC at instance create.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases`\n\n```ignore\nlet response = client.list_vpc_dhcp_leases()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List active DHCP leases for a VPC. Each entry was written when\n\ntritond pre-assigned an IP to a NIC at instance create.\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases`\n\n```ignore\nlet response = client.list_vpc_dhcp_leases()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
     pub fn list_vpc_dhcp_leases(&self) -> builder::ListVpcDhcpLeases<'_> {
         builder::ListVpcDhcpLeases::new(self)
     }
 
-    #[doc = "Look up a lease by MAC\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}`\n\n```ignore\nlet response = client.get_vpc_dhcp_lease()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .mac(mac)\n    .send()\n    .await;\n```"]
+    #[doc = "Look up a lease by MAC\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}`\n\n```ignore\nlet response = client.get_vpc_dhcp_lease()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .mac(mac)\n    .send()\n    .await;\n```"]
     pub fn get_vpc_dhcp_lease(&self) -> builder::GetVpcDhcpLease<'_> {
         builder::GetVpcDhcpLease::new(self)
     }
 
-    #[doc = "Operator-driven release: remove the lease record. The\n\nunderlying IP is freed for re-allocation; sticky-by-MAC for this MAC is broken until the operator re-creates the reservation.\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}`\n\n```ignore\nlet response = client.delete_vpc_dhcp_lease()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .mac(mac)\n    .send()\n    .await;\n```"]
+    #[doc = "Operator-driven release: remove the lease record. The\n\nunderlying IP is freed for re-allocation; sticky-by-MAC for this MAC is broken until the operator re-creates the reservation.\n\nSends a `DELETE` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}`\n\n```ignore\nlet response = client.delete_vpc_dhcp_lease()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .mac(mac)\n    .send()\n    .await;\n```"]
     pub fn delete_vpc_dhcp_lease(&self) -> builder::DeleteVpcDhcpLease<'_> {
         builder::DeleteVpcDhcpLease::new(self)
     }
 
-    #[doc = "Read the per-VPC DHCP pool config. Returns the body wrapped\n\n`Some` when set; returns `None` when the operator hasn't customised this VPC.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool`\n\n```ignore\nlet response = client.get_vpc_dhcp_pool()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Read the per-VPC DHCP pool config. Returns the body wrapped\n\n`Some` when set; returns `None` when the operator hasn't customised this VPC.\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool`\n\n```ignore\nlet response = client.get_vpc_dhcp_pool()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
     pub fn get_vpc_dhcp_pool(&self) -> builder::GetVpcDhcpPool<'_> {
         builder::GetVpcDhcpPool::new(self)
     }
 
-    #[doc = "List DHCP reservations (operator-pinned MAC→IP mappings) in a VPC\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations`\n\n```ignore\nlet response = client.list_vpc_dhcp_reservations()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List DHCP reservations (operator-pinned MAC→IP mappings) in a VPC\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations`\n\n```ignore\nlet response = client.list_vpc_dhcp_reservations()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
     pub fn list_vpc_dhcp_reservations(&self) -> builder::ListVpcDhcpReservations<'_> {
         builder::ListVpcDhcpReservations::new(self)
     }
 
-    #[doc = "Look up a reservation by MAC\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations/{mac}`\n\n```ignore\nlet response = client.get_vpc_dhcp_reservation()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .mac(mac)\n    .send()\n    .await;\n```"]
+    #[doc = "Look up a reservation by MAC\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations/{mac}`\n\n```ignore\nlet response = client.get_vpc_dhcp_reservation()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .mac(mac)\n    .send()\n    .await;\n```"]
     pub fn get_vpc_dhcp_reservation(&self) -> builder::GetVpcDhcpReservation<'_> {
         builder::GetVpcDhcpReservation::new(self)
     }
 
-    #[doc = "List firewall rules scoped to a VPC, sorted by `priority`\n\ndescending (highest evaluates first).\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules`\n\n```ignore\nlet response = client.list_vpc_firewall_rules()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List firewall rules scoped to a VPC, sorted by `priority`\n\ndescending (highest evaluates first).\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules`\n\n```ignore\nlet response = client.list_vpc_firewall_rules()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
     pub fn list_vpc_firewall_rules(&self) -> builder::ListVpcFirewallRules<'_> {
         builder::ListVpcFirewallRules::new(self)
     }
 
-    #[doc = "List NAT gateways inside a VPC\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways`\n\n```ignore\nlet response = client.list_vpc_nat_gateways()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List NAT gateways inside a VPC\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways`\n\n```ignore\nlet response = client.list_vpc_nat_gateways()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
     pub fn list_vpc_nat_gateways(&self) -> builder::ListVpcNatGateways<'_> {
         builder::ListVpcNatGateways::new(self)
     }
 
-    #[doc = "Read a single NAT gateway\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways/{nat_gateway_id}`\n\n```ignore\nlet response = client.get_vpc_nat_gateway()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .nat_gateway_id(nat_gateway_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Read a single NAT gateway\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways/{nat_gateway_id}`\n\n```ignore\nlet response = client.get_vpc_nat_gateway()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .nat_gateway_id(nat_gateway_id)\n    .send()\n    .await;\n```"]
     pub fn get_vpc_nat_gateway(&self) -> builder::GetVpcNatGateway<'_> {
         builder::GetVpcNatGateway::new(self)
     }
 
-    #[doc = "List route tables inside a VPC\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables`\n\n```ignore\nlet response = client.list_vpc_route_tables()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List route tables inside a VPC\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables`\n\n```ignore\nlet response = client.list_vpc_route_tables()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
     pub fn list_vpc_route_tables(&self) -> builder::ListVpcRouteTables<'_> {
         builder::ListVpcRouteTables::new(self)
     }
 
-    #[doc = "Read a single route table\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}`\n\n```ignore\nlet response = client.get_vpc_route_table()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .route_table_id(route_table_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Read a single route table\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}`\n\n```ignore\nlet response = client.get_vpc_route_table()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .route_table_id(route_table_id)\n    .send()\n    .await;\n```"]
     pub fn get_vpc_route_table(&self) -> builder::GetVpcRouteTable<'_> {
         builder::GetVpcRouteTable::new(self)
     }
 
-    #[doc = "List routes inside a route table\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}/routes`\n\n```ignore\nlet response = client.list_vpc_route_table_routes()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .route_table_id(route_table_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List routes inside a route table\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}/routes`\n\n```ignore\nlet response = client.list_vpc_route_table_routes()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .route_table_id(route_table_id)\n    .send()\n    .await;\n```"]
     pub fn list_vpc_route_table_routes(&self) -> builder::ListVpcRouteTableRoutes<'_> {
         builder::ListVpcRouteTableRoutes::new(self)
     }
 
-    #[doc = "Read a single route\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}/routes/{route_id}`\n\n```ignore\nlet response = client.get_vpc_route_table_route()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .route_table_id(route_table_id)\n    .route_id(route_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Read a single route\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}/routes/{route_id}`\n\n```ignore\nlet response = client.get_vpc_route_table_route()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .route_table_id(route_table_id)\n    .route_id(route_id)\n    .send()\n    .await;\n```"]
     pub fn get_vpc_route_table_route(&self) -> builder::GetVpcRouteTableRoute<'_> {
         builder::GetVpcRouteTableRoute::new(self)
     }
 
-    #[doc = "List the subnets inside a VPC. Returns 404 when the tenant\n\nproject, or VPC does not exist (or is in the wrong parent).\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets`\n\n```ignore\nlet response = client.list_vpc_subnets()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List the subnets inside a VPC. Returns 404 when the tenant\n\nproject, or VPC does not exist (or is in the wrong parent).\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets`\n\n```ignore\nlet response = client.list_vpc_subnets()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
     pub fn list_vpc_subnets(&self) -> builder::ListVpcSubnets<'_> {
         builder::ListVpcSubnets::new(self)
     }
 
-    #[doc = "Read a single subnet. Returns 404 when the subnet does not\n\nexist or belongs to a different tenant, project, or VPC.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}`\n\n```ignore\nlet response = client.get_vpc_subnet()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .subnet_id(subnet_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Read a single subnet. Returns 404 when the subnet does not\n\nexist or belongs to a different tenant, project, or VPC.\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}`\n\n```ignore\nlet response = client.get_vpc_subnet()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .subnet_id(subnet_id)\n    .send()\n    .await;\n```"]
     pub fn get_vpc_subnet(&self) -> builder::GetVpcSubnet<'_> {
         builder::GetVpcSubnet::new(self)
     }
 
-    #[doc = "List SSH keys visible to the tenant: Public + Silo (of\n\ntenant's silo) + Tenant.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/ssh-keys`\n\n```ignore\nlet response = client.list_tenant_ssh_keys()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List SSH keys visible to the tenant: Public + Silo (of\n\ntenant's silo) + Tenant.\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/ssh-keys`\n\n```ignore\nlet response = client.list_tenant_ssh_keys()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
     pub fn list_tenant_ssh_keys(&self) -> builder::ListTenantSshKeys<'_> {
         builder::ListTenantSshKeys::new(self)
     }
 
-    #[doc = "Register a `Tenant`-scoped SSH key\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/ssh-keys`\n\n```ignore\nlet response = client.create_tenant_ssh_key()\n    .tenant_id(tenant_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Register a `Tenant`-scoped SSH key\n\nSends a `POST` request to `/v1/tenants/{tenant_id}/ssh-keys`\n\n```ignore\nlet response = client.create_tenant_ssh_key()\n    .tenant_id(tenant_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_tenant_ssh_key(&self) -> builder::CreateTenantSshKey<'_> {
         builder::CreateTenantSshKey::new(self)
     }
@@ -37413,13 +37413,13 @@ pub mod builder {
             Self { client: client }
         }
 
-        #[doc = "Sends a `GET` request to `/v2/admin/legacy/cns`"]
+        #[doc = "Sends a `GET` request to `/v1/admin/legacy/cns`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::LegacyCnSummary>>, Error<types::Error>>
         {
             let Self { client } = self;
-            let url = format!("{}/v2/admin/legacy/cns", client.baseurl,);
+            let url = format!("{}/v1/admin/legacy/cns", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -37481,13 +37481,13 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/admin/legacy/vms`"]
+        #[doc = "Sends a `GET` request to `/v1/admin/legacy/vms`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::LegacyVm>>, Error<types::Error>> {
             let Self { client, host_cn } = self;
             let host_cn = host_cn.map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/admin/legacy/vms", client.baseurl,);
+            let url = format!("{}/v1/admin/legacy/vms", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -37549,7 +37549,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/admin/legacy/vms/{smartos_uuid}`"]
+        #[doc = "Sends a `GET` request to `/v1/admin/legacy/vms/{smartos_uuid}`"]
         pub async fn send(self) -> Result<ResponseValue<types::LegacyVm>, Error<types::Error>> {
             let Self {
                 client,
@@ -37557,7 +37557,7 @@ pub mod builder {
             } = self;
             let smartos_uuid = smartos_uuid.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/admin/legacy/vms/{}",
+                "{}/v1/admin/legacy/vms/{}",
                 client.baseurl,
                 encode_path(&smartos_uuid.to_string()),
             );
@@ -37633,7 +37633,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/admin/legacy/vms/{smartos_uuid}/console`"]
+        #[doc = "Sends a `GET` request to `/v1/admin/legacy/vms/{smartos_uuid}/console`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<reqwest::Upgraded>, Error<reqwest::Upgraded>> {
@@ -37645,7 +37645,7 @@ pub mod builder {
             let smartos_uuid = smartos_uuid.map_err(Error::InvalidRequest)?;
             let kind = kind.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/admin/legacy/vms/{}/console",
+                "{}/v1/admin/legacy/vms/{}/console",
                 client.baseurl,
                 encode_path(&smartos_uuid.to_string()),
             );
@@ -37711,14 +37711,14 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/agent/blueprints/{port_id}`"]
+        #[doc = "Sends a `GET` request to `/v1/agent/blueprints/{port_id}`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::AgentPortBlueprint>, Error<types::Error>> {
             let Self { client, port_id } = self;
             let port_id = port_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/agent/blueprints/{}",
+                "{}/v1/agent/blueprints/{}",
                 client.baseurl,
                 encode_path(&port_id.to_string()),
             );
@@ -37792,7 +37792,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/agent/claim`"]
+        #[doc = "Sends a `POST` request to `/v1/agent/claim`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::ClaimJobResponse>, Error<types::Error>> {
@@ -37800,7 +37800,7 @@ pub mod builder {
             let body = body
                 .and_then(|v| types::ClaimJobRequest::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/agent/claim", client.baseurl,);
+            let url = format!("{}/v1/agent/claim", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -37876,7 +37876,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/agent/dhcp-lease-activity`"]
+        #[doc = "Sends a `POST` request to `/v1/agent/dhcp-lease-activity`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self { client, body } = self;
             let body = body
@@ -37884,7 +37884,7 @@ pub mod builder {
                     types::DhcpLeaseActivityReport::try_from(v).map_err(|e| e.to_string())
                 })
                 .map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/agent/dhcp-lease-activity", client.baseurl,);
+            let url = format!("{}/v1/agent/dhcp-lease-activity", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -37932,10 +37932,10 @@ pub mod builder {
             Self { client: client }
         }
 
-        #[doc = "Sends a `POST` request to `/v2/agent/heartbeat`"]
+        #[doc = "Sends a `POST` request to `/v1/agent/heartbeat`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self { client } = self;
-            let url = format!("{}/v2/agent/heartbeat", client.baseurl,);
+            let url = format!("{}/v1/agent/heartbeat", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -38032,7 +38032,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `PUT` request to `/v2/agent/instances/{instance_id}/meta`"]
+        #[doc = "Sends a `PUT` request to `/v1/agent/instances/{instance_id}/meta`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::SetMetaResponse>, Error<types::Error>> {
@@ -38048,7 +38048,7 @@ pub mod builder {
                 .and_then(|v| types::SetGuestMetaRequest::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/agent/instances/{}/meta",
+                "{}/v1/agent/instances/{}/meta",
                 client.baseurl,
                 encode_path(&instance_id.to_string()),
             );
@@ -38114,7 +38114,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/agent/instances/{instance_id}/realized-meta`"]
+        #[doc = "Sends a `GET` request to `/v1/agent/instances/{instance_id}/realized-meta`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::RealizedMetaEntry>>, Error<types::Error>>
@@ -38125,7 +38125,7 @@ pub mod builder {
             } = self;
             let instance_id = instance_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/agent/instances/{}/realized-meta",
+                "{}/v1/agent/instances/{}/realized-meta",
                 client.baseurl,
                 encode_path(&instance_id.to_string()),
             );
@@ -38189,14 +38189,14 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/agent/jobs/{job_id}/blueprint`"]
+        #[doc = "Sends a `GET` request to `/v1/agent/jobs/{job_id}/blueprint`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::ProvisioningBlueprint>, Error<types::Error>> {
             let Self { client, job_id } = self;
             let job_id = job_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/agent/jobs/{}/blueprint",
+                "{}/v1/agent/jobs/{}/blueprint",
                 client.baseurl,
                 encode_path(&job_id.to_string()),
             );
@@ -38284,7 +38284,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/agent/jobs/{job_id}/complete`"]
+        #[doc = "Sends a `POST` request to `/v1/agent/jobs/{job_id}/complete`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::ProvisioningJob>, Error<types::Error>> {
@@ -38298,7 +38298,7 @@ pub mod builder {
                 .and_then(|v| types::CompleteJobRequest::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/agent/jobs/{}/complete",
+                "{}/v1/agent/jobs/{}/complete",
                 client.baseurl,
                 encode_path(&job_id.to_string()),
             );
@@ -38363,11 +38363,11 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/agent/logs`"]
+        #[doc = "Sends a `POST` request to `/v1/agent/logs`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self { client, body } = self;
             let body = body.map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/agent/logs", client.baseurl,);
+            let url = format!("{}/v1/agent/logs", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -38429,11 +38429,11 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/agent/metrics`"]
+        #[doc = "Sends a `POST` request to `/v1/agent/metrics`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self { client, body } = self;
             let body = body.map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/agent/metrics", client.baseurl,);
+            let url = format!("{}/v1/agent/metrics", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -38510,7 +38510,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/agent/network-realization`"]
+        #[doc = "Sends a `POST` request to `/v1/agent/network-realization`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self { client, body } = self;
             let body = body
@@ -38518,7 +38518,7 @@ pub mod builder {
                     types::NetworkRealizationRequest::try_from(v).map_err(|e| e.to_string())
                 })
                 .map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/agent/network-realization", client.baseurl,);
+            let url = format!("{}/v1/agent/network-realization", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -38592,14 +38592,14 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/agent/peer`"]
+        #[doc = "Sends a `GET` request to `/v1/agent/peer`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::AgentPeerResolveResponse>, Error<types::Error>> {
             let Self { client, ip, vni } = self;
             let ip = ip.map_err(Error::InvalidRequest)?;
             let vni = vni.map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/agent/peer", client.baseurl,);
+            let url = format!("{}/v1/agent/peer", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -38663,14 +38663,14 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/agent/peer-invalidations`"]
+        #[doc = "Sends a `GET` request to `/v1/agent/peer-invalidations`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::AgentPeerInvalidationsResponse>, Error<types::Error>>
         {
             let Self { client, since } = self;
             let since = since.map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/agent/peer-invalidations", client.baseurl,);
+            let url = format!("{}/v1/agent/peer-invalidations", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -38744,7 +38744,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/agent/register`"]
+        #[doc = "Sends a `POST` request to `/v1/agent/register`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::RegisterCnResponse>, Error<types::Error>> {
@@ -38752,7 +38752,7 @@ pub mod builder {
             let body = body
                 .and_then(|v| types::RegisterCnRequest::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/agent/register", client.baseurl,);
+            let url = format!("{}/v1/agent/register", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -38814,13 +38814,13 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/agent/register/status`"]
+        #[doc = "Sends a `GET` request to `/v1/agent/register/status`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::RegisterStatusResponse>, Error<types::Error>> {
             let Self { client, poll_token } = self;
             let poll_token = poll_token.map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/agent/register/status", client.baseurl,);
+            let url = format!("{}/v1/agent/register/status", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -38897,13 +38897,13 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/agent/status`"]
+        #[doc = "Sends a `POST` request to `/v1/agent/status`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::AgentStatusRequest::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/agent/status", client.baseurl,);
+            let url = format!("{}/v1/agent/status", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -38979,7 +38979,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/audit/events`"]
+        #[doc = "Sends a `GET` request to `/v1/audit/events`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::AuditEventList>, Error<types::Error>> {
@@ -38990,7 +38990,7 @@ pub mod builder {
             } = self;
             let after_seq = after_seq.map_err(Error::InvalidRequest)?;
             let limit = limit.map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/audit/events", client.baseurl,);
+            let url = format!("{}/v1/audit/events", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -39053,12 +39053,12 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/audit/events/{seq}`"]
+        #[doc = "Sends a `GET` request to `/v1/audit/events/{seq}`"]
         pub async fn send(self) -> Result<ResponseValue<types::AuditEvent>, Error<types::Error>> {
             let Self { client, seq } = self;
             let seq = seq.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/audit/events/{}",
+                "{}/v1/audit/events/{}",
                 client.baseurl,
                 encode_path(&seq.to_string()),
             );
@@ -39136,14 +39136,14 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/audit/verify`"]
+        #[doc = "Sends a `GET` request to `/v1/audit/verify`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::AuditVerifyResponse>, Error<types::Error>> {
             let Self { client, from, to } = self;
             let from = from.map_err(Error::InvalidRequest)?;
             let to = to.map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/audit/verify", client.baseurl,);
+            let url = format!("{}/v1/audit/verify", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -39192,13 +39192,13 @@ pub mod builder {
             Self { client: client }
         }
 
-        #[doc = "Sends a `GET` request to `/v2/auth/api-keys`"]
+        #[doc = "Sends a `GET` request to `/v1/auth/api-keys`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::ApiKeyView>>, Error<types::Error>>
         {
             let Self { client } = self;
-            let url = format!("{}/v2/auth/api-keys", client.baseurl,);
+            let url = format!("{}/v1/auth/api-keys", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -39269,7 +39269,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/auth/api-keys`"]
+        #[doc = "Sends a `POST` request to `/v1/auth/api-keys`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::ApiKeyCreated>, Error<types::Error>> {
@@ -39277,7 +39277,7 @@ pub mod builder {
             let body = body
                 .and_then(|v| types::NewApiKey::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/auth/api-keys", client.baseurl,);
+            let url = format!("{}/v1/auth/api-keys", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -39339,12 +39339,12 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `DELETE` request to `/v2/auth/api-keys/{api_key_id}`"]
+        #[doc = "Sends a `DELETE` request to `/v1/auth/api-keys/{api_key_id}`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self { client, api_key_id } = self;
             let api_key_id = api_key_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/auth/api-keys/{}",
+                "{}/v1/auth/api-keys/{}",
                 client.baseurl,
                 encode_path(&api_key_id.to_string()),
             );
@@ -39394,12 +39394,12 @@ pub mod builder {
             Self { client: client }
         }
 
-        #[doc = "Sends a `GET` request to `/v2/auth/images`"]
+        #[doc = "Sends a `GET` request to `/v1/auth/images`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::Image>>, Error<types::Error>> {
             let Self { client } = self;
-            let url = format!("{}/v2/auth/images", client.baseurl,);
+            let url = format!("{}/v1/auth/images", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -39470,13 +39470,13 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/auth/images`"]
+        #[doc = "Sends a `POST` request to `/v1/auth/images`"]
         pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::NewImage::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/auth/images", client.baseurl,);
+            let url = format!("{}/v1/auth/images", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -39548,7 +39548,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/auth/login`"]
+        #[doc = "Sends a `POST` request to `/v1/auth/login`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::TokenResponse>, Error<types::Error>> {
@@ -39556,7 +39556,7 @@ pub mod builder {
             let body = body
                 .and_then(|v| types::LoginRequest::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/auth/login", client.baseurl,);
+            let url = format!("{}/v1/auth/login", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -39628,7 +39628,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/auth/refresh`"]
+        #[doc = "Sends a `POST` request to `/v1/auth/refresh`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::TokenResponse>, Error<types::Error>> {
@@ -39636,7 +39636,7 @@ pub mod builder {
             let body = body
                 .and_then(|v| types::RefreshRequest::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/auth/refresh", client.baseurl,);
+            let url = format!("{}/v1/auth/refresh", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -39684,12 +39684,12 @@ pub mod builder {
             Self { client: client }
         }
 
-        #[doc = "Sends a `GET` request to `/v2/auth/ssh-keys`"]
+        #[doc = "Sends a `GET` request to `/v1/auth/ssh-keys`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::SshKey>>, Error<types::Error>> {
             let Self { client } = self;
-            let url = format!("{}/v2/auth/ssh-keys", client.baseurl,);
+            let url = format!("{}/v1/auth/ssh-keys", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -39760,13 +39760,13 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/auth/ssh-keys`"]
+        #[doc = "Sends a `POST` request to `/v1/auth/ssh-keys`"]
         pub async fn send(self) -> Result<ResponseValue<types::SshKey>, Error<types::Error>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::NewSshKey::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/auth/ssh-keys", client.baseurl,);
+            let url = format!("{}/v1/auth/ssh-keys", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -39840,13 +39840,13 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/cn-approvals`"]
+        #[doc = "Sends a `POST` request to `/v1/cn-approvals`"]
         pub async fn send(self) -> Result<ResponseValue<types::CnView>, Error<types::Error>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::ApproveCnRequest::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/cn-approvals", client.baseurl,);
+            let url = format!("{}/v1/cn-approvals", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -39894,12 +39894,12 @@ pub mod builder {
             Self { client: client }
         }
 
-        #[doc = "Sends a `GET` request to `/v2/cn-auto-approve`"]
+        #[doc = "Sends a `GET` request to `/v1/cn-auto-approve`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::AutoApproveWindow>, Error<types::Error>> {
             let Self { client } = self;
-            let url = format!("{}/v2/cn-auto-approve", client.baseurl,);
+            let url = format!("{}/v1/cn-auto-approve", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -39974,7 +39974,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/cn-auto-approve`"]
+        #[doc = "Sends a `POST` request to `/v1/cn-auto-approve`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::AutoApproveWindow>, Error<types::Error>> {
@@ -39982,7 +39982,7 @@ pub mod builder {
             let body = body
                 .and_then(|v| types::OpenAutoApproveRequest::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/cn-auto-approve", client.baseurl,);
+            let url = format!("{}/v1/cn-auto-approve", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -40030,10 +40030,10 @@ pub mod builder {
             Self { client: client }
         }
 
-        #[doc = "Sends a `DELETE` request to `/v2/cn-auto-approve`"]
+        #[doc = "Sends a `DELETE` request to `/v1/cn-auto-approve`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self { client } = self;
-            let url = format!("{}/v2/cn-auto-approve", client.baseurl,);
+            let url = format!("{}/v1/cn-auto-approve", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -40094,7 +40094,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/cns/{server_uuid}/disable`"]
+        #[doc = "Sends a `POST` request to `/v1/cns/{server_uuid}/disable`"]
         pub async fn send(self) -> Result<ResponseValue<types::CnView>, Error<types::Error>> {
             let Self {
                 client,
@@ -40102,7 +40102,7 @@ pub mod builder {
             } = self;
             let server_uuid = server_uuid.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/cns/{}/disable",
+                "{}/v1/cns/{}/disable",
                 client.baseurl,
                 encode_path(&server_uuid.to_string()),
             );
@@ -40166,7 +40166,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/cns/{server_uuid}/drain/preview`"]
+        #[doc = "Sends a `POST` request to `/v1/cns/{server_uuid}/drain/preview`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::DrainPreviewResponse>, Error<types::Error>> {
@@ -40176,7 +40176,7 @@ pub mod builder {
             } = self;
             let server_uuid = server_uuid.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/cns/{}/drain/preview",
+                "{}/v1/cns/{}/drain/preview",
                 client.baseurl,
                 encode_path(&server_uuid.to_string()),
             );
@@ -40264,7 +40264,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/cns/{server_uuid}/metrics`"]
+        #[doc = "Sends a `GET` request to `/v1/cns/{server_uuid}/metrics`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<tritond_metrics::RangeResult>, Error<types::Error>> {
@@ -40278,7 +40278,7 @@ pub mod builder {
             let range = range.map_err(Error::InvalidRequest)?;
             let schema = schema.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/cns/{}/metrics",
+                "{}/v1/cns/{}/metrics",
                 client.baseurl,
                 encode_path(&server_uuid.to_string()),
             );
@@ -40368,7 +40368,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/cns/{server_uuid}/role`"]
+        #[doc = "Sends a `POST` request to `/v1/cns/{server_uuid}/role`"]
         pub async fn send(self) -> Result<ResponseValue<types::CnView>, Error<types::Error>> {
             let Self {
                 client,
@@ -40380,7 +40380,7 @@ pub mod builder {
                 .and_then(|v| types::SetCnRoleRequest::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/cns/{}/role",
+                "{}/v1/cns/{}/role",
                 client.baseurl,
                 encode_path(&server_uuid.to_string()),
             );
@@ -40431,13 +40431,13 @@ pub mod builder {
             Self { client: client }
         }
 
-        #[doc = "Sends a `GET` request to `/v2/config`"]
+        #[doc = "Sends a `GET` request to `/v1/config`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::ConfigEntry>>, Error<types::Error>>
         {
             let Self { client } = self;
-            let url = format!("{}/v2/config", client.baseurl,);
+            let url = format!("{}/v1/config", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -40498,12 +40498,12 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/config/{key}`"]
+        #[doc = "Sends a `GET` request to `/v1/config/{key}`"]
         pub async fn send(self) -> Result<ResponseValue<types::ConfigEntry>, Error<types::Error>> {
             let Self { client, key } = self;
             let key = key.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/config/{}",
+                "{}/v1/config/{}",
                 client.baseurl,
                 encode_path(&key.to_string()),
             );
@@ -40591,7 +40591,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `PUT` request to `/v2/config/{key}`"]
+        #[doc = "Sends a `PUT` request to `/v1/config/{key}`"]
         pub async fn send(self) -> Result<ResponseValue<types::ConfigEntry>, Error<types::Error>> {
             let Self { client, key, body } = self;
             let key = key.map_err(Error::InvalidRequest)?;
@@ -40599,7 +40599,7 @@ pub mod builder {
                 .and_then(|v| types::SetConfigRequest::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/config/{}",
+                "{}/v1/config/{}",
                 client.baseurl,
                 encode_path(&key.to_string()),
             );
@@ -40664,12 +40664,12 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `DELETE` request to `/v2/config/{key}`"]
+        #[doc = "Sends a `DELETE` request to `/v1/config/{key}`"]
         pub async fn send(self) -> Result<ResponseValue<types::ConfigEntry>, Error<types::Error>> {
             let Self { client, key } = self;
             let key = key.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/config/{}",
+                "{}/v1/config/{}",
                 client.baseurl,
                 encode_path(&key.to_string()),
             );
@@ -40719,12 +40719,12 @@ pub mod builder {
             Self { client: client }
         }
 
-        #[doc = "Sends a `GET` request to `/v2/health`"]
+        #[doc = "Sends a `GET` request to `/v1/health`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::HealthResponse>, Error<types::Error>> {
             let Self { client } = self;
-            let url = format!("{}/v2/health", client.baseurl,);
+            let url = format!("{}/v1/health", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -40847,13 +40847,13 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/images`"]
+        #[doc = "Sends a `POST` request to `/v1/images`"]
         pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::NewImage::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/images", client.baseurl,);
+            let url = format!("{}/v1/images", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -40984,12 +40984,12 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `DELETE` request to `/v2/images/{image_id}`"]
+        #[doc = "Sends a `DELETE` request to `/v1/images/{image_id}`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self { client, image_id } = self;
             let image_id = image_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/images/{}",
+                "{}/v1/images/{}",
                 client.baseurl,
                 encode_path(&image_id.to_string()),
             );
@@ -41053,7 +41053,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/instances/{instance_id}/migrations`"]
+        #[doc = "Sends a `GET` request to `/v1/instances/{instance_id}/migrations`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::MigrationRecord>>, Error<types::Error>>
@@ -41064,7 +41064,7 @@ pub mod builder {
             } = self;
             let instance_id = instance_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/instances/{}/migrations",
+                "{}/v1/instances/{}/migrations",
                 client.baseurl,
                 encode_path(&instance_id.to_string()),
             );
@@ -41128,7 +41128,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/instances/{instance_id}/realized-meta`"]
+        #[doc = "Sends a `GET` request to `/v1/instances/{instance_id}/realized-meta`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::RealizedMetaEntry>>, Error<types::Error>>
@@ -41139,7 +41139,7 @@ pub mod builder {
             } = self;
             let instance_id = instance_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/instances/{}/realized-meta",
+                "{}/v1/instances/{}/realized-meta",
                 client.baseurl,
                 encode_path(&instance_id.to_string()),
             );
@@ -41215,7 +41215,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/meta/{scope}/{scope_id}`"]
+        #[doc = "Sends a `GET` request to `/v1/meta/{scope}/{scope_id}`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::MetaEntry>>, Error<types::Error>> {
@@ -41227,7 +41227,7 @@ pub mod builder {
             let scope = scope.map_err(Error::InvalidRequest)?;
             let scope_id = scope_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/meta/{}/{}",
+                "{}/v1/meta/{}/{}",
                 client.baseurl,
                 encode_path(&scope.to_string()),
                 encode_path(&scope_id.to_string()),
@@ -41316,7 +41316,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/meta/{scope}/{scope_id}/affected`"]
+        #[doc = "Sends a `GET` request to `/v1/meta/{scope}/{scope_id}/affected`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::AffectedInstancesResponse>, Error<types::Error>> {
@@ -41330,7 +41330,7 @@ pub mod builder {
             let scope_id = scope_id.map_err(Error::InvalidRequest)?;
             let key = key.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/meta/{}/{}/affected",
+                "{}/v1/meta/{}/{}/affected",
                 client.baseurl,
                 encode_path(&scope.to_string()),
                 encode_path(&scope_id.to_string()),
@@ -41420,7 +41420,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/meta/{scope}/{scope_id}/entry`"]
+        #[doc = "Sends a `GET` request to `/v1/meta/{scope}/{scope_id}/entry`"]
         pub async fn send(self) -> Result<ResponseValue<types::MetaEntry>, Error<types::Error>> {
             let Self {
                 client,
@@ -41432,7 +41432,7 @@ pub mod builder {
             let scope_id = scope_id.map_err(Error::InvalidRequest)?;
             let key = key.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/meta/{}/{}/entry",
+                "{}/v1/meta/{}/{}/entry",
                 client.baseurl,
                 encode_path(&scope.to_string()),
                 encode_path(&scope_id.to_string()),
@@ -41544,7 +41544,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `PUT` request to `/v2/meta/{scope}/{scope_id}/entry`"]
+        #[doc = "Sends a `PUT` request to `/v1/meta/{scope}/{scope_id}/entry`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::SetMetaResponse>, Error<types::Error>> {
@@ -41562,7 +41562,7 @@ pub mod builder {
                 .and_then(|v| types::SetMetaRequest::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/meta/{}/{}/entry",
+                "{}/v1/meta/{}/{}/entry",
                 client.baseurl,
                 encode_path(&scope.to_string()),
                 encode_path(&scope_id.to_string()),
@@ -41653,7 +41653,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `DELETE` request to `/v2/meta/{scope}/{scope_id}/entry`"]
+        #[doc = "Sends a `DELETE` request to `/v1/meta/{scope}/{scope_id}/entry`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self {
                 client,
@@ -41665,7 +41665,7 @@ pub mod builder {
             let scope_id = scope_id.map_err(Error::InvalidRequest)?;
             let key = key.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/meta/{}/{}/entry",
+                "{}/v1/meta/{}/{}/entry",
                 client.baseurl,
                 encode_path(&scope.to_string()),
                 encode_path(&scope_id.to_string()),
@@ -41745,7 +41745,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/migrations`"]
+        #[doc = "Sends a `GET` request to `/v1/migrations`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::MigrationRecord>>, Error<types::Error>>
@@ -41757,7 +41757,7 @@ pub mod builder {
             } = self;
             let after_id = after_id.map_err(Error::InvalidRequest)?;
             let limit = limit.map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/migrations", client.baseurl,);
+            let url = format!("{}/v1/migrations", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -41820,7 +41820,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/migrations/{migration_id}`"]
+        #[doc = "Sends a `GET` request to `/v1/migrations/{migration_id}`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::MigrationRecord>, Error<types::Error>> {
@@ -41830,7 +41830,7 @@ pub mod builder {
             } = self;
             let migration_id = migration_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/migrations/{}",
+                "{}/v1/migrations/{}",
                 client.baseurl,
                 encode_path(&migration_id.to_string()),
             );
@@ -41920,7 +41920,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/migrations/{migration_id}/progress`"]
+        #[doc = "Sends a `GET` request to `/v1/migrations/{migration_id}/progress`"]
         pub async fn send(
             self,
         ) -> Result<
@@ -41937,7 +41937,7 @@ pub mod builder {
             let after_seq = after_seq.map_err(Error::InvalidRequest)?;
             let limit = limit.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/migrations/{}/progress",
+                "{}/v1/migrations/{}/progress",
                 client.baseurl,
                 encode_path(&migration_id.to_string()),
             );
@@ -42043,7 +42043,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/operations`"]
+        #[doc = "Sends a `GET` request to `/v1/operations`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::OperationSummary>>, Error<types::Error>>
@@ -42059,7 +42059,7 @@ pub mod builder {
             let limit = limit.map_err(Error::InvalidRequest)?;
             let resource_id = resource_id.map_err(Error::InvalidRequest)?;
             let resource_scope = resource_scope.map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/operations", client.baseurl,);
+            let url = format!("{}/v1/operations", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -42130,7 +42130,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/operations/{operation_id}`"]
+        #[doc = "Sends a `GET` request to `/v1/operations/{operation_id}`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::OperationDetail>, Error<types::Error>> {
@@ -42140,7 +42140,7 @@ pub mod builder {
             } = self;
             let operation_id = operation_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/operations/{}",
+                "{}/v1/operations/{}",
                 client.baseurl,
                 encode_path(&operation_id.to_string()),
             );
@@ -42204,7 +42204,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/operations/{operation_id}/abandon`"]
+        #[doc = "Sends a `POST` request to `/v1/operations/{operation_id}/abandon`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::AbandonResponse>, Error<types::Error>> {
@@ -42214,7 +42214,7 @@ pub mod builder {
             } = self;
             let operation_id = operation_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/operations/{}/abandon",
+                "{}/v1/operations/{}/abandon",
                 client.baseurl,
                 encode_path(&operation_id.to_string()),
             );
@@ -42264,12 +42264,12 @@ pub mod builder {
             Self { client: client }
         }
 
-        #[doc = "Sends a `GET` request to `/v2/silos`"]
+        #[doc = "Sends a `GET` request to `/v1/silos`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::Silo>>, Error<types::Error>> {
             let Self { client } = self;
-            let url = format!("{}/v2/silos", client.baseurl,);
+            let url = format!("{}/v1/silos", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -42340,13 +42340,13 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/silos`"]
+        #[doc = "Sends a `POST` request to `/v1/silos`"]
         pub async fn send(self) -> Result<ResponseValue<types::Silo>, Error<types::Error>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::NewSilo::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/silos", client.baseurl,);
+            let url = format!("{}/v1/silos", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -42408,12 +42408,12 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}`"]
+        #[doc = "Sends a `GET` request to `/v1/silos/{silo_id}`"]
         pub async fn send(self) -> Result<ResponseValue<types::Silo>, Error<types::Error>> {
             let Self { client, silo_id } = self;
             let silo_id = silo_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/silos/{}",
+                "{}/v1/silos/{}",
                 client.baseurl,
                 encode_path(&silo_id.to_string()),
             );
@@ -42501,7 +42501,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/image-bundles`"]
+        #[doc = "Sends a `POST` request to `/v1/silos/{silo_id}/image-bundles`"]
         pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
             let Self {
                 client,
@@ -42513,7 +42513,7 @@ pub mod builder {
                 .and_then(|v| types::NewImageFromBundle::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/silos/{}/image-bundles",
+                "{}/v1/silos/{}/image-bundles",
                 client.baseurl,
                 encode_path(&silo_id.to_string()),
             );
@@ -42578,14 +42578,14 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/images`"]
+        #[doc = "Sends a `GET` request to `/v1/silos/{silo_id}/images`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::Image>>, Error<types::Error>> {
             let Self { client, silo_id } = self;
             let silo_id = silo_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/silos/{}/images",
+                "{}/v1/silos/{}/images",
                 client.baseurl,
                 encode_path(&silo_id.to_string()),
             );
@@ -42671,7 +42671,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/images`"]
+        #[doc = "Sends a `POST` request to `/v1/silos/{silo_id}/images`"]
         pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
             let Self {
                 client,
@@ -42683,7 +42683,7 @@ pub mod builder {
                 .and_then(|v| types::NewImage::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/silos/{}/images",
+                "{}/v1/silos/{}/images",
                 client.baseurl,
                 encode_path(&silo_id.to_string()),
             );
@@ -42772,7 +42772,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/imgapi-images`"]
+        #[doc = "Sends a `POST` request to `/v1/silos/{silo_id}/imgapi-images`"]
         pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
             let Self {
                 client,
@@ -42784,7 +42784,7 @@ pub mod builder {
                 .and_then(|v| types::NewImageFromImgapi::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/silos/{}/imgapi-images",
+                "{}/v1/silos/{}/imgapi-images",
                 client.baseurl,
                 encode_path(&silo_id.to_string()),
             );
@@ -42849,14 +42849,14 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/ssh-keys`"]
+        #[doc = "Sends a `GET` request to `/v1/silos/{silo_id}/ssh-keys`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::SshKey>>, Error<types::Error>> {
             let Self { client, silo_id } = self;
             let silo_id = silo_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/silos/{}/ssh-keys",
+                "{}/v1/silos/{}/ssh-keys",
                 client.baseurl,
                 encode_path(&silo_id.to_string()),
             );
@@ -42942,7 +42942,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/ssh-keys`"]
+        #[doc = "Sends a `POST` request to `/v1/silos/{silo_id}/ssh-keys`"]
         pub async fn send(self) -> Result<ResponseValue<types::SshKey>, Error<types::Error>> {
             let Self {
                 client,
@@ -42954,7 +42954,7 @@ pub mod builder {
                 .and_then(|v| types::NewSshKey::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/silos/{}/ssh-keys",
+                "{}/v1/silos/{}/ssh-keys",
                 client.baseurl,
                 encode_path(&silo_id.to_string()),
             );
@@ -43019,14 +43019,14 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/tenants`"]
+        #[doc = "Sends a `GET` request to `/v1/silos/{silo_id}/tenants`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::Tenant>>, Error<types::Error>> {
             let Self { client, silo_id } = self;
             let silo_id = silo_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/silos/{}/tenants",
+                "{}/v1/silos/{}/tenants",
                 client.baseurl,
                 encode_path(&silo_id.to_string()),
             );
@@ -43112,7 +43112,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/tenants`"]
+        #[doc = "Sends a `POST` request to `/v1/silos/{silo_id}/tenants`"]
         pub async fn send(self) -> Result<ResponseValue<types::Tenant>, Error<types::Error>> {
             let Self {
                 client,
@@ -43124,7 +43124,7 @@ pub mod builder {
                 .and_then(|v| types::NewTenant::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/silos/{}/tenants",
+                "{}/v1/silos/{}/tenants",
                 client.baseurl,
                 encode_path(&silo_id.to_string()),
             );
@@ -43201,7 +43201,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/tenants/{tenant_id}`"]
+        #[doc = "Sends a `GET` request to `/v1/silos/{silo_id}/tenants/{tenant_id}`"]
         pub async fn send(self) -> Result<ResponseValue<types::Tenant>, Error<types::Error>> {
             let Self {
                 client,
@@ -43211,7 +43211,7 @@ pub mod builder {
             let silo_id = silo_id.map_err(Error::InvalidRequest)?;
             let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/silos/{}/tenants/{}",
+                "{}/v1/silos/{}/tenants/{}",
                 client.baseurl,
                 encode_path(&silo_id.to_string()),
                 encode_path(&tenant_id.to_string()),
@@ -43288,7 +43288,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `DELETE` request to `/v2/silos/{silo_id}/tenants/{tenant_id}`"]
+        #[doc = "Sends a `DELETE` request to `/v1/silos/{silo_id}/tenants/{tenant_id}`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self {
                 client,
@@ -43298,7 +43298,7 @@ pub mod builder {
             let silo_id = silo_id.map_err(Error::InvalidRequest)?;
             let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/silos/{}/tenants/{}",
+                "{}/v1/silos/{}/tenants/{}",
                 client.baseurl,
                 encode_path(&silo_id.to_string()),
                 encode_path(&tenant_id.to_string()),
@@ -43425,13 +43425,13 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/ssh-keys`"]
+        #[doc = "Sends a `POST` request to `/v1/ssh-keys`"]
         pub async fn send(self) -> Result<ResponseValue<types::SshKey>, Error<types::Error>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::NewSshKey::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/ssh-keys", client.baseurl,);
+            let url = format!("{}/v1/ssh-keys", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -43562,12 +43562,12 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `DELETE` request to `/v2/ssh-keys/{key_id}`"]
+        #[doc = "Sends a `DELETE` request to `/v1/ssh-keys/{key_id}`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self { client, key_id } = self;
             let key_id = key_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/ssh-keys/{}",
+                "{}/v1/ssh-keys/{}",
                 client.baseurl,
                 encode_path(&key_id.to_string()),
             );
@@ -43617,13 +43617,13 @@ pub mod builder {
             Self { client: client }
         }
 
-        #[doc = "Sends a `GET` request to `/v2/storage/clusters`"]
+        #[doc = "Sends a `GET` request to `/v1/storage/clusters`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::StorageClusterView>>, Error<types::Error>>
         {
             let Self { client } = self;
-            let url = format!("{}/v2/storage/clusters", client.baseurl,);
+            let url = format!("{}/v1/storage/clusters", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -43696,7 +43696,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/storage/clusters`"]
+        #[doc = "Sends a `POST` request to `/v1/storage/clusters`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::StorageClusterView>, Error<types::Error>> {
@@ -43704,7 +43704,7 @@ pub mod builder {
             let body = body
                 .and_then(|v| types::NewStorageCluster::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
-            let url = format!("{}/v2/storage/clusters", client.baseurl,);
+            let url = format!("{}/v1/storage/clusters", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
                 ::reqwest::header::HeaderName::from_static("api-version"),
@@ -43766,14 +43766,14 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}`"]
+        #[doc = "Sends a `GET` request to `/v1/storage/clusters/{id}`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::StorageClusterView>, Error<types::Error>> {
             let Self { client, id } = self;
             let id = id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}",
+                "{}/v1/storage/clusters/{}",
                 client.baseurl,
                 encode_path(&id.to_string()),
             );
@@ -43837,12 +43837,12 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `DELETE` request to `/v2/storage/clusters/{id}`"]
+        #[doc = "Sends a `DELETE` request to `/v1/storage/clusters/{id}`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self { client, id } = self;
             let id = id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}",
+                "{}/v1/storage/clusters/{}",
                 client.baseurl,
                 encode_path(&id.to_string()),
             );
@@ -43918,7 +43918,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `DELETE` request to `/v2/storage/clusters/{id}/access-keys/{access_key_id}`"]
+        #[doc = "Sends a `DELETE` request to `/v1/storage/clusters/{id}/access-keys/{access_key_id}`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self {
                 client,
@@ -43928,7 +43928,7 @@ pub mod builder {
             let id = id.map_err(Error::InvalidRequest)?;
             let access_key_id = access_key_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/access-keys/{}",
+                "{}/v1/storage/clusters/{}/access-keys/{}",
                 client.baseurl,
                 encode_path(&id.to_string()),
                 encode_path(&access_key_id.to_string()),
@@ -44006,7 +44006,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/buckets`"]
+        #[doc = "Sends a `GET` request to `/v1/storage/clusters/{id}/buckets`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::StorageBucket>>, Error<types::Error>>
@@ -44015,7 +44015,7 @@ pub mod builder {
             let id = id.map_err(Error::InvalidRequest)?;
             let stats = stats.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/buckets",
+                "{}/v1/storage/clusters/{}/buckets",
                 client.baseurl,
                 encode_path(&id.to_string()),
             );
@@ -44107,7 +44107,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/buckets`"]
+        #[doc = "Sends a `POST` request to `/v1/storage/clusters/{id}/buckets`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::StorageBucket>, Error<types::Error>> {
@@ -44119,7 +44119,7 @@ pub mod builder {
                 })
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/buckets",
+                "{}/v1/storage/clusters/{}/buckets",
                 client.baseurl,
                 encode_path(&id.to_string()),
             );
@@ -44196,7 +44196,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/buckets/{bucket}`"]
+        #[doc = "Sends a `GET` request to `/v1/storage/clusters/{id}/buckets/{bucket}`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::StorageBucket>, Error<types::Error>> {
@@ -44204,7 +44204,7 @@ pub mod builder {
             let id = id.map_err(Error::InvalidRequest)?;
             let bucket = bucket.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/buckets/{}",
+                "{}/v1/storage/clusters/{}/buckets/{}",
                 client.baseurl,
                 encode_path(&id.to_string()),
                 encode_path(&bucket.to_string()),
@@ -44281,13 +44281,13 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `DELETE` request to `/v2/storage/clusters/{id}/buckets/{bucket}`"]
+        #[doc = "Sends a `DELETE` request to `/v1/storage/clusters/{id}/buckets/{bucket}`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self { client, id, bucket } = self;
             let id = id.map_err(Error::InvalidRequest)?;
             let bucket = bucket.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/buckets/{}",
+                "{}/v1/storage/clusters/{}/buckets/{}",
                 client.baseurl,
                 encode_path(&id.to_string()),
                 encode_path(&bucket.to_string()),
@@ -44414,7 +44414,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/buckets/{bucket}/objects`"]
+        #[doc = "Sends a `GET` request to `/v1/storage/clusters/{id}/buckets/{bucket}/objects`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::StorageObjectsPage>, Error<types::Error>> {
@@ -44434,7 +44434,7 @@ pub mod builder {
             let max_keys = max_keys.map_err(Error::InvalidRequest)?;
             let prefix = prefix.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/buckets/{}/objects",
+                "{}/v1/storage/clusters/{}/buckets/{}/objects",
                 client.baseurl,
                 encode_path(&id.to_string()),
                 encode_path(&bucket.to_string()),
@@ -44506,14 +44506,14 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/cluster`"]
+        #[doc = "Sends a `GET` request to `/v1/storage/clusters/{id}/cluster`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::StorageClusterSummary>, Error<types::Error>> {
             let Self { client, id } = self;
             let id = id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/cluster",
+                "{}/v1/storage/clusters/{}/cluster",
                 client.baseurl,
                 encode_path(&id.to_string()),
             );
@@ -44577,14 +44577,14 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/health`"]
+        #[doc = "Sends a `POST` request to `/v1/storage/clusters/{id}/health`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::StorageClusterView>, Error<types::Error>> {
             let Self { client, id } = self;
             let id = id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/health",
+                "{}/v1/storage/clusters/{}/health",
                 client.baseurl,
                 encode_path(&id.to_string()),
             );
@@ -44648,14 +44648,14 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/membership`"]
+        #[doc = "Sends a `GET` request to `/v1/storage/clusters/{id}/membership`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::StorageMembership>, Error<types::Error>> {
             let Self { client, id } = self;
             let id = id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/membership",
+                "{}/v1/storage/clusters/{}/membership",
                 client.baseurl,
                 encode_path(&id.to_string()),
             );
@@ -44719,7 +44719,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/nodes`"]
+        #[doc = "Sends a `GET` request to `/v1/storage/clusters/{id}/nodes`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::StorageNode>>, Error<types::Error>>
@@ -44727,7 +44727,7 @@ pub mod builder {
             let Self { client, id } = self;
             let id = id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/nodes",
+                "{}/v1/storage/clusters/{}/nodes",
                 client.baseurl,
                 encode_path(&id.to_string()),
             );
@@ -44817,7 +44817,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/nodes`"]
+        #[doc = "Sends a `POST` request to `/v1/storage/clusters/{id}/nodes`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::StorageMembership>, Error<types::Error>> {
@@ -44827,7 +44827,7 @@ pub mod builder {
                 .and_then(|v| types::StorageAddNodeRequest::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/nodes",
+                "{}/v1/storage/clusters/{}/nodes",
                 client.baseurl,
                 encode_path(&id.to_string()),
             );
@@ -44904,7 +44904,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/nodes/{node_id}`"]
+        #[doc = "Sends a `GET` request to `/v1/storage/clusters/{id}/nodes/{node_id}`"]
         pub async fn send(self) -> Result<ResponseValue<types::StorageNode>, Error<types::Error>> {
             let Self {
                 client,
@@ -44914,7 +44914,7 @@ pub mod builder {
             let id = id.map_err(Error::InvalidRequest)?;
             let node_id = node_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/nodes/{}",
+                "{}/v1/storage/clusters/{}/nodes/{}",
                 client.baseurl,
                 encode_path(&id.to_string()),
                 encode_path(&node_id.to_string()),
@@ -44991,7 +44991,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `DELETE` request to `/v2/storage/clusters/{id}/nodes/{node_id}`"]
+        #[doc = "Sends a `DELETE` request to `/v1/storage/clusters/{id}/nodes/{node_id}`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::StorageMembership>, Error<types::Error>> {
@@ -45003,7 +45003,7 @@ pub mod builder {
             let id = id.map_err(Error::InvalidRequest)?;
             let node_id = node_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/nodes/{}",
+                "{}/v1/storage/clusters/{}/nodes/{}",
                 client.baseurl,
                 encode_path(&id.to_string()),
                 encode_path(&node_id.to_string()),
@@ -45080,7 +45080,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/nodes/{node_id}/drain`"]
+        #[doc = "Sends a `POST` request to `/v1/storage/clusters/{id}/nodes/{node_id}/drain`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::StorageMembership>, Error<types::Error>> {
@@ -45092,7 +45092,7 @@ pub mod builder {
             let id = id.map_err(Error::InvalidRequest)?;
             let node_id = node_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/nodes/{}/drain",
+                "{}/v1/storage/clusters/{}/nodes/{}/drain",
                 client.baseurl,
                 encode_path(&id.to_string()),
                 encode_path(&node_id.to_string()),
@@ -45195,7 +45195,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/nodes/{node_id}/reweight`"]
+        #[doc = "Sends a `POST` request to `/v1/storage/clusters/{id}/nodes/{node_id}/reweight`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::StorageMembership>, Error<types::Error>> {
@@ -45211,7 +45211,7 @@ pub mod builder {
                 .and_then(|v| types::StorageReweightRequest::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/nodes/{}/reweight",
+                "{}/v1/storage/clusters/{}/nodes/{}/reweight",
                 client.baseurl,
                 encode_path(&id.to_string()),
                 encode_path(&node_id.to_string()),
@@ -45289,7 +45289,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/nodes/{node_id}/undrain`"]
+        #[doc = "Sends a `POST` request to `/v1/storage/clusters/{id}/nodes/{node_id}/undrain`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::StorageMembership>, Error<types::Error>> {
@@ -45301,7 +45301,7 @@ pub mod builder {
             let id = id.map_err(Error::InvalidRequest)?;
             let node_id = node_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/nodes/{}/undrain",
+                "{}/v1/storage/clusters/{}/nodes/{}/undrain",
                 client.baseurl,
                 encode_path(&id.to_string()),
                 encode_path(&node_id.to_string()),
@@ -45390,7 +45390,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/presigner`"]
+        #[doc = "Sends a `POST` request to `/v1/storage/clusters/{id}/presigner`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::StorageClusterView>, Error<types::Error>> {
@@ -45400,7 +45400,7 @@ pub mod builder {
                 .and_then(|v| types::SetPresignerRequest::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/presigner",
+                "{}/v1/storage/clusters/{}/presigner",
                 client.baseurl,
                 encode_path(&id.to_string()),
             );
@@ -45489,7 +45489,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/s3/presign/get`"]
+        #[doc = "Sends a `POST` request to `/v1/storage/clusters/{id}/s3/presign/get`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::PresignResponse>, Error<types::Error>> {
@@ -45499,7 +45499,7 @@ pub mod builder {
                 .and_then(|v| types::PresignGetRequest::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/s3/presign/get",
+                "{}/v1/storage/clusters/{}/s3/presign/get",
                 client.baseurl,
                 encode_path(&id.to_string()),
             );
@@ -45588,7 +45588,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/s3/presign/put`"]
+        #[doc = "Sends a `POST` request to `/v1/storage/clusters/{id}/s3/presign/put`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::PresignResponse>, Error<types::Error>> {
@@ -45598,7 +45598,7 @@ pub mod builder {
                 .and_then(|v| types::PresignPutRequest::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/s3/presign/put",
+                "{}/v1/storage/clusters/{}/s3/presign/put",
                 client.baseurl,
                 encode_path(&id.to_string()),
             );
@@ -45663,7 +45663,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/users`"]
+        #[doc = "Sends a `GET` request to `/v1/storage/clusters/{id}/users`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::StorageUser>>, Error<types::Error>>
@@ -45671,7 +45671,7 @@ pub mod builder {
             let Self { client, id } = self;
             let id = id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/users",
+                "{}/v1/storage/clusters/{}/users",
                 client.baseurl,
                 encode_path(&id.to_string()),
             );
@@ -45761,7 +45761,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/users`"]
+        #[doc = "Sends a `POST` request to `/v1/storage/clusters/{id}/users`"]
         pub async fn send(self) -> Result<ResponseValue<types::StorageUser>, Error<types::Error>> {
             let Self { client, id, body } = self;
             let id = id.map_err(Error::InvalidRequest)?;
@@ -45771,7 +45771,7 @@ pub mod builder {
                 })
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/users",
+                "{}/v1/storage/clusters/{}/users",
                 client.baseurl,
                 encode_path(&id.to_string()),
             );
@@ -45848,13 +45848,13 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/users/{user}`"]
+        #[doc = "Sends a `GET` request to `/v1/storage/clusters/{id}/users/{user}`"]
         pub async fn send(self) -> Result<ResponseValue<types::StorageUser>, Error<types::Error>> {
             let Self { client, id, user } = self;
             let id = id.map_err(Error::InvalidRequest)?;
             let user = user.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/users/{}",
+                "{}/v1/storage/clusters/{}/users/{}",
                 client.baseurl,
                 encode_path(&id.to_string()),
                 encode_path(&user.to_string()),
@@ -45931,13 +45931,13 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `DELETE` request to `/v2/storage/clusters/{id}/users/{user}`"]
+        #[doc = "Sends a `DELETE` request to `/v1/storage/clusters/{id}/users/{user}`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self { client, id, user } = self;
             let id = id.map_err(Error::InvalidRequest)?;
             let user = user.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/users/{}",
+                "{}/v1/storage/clusters/{}/users/{}",
                 client.baseurl,
                 encode_path(&id.to_string()),
                 encode_path(&user.to_string()),
@@ -46014,7 +46014,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/users/{user}/access-keys`"]
+        #[doc = "Sends a `GET` request to `/v1/storage/clusters/{id}/users/{user}/access-keys`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::StorageAccessKey>>, Error<types::Error>>
@@ -46023,7 +46023,7 @@ pub mod builder {
             let id = id.map_err(Error::InvalidRequest)?;
             let user = user.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/users/{}/access-keys",
+                "{}/v1/storage/clusters/{}/users/{}/access-keys",
                 client.baseurl,
                 encode_path(&id.to_string()),
                 encode_path(&user.to_string()),
@@ -46100,7 +46100,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/users/{user}/access-keys`"]
+        #[doc = "Sends a `POST` request to `/v1/storage/clusters/{id}/users/{user}/access-keys`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::StorageAccessKey>, Error<types::Error>> {
@@ -46108,7 +46108,7 @@ pub mod builder {
             let id = id.map_err(Error::InvalidRequest)?;
             let user = user.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/users/{}/access-keys",
+                "{}/v1/storage/clusters/{}/users/{}/access-keys",
                 client.baseurl,
                 encode_path(&id.to_string()),
                 encode_path(&user.to_string()),
@@ -46185,7 +46185,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/users/{user}/policies`"]
+        #[doc = "Sends a `GET` request to `/v1/storage/clusters/{id}/users/{user}/policies`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<::std::string::String>>, Error<types::Error>>
@@ -46194,7 +46194,7 @@ pub mod builder {
             let id = id.map_err(Error::InvalidRequest)?;
             let user = user.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/users/{}/policies",
+                "{}/v1/storage/clusters/{}/users/{}/policies",
                 client.baseurl,
                 encode_path(&id.to_string()),
                 encode_path(&user.to_string()),
@@ -46283,7 +46283,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/users/{user}/policies/{policy}`"]
+        #[doc = "Sends a `GET` request to `/v1/storage/clusters/{id}/users/{user}/policies/{policy}`"]
         pub async fn send(self) -> Result<ResponseValue<::serde_json::Value>, Error<types::Error>> {
             let Self {
                 client,
@@ -46295,7 +46295,7 @@ pub mod builder {
             let user = user.map_err(Error::InvalidRequest)?;
             let policy = policy.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/users/{}/policies/{}",
+                "{}/v1/storage/clusters/{}/users/{}/policies/{}",
                 client.baseurl,
                 encode_path(&id.to_string()),
                 encode_path(&user.to_string()),
@@ -46397,7 +46397,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `PUT` request to `/v2/storage/clusters/{id}/users/{user}/policies/{policy}`"]
+        #[doc = "Sends a `PUT` request to `/v1/storage/clusters/{id}/users/{user}/policies/{policy}`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self {
                 client,
@@ -46411,7 +46411,7 @@ pub mod builder {
             let policy = policy.map_err(Error::InvalidRequest)?;
             let body = body.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/users/{}/policies/{}",
+                "{}/v1/storage/clusters/{}/users/{}/policies/{}",
                 client.baseurl,
                 encode_path(&id.to_string()),
                 encode_path(&user.to_string()),
@@ -46502,7 +46502,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `DELETE` request to `/v2/storage/clusters/{id}/users/{user}/policies/{policy}`"]
+        #[doc = "Sends a `DELETE` request to `/v1/storage/clusters/{id}/users/{user}/policies/{policy}`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self {
                 client,
@@ -46514,7 +46514,7 @@ pub mod builder {
             let user = user.map_err(Error::InvalidRequest)?;
             let policy = policy.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/storage/clusters/{}/users/{}/policies/{}",
+                "{}/v1/storage/clusters/{}/users/{}/policies/{}",
                 client.baseurl,
                 encode_path(&id.to_string()),
                 encode_path(&user.to_string()),
@@ -46580,14 +46580,14 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/idp`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/idp`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::IdpConfigView>, Error<types::Error>> {
             let Self { client, tenant_id } = self;
             let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/idp",
+                "{}/v1/tenants/{}/idp",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
             );
@@ -46673,7 +46673,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/idp`"]
+        #[doc = "Sends a `POST` request to `/v1/tenants/{tenant_id}/idp`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::IdpConfigView>, Error<types::Error>> {
@@ -46687,7 +46687,7 @@ pub mod builder {
                 .and_then(|v| types::NewIdpConfig::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/idp",
+                "{}/v1/tenants/{}/idp",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
             );
@@ -46752,12 +46752,12 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `DELETE` request to `/v2/tenants/{tenant_id}/idp`"]
+        #[doc = "Sends a `DELETE` request to `/v1/tenants/{tenant_id}/idp`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self { client, tenant_id } = self;
             let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/idp",
+                "{}/v1/tenants/{}/idp",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
             );
@@ -46821,14 +46821,14 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/images`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/images`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::Image>>, Error<types::Error>> {
             let Self { client, tenant_id } = self;
             let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/images",
+                "{}/v1/tenants/{}/images",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
             );
@@ -46914,7 +46914,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/images`"]
+        #[doc = "Sends a `POST` request to `/v1/tenants/{tenant_id}/images`"]
         pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
             let Self {
                 client,
@@ -46926,7 +46926,7 @@ pub mod builder {
                 .and_then(|v| types::NewImage::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/images",
+                "{}/v1/tenants/{}/images",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
             );
@@ -46991,14 +46991,14 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::Project>>, Error<types::Error>> {
             let Self { client, tenant_id } = self;
             let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects",
+                "{}/v1/tenants/{}/projects",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
             );
@@ -47084,7 +47084,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects`"]
+        #[doc = "Sends a `POST` request to `/v1/tenants/{tenant_id}/projects`"]
         pub async fn send(self) -> Result<ResponseValue<types::Project>, Error<types::Error>> {
             let Self {
                 client,
@@ -47096,7 +47096,7 @@ pub mod builder {
                 .and_then(|v| types::NewProject::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects",
+                "{}/v1/tenants/{}/projects",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
             );
@@ -47173,7 +47173,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}`"]
         pub async fn send(self) -> Result<ResponseValue<types::Project>, Error<types::Error>> {
             let Self {
                 client,
@@ -47183,7 +47183,7 @@ pub mod builder {
             let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}",
+                "{}/v1/tenants/{}/projects/{}",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -47260,7 +47260,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}`"]
+        #[doc = "Sends a `DELETE` request to `/v1/tenants/{tenant_id}/projects/{project_id}`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self {
                 client,
@@ -47270,7 +47270,7 @@ pub mod builder {
             let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}",
+                "{}/v1/tenants/{}/projects/{}",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -47347,7 +47347,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/floating-ips`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::FloatingIp>>, Error<types::Error>>
@@ -47360,7 +47360,7 @@ pub mod builder {
             let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/floating-ips",
+                "{}/v1/tenants/{}/projects/{}/floating-ips",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -47449,7 +47449,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}`"]
         pub async fn send(self) -> Result<ResponseValue<types::FloatingIp>, Error<types::Error>> {
             let Self {
                 client,
@@ -47461,7 +47461,7 @@ pub mod builder {
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let floating_ip_id = floating_ip_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/floating-ips/{}",
+                "{}/v1/tenants/{}/projects/{}/floating-ips/{}",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -47577,7 +47577,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach`"]
+        #[doc = "Sends a `POST` request to `/v1/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach`"]
         pub async fn send(self) -> Result<ResponseValue<types::FloatingIp>, Error<types::Error>> {
             let Self {
                 client,
@@ -47595,7 +47595,7 @@ pub mod builder {
                 })
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/floating-ips/{}/attach",
+                "{}/v1/tenants/{}/projects/{}/floating-ips/{}/attach",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -47686,7 +47686,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach`"]
+        #[doc = "Sends a `POST` request to `/v1/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach`"]
         pub async fn send(self) -> Result<ResponseValue<types::FloatingIp>, Error<types::Error>> {
             let Self {
                 client,
@@ -47698,7 +47698,7 @@ pub mod builder {
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let floating_ip_id = floating_ip_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/floating-ips/{}/detach",
+                "{}/v1/tenants/{}/projects/{}/floating-ips/{}/detach",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -47776,7 +47776,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/images`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/images`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::Image>>, Error<types::Error>> {
@@ -47788,7 +47788,7 @@ pub mod builder {
             let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/images",
+                "{}/v1/tenants/{}/projects/{}/images",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -47887,7 +47887,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/images`"]
+        #[doc = "Sends a `POST` request to `/v1/tenants/{tenant_id}/projects/{project_id}/images`"]
         pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
             let Self {
                 client,
@@ -47901,7 +47901,7 @@ pub mod builder {
                 .and_then(|v| types::NewImage::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/images",
+                "{}/v1/tenants/{}/projects/{}/images",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -48003,7 +48003,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/console`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/console`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<reqwest::Upgraded>, Error<reqwest::Upgraded>> {
@@ -48019,7 +48019,7 @@ pub mod builder {
             let instance_id = instance_id.map_err(Error::InvalidRequest)?;
             let kind = kind.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/instances/{}/console",
+                "{}/v1/tenants/{}/projects/{}/instances/{}/console",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -48149,7 +48149,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/logs/{source}`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/logs/{source}`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<tritond_logs::LogTailResult>, Error<types::Error>> {
@@ -48169,7 +48169,7 @@ pub mod builder {
             let before_seq = before_seq.map_err(Error::InvalidRequest)?;
             let lines = lines.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/instances/{}/logs/{}",
+                "{}/v1/tenants/{}/projects/{}/instances/{}/logs/{}",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -48289,7 +48289,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/metrics`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/metrics`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<tritond_metrics::RangeResult>, Error<types::Error>> {
@@ -48307,7 +48307,7 @@ pub mod builder {
             let range = range.map_err(Error::InvalidRequest)?;
             let schema = schema.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/instances/{}/metrics",
+                "{}/v1/tenants/{}/projects/{}/instances/{}/metrics",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -48423,7 +48423,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/migrate`"]
+        #[doc = "Sends a `POST` request to `/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/migrate`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::MigrateInstanceResponse>, Error<types::Error>> {
@@ -48441,7 +48441,7 @@ pub mod builder {
                 .and_then(|v| types::MigrateInstanceBody::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/instances/{}/migrate",
+                "{}/v1/tenants/{}/projects/{}/instances/{}/migrate",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -48520,7 +48520,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/quota`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/quota`"]
         pub async fn send(self) -> Result<ResponseValue<types::Quota>, Error<types::Error>> {
             let Self {
                 client,
@@ -48530,7 +48530,7 @@ pub mod builder {
             let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/quota",
+                "{}/v1/tenants/{}/projects/{}/quota",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -48629,7 +48629,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `PUT` request to `/v2/tenants/{tenant_id}/projects/{project_id}/quota`"]
+        #[doc = "Sends a `PUT` request to `/v1/tenants/{tenant_id}/projects/{project_id}/quota`"]
         pub async fn send(self) -> Result<ResponseValue<types::Quota>, Error<types::Error>> {
             let Self {
                 client,
@@ -48643,7 +48643,7 @@ pub mod builder {
                 .and_then(|v| types::NewQuota::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/quota",
+                "{}/v1/tenants/{}/projects/{}/quota",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -48721,7 +48721,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/quota`"]
+        #[doc = "Sends a `DELETE` request to `/v1/tenants/{tenant_id}/projects/{project_id}/quota`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self {
                 client,
@@ -48731,7 +48731,7 @@ pub mod builder {
             let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/quota",
+                "{}/v1/tenants/{}/projects/{}/quota",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -48808,7 +48808,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/ssh-keys`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/ssh-keys`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::SshKey>>, Error<types::Error>> {
@@ -48820,7 +48820,7 @@ pub mod builder {
             let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/ssh-keys",
+                "{}/v1/tenants/{}/projects/{}/ssh-keys",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -48919,7 +48919,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/ssh-keys`"]
+        #[doc = "Sends a `POST` request to `/v1/tenants/{tenant_id}/projects/{project_id}/ssh-keys`"]
         pub async fn send(self) -> Result<ResponseValue<types::SshKey>, Error<types::Error>> {
             let Self {
                 client,
@@ -48933,7 +48933,7 @@ pub mod builder {
                 .and_then(|v| types::NewSshKey::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/ssh-keys",
+                "{}/v1/tenants/{}/projects/{}/ssh-keys",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -49011,7 +49011,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::Vpc>>, Error<types::Error>> {
@@ -49023,7 +49023,7 @@ pub mod builder {
             let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/vpcs",
+                "{}/v1/tenants/{}/projects/{}/vpcs",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -49112,7 +49112,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}`"]
         pub async fn send(self) -> Result<ResponseValue<types::Vpc>, Error<types::Error>> {
             let Self {
                 client,
@@ -49124,7 +49124,7 @@ pub mod builder {
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/vpcs/{}",
+                "{}/v1/tenants/{}/projects/{}/vpcs/{}",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -49214,7 +49214,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::DhcpLease>>, Error<types::Error>> {
@@ -49228,7 +49228,7 @@ pub mod builder {
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/vpcs/{}/dhcp/leases",
+                "{}/v1/tenants/{}/projects/{}/vpcs/{}/dhcp/leases",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -49330,7 +49330,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}`"]
         pub async fn send(self) -> Result<ResponseValue<types::DhcpLease>, Error<types::Error>> {
             let Self {
                 client,
@@ -49344,7 +49344,7 @@ pub mod builder {
             let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
             let mac = mac.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/vpcs/{}/dhcp/leases/{}",
+                "{}/v1/tenants/{}/projects/{}/vpcs/{}/dhcp/leases/{}",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -49447,7 +49447,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}`"]
+        #[doc = "Sends a `DELETE` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self {
                 client,
@@ -49461,7 +49461,7 @@ pub mod builder {
             let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
             let mac = mac.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/vpcs/{}/dhcp/leases/{}",
+                "{}/v1/tenants/{}/projects/{}/vpcs/{}/dhcp/leases/{}",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -49552,7 +49552,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool`"]
         pub async fn send(self) -> Result<ResponseValue<types::DhcpPool>, Error<types::Error>> {
             let Self {
                 client,
@@ -49564,7 +49564,7 @@ pub mod builder {
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/vpcs/{}/dhcp/pool",
+                "{}/v1/tenants/{}/projects/{}/vpcs/{}/dhcp/pool",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -49654,7 +49654,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::DhcpReservation>>, Error<types::Error>>
@@ -49669,7 +49669,7 @@ pub mod builder {
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/vpcs/{}/dhcp/reservations",
+                "{}/v1/tenants/{}/projects/{}/vpcs/{}/dhcp/reservations",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -49771,7 +49771,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations/{mac}`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations/{mac}`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<types::DhcpReservation>, Error<types::Error>> {
@@ -49787,7 +49787,7 @@ pub mod builder {
             let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
             let mac = mac.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/vpcs/{}/dhcp/reservations/{}",
+                "{}/v1/tenants/{}/projects/{}/vpcs/{}/dhcp/reservations/{}",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -49878,7 +49878,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::FirewallRule>>, Error<types::Error>>
@@ -49893,7 +49893,7 @@ pub mod builder {
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/vpcs/{}/firewall-rules",
+                "{}/v1/tenants/{}/projects/{}/vpcs/{}/firewall-rules",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -49983,7 +49983,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::NatGateway>>, Error<types::Error>>
@@ -49998,7 +49998,7 @@ pub mod builder {
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/vpcs/{}/nat-gateways",
+                "{}/v1/tenants/{}/projects/{}/vpcs/{}/nat-gateways",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -50100,7 +50100,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways/{nat_gateway_id}`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways/{nat_gateway_id}`"]
         pub async fn send(self) -> Result<ResponseValue<types::NatGateway>, Error<types::Error>> {
             let Self {
                 client,
@@ -50114,7 +50114,7 @@ pub mod builder {
             let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
             let nat_gateway_id = nat_gateway_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/vpcs/{}/nat-gateways/{}",
+                "{}/v1/tenants/{}/projects/{}/vpcs/{}/nat-gateways/{}",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -50205,7 +50205,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::RouteTable>>, Error<types::Error>>
@@ -50220,7 +50220,7 @@ pub mod builder {
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/vpcs/{}/route-tables",
+                "{}/v1/tenants/{}/projects/{}/vpcs/{}/route-tables",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -50322,7 +50322,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}`"]
         pub async fn send(self) -> Result<ResponseValue<types::RouteTable>, Error<types::Error>> {
             let Self {
                 client,
@@ -50336,7 +50336,7 @@ pub mod builder {
             let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
             let route_table_id = route_table_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/vpcs/{}/route-tables/{}",
+                "{}/v1/tenants/{}/projects/{}/vpcs/{}/route-tables/{}",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -50439,7 +50439,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}/routes`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}/routes`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::Route>>, Error<types::Error>> {
@@ -50455,7 +50455,7 @@ pub mod builder {
             let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
             let route_table_id = route_table_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/vpcs/{}/route-tables/{}/routes",
+                "{}/v1/tenants/{}/projects/{}/vpcs/{}/route-tables/{}/routes",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -50570,7 +50570,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}/routes/{route_id}`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}/routes/{route_id}`"]
         pub async fn send(self) -> Result<ResponseValue<types::Route>, Error<types::Error>> {
             let Self {
                 client,
@@ -50586,7 +50586,7 @@ pub mod builder {
             let route_table_id = route_table_id.map_err(Error::InvalidRequest)?;
             let route_id = route_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/vpcs/{}/route-tables/{}/routes/{}",
+                "{}/v1/tenants/{}/projects/{}/vpcs/{}/route-tables/{}/routes/{}",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -50678,7 +50678,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::Subnet>>, Error<types::Error>> {
@@ -50692,7 +50692,7 @@ pub mod builder {
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/vpcs/{}/subnets",
+                "{}/v1/tenants/{}/projects/{}/vpcs/{}/subnets",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -50794,7 +50794,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}`"]
         pub async fn send(self) -> Result<ResponseValue<types::Subnet>, Error<types::Error>> {
             let Self {
                 client,
@@ -50808,7 +50808,7 @@ pub mod builder {
             let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
             let subnet_id = subnet_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/projects/{}/vpcs/{}/subnets/{}",
+                "{}/v1/tenants/{}/projects/{}/vpcs/{}/subnets/{}",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
                 encode_path(&project_id.to_string()),
@@ -50875,14 +50875,14 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/ssh-keys`"]
+        #[doc = "Sends a `GET` request to `/v1/tenants/{tenant_id}/ssh-keys`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::SshKey>>, Error<types::Error>> {
             let Self { client, tenant_id } = self;
             let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/ssh-keys",
+                "{}/v1/tenants/{}/ssh-keys",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
             );
@@ -50968,7 +50968,7 @@ pub mod builder {
             self
         }
 
-        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/ssh-keys`"]
+        #[doc = "Sends a `POST` request to `/v1/tenants/{tenant_id}/ssh-keys`"]
         pub async fn send(self) -> Result<ResponseValue<types::SshKey>, Error<types::Error>> {
             let Self {
                 client,
@@ -50980,7 +50980,7 @@ pub mod builder {
                 .and_then(|v| types::NewSshKey::try_from(v).map_err(|e| e.to_string()))
                 .map_err(Error::InvalidRequest)?;
             let url = format!(
-                "{}/v2/tenants/{}/ssh-keys",
+                "{}/v1/tenants/{}/ssh-keys",
                 client.baseurl,
                 encode_path(&tenant_id.to_string()),
             );

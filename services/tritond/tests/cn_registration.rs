@@ -7,8 +7,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 //! End-to-end tests for the CN self-registration + approval flow
-//! (`/v2/agent/register`, `/v2/agent/register/status`, and the
-//! operator surface at `/v2/cns/*`).
+//! (`/v1/agent/register`, `/v1/agent/register/status`, and the
+//! operator surface at `/v1/cns/*`).
 //!
 //! Strategy: stand up a tritond, exercise the anonymous registration
 //! endpoints from a no-auth client, drive the operator approval
@@ -425,7 +425,7 @@ async fn anonymous_cannot_approve_or_list() {
         .send()
         .await
         .unwrap_err();
-    // Anonymous on the legacy /v2/cn-approvals approve endpoint
+    // Anonymous on the legacy /v1/cn-approvals approve endpoint
     // still 403s - fleet-scoped, no capability gate.
     assert_eq!(approve_err.status().unwrap().as_u16(), 403);
     // Anonymous on /v1/system/cns hits the capability gate which

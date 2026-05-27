@@ -609,7 +609,7 @@ pub(crate) async fn list_my_images(
     let principal =
         authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::ImageList)
             .await?;
-    // /v2/auth/* requires an authenticated principal — Cedar
+    // /v1/auth/* requires an authenticated principal — Cedar
     // would otherwise let an Anonymous probe reach this list.
     let (user_id, _) = require_authenticated(principal)?;
     let images = ctx

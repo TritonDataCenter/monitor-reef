@@ -7,7 +7,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 //! End-to-end tests for the operator-auth surface
-//! (`/v2/auth/login`, `/v2/auth/refresh`, `/v2/auth/api-keys`).
+//! (`/v1/auth/login`, `/v1/auth/refresh`, `/v1/auth/api-keys`).
 
 use std::sync::Arc;
 

@@ -7,7 +7,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 //! End-to-end tests for the
-//! `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways`
+//! `/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways`
 //! surface and its tenant-scoped Cedar gates.
 
 use std::collections::BTreeMap;

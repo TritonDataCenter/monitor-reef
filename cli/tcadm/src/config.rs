@@ -12,7 +12,7 @@
 //! endpoint and the most recent access/refresh token pair from
 //! `tcadm login` or `tcadm configure`. The refresh middleware in
 //! [`crate::session`] rewrites the file in place after a successful
-//! `/v2/auth/refresh`.
+//! `/v1/auth/refresh`.
 
 use std::path::PathBuf;
 

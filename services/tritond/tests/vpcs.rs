@@ -7,7 +7,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 //! End-to-end tests for the
-//! `/v2/silos/{silo_id}/projects/{project_id}/vpcs` surface and the
+//! `/v1/silos/{silo_id}/projects/{project_id}/vpcs` surface and the
 //! silo-scoped Cedar policy that gates it.
 //!
 //! Mirrors `tests/projects.rs`: the same stub-OIDC fixture mints
@@ -523,7 +523,7 @@ async fn cross_silo_get_returns_404_not_403() {
     let token = idp.mint_token("tritond", "alpha-tenant");
     let tenant = test.bearer_client(&token);
 
-    // GET /v2/silos/{alpha}/projects/{beta_proj.id}/vpcs/{beta_vpc.id}
+    // GET /v1/silos/{alpha}/projects/{beta_proj.id}/vpcs/{beta_vpc.id}
     // — Cedar denies because alpha-tenant is not in beta. 404.
     let err = tenant
         .get_project_vpc()

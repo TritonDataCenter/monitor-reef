@@ -17,7 +17,7 @@
 //!    byte offset is persisted under
 //!    `<state_dir>/<source>-<vm_uuid>.offset`.
 //! 3. Posts a [`tritond_logs::LogBatch`] per (zone, source) to
-//!    tritond's `/v2/agent/logs` endpoint.
+//!    tritond's `/v1/agent/logs` endpoint.
 //!
 //! Robustness rules:
 //!

@@ -464,7 +464,7 @@ async fn user_ssh_key_visibility_matrix() {
     assert_eq!(fetched.id, key.id);
     let _ = test.root_user_id;
 
-    // Alice's /v2/auth/ssh-keys list shows her own key; Bob's
+    // Alice's /v1/auth/ssh-keys list shows her own key; Bob's
     // shows nothing.
     let alice_list = alice.list_my_ssh_keys().send().await.unwrap().into_inner();
     assert_eq!(alice_list.len(), 1);

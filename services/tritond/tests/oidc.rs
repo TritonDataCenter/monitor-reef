@@ -22,7 +22,7 @@
 //! index.
 //!
 //! The tests cover:
-//! - `POST /v2/tenants/{}/idp` with an unreachable URL → 4xx
+//! - `POST /v1/tenants/{}/idp` with an unreachable URL → 4xx
 //!   (eager discovery rejects).
 //! - First OIDC login JIT-creates a federated user; the same user
 //!   id is returned on subsequent logins (no duplicate users).

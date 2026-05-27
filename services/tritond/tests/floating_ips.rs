@@ -7,7 +7,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 //! End-to-end tests for the
-//! `/v2/silos/{silo_id}/projects/{project_id}/floating-ips` surface.
+//! `/v1/silos/{silo_id}/projects/{project_id}/floating-ips` surface.
 //!
 //! Verifies the design choices that make our FloatingIp better
 //! than typical clouds':

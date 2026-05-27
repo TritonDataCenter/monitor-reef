@@ -10,7 +10,7 @@
 //! (CPU, memory, VFS I/O, network, load average, established TCP),
 //! turns each into [`tritond_metrics::Sample`]s under the matching
 //! schema, and POSTs one [`tritond_metrics::SampleBatch`] to
-//! tritond's `/v2/agent/metrics` endpoint.
+//! tritond's `/v1/agent/metrics` endpoint.
 //!
 //! Two scopes per metric: `*_per_zone` (one VM, carries `instance_id`)
 //! and `*_per_cn` (the global zone / whole-host view, no

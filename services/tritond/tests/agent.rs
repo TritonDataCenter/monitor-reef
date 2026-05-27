@@ -6,7 +6,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-//! End-to-end tests for the agent transport seam (`/v2/agent/*`).
+//! End-to-end tests for the agent transport seam (`/v1/agent/*`).
 //!
 //! Strategy: stand up a tritond with the in-process stub
 //! provisioner *disabled* so the test owns the queue. Mint an
@@ -15,7 +15,7 @@
 //! `{"job": null}`, (b) a Pending job is claimed and transitions
 //! to `InProgress`, (c) `complete` lands the job in `Completed`,
 //! (d) a re-claim returns null, and (e) keys with other scopes
-//! cannot reach `/v2/agent/*` at all.
+//! cannot reach `/v1/agent/*` at all.
 
 use std::sync::Arc;
 
@@ -669,7 +669,7 @@ async fn agent_complete_with_failure_records_reason() {
 #[tokio::test]
 async fn read_only_scope_cannot_reach_agent_surface() {
     // ReadOnly scope is the highest read-allowed scope; if it can't
-    // touch /v2/agent/* then neither can anything narrower.
+    // touch /v1/agent/* then neither can anything narrower.
     let test = TestServer::start().await;
     let secret = mint_key(&test, ApiKeyScope::ReadOnly).await;
     let client = test.bearer_client(&secret);

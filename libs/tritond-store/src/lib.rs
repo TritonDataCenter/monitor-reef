@@ -811,7 +811,7 @@ pub trait Store: Send + Sync + 'static {
 
     /// List every image visible at a tenant URL: Public + Silo
     /// (of tenant's silo) + Tenant. Used by `GET
-    /// /v2/tenants/{tenant}/images` for the practical "what can a
+    /// /v1/tenants/{tenant}/images` for the practical "what can a
     /// tenant member launch from?" query.
     async fn list_visible_images_in_tenant(
         &self,
@@ -821,7 +821,7 @@ pub trait Store: Send + Sync + 'static {
     /// List every image visible at a project URL: Public + Silo
     /// (of project's silo) + Tenant (of project's tenant) +
     /// Project. Used by `GET
-    /// /v2/tenants/{tenant}/projects/{project}/images` for the
+    /// /v1/tenants/{tenant}/projects/{project}/images` for the
     /// practical "what can a project member launch from?" query.
     async fn list_visible_images_in_project(
         &self,
@@ -1188,7 +1188,7 @@ pub trait Store: Send + Sync + 'static {
     // Live migrations (LM-1).
     //
     // The migration-saga lifecycle owns these rows; operators
-    // observe via `GET /v2/migrations` and friends. The
+    // observe via `GET /v1/migrations` and friends. The
     // one-migration-per-VM guard is enforced by `create_migration`
     // taking the `migration/active/<instance>` key atomically.
     // ------------------------------------------------------------------
@@ -1322,7 +1322,7 @@ pub trait Store: Send + Sync + 'static {
     async fn get_cn(&self, server_uuid: Uuid) -> Result<Cn, StoreError>;
 
     /// Look up a CN by its long-poll token. Used by
-    /// `GET /v2/agent/register/status` to resolve "the agent
+    /// `GET /v1/agent/register/status` to resolve "the agent
     /// holding this token" to its record. Returns
     /// [`StoreError::NotFound`] if no record matches.
     async fn get_cn_by_poll_token(&self, poll_token: &str) -> Result<Cn, StoreError>;

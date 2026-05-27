@@ -486,7 +486,7 @@ async fn user_image_visibility_matrix() {
     assert_eq!(fetched.id, img.id);
     let _ = test.root_user_id;
 
-    // Alice's /v2/auth/images list shows her own image; Bob's
+    // Alice's /v1/auth/images list shows her own image; Bob's
     // shows nothing.
     let alice_list = alice.list_my_images().send().await.unwrap().into_inner();
     assert_eq!(alice_list.len(), 1);

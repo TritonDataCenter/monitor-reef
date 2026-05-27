@@ -8,7 +8,7 @@
 //! RFD 00007.
 //!
 //! The first stable Triton Cloud API ships at `/v1/`. The legacy
-//! `/v2/` paths in this trait stay during AP-3a..AP-3e (the
+//! `/v1/` paths in this trait stay during AP-3a..AP-3e (the
 //! coordinated rollover) and flip to `410 Gone` with a
 //! [`RedirectHint`] body at AP-3e.
 //!
@@ -379,7 +379,7 @@ impl std::fmt::Display for NameOrId {
     }
 }
 
-/// Body of the `410 Gone` response served at every legacy `/v2/`
+/// Body of the `410 Gone` response served at every legacy `/v1/`
 /// path after the AP-3e cutover commit.
 ///
 /// The hint carries the *new* path a client should call, with the
@@ -398,7 +398,7 @@ pub struct RedirectHint {
     pub path: String,
     /// Query parameters to set on the replacement call. Built from
     /// the `(tenant_id, project_id, ...)` segments of the old URL
-    /// so a `GET /v2/tenants/T/projects/P/instances` hint carries
+    /// so a `GET /v1/tenants/T/projects/P/instances` hint carries
     /// `{"tenant": "T", "project": "P"}`.
     pub query_params: std::collections::BTreeMap<String, String>,
 }

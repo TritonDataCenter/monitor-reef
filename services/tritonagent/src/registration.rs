@@ -11,9 +11,9 @@
 //! 1. **Already paired.** A credential file exists on disk; we just
 //!    read it and proceed.
 //! 2. **Fresh CN.** No credential file. The agent calls
-//!    `POST /v2/agent/register` with its sysinfo, prints the returned
+//!    `POST /v1/agent/register` with its sysinfo, prints the returned
 //!    claim code on the console (and into a scrape-friendly file), then
-//!    long-polls `GET /v2/agent/register/status` until an operator (or
+//!    long-polls `GET /v1/agent/register/status` until an operator (or
 //!    the auto-approve window) yields the per-CN API key. The key is
 //!    persisted via [`crate::credentials::save`] before the function
 //!    returns, so a crash during the very next operation does not lose
@@ -62,7 +62,7 @@ const TRANSIENT_RETRY_DELAY: Duration = Duration::from_secs(5);
 /// plus the per-CN console-ticket key and IMDS token key (each when
 /// known -- see below).
 pub struct RegistrationOutcome {
-    /// Wire-form `tcadm_…` API key for every `/v2/agent/*` call.
+    /// Wire-form `tcadm_…` API key for every `/v1/agent/*` call.
     pub api_key: String,
     /// Per-CN HS256 console-ticket key. `None` when the agent resumed
     /// from a credential file written before this feature shipped (or
@@ -188,7 +188,7 @@ pub async fn register_or_resume(
         .body(register_req)
         .send()
         .await
-        .with_context(|| format!("POST {endpoint}/v2/agent/register (server_uuid={server_uuid})"))?
+        .with_context(|| format!("POST {endpoint}/v1/agent/register (server_uuid={server_uuid})"))?
         .into_inner();
 
     let poll_token = response.poll_token;
@@ -435,7 +435,7 @@ fn announce_claim_code(code: &str) {
     }
 }
 
-/// Long-poll tritond's `/v2/agent/register/status` until the
+/// Long-poll tritond's `/v1/agent/register/status` until the
 /// per-CN API key arrives, the registration is disabled, or
 /// `register_timeout` elapses.
 ///

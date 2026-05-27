@@ -100,7 +100,7 @@ fn init_process(log_filter: &str) {
 
     // rustls 0.23 requires a process-default `CryptoProvider` before
     // the first `ClientConfig::builder()` call. The bundle ingest path
-    // (`POST /v2/silos/.../image-bundles`) uses reqwest which arms TLS
+    // (`POST /v1/silos/.../image-bundles`) uses reqwest which arms TLS
     // even for plaintext URLs; without this `tritond` panics on the
     // first ingest on a cold SmartOS GZ. `install_default` returns Err
     // if a provider is already installed, which is harmless.

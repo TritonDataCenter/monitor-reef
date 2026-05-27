@@ -8,7 +8,7 @@
 //!
 //! After the registration / approval handshake, the agent receives a
 //! wire-form `tcadm_…` API key from tritond. That key is the agent's
-//! sole credential for every subsequent `/v2/agent/*` call, so it must
+//! sole credential for every subsequent `/v1/agent/*` call, so it must
 //! survive process restarts.
 //!
 //! This module owns the on-disk format. Today it is a single file

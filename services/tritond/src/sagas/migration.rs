@@ -44,7 +44,7 @@ type Ctx = ActionContext<TritondSagaType>;
 ///
 /// The migration record is **pre-created** by the handler before
 /// the saga starts (so the operator's `POST` immediately surfaces
-/// it on `/v2/migrations`). The saga's first action associates
+/// it on `/v1/migrations`). The saga's first action associates
 /// the assigned saga_id back onto the record; the actual record
 /// lives in FDB the whole time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -277,7 +277,7 @@ async fn associate_record(ctx: Ctx) -> Result<MigrationRecord, ActionError> {
 
         // Read the pre-created record. The handler created it
         // before saga_execute; we stamp the saga_id on it so the
-        // /v2/migrations surface can link to the operation.
+        // /v1/migrations surface can link to the operation.
         let mut record = store
             .get_migration(params.migration_id)
             .await
@@ -582,7 +582,7 @@ async fn create_target_zone_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
     // Best-effort: enqueue a MigrationCleanupTarget job so the
     // target agent vmadm-deletes the half-started zone. If the
     // target CN is unreachable, the job sits in the queue until
-    // the agent comes back (operator-visible via /v2/migrations
+    // the agent comes back (operator-visible via /v1/migrations
     // showing the failed migration).
     if let Err(e) = store
         .enqueue_job(tritond_store::NewJob {

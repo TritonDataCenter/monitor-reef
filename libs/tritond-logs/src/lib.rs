@@ -19,7 +19,7 @@
 //!
 //! * tritonagent's `log_tailer` reads new bytes from each file
 //!   every few seconds, parses lines, batches them, and POSTs to
-//!   tritond's `/v2/agent/logs` ingest endpoint.
+//!   tritond's `/v1/agent/logs` ingest endpoint.
 //! * tritond's [`LogStore`] consumes batches and answers tail-read
 //!   queries scoped to a `(instance_id, source)` pair.
 //! * Two backends: an in-memory ring buffer (default, dev) and a

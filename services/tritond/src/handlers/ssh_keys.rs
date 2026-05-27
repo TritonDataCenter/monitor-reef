@@ -451,7 +451,7 @@ pub(crate) async fn list_my_ssh_keys(
         Action::SshKeyList,
     )
     .await?;
-    // /v2/auth/* requires an authenticated principal — Cedar
+    // /v1/auth/* requires an authenticated principal — Cedar
     // would otherwise let an Anonymous probe reach this list.
     let (user_id, _) = require_authenticated(principal)?;
     let keys = ctx

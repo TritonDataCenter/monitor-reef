@@ -237,7 +237,7 @@ pub enum Principal {
         silo_id: Option<Uuid>,
         scope: Option<ApiKeyScope>,
         /// CN binding from the per-CN API key minted at registration
-        /// approval. `/v2/agent/*` handlers must verify this matches
+        /// approval. `/v1/agent/*` handlers must verify this matches
         /// the CN identity the request claims; mismatch is a 403.
         bound_cn: Option<Uuid>,
     },
@@ -303,7 +303,7 @@ impl Principal {
             );
             // user_id is always present on an authenticated
             // operator; emitting it as an attribute lets Cedar
-            // gate user-scoped actions (e.g. /v2/auth/images)
+            // gate user-scoped actions (e.g. /v1/auth/images)
             // on `principal has user_id`.
             attrs.insert(
                 "user_id".to_string(),
@@ -350,7 +350,7 @@ pub enum Action {
     MigrationList,
     MigrationGet,
     /// LM-5 — start a live migration via
-    /// `POST /v2/instances/{id}/actions/migrate`. Tenant-scoped
+    /// `POST /v1/instances/{id}/actions/migrate`. Tenant-scoped
     /// (any project member can migrate their own instances);
     /// operator-only sub-actions like `target_server_uuid` force
     /// override gate behind the root-allows-all Cedar rule
@@ -406,9 +406,9 @@ pub enum Action {
     /// Scope-aware ssh-key list (silo/tenant/project/user URLs).
     /// Gated by per-scope Cedar rules.
     SshKeyList,
-    /// Anonymous-allowed Public-ssh-key list (only `/v2/ssh-keys`).
+    /// Anonymous-allowed Public-ssh-key list (only `/v1/ssh-keys`).
     /// Separate so the anonymous-public-actions Cedar rule
-    /// doesn't accidentally permit `/v2/silos/.../ssh-keys` to
+    /// doesn't accidentally permit `/v1/silos/.../ssh-keys` to
     /// unauthenticated probes.
     SshKeyListPublic,
     SshKeyCreate,
@@ -417,9 +417,9 @@ pub enum Action {
     /// Scope-aware image list (silo/tenant/project/user URLs).
     /// Gated by per-scope Cedar rules.
     ImageList,
-    /// Anonymous-allowed Public-image list (only `/v2/images`).
+    /// Anonymous-allowed Public-image list (only `/v1/images`).
     /// Separate so the anonymous-public-actions Cedar rule
-    /// doesn't accidentally permit `/v2/silos/.../images` to
+    /// doesn't accidentally permit `/v1/silos/.../images` to
     /// unauthenticated probes.
     ImageListPublic,
     ImageCreate,
@@ -503,7 +503,7 @@ pub enum Action {
     AutoApproveSet,
     /// Close the auto-approve window early.
     AutoApproveClear,
-    /// Cluster-wide configuration surface (`/v2/config`). Gated by
+    /// Cluster-wide configuration surface (`/v1/config`). Gated by
     /// the fleet-admin Cedar rule (and root-allows-all). `*List`/
     /// `*Get` are reads; `*Set`/`*Reset` are writes (so a ReadOnly
     /// API key can inspect but not change cluster settings).
@@ -512,14 +512,14 @@ pub enum Action {
     ConfigSet,
     ConfigReset,
     /// Fleet-scoped legacy-discovery surface
-    /// (`/v2/admin/legacy/*`). Gated by the fleet-admin Cedar rule.
+    /// (`/v1/admin/legacy/*`). Gated by the fleet-admin Cedar rule.
     LegacyCnList,
     LegacyCnGet,
     LegacyVmList,
     LegacyVmGet,
     LegacyAlarmList,
     /// Operator-only storage-cluster registration surface
-    /// (`/v2/storage/clusters`). Gated by the root-allows-all rule —
+    /// (`/v1/storage/clusters`). Gated by the root-allows-all rule —
     /// see the `POLICY_BUNDLE` doc-comment for why these never get
     /// a per-silo or fleet-admin variant. Per-forwarder action
     /// variants (StorageClusterSummary, StorageNodes, etc.) ship
@@ -1022,7 +1022,7 @@ impl AuthService {
                     // "no extra restriction" — see [`scope_allows_action`].
                     scope: Some(record.scope),
                     // Per-CN binding (set by the registration approval
-                    // flow). Handlers under `/v2/agent/*` enforce that
+                    // flow). Handlers under `/v1/agent/*` enforce that
                     // the request's CN identity matches this value.
                     bound_cn: record.bound_to_cn,
                 })
@@ -1545,7 +1545,7 @@ pub fn require_capability(
 
 /// 401 helper — used by handlers that need an *authenticated*
 /// principal even if Cedar would let an anonymous request through
-/// (e.g. /v2/auth/api-keys must run as somebody).
+/// (e.g. /v1/auth/api-keys must run as somebody).
 pub fn require_authenticated(principal: Principal) -> Result<(Uuid, bool), HttpError> {
     match principal {
         Principal::Operator {
@@ -1560,7 +1560,7 @@ pub fn require_authenticated(principal: Principal) -> Result<(Uuid, bool), HttpE
 }
 
 /// Returns the per-CN binding from the principal's API key, if
-/// any. Used by `/v2/agent/*` handlers to enforce that a key
+/// any. Used by `/v1/agent/*` handlers to enforce that a key
 /// minted for CN-A cannot drive work as CN-B.
 #[must_use]
 pub fn principal_bound_cn(principal: &Principal) -> Option<Uuid> {

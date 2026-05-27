@@ -6,9 +6,9 @@
 
 //! Triton Cloud control plane daemon.
 //!
-//! Phase 0e ships `/v2/health`, the silo CRUD primitives, and the
-//! operator-auth surface (`/v2/auth/login`, `/v2/auth/refresh`,
-//! `/v2/auth/api-keys`). The store is pluggable ([`MemStore`] for
+//! Phase 0e ships `/v1/health`, the silo CRUD primitives, and the
+//! operator-auth surface (`/v1/auth/login`, `/v1/auth/refresh`,
+//! `/v1/auth/api-keys`). The store is pluggable ([`MemStore`] for
 //! tests, `FdbStore` in production); the auth service holds the
 //! cluster-wide HS256 signing key and the embedded Cedar policy
 //! bundle.

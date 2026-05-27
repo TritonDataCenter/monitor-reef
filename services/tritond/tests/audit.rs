@@ -6,8 +6,8 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-//! End-to-end tests for the audit-log surface (`/v2/audit/events`,
-//! `/v2/audit/verify`) and the emission rules driven by the request
+//! End-to-end tests for the audit-log surface (`/v1/audit/events`,
+//! `/v1/audit/verify`) and the emission rules driven by the request
 //! lifecycle.
 
 use std::sync::Arc;
@@ -144,7 +144,7 @@ async fn anonymous_deny_does_not_pollute_chain() {
     let test = TestServer::start().await;
     let client = test.anonymous_client();
 
-    // Anonymous probe of /v2/silos → 403; per design, no event.
+    // Anonymous probe of /v1/silos → 403; per design, no event.
     let _err = client
         .create_silo()
         .body(NewSilo {

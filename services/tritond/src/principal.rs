@@ -51,7 +51,7 @@ pub(crate) fn require_bound_cn(principal: &Principal) -> Result<Uuid, HttpError>
         HttpError::for_client_error(
             Some("Forbidden".to_string()),
             ClientErrorStatusCode::FORBIDDEN,
-            "this endpoint requires a CN-bound api key (the per-CN keys minted by /v2/cn-approvals)"
+            "this endpoint requires a CN-bound api key (the per-CN keys minted by /v1/cn-approvals)"
                 .to_string(),
         )
     })

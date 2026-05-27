@@ -106,8 +106,8 @@ pub struct AgentConfig {
     pub dry_run: bool,
     /// When `true` (the default), the agent spawns the harvested
     /// `cn_status::Heartbeater` alongside the job-claim loop and
-    /// posts liveness + status to tritond's `/v2/agent/heartbeat`
-    /// and `/v2/agent/status`. Disabled by `--no-heartbeater`
+    /// posts liveness + status to tritond's `/v1/agent/heartbeat`
+    /// and `/v1/agent/status`. Disabled by `--no-heartbeater`
     /// for tritond integration tests that don't want background
     /// chatter at the test server. Also gates the console listener
     /// (so integration tests don't open a port).

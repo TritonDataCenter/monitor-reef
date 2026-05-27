@@ -44,7 +44,7 @@ use crate::types::{RecoverableSaga, ResourceRef, ResourceScope, SecEpoch, SecHea
 /// SG-2b ships start + finish hooks. Per-action `operation_step`
 /// events are deferred — Steno doesn't expose action-completion
 /// hooks, and the SecStore's node-event log already carries that
-/// information for `/v2/operations/{id}` and `tcadm operations
+/// information for `/v1/operations/{id}` and `tcadm operations
 /// get`. Operators get fleet-chain breadcrumbs for "saga X started
 /// / finished" today; deep step-by-step audit lives on the
 /// existing per-step `record_event` writes.
@@ -220,7 +220,7 @@ impl SagaExecutor {
             .await?;
         // 3. Audit: operation_started (D-Sg-11). Fired after the
         //    record is durable so a reader of the audit log can
-        //    correlate `saga_id` with the record on `/v2/operations`.
+        //    correlate `saga_id` with the record on `/v1/operations`.
         if let Some(audit) = self.audit.as_ref() {
             audit.operation_started(saga_id, name, version).await;
         }
@@ -271,7 +271,7 @@ impl SagaExecutor {
     }
 
     /// Operator-facing listing: page through every saga the
-    /// SecStore knows about. Used by the SG-4 `/v2/operations`
+    /// SecStore knows about. Used by the SG-4 `/v1/operations`
     /// surface. `marker` is an opaque continuation token; pass
     /// `None` for the first page. See
     /// [`TritondSecStore::list_sagas`] for ordering semantics.
@@ -285,14 +285,14 @@ impl SagaExecutor {
 
     /// Operator-facing detail lookup: the full `SagaRecord` for
     /// one saga. Returns `SagaError::NotFound` if the id is
-    /// unknown. Used by `GET /v2/operations/{id}`.
+    /// unknown. Used by `GET /v1/operations/{id}`.
     pub async fn get_saga(&self, id: steno::SagaId) -> SagaResult<crate::types::SagaRecord> {
         self.sec_store.get_record(id).await
     }
 
     /// Operator-facing event-log fetch for one saga. Returns the
     /// persisted Steno node-event log in node-id order. Used by
-    /// `GET /v2/operations/{id}` to project per-step progress
+    /// `GET /v1/operations/{id}` to project per-step progress
     /// (RFD 00004 D-Sg-13).
     pub async fn get_saga_events(
         &self,

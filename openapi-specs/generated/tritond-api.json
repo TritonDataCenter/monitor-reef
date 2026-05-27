@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Triton Cloud Control Plane",
-    "description": "Triton Cloud control-plane API. Phase 0 surface (`/v2/health`); subsequent phases add silos, instances, VPCs, audit, secrets, and the rest of DESIGN.md §14.",
+    "description": "Triton Cloud control-plane API. Phase 0 surface (`/v1/health`); subsequent phases add silos, instances, VPCs, audit, secrets, and the rest of DESIGN.md \u00a714.",
     "version": "0.1.0"
   },
   "paths": {
@@ -609,61 +609,30 @@
       }
     },
     "/v1/images": {
-      "get": {
+      "post": {
         "tags": [
           "images"
         ],
-        "summary": "RFD 00007 `GET /v1/images?scope=public[&silo=&tenant=&project=]`.",
-        "description": "AP-2h: `scope=public` only.",
-        "operationId": "list_images_v1",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "project",
-            "description": "Restrict to a single project.",
-            "schema": {
-              "nullable": true,
-              "type": "string",
-              "format": "uuid"
+        "summary": "Create a `Public` image. Root-only via Cedar.",
+        "description": "Returns 400 if `sha256` is not 64 lowercase hex chars or if `size_bytes` is zero. Returns 409 if the name is already in use among Public images.",
+        "operationId": "create_public_image",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewImage"
+              }
             }
           },
-          {
-            "in": "query",
-            "name": "scope",
-            "description": "Required at AP-2h: only `public` is accepted. Other scopes land in AP-3a with the scope-resolution helper.",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/ImageScopeSelector"
-            }
-          },
-          {
-            "in": "query",
-            "name": "silo",
-            "description": "Restrict to a single silo (fleet-admin only).",
-            "schema": {
-              "nullable": true,
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "query",
-            "name": "tenant",
-            "description": "Restrict to a single tenant.",
-            "schema": {
-              "nullable": true,
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
+          "required": true
+        },
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "201": {
+            "description": "successful creation",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ResultsPage_for_Image"
+                  "$ref": "#/components/schemas/Image"
                 }
               }
             }
@@ -678,12 +647,13 @@
       }
     },
     "/v1/images/{image_id}": {
-      "get": {
+      "delete": {
         "tags": [
           "images"
         ],
-        "summary": "RFD 00007 `GET /v1/images/{image_id}`. Flat single-image read.",
-        "operationId": "get_image_v1",
+        "summary": "Delete an image by id. Returns 404 when the image does",
+        "description": "not exist OR the principal lacks ownership for the image's scope: * `Public` \u2014 root only. * `Silo` / `Tenant` / `Project` \u2014 any tenant member of the resolved tenant (Phase 0 = same-tenant access). * `User` \u2014 only the owning user (or root).",
+        "operationId": "delete_image",
         "parameters": [
           {
             "in": "path",
@@ -696,15 +666,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Image"
-                }
-              }
-            }
+          "204": {
+            "description": "successful deletion"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
@@ -808,7 +771,7 @@
           "instances"
         ],
         "summary": "RFD 00007 `POST /v1/instances?tenant=&project=`. Create an",
-        "description": "instance in the named tenant + project. Equivalent semantics to the v2 `POST /v2/tenants/{t}/projects/{p}/instances`; the only difference is the URL shape (scope as selectors, not path segments). The handler still validates that the resolved tenant / project exist and live in the principal's silo, surfacing cross-tenant 404 as before.\n\n`tenant` and `project` are required selectors at AP-2d. AP-3a swaps to a `NameOrId` newtype.",
+        "description": "instance in the named tenant + project. Equivalent semantics to the v2 `POST /v1/tenants/{t}/projects/{p}/instances`; the only difference is the URL shape (scope as selectors, not path segments). The handler still validates that the resolved tenant / project exist and live in the principal's silo, surfacing cross-tenant 404 as before.\n\n`tenant` and `project` are required selectors at AP-2d. AP-3a swaps to a `NameOrId` newtype.",
         "operationId": "create_instance_v1",
         "parameters": [
           {
@@ -1829,59 +1792,30 @@
       }
     },
     "/v1/ssh-keys": {
-      "get": {
+      "post": {
         "tags": [
           "ssh-keys"
         ],
-        "summary": "RFD 00007 `GET /v1/ssh-keys?scope=public[&silo=&tenant=&project=]`.",
-        "operationId": "list_ssh_keys_v1",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "project",
-            "description": "Restrict to a single project.",
-            "schema": {
-              "nullable": true,
-              "type": "string",
-              "format": "uuid"
+        "summary": "Create a `Public` SSH key. Root-only via Cedar.",
+        "description": "Returns 400 if the key cannot be parsed as openssh, 409 if the name or fingerprint is already in use among Public keys.",
+        "operationId": "create_public_ssh_key",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSshKey"
+              }
             }
           },
-          {
-            "in": "query",
-            "name": "scope",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/ImageScopeSelector"
-            }
-          },
-          {
-            "in": "query",
-            "name": "silo",
-            "description": "Restrict to a single silo (fleet-admin only).",
-            "schema": {
-              "nullable": true,
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "query",
-            "name": "tenant",
-            "description": "Restrict to a single tenant.",
-            "schema": {
-              "nullable": true,
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
+          "required": true
+        },
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "201": {
+            "description": "successful creation",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ResultsPage_for_SshKey"
+                  "$ref": "#/components/schemas/SshKey"
                 }
               }
             }
@@ -1896,12 +1830,13 @@
       }
     },
     "/v1/ssh-keys/{key_id}": {
-      "get": {
+      "delete": {
         "tags": [
           "ssh-keys"
         ],
-        "summary": "RFD 00007 `GET /v1/ssh-keys/{key_id}`. Flat single-key read.",
-        "operationId": "get_ssh_key_v1",
+        "summary": "Delete an SSH key by id. Returns 404 when the key does",
+        "description": "not exist OR the principal lacks ownership for the key's scope: * `Public` \u2014 root only. * `Silo` / `Tenant` / `Project` \u2014 any tenant member of the resolved tenant (Phase 0 = same-tenant access). * `User` \u2014 only the owning user (or root).",
+        "operationId": "delete_ssh_key",
         "parameters": [
           {
             "in": "path",
@@ -1914,15 +1849,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SshKey"
-                }
-              }
-            }
+          "204": {
+            "description": "successful deletion"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
@@ -3070,7 +2998,7 @@
           "vpcs"
         ],
         "summary": "RFD 00007 `POST /v1/vpcs?tenant=&project=`. Create a VPC",
-        "description": "under the named project. `silo=` is rejected at the customer surface; tenant + project are both required selectors. Body is the same `NewVpc` shape the /v2/ create handler accepted.",
+        "description": "under the named project. `silo=` is rejected at the customer surface; tenant + project are both required selectors. Body is the same `NewVpc` shape the /v1/ create handler accepted.",
         "operationId": "create_vpc_v1",
         "parameters": [
           {
@@ -3176,7 +3104,7 @@
           "vpcs"
         ],
         "summary": "RFD 00007 `DELETE /v1/vpcs/{vpc_id}`. The handler enforces",
-        "description": "the same dependency gate as the legacy /v2/ delete: subnets, firewall rules, NAT gateways, and route tables anchored on the VPC must be deleted first.",
+        "description": "the same dependency gate as the legacy /v1/ delete: subnets, firewall rules, NAT gateways, and route tables anchored on the VPC must be deleted first.",
         "operationId": "delete_vpc_v1",
         "parameters": [
           {
@@ -3202,7 +3130,7 @@
         }
       }
     },
-    "/v2/admin/legacy/cns": {
+    "/v1/admin/legacy/cns": {
       "get": {
         "tags": [
           "legacy-admin"
@@ -3234,7 +3162,7 @@
         }
       }
     },
-    "/v2/admin/legacy/vms": {
+    "/v1/admin/legacy/vms": {
       "get": {
         "tags": [
           "legacy-admin"
@@ -3278,7 +3206,7 @@
         }
       }
     },
-    "/v2/admin/legacy/vms/{smartos_uuid}": {
+    "/v1/admin/legacy/vms/{smartos_uuid}": {
       "get": {
         "tags": [
           "legacy-admin"
@@ -3317,13 +3245,13 @@
         }
       }
     },
-    "/v2/admin/legacy/vms/{smartos_uuid}/console": {
+    "/v1/admin/legacy/vms/{smartos_uuid}/console": {
       "get": {
         "tags": [
           "legacy-admin"
         ],
         "summary": "Operator console for a discovered (non-tritond-managed) zone,",
-        "description": "addressed by SmartOS zone uuid. Fleet-admin only — no tenant scoping. Serial only in practice for native zones; `kind=vnc` is honoured for bhyve / kvm zones. Not covered by the generated client.",
+        "description": "addressed by SmartOS zone uuid. Fleet-admin only \u2014 no tenant scoping. Serial only in practice for native zones; `kind=vnc` is honoured for bhyve / kvm zones. Not covered by the generated client.",
         "operationId": "legacy_vm_console",
         "parameters": [
           {
@@ -3358,7 +3286,7 @@
         "x-dropshot-websocket": {}
       }
     },
-    "/v2/agent/blueprints/{port_id}": {
+    "/v1/agent/blueprints/{port_id}": {
       "get": {
         "tags": [
           "agent"
@@ -3397,13 +3325,13 @@
         }
       }
     },
-    "/v2/agent/claim": {
+    "/v1/agent/claim": {
       "post": {
         "tags": [
           "agent"
         ],
         "summary": "Atomically claim the next Pending provisioning job.",
-        "description": "Returns `200 OK` with `{\"job\": null}` when the queue is empty (the agent should sleep before its next poll), and `200 OK` with `{\"job\": {...}}` when a job was claimed and transitioned to `InProgress`. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].\n\nThe path is `/v2/agent/claim` rather than `/v2/agent/jobs/claim` because Dropshot's router cannot disambiguate a literal `claim` segment from a `{job_id}` path parameter at the same level.",
+        "description": "Returns `200 OK` with `{\"job\": null}` when the queue is empty (the agent should sleep before its next poll), and `200 OK` with `{\"job\": {...}}` when a job was claimed and transitioned to `InProgress`. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].\n\nThe path is `/v1/agent/claim` rather than `/v1/agent/jobs/claim` because Dropshot's router cannot disambiguate a literal `claim` segment from a `{job_id}` path parameter at the same level.",
         "operationId": "agent_claim_job",
         "requestBody": {
           "content": {
@@ -3435,13 +3363,13 @@
         }
       }
     },
-    "/v2/agent/dhcp-lease-activity": {
+    "/v1/agent/dhcp-lease-activity": {
       "post": {
         "tags": [
           "agent"
         ],
         "summary": "Report DHCP request activity the kmod observed for guest ports.",
-        "description": "Auth: requires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. State-sample traffic — the response is always `200 OK`; items for unknown ports or ports with no lease record yet are silently skipped.",
+        "description": "Auth: requires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. State-sample traffic \u2014 the response is always `200 OK`; items for unknown ports or ports with no lease record yet are silently skipped.",
         "operationId": "agent_report_dhcp_lease_activity",
         "requestBody": {
           "content": {
@@ -3477,12 +3405,12 @@
         }
       }
     },
-    "/v2/agent/heartbeat": {
+    "/v1/agent/heartbeat": {
       "post": {
         "tags": [
           "agent"
         ],
-        "summary": "Heartbeat from a bound agent. Lightweight ping — empty",
+        "summary": "Heartbeat from a bound agent. Lightweight ping \u2014 empty",
         "description": "body, just bumps `Cn.last_seen`. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`] AND a `bound_to_cn` value (the per-CN keys minted at approval). Unbound Agent keys (legacy operator-minted) get 403 since there's no CN to attribute the heartbeat to.",
         "operationId": "agent_heartbeat",
         "responses": {
@@ -3509,13 +3437,13 @@
         }
       }
     },
-    "/v2/agent/instances/{instance_id}/meta": {
+    "/v1/agent/instances/{instance_id}/meta": {
       "put": {
         "tags": [
           "agent"
         ],
         "summary": "Agent-facing instance-scoped `guest/*` metadata writeback.",
-        "description": "The IMDSv2 listener in tritonagent forwards a guest VM's `PUT /triton/guest/<key>` through this endpoint. The server enforces:\n\n* the key must start with `guest/` (no other prefix); * scope is always Instance, instance_id is the URL path; * `guest_visible` and `guest_writable` are forced true (operator-set entries can flip these via the tenant-facing set_meta surface; the guest never controls them); * the calling agent is CN-bound (`Action::AgentBlueprint`); * the instance is currently placed on the agent's CN — already enforced by the IMDS dataplane (the request reaches the agent only via that instance's vnic).",
+        "description": "The IMDSv2 listener in tritonagent forwards a guest VM's `PUT /triton/guest/<key>` through this endpoint. The server enforces:\n\n* the key must start with `guest/` (no other prefix); * scope is always Instance, instance_id is the URL path; * `guest_visible` and `guest_writable` are forced true (operator-set entries can flip these via the tenant-facing set_meta surface; the guest never controls them); * the calling agent is CN-bound (`Action::AgentBlueprint`); * the instance is currently placed on the agent's CN \u2014 already enforced by the IMDS dataplane (the request reaches the agent only via that instance's vnic).",
         "operationId": "agent_set_instance_guest_meta",
         "parameters": [
           {
@@ -3566,13 +3494,13 @@
         }
       }
     },
-    "/v2/agent/instances/{instance_id}/realized-meta": {
+    "/v1/agent/instances/{instance_id}/realized-meta": {
       "get": {
         "tags": [
           "agent"
         ],
         "summary": "Agent-facing realized metadata view for one instance. Same",
-        "description": "body as [`Self::get_instance_realized_meta`] but auth is the CN-bound `Action::AgentBlueprint` scope (matches [`Self::agent_peer_resolve`]). The tenant-facing endpoint requires tenant-member Cedar, which a CN-bound API key cannot satisfy — but tritonagent's IMDS daemon needs to read the realized view to answer guest IMDSv2 requests. The dataplane already enforces locality: the IMDS request arrives via the guest's vnic on this CN, so any instance the agent asks about is one currently placed on the agent's CN.",
+        "description": "body as [`Self::get_instance_realized_meta`] but auth is the CN-bound `Action::AgentBlueprint` scope (matches [`Self::agent_peer_resolve`]). The tenant-facing endpoint requires tenant-member Cedar, which a CN-bound API key cannot satisfy \u2014 but tritonagent's IMDS daemon needs to read the realized view to answer guest IMDSv2 requests. The dataplane already enforces locality: the IMDS request arrives via the guest's vnic on this CN, so any instance the agent asks about is one currently placed on the agent's CN.",
         "operationId": "agent_get_instance_realized_meta",
         "parameters": [
           {
@@ -3609,13 +3537,13 @@
         }
       }
     },
-    "/v2/agent/jobs/{job_id}/blueprint": {
+    "/v1/agent/jobs/{job_id}/blueprint": {
       "get": {
         "tags": [
           "agent"
         ],
         "summary": "Materialise the full blueprint the agent needs to act on",
-        "description": "a claimed job — instance + image + NICs + disks + authorised SSH public keys, all in one response. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].",
+        "description": "a claimed job \u2014 instance + image + NICs + disks + authorised SSH public keys, all in one response. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].",
         "operationId": "agent_job_blueprint",
         "parameters": [
           {
@@ -3648,7 +3576,7 @@
         }
       }
     },
-    "/v2/agent/jobs/{job_id}/complete": {
+    "/v1/agent/jobs/{job_id}/complete": {
       "post": {
         "tags": [
           "agent"
@@ -3697,7 +3625,7 @@
         }
       }
     },
-    "/v2/agent/logs": {
+    "/v1/agent/logs": {
       "post": {
         "tags": [
           "agent"
@@ -3728,7 +3656,7 @@
         }
       }
     },
-    "/v2/agent/metrics": {
+    "/v1/agent/metrics": {
       "post": {
         "tags": [
           "agent"
@@ -3759,7 +3687,7 @@
         }
       }
     },
-    "/v2/agent/network-realization": {
+    "/v1/agent/network-realization": {
       "post": {
         "tags": [
           "agent"
@@ -3801,13 +3729,13 @@
         }
       }
     },
-    "/v2/agent/peer": {
+    "/v1/agent/peer": {
       "get": {
         "tags": [
           "agent"
         ],
         "summary": "Resolve one in-VPC peer (`vni`, `ip`) -> guest MAC + host",
-        "description": "underlay. The bound CN agent calls this on every v2p cache miss; tritond walks the NIC table, finds the NIC that owns the IP, looks up its host CN, and returns the CN's underlay address. Returns 404 when no realized NIC owns the IP. See `PROTEUS_PLAN.md` §11.7.1.",
+        "description": "underlay. The bound CN agent calls this on every v2p cache miss; tritond walks the NIC table, finds the NIC that owns the IP, looks up its host CN, and returns the CN's underlay address. Returns 404 when no realized NIC owns the IP. See `PROTEUS_PLAN.md` \u00a711.7.1.",
         "operationId": "agent_peer_resolve",
         "parameters": [
           {
@@ -3851,13 +3779,13 @@
         }
       }
     },
-    "/v2/agent/peer-invalidations": {
+    "/v1/agent/peer-invalidations": {
       "get": {
         "tags": [
           "agent"
         ],
         "summary": "Pull pending v2p invalidations for this CN, strictly after",
-        "description": "the supplied `since` cursor. The bound CN agent polls this on a fixed cadence (default ~10s) and applies each entry via `InvalidatePeerEntry` on every local port that might have cached it. Phase A v1: tritond broadcasts NIC-teardown invalidations to all CNs; Phase B adds per-CN filtering by tracking which CNs have queried `/v2/agent/peer`. See `PROTEUS_PLAN.md` §11.7.1.",
+        "description": "the supplied `since` cursor. The bound CN agent polls this on a fixed cadence (default ~10s) and applies each entry via `InvalidatePeerEntry` on every local port that might have cached it. Phase A v1: tritond broadcasts NIC-teardown invalidations to all CNs; Phase B adds per-CN filtering by tracking which CNs have queried `/v1/agent/peer`. See `PROTEUS_PLAN.md` \u00a711.7.1.",
         "operationId": "agent_peer_invalidations",
         "parameters": [
           {
@@ -3891,13 +3819,13 @@
         }
       }
     },
-    "/v2/agent/register": {
+    "/v1/agent/register": {
       "post": {
         "tags": [
           "agent"
         ],
         "summary": "Self-register a compute node. Anonymous endpoint (no API",
-        "description": "key needed) — the agent has none until approval completes. Tritond creates a [`CnState::Pending`] record with a fresh claim code unless the global auto-approve window is open, in which case the record is created directly Approved and the agent will retrieve its API key on the very next `/register/status` long-poll.\n\nIdempotent on `server_uuid`: re-registration of a Pending record rotates the claim code; re-registration of an Approved record refreshes sysinfo without re-minting credentials.",
+        "description": "key needed) \u2014 the agent has none until approval completes. Tritond creates a [`CnState::Pending`] record with a fresh claim code unless the global auto-approve window is open, in which case the record is created directly Approved and the agent will retrieve its API key on the very next `/register/status` long-poll.\n\nIdempotent on `server_uuid`: re-registration of a Pending record rotates the claim code; re-registration of an Approved record refreshes sysinfo without re-minting credentials.",
         "operationId": "agent_register",
         "requestBody": {
           "content": {
@@ -3929,13 +3857,13 @@
         }
       }
     },
-    "/v2/agent/register/status": {
+    "/v1/agent/register/status": {
       "get": {
         "tags": [
           "agent"
         ],
         "summary": "Long-poll for the per-CN API key. Anonymous endpoint",
-        "description": "authenticated only by holding the `poll_token` returned at registration. Tritond holds the connection open for up to ~30s waiting for state to flip from Pending to Approved (or for the auto-approve credential to be wired up); on timeout the agent re-polls.\n\nThe `api_key` field is populated **once** — on the first successful retrieval after approval. Subsequent calls return `state = Approved` with `api_key = None`.",
+        "description": "authenticated only by holding the `poll_token` returned at registration. Tritond holds the connection open for up to ~30s waiting for state to flip from Pending to Approved (or for the auto-approve credential to be wired up); on timeout the agent re-polls.\n\nThe `api_key` field is populated **once** \u2014 on the first successful retrieval after approval. Subsequent calls return `state = Approved` with `api_key = None`.",
         "operationId": "agent_register_status",
         "parameters": [
           {
@@ -3967,7 +3895,7 @@
         }
       }
     },
-    "/v2/agent/status": {
+    "/v1/agent/status": {
       "post": {
         "tags": [
           "agent"
@@ -4009,7 +3937,7 @@
         }
       }
     },
-    "/v2/audit/events": {
+    "/v1/audit/events": {
       "get": {
         "tags": [
           "audit"
@@ -4061,7 +3989,7 @@
         }
       }
     },
-    "/v2/audit/events/{seq}": {
+    "/v1/audit/events/{seq}": {
       "get": {
         "tags": [
           "audit"
@@ -4100,7 +4028,7 @@
         }
       }
     },
-    "/v2/audit/verify": {
+    "/v1/audit/verify": {
       "get": {
         "tags": [
           "audit"
@@ -4152,7 +4080,7 @@
         }
       }
     },
-    "/v2/auth/api-keys": {
+    "/v1/auth/api-keys": {
       "get": {
         "tags": [
           "auth"
@@ -4220,7 +4148,7 @@
         }
       }
     },
-    "/v2/auth/api-keys/{api_key_id}": {
+    "/v1/auth/api-keys/{api_key_id}": {
       "delete": {
         "tags": [
           "auth"
@@ -4252,7 +4180,7 @@
         }
       }
     },
-    "/v2/auth/images": {
+    "/v1/auth/images": {
       "get": {
         "tags": [
           "images"
@@ -4319,7 +4247,7 @@
         }
       }
     },
-    "/v2/auth/login": {
+    "/v1/auth/login": {
       "post": {
         "tags": [
           "auth"
@@ -4357,7 +4285,7 @@
         }
       }
     },
-    "/v2/auth/refresh": {
+    "/v1/auth/refresh": {
       "post": {
         "tags": [
           "auth"
@@ -4395,7 +4323,7 @@
         }
       }
     },
-    "/v2/auth/ssh-keys": {
+    "/v1/auth/ssh-keys": {
       "get": {
         "tags": [
           "ssh-keys"
@@ -4462,13 +4390,13 @@
         }
       }
     },
-    "/v2/cn-approvals": {
+    "/v1/cn-approvals": {
       "post": {
         "tags": [
           "cns"
         ],
         "summary": "Approve a Pending compute node by claim code. Mints the",
-        "description": "per-CN API key inside the same transaction that flips state; the plaintext is delivered to the agent via its long-poll on `/register/status`. Per-source-IP rate-limited.\n\nReturns 404 for unknown / expired / already-approved codes (conflated to defeat enumeration). Returns 429 when the per-IP bucket is drained.\n\nThe path is `/v2/cn-approvals` rather than nested under `/v2/cns/...` because Dropshot's router cannot disambiguate a literal `approve` segment from the `{server_uuid}` parameter at the same level.",
+        "description": "per-CN API key inside the same transaction that flips state; the plaintext is delivered to the agent via its long-poll on `/register/status`. Per-source-IP rate-limited.\n\nReturns 404 for unknown / expired / already-approved codes (conflated to defeat enumeration). Returns 429 when the per-IP bucket is drained.\n\nThe path is `/v1/cn-approvals` rather than nested under `/v1/cns/...` because Dropshot's router cannot disambiguate a literal `approve` segment from the `{server_uuid}` parameter at the same level.",
         "operationId": "approve_cn",
         "requestBody": {
           "content": {
@@ -4500,13 +4428,13 @@
         }
       }
     },
-    "/v2/cn-auto-approve": {
+    "/v1/cn-auto-approve": {
       "get": {
         "tags": [
           "cns"
         ],
         "summary": "Read the current auto-approve window, if open.",
-        "description": "Returns `200 OK` with `null` when no window is open.\n\nPath lives at `/v2/cn-auto-approve` rather than nested under `/v2/cns/...` for the same reason as `/v2/cn-approvals`: a literal `auto-approve` segment cannot coexist with the `{server_uuid}` parameter on Dropshot's router.",
+        "description": "Returns `200 OK` with `null` when no window is open.\n\nPath lives at `/v1/cn-auto-approve` rather than nested under `/v1/cns/...` for the same reason as `/v1/cn-approvals`: a literal `auto-approve` segment cannot coexist with the `{server_uuid}` parameter on Dropshot's router.",
         "operationId": "get_auto_approve_window",
         "responses": {
           "200": {
@@ -4583,7 +4511,7 @@
         }
       }
     },
-    "/v2/cns/{server_uuid}/disable": {
+    "/v1/cns/{server_uuid}/disable": {
       "post": {
         "tags": [
           "cns"
@@ -4622,13 +4550,13 @@
         }
       }
     },
-    "/v2/cns/{server_uuid}/drain/preview": {
+    "/v1/cns/{server_uuid}/drain/preview": {
       "post": {
         "tags": [
           "cns"
         ],
         "summary": "Dry-run the drain plan for one CN. For each instance currently",
-        "description": "hosted on this CN the placement engine picks a candidate target (excluding the source CN); the response partitions into `placeable` (a target was found) and `not_placeable` (no eligible CN). Also surfaces a quorum heuristic so the operator can spot vault / etcd / fdb / etc. members before committing the drain. Read-only — no reservations are written.\n\nUsed by the operator console's BlastRadiusCard on Compute Node detail (admin v3 design) to show \"12 instances would migrate to: monroe-r2-s01 × 7, monroe-r2-s02 × 5; capacity OK; quorum at risk: vault-primary\" before the operator commits.",
+        "description": "hosted on this CN the placement engine picks a candidate target (excluding the source CN); the response partitions into `placeable` (a target was found) and `not_placeable` (no eligible CN). Also surfaces a quorum heuristic so the operator can spot vault / etcd / fdb / etc. members before committing the drain. Read-only \u2014 no reservations are written.\n\nUsed by the operator console's BlastRadiusCard on Compute Node detail (admin v3 design) to show \"12 instances would migrate to: monroe-r2-s01 \u00d7 7, monroe-r2-s02 \u00d7 5; capacity OK; quorum at risk: vault-primary\" before the operator commits.",
         "operationId": "drain_preview",
         "parameters": [
           {
@@ -4661,7 +4589,7 @@
         }
       }
     },
-    "/v2/cns/{server_uuid}/metrics": {
+    "/v1/cns/{server_uuid}/metrics": {
       "get": {
         "tags": [
           "cns"
@@ -4718,7 +4646,7 @@
         }
       }
     },
-    "/v2/cns/{server_uuid}/role": {
+    "/v1/cns/{server_uuid}/role": {
       "post": {
         "tags": [
           "cns"
@@ -4766,7 +4694,7 @@
         }
       }
     },
-    "/v2/config": {
+    "/v1/config": {
       "get": {
         "tags": [
           "config"
@@ -4798,7 +4726,7 @@
         }
       }
     },
-    "/v2/config/{key}": {
+    "/v1/config/{key}": {
       "get": {
         "tags": [
           "config"
@@ -4921,7 +4849,7 @@
         }
       }
     },
-    "/v2/health": {
+    "/v1/health": {
       "get": {
         "tags": [
           "system"
@@ -4948,144 +4876,7 @@
         }
       }
     },
-    "/v2/images": {
-      "get": {
-        "tags": [
-          "images"
-        ],
-        "summary": "List Public images. Anonymous-accessible — Public means",
-        "description": "public, so unauthenticated probes get the catalog.",
-        "operationId": "list_public_images",
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Image",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Image"
-                  }
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "images"
-        ],
-        "summary": "Create a `Public` image. Root-only via Cedar.",
-        "description": "Returns 400 if `sha256` is not 64 lowercase hex chars or if `size_bytes` is zero. Returns 409 if the name is already in use among Public images.",
-        "operationId": "create_public_image",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NewImage"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "successful creation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Image"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/images/{image_id}": {
-      "get": {
-        "tags": [
-          "images"
-        ],
-        "summary": "Read a single image by id. Returns 404 when the image",
-        "description": "does not exist OR when the principal cannot see it (cross-scope visibility deny).",
-        "operationId": "get_image",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "image_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Image"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "images"
-        ],
-        "summary": "Delete an image by id. Returns 404 when the image does",
-        "description": "not exist OR the principal lacks ownership for the image's scope: * `Public` — root only. * `Silo` / `Tenant` / `Project` — any tenant member of the resolved tenant (Phase 0 = same-tenant access). * `User` — only the owning user (or root).",
-        "operationId": "delete_image",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "image_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "successful deletion"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/instances/{instance_id}/migrations": {
+    "/v1/instances/{instance_id}/migrations": {
       "get": {
         "tags": [
           "migrations"
@@ -5128,13 +4919,13 @@
         }
       }
     },
-    "/v2/instances/{instance_id}/realized-meta": {
+    "/v1/instances/{instance_id}/realized-meta": {
       "get": {
         "tags": [
           "meta"
         ],
         "summary": "The full realized metadata view for one instance: the",
-        "description": "precedence merge of the four stored scopes (Silo < Tenant < Project < Instance) with the computed system keys (`meta-data/*`, `triton/system/*`) layered on top, each leaf tagged with the scope it came from. See `IMDS_DESIGN.md` §1.5. RBAC: tenant-member of the instance's owning tenant.",
+        "description": "precedence merge of the four stored scopes (Silo < Tenant < Project < Instance) with the computed system keys (`meta-data/*`, `triton/system/*`) layered on top, each leaf tagged with the scope it came from. See `IMDS_DESIGN.md` \u00a71.5. RBAC: tenant-member of the instance's owning tenant.",
         "operationId": "get_instance_realized_meta",
         "parameters": [
           {
@@ -5171,7 +4962,7 @@
         }
       }
     },
-    "/v2/meta/{scope}/{scope_id}": {
+    "/v1/meta/{scope}/{scope_id}": {
       "get": {
         "tags": [
           "meta"
@@ -5222,13 +5013,13 @@
         }
       }
     },
-    "/v2/meta/{scope}/{scope_id}/affected": {
+    "/v1/meta/{scope}/{scope_id}/affected": {
       "get": {
         "tags": [
           "meta"
         ],
         "summary": "The affected-instances reverse-index for one (scope, key) pair.",
-        "description": "Walks every instance under the request scope and partitions them by whether the request scope's value wins for that instance or a narrower scope's value shadows it. RBAC: same as [`Self::list_meta`] at the request scope.\n\nUsed by the operator console's IMDS authoring surface to answer \"if I edit here, what changes?\" *before* the operator commits — see `IMDS_DESIGN.md` §1.5 and the admin v3 design chat.",
+        "description": "Walks every instance under the request scope and partitions them by whether the request scope's value wins for that instance or a narrower scope's value shadows it. RBAC: same as [`Self::list_meta`] at the request scope.\n\nUsed by the operator console's IMDS authoring surface to answer \"if I edit here, what changes?\" *before* the operator commits \u2014 see `IMDS_DESIGN.md` \u00a71.5 and the admin v3 design chat.",
         "operationId": "get_affected_instances",
         "parameters": [
           {
@@ -5277,13 +5068,13 @@
         }
       }
     },
-    "/v2/meta/{scope}/{scope_id}/entry": {
+    "/v1/meta/{scope}/{scope_id}/entry": {
       "get": {
         "tags": [
           "meta"
         ],
         "summary": "Read one metadata entry by key (query parameter). The key may",
-        "description": "contain `/` (`config/ntp-servers`, `state/active-color`, …), hence the query-string placement.",
+        "description": "contain `/` (`config/ntp-servers`, `state/active-color`, \u2026), hence the query-string placement.",
         "operationId": "get_meta",
         "parameters": [
           {
@@ -5441,7 +5232,7 @@
         }
       }
     },
-    "/v2/migrations": {
+    "/v1/migrations": {
       "get": {
         "tags": [
           "migrations"
@@ -5496,7 +5287,7 @@
         }
       }
     },
-    "/v2/migrations/{migration_id}": {
+    "/v1/migrations/{migration_id}": {
       "get": {
         "tags": [
           "migrations"
@@ -5534,7 +5325,7 @@
         }
       }
     },
-    "/v2/migrations/{migration_id}/progress": {
+    "/v1/migrations/{migration_id}/progress": {
       "get": {
         "tags": [
           "migrations"
@@ -5599,13 +5390,13 @@
         }
       }
     },
-    "/v2/operations": {
+    "/v1/operations": {
       "get": {
         "tags": [
           "operations"
         ],
         "summary": "List long-running operations (RFD 00004 SG-4). Returns",
-        "description": "every saga the SecStore knows about — `Running`, `Stuck`, and `Done` alike. Continuation pagination via the `after_id` query parameter. Operator-only at SG-4; SG-4b will add tenant scoping once the catalog has tenant-scoped sagas with resource references.",
+        "description": "every saga the SecStore knows about \u2014 `Running`, `Stuck`, and `Done` alike. Continuation pagination via the `after_id` query parameter. Operator-only at SG-4; SG-4b will add tenant scoping once the catalog has tenant-scoped sagas with resource references.",
         "operationId": "list_operations",
         "parameters": [
           {
@@ -5672,7 +5463,7 @@
         }
       }
     },
-    "/v2/operations/{operation_id}": {
+    "/v1/operations/{operation_id}": {
       "get": {
         "tags": [
           "operations"
@@ -5711,7 +5502,7 @@
         }
       }
     },
-    "/v2/operations/{operation_id}/abandon": {
+    "/v1/operations/{operation_id}/abandon": {
       "post": {
         "tags": [
           "operations"
@@ -5750,7 +5541,7 @@
         }
       }
     },
-    "/v2/silos": {
+    "/v1/silos": {
       "get": {
         "tags": [
           "silos"
@@ -5818,7 +5609,7 @@
         }
       }
     },
-    "/v2/silos/{silo_id}": {
+    "/v1/silos/{silo_id}": {
       "get": {
         "tags": [
           "silos"
@@ -5856,13 +5647,13 @@
         }
       }
     },
-    "/v2/silos/{silo_id}/image-bundles": {
+    "/v1/silos/{silo_id}/image-bundles": {
       "post": {
         "tags": [
           "images"
         ],
         "summary": "Register an image from a tritond image bundle (silo-scoped",
-        "description": "only). tritond fetches the bundle once at registration, validates the manifest, re-hashes the content, and populates every Image-record field from the manifest. The returned `Image` carries `compatibility = Some(...)` so the per-CN agent enforces brand + min_smartos_platform gates at provision time. Returns 400 on a malformed bundle or sha256 mismatch, 502 if `bundle_url` is unreachable, 409 on a name or content collision within the silo.\n\nThe path is `/v2/silos/{silo_id}/image-bundles` rather than `/v2/silos/{silo_id}/images/from-bundle` because Dropshot's router cannot disambiguate a literal `from-bundle` segment from a sibling `{image_id}` parameter at the same level.",
+        "description": "only). tritond fetches the bundle once at registration, validates the manifest, re-hashes the content, and populates every Image-record field from the manifest. The returned `Image` carries `compatibility = Some(...)` so the per-CN agent enforces brand + min_smartos_platform gates at provision time. Returns 400 on a malformed bundle or sha256 mismatch, 502 if `bundle_url` is unreachable, 409 on a name or content collision within the silo.\n\nThe path is `/v1/silos/{silo_id}/image-bundles` rather than `/v1/silos/{silo_id}/images/from-bundle` because Dropshot's router cannot disambiguate a literal `from-bundle` segment from a sibling `{image_id}` parameter at the same level.",
         "operationId": "create_silo_image_from_bundle",
         "parameters": [
           {
@@ -5905,13 +5696,13 @@
         }
       }
     },
-    "/v2/silos/{silo_id}/images": {
+    "/v1/silos/{silo_id}/images": {
       "get": {
         "tags": [
           "images"
         ],
         "summary": "List the images whose scope is exactly `Silo { silo_id }`",
-        "description": "(does NOT include Public — use `/v2/tenants/{tenant_id}/images` for the unioned tenant view).",
+        "description": "(does NOT include Public \u2014 use `/v1/tenants/{tenant_id}/images` for the unioned tenant view).",
         "operationId": "list_silo_images",
         "parameters": [
           {
@@ -5994,13 +5785,13 @@
         }
       }
     },
-    "/v2/silos/{silo_id}/imgapi-images": {
+    "/v1/silos/{silo_id}/imgapi-images": {
       "post": {
         "tags": [
           "images"
         ],
         "summary": "Register a `Silo`-scoped image from an IMGAPI v2",
-        "description": "manifest. The operator (or `tcadm image fetch-nocloud`) uploads the blob to Manta first, then POSTs the manifest + the public Manta URL + the SHA-256 of the bytes here. tritond derives every Image-record field from the manifest and persists `manta_url` as `source_url`. The per-CN agent then uses the existing source_url / sha256 fetch + verify path at provision time.\n\nReturns 400 on a manifest validation failure, sha256 shape error, or `files[]` count mismatch; 409 on a uuid or content collision within the silo.\n\nPath is `/imgapi-images` (sibling resource) to mirror the `image-bundles` precedent and sidestep any Dropshot literal-vs-`{image_id}` ambiguity at `/v2/silos/{silo_id}/images/...`.",
+        "description": "manifest. The operator (or `tcadm image fetch-nocloud`) uploads the blob to Manta first, then POSTs the manifest + the public Manta URL + the SHA-256 of the bytes here. tritond derives every Image-record field from the manifest and persists `manta_url` as `source_url`. The per-CN agent then uses the existing source_url / sha256 fetch + verify path at provision time.\n\nReturns 400 on a manifest validation failure, sha256 shape error, or `files[]` count mismatch; 409 on a uuid or content collision within the silo.\n\nPath is `/imgapi-images` (sibling resource) to mirror the `image-bundles` precedent and sidestep any Dropshot literal-vs-`{image_id}` ambiguity at `/v1/silos/{silo_id}/images/...`.",
         "operationId": "create_silo_image_from_imgapi",
         "parameters": [
           {
@@ -6043,13 +5834,13 @@
         }
       }
     },
-    "/v2/silos/{silo_id}/ssh-keys": {
+    "/v1/silos/{silo_id}/ssh-keys": {
       "get": {
         "tags": [
           "ssh-keys"
         ],
         "summary": "List the SSH keys whose scope is exactly `Silo { silo_id }`",
-        "description": "(does NOT include Public — use `/v2/tenants/{tenant_id}/ssh-keys` for the unioned tenant view).",
+        "description": "(does NOT include Public \u2014 use `/v1/tenants/{tenant_id}/ssh-keys` for the unioned tenant view).",
         "operationId": "list_silo_ssh_keys",
         "parameters": [
           {
@@ -6133,7 +5924,7 @@
         }
       }
     },
-    "/v2/silos/{silo_id}/tenants": {
+    "/v1/silos/{silo_id}/tenants": {
       "get": {
         "tags": [
           "silos",
@@ -6225,7 +6016,7 @@
         }
       }
     },
-    "/v2/silos/{silo_id}/tenants/{tenant_id}": {
+    "/v1/silos/{silo_id}/tenants/{tenant_id}": {
       "get": {
         "tags": [
           "silos",
@@ -6314,144 +6105,7 @@
         }
       }
     },
-    "/v2/ssh-keys": {
-      "get": {
-        "tags": [
-          "ssh-keys"
-        ],
-        "summary": "List Public SSH keys. Anonymous-accessible — Public means",
-        "description": "public, so unauthenticated probes get the catalog.",
-        "operationId": "list_public_ssh_keys",
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_SshKey",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/SshKey"
-                  }
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "ssh-keys"
-        ],
-        "summary": "Create a `Public` SSH key. Root-only via Cedar.",
-        "description": "Returns 400 if the key cannot be parsed as openssh, 409 if the name or fingerprint is already in use among Public keys.",
-        "operationId": "create_public_ssh_key",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NewSshKey"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "successful creation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SshKey"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/ssh-keys/{key_id}": {
-      "get": {
-        "tags": [
-          "ssh-keys"
-        ],
-        "summary": "Read a single SSH key by id. Returns 404 when the key",
-        "description": "does not exist OR when the principal cannot see it (cross-scope visibility deny).",
-        "operationId": "get_ssh_key",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "key_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SshKey"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "ssh-keys"
-        ],
-        "summary": "Delete an SSH key by id. Returns 404 when the key does",
-        "description": "not exist OR the principal lacks ownership for the key's scope: * `Public` — root only. * `Silo` / `Tenant` / `Project` — any tenant member of the resolved tenant (Phase 0 = same-tenant access). * `User` — only the owning user (or root).",
-        "operationId": "delete_ssh_key",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "key_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "successful deletion"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/storage/clusters": {
+    "/v1/storage/clusters": {
       "get": {
         "tags": [
           "storage-clusters"
@@ -6487,7 +6141,7 @@
           "storage-clusters"
         ],
         "summary": "Register a new storage cluster (mantad / mantafs / manta-block).",
-        "description": "The bearer token submitted in the body is held server-side and never returned by any GET — see [`StorageClusterView`] for the redacted wire shape.",
+        "description": "The bearer token submitted in the body is held server-side and never returned by any GET \u2014 see [`StorageClusterView`] for the redacted wire shape.",
         "operationId": "create_storage_cluster",
         "requestBody": {
           "content": {
@@ -6519,7 +6173,7 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}": {
+    "/v1/storage/clusters/{id}": {
       "get": {
         "tags": [
           "storage-clusters"
@@ -6586,13 +6240,13 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/access-keys/{access_key_id}": {
+    "/v1/storage/clusters/{id}/access-keys/{access_key_id}": {
       "delete": {
         "tags": [
           "storage-clusters"
         ],
         "summary": "`DELETE /admin/v1/access-keys/{access_key_id}`. Note that the",
-        "description": "AKID alone identifies the key — there's no per-user nesting here, mirroring mantad's surface.",
+        "description": "AKID alone identifies the key \u2014 there's no per-user nesting here, mirroring mantad's surface.",
         "operationId": "delete_storage_cluster_access_key",
         "parameters": [
           {
@@ -6626,12 +6280,12 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/buckets": {
+    "/v1/storage/clusters/{id}/buckets": {
       "get": {
         "tags": [
           "storage-clusters"
         ],
-        "summary": "`GET /admin/v1/buckets` — all buckets in the cluster.",
+        "summary": "`GET /admin/v1/buckets` \u2014 all buckets in the cluster.",
         "description": "`?stats=true` forwards `?stats=1` to mantad and includes per-bucket object counts + total bytes (a more expensive scan).",
         "operationId": "list_storage_cluster_buckets",
         "parameters": [
@@ -6680,7 +6334,7 @@
         "tags": [
           "storage-clusters"
         ],
-        "summary": "`POST /admin/v1/buckets` — create a bucket.",
+        "summary": "`POST /admin/v1/buckets` \u2014 create a bucket.",
         "operationId": "create_storage_cluster_bucket",
         "parameters": [
           {
@@ -6723,12 +6377,12 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/buckets/{bucket}": {
+    "/v1/storage/clusters/{id}/buckets/{bucket}": {
       "get": {
         "tags": [
           "storage-clusters"
         ],
-        "summary": "`GET /admin/v1/buckets/{bucket}` — bucket detail.",
+        "summary": "`GET /admin/v1/buckets/{bucket}` \u2014 bucket detail.",
         "operationId": "get_storage_cluster_bucket",
         "parameters": [
           {
@@ -6772,7 +6426,7 @@
         "tags": [
           "storage-clusters"
         ],
-        "summary": "`DELETE /admin/v1/buckets/{bucket}` — delete an empty bucket.",
+        "summary": "`DELETE /admin/v1/buckets/{bucket}` \u2014 delete an empty bucket.",
         "operationId": "delete_storage_cluster_bucket",
         "parameters": [
           {
@@ -6806,12 +6460,12 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/buckets/{bucket}/objects": {
+    "/v1/storage/clusters/{id}/buckets/{bucket}/objects": {
       "get": {
         "tags": [
           "storage-clusters"
         ],
-        "summary": "`GET /admin/v1/buckets/{bucket}/objects` — paged object listing.",
+        "summary": "`GET /admin/v1/buckets/{bucket}/objects` \u2014 paged object listing.",
         "operationId": "list_storage_cluster_objects",
         "parameters": [
           {
@@ -6886,12 +6540,12 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/cluster": {
+    "/v1/storage/clusters/{id}/cluster": {
       "get": {
         "tags": [
           "storage-clusters"
         ],
-        "summary": "`GET /admin/v1/cluster` — cluster summary.",
+        "summary": "`GET /admin/v1/cluster` \u2014 cluster summary.",
         "operationId": "get_storage_cluster_summary",
         "parameters": [
           {
@@ -6924,7 +6578,7 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/health": {
+    "/v1/storage/clusters/{id}/health": {
       "post": {
         "tags": [
           "storage-clusters"
@@ -6963,12 +6617,12 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/membership": {
+    "/v1/storage/clusters/{id}/membership": {
       "get": {
         "tags": [
           "storage-clusters"
         ],
-        "summary": "`GET /admin/v1/membership` — current membership view.",
+        "summary": "`GET /admin/v1/membership` \u2014 current membership view.",
         "operationId": "get_storage_cluster_membership",
         "parameters": [
           {
@@ -7001,12 +6655,12 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/nodes": {
+    "/v1/storage/clusters/{id}/nodes": {
       "get": {
         "tags": [
           "storage-clusters"
         ],
-        "summary": "`GET /admin/v1/nodes` — list all nodes.",
+        "summary": "`GET /admin/v1/nodes` \u2014 list all nodes.",
         "operationId": "list_storage_cluster_nodes",
         "parameters": [
           {
@@ -7046,7 +6700,7 @@
         "tags": [
           "storage-clusters"
         ],
-        "summary": "`POST /admin/v1/nodes` — register a peer.",
+        "summary": "`POST /admin/v1/nodes` \u2014 register a peer.",
         "operationId": "add_storage_cluster_node",
         "parameters": [
           {
@@ -7089,12 +6743,12 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/nodes/{node_id}": {
+    "/v1/storage/clusters/{id}/nodes/{node_id}": {
       "get": {
         "tags": [
           "storage-clusters"
         ],
-        "summary": "`GET /admin/v1/nodes/{node_id}` — single-node detail.",
+        "summary": "`GET /admin/v1/nodes/{node_id}` \u2014 single-node detail.",
         "operationId": "get_storage_cluster_node",
         "parameters": [
           {
@@ -7141,7 +6795,7 @@
         "tags": [
           "storage-clusters"
         ],
-        "summary": "`DELETE /admin/v1/nodes/{node_id}` — drop a peer.",
+        "summary": "`DELETE /admin/v1/nodes/{node_id}` \u2014 drop a peer.",
         "operationId": "remove_storage_cluster_node",
         "parameters": [
           {
@@ -7185,7 +6839,7 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/nodes/{node_id}/drain": {
+    "/v1/storage/clusters/{id}/nodes/{node_id}/drain": {
       "post": {
         "tags": [
           "storage-clusters"
@@ -7234,7 +6888,7 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/nodes/{node_id}/reweight": {
+    "/v1/storage/clusters/{id}/nodes/{node_id}/reweight": {
       "post": {
         "tags": [
           "storage-clusters"
@@ -7293,7 +6947,7 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/nodes/{node_id}/undrain": {
+    "/v1/storage/clusters/{id}/nodes/{node_id}/undrain": {
       "post": {
         "tags": [
           "storage-clusters"
@@ -7342,13 +6996,13 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/presigner": {
+    "/v1/storage/clusters/{id}/presigner": {
       "post": {
         "tags": [
           "storage-clusters"
         ],
         "summary": "Configure (or rotate) the per-cluster presigner identity.",
-        "description": "`s3_endpoint` updates the cluster's data-plane URL; pass `None` to leave it unchanged. Empty `access_key_id` + `secret_access_key` clear the presigner. Mismatched (one empty, one set) → 409.",
+        "description": "`s3_endpoint` updates the cluster's data-plane URL; pass `None` to leave it unchanged. Empty `access_key_id` + `secret_access_key` clear the presigner. Mismatched (one empty, one set) \u2192 409.",
         "operationId": "set_storage_cluster_presigner",
         "parameters": [
           {
@@ -7391,7 +7045,7 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/s3/presign/get": {
+    "/v1/storage/clusters/{id}/s3/presign/get": {
       "post": {
         "tags": [
           "storage-clusters"
@@ -7440,7 +7094,7 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/s3/presign/put": {
+    "/v1/storage/clusters/{id}/s3/presign/put": {
       "post": {
         "tags": [
           "storage-clusters"
@@ -7489,7 +7143,7 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/users": {
+    "/v1/storage/clusters/{id}/users": {
       "get": {
         "tags": [
           "storage-clusters"
@@ -7577,7 +7231,7 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/users/{user}": {
+    "/v1/storage/clusters/{id}/users/{user}": {
       "get": {
         "tags": [
           "storage-clusters"
@@ -7660,7 +7314,7 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/users/{user}/access-keys": {
+    "/v1/storage/clusters/{id}/users/{user}/access-keys": {
       "get": {
         "tags": [
           "storage-clusters"
@@ -7713,7 +7367,7 @@
         "tags": [
           "storage-clusters"
         ],
-        "summary": "`POST /admin/v1/users/{user}/access-keys` — secret returned",
+        "summary": "`POST /admin/v1/users/{user}/access-keys` \u2014 secret returned",
         "description": "once on the response. Caller must capture it; mantad does not retain the cleartext.",
         "operationId": "create_storage_cluster_access_key",
         "parameters": [
@@ -7755,12 +7409,12 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/users/{user}/policies": {
+    "/v1/storage/clusters/{id}/users/{user}/policies": {
       "get": {
         "tags": [
           "storage-clusters"
         ],
-        "summary": "`GET /admin/v1/users/{user}/policies` — list attached policy",
+        "summary": "`GET /admin/v1/users/{user}/policies` \u2014 list attached policy",
         "description": "names. Returns a Vec<String> verbatim from mantad.",
         "operationId": "list_storage_cluster_user_policies",
         "parameters": [
@@ -7806,12 +7460,12 @@
         }
       }
     },
-    "/v2/storage/clusters/{id}/users/{user}/policies/{policy}": {
+    "/v1/storage/clusters/{id}/users/{user}/policies/{policy}": {
       "get": {
         "tags": [
           "storage-clusters"
         ],
-        "summary": "`GET /admin/v1/users/{user}/policies/{policy}` — raw policy JSON.",
+        "summary": "`GET /admin/v1/users/{user}/policies/{policy}` \u2014 raw policy JSON.",
         "operationId": "get_storage_cluster_user_policy",
         "parameters": [
           {
@@ -7861,7 +7515,7 @@
         "tags": [
           "storage-clusters"
         ],
-        "summary": "`PUT /admin/v1/users/{user}/policies/{policy}` — upsert a JSON",
+        "summary": "`PUT /admin/v1/users/{user}/policies/{policy}` \u2014 upsert a JSON",
         "description": "policy doc. Body is the raw policy document; mantad does not validate schema beyond \"is JSON\".",
         "operationId": "put_storage_cluster_user_policy",
         "parameters": [
@@ -7957,7 +7611,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/idp": {
+    "/v1/tenants/{tenant_id}/idp": {
       "get": {
         "tags": [
           "tenants",
@@ -8076,7 +7730,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/images": {
+    "/v1/tenants/{tenant_id}/images": {
       "get": {
         "tags": [
           "images"
@@ -8165,7 +7819,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects": {
+    "/v1/tenants/{tenant_id}/projects": {
       "get": {
         "tags": [
           "projects"
@@ -8254,7 +7908,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}": {
       "get": {
         "tags": [
           "projects"
@@ -8341,7 +7995,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/floating-ips": {
       "get": {
         "tags": [
           "floating-ips"
@@ -8392,7 +8046,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}": {
       "get": {
         "tags": [
           "floating-ips"
@@ -8449,7 +8103,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach": {
       "post": {
         "tags": [
           "floating-ips"
@@ -8516,12 +8170,12 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach": {
       "post": {
         "tags": [
           "floating-ips"
         ],
-        "summary": "Detach a FloatingIp from its current NIC. Idempotent — a",
+        "summary": "Detach a FloatingIp from its current NIC. Idempotent \u2014 a",
         "description": "detach on an already-detached FloatingIp is a no-op that returns the current record.",
         "operationId": "detach_project_floating_ip",
         "parameters": [
@@ -8573,7 +8227,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/images": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/images": {
       "get": {
         "tags": [
           "images"
@@ -8680,7 +8334,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/console": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/console": {
       "get": {
         "tags": [
           "instances"
@@ -8739,7 +8393,7 @@
         "x-dropshot-websocket": {}
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/logs/{source}": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/logs/{source}": {
       "get": {
         "tags": [
           "instances"
@@ -8825,7 +8479,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/metrics": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/metrics": {
       "get": {
         "tags": [
           "instances"
@@ -8900,7 +8554,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/migrate": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/migrate": {
       "post": {
         "tags": [
           "instances",
@@ -8968,7 +8622,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/quota": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/quota": {
       "get": {
         "tags": [
           "quotas"
@@ -9111,7 +8765,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/ssh-keys": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/ssh-keys": {
       "get": {
         "tags": [
           "ssh-keys"
@@ -9218,7 +8872,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs": {
       "get": {
         "tags": [
           "vpcs"
@@ -9270,7 +8924,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}": {
       "get": {
         "tags": [
           "vpcs"
@@ -9327,7 +8981,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases": {
       "get": {
         "tags": [
           "dhcp"
@@ -9388,7 +9042,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}": {
       "get": {
         "tags": [
           "dhcp"
@@ -9508,7 +9162,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool": {
       "get": {
         "tags": [
           "dhcp"
@@ -9565,12 +9219,12 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations": {
       "get": {
         "tags": [
           "dhcp"
         ],
-        "summary": "List DHCP reservations (operator-pinned MAC→IP mappings) in a VPC.",
+        "summary": "List DHCP reservations (operator-pinned MAC\u2192IP mappings) in a VPC.",
         "operationId": "list_vpc_dhcp_reservations",
         "parameters": [
           {
@@ -9625,7 +9279,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations/{mac}": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations/{mac}": {
       "get": {
         "tags": [
           "dhcp"
@@ -9689,7 +9343,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules": {
       "get": {
         "tags": [
           "firewall-rules"
@@ -9750,7 +9404,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways": {
       "get": {
         "tags": [
           "nat-gateways"
@@ -9810,7 +9464,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways/{nat_gateway_id}": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways/{nat_gateway_id}": {
       "get": {
         "tags": [
           "nat-gateways"
@@ -9875,7 +9529,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables": {
       "get": {
         "tags": [
           "route-tables"
@@ -9935,7 +9589,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}": {
       "get": {
         "tags": [
           "route-tables"
@@ -10000,7 +9654,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}/routes": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}/routes": {
       "get": {
         "tags": [
           "routes"
@@ -10069,7 +9723,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}/routes/{route_id}": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}/routes/{route_id}": {
       "get": {
         "tags": [
           "routes"
@@ -10143,7 +9797,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets": {
       "get": {
         "tags": [
           "subnets"
@@ -10204,7 +9858,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}": {
+    "/v1/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}": {
       "get": {
         "tags": [
           "subnets"
@@ -10270,7 +9924,7 @@
         }
       }
     },
-    "/v2/tenants/{tenant_id}/ssh-keys": {
+    "/v1/tenants/{tenant_id}/ssh-keys": {
       "get": {
         "tags": [
           "ssh-keys"
@@ -10358,12 +10012,154 @@
           }
         }
       }
+    },
+    "/v2/images": {
+      "get": {
+        "tags": [
+          "images"
+        ],
+        "summary": "List Public images. Anonymous-accessible \u2014 Public means",
+        "description": "public, so unauthenticated probes get the catalog.",
+        "operationId": "list_public_images",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Image",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Image"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/ssh-keys": {
+      "get": {
+        "tags": [
+          "ssh-keys"
+        ],
+        "summary": "List Public SSH keys. Anonymous-accessible \u2014 Public means",
+        "description": "public, so unauthenticated probes get the catalog.",
+        "operationId": "list_public_ssh_keys",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_SshKey",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SshKey"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/images/{image_id}": {
+      "get": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Read a single image by id. Returns 404 when the image",
+        "description": "does not exist OR when the principal cannot see it (cross-scope visibility deny).",
+        "operationId": "get_image",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/ssh-keys/{key_id}": {
+      "get": {
+        "tags": [
+          "ssh-keys"
+        ],
+        "summary": "Read a single SSH key by id. Returns 404 when the key",
+        "description": "does not exist OR when the principal cannot see it (cross-scope visibility deny).",
+        "operationId": "get_ssh_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SshKey"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
       "AbandonResponse": {
-        "description": "Response body for `POST /v2/operations/{operation_id}/abandon`.",
+        "description": "Response body for `POST /v1/operations/{operation_id}/abandon`.",
         "type": "object",
         "properties": {
           "id": {
@@ -10543,7 +10339,7 @@
         ]
       },
       "AffectedInstancesResponse": {
-        "description": "Response body for `GET /v2/meta/{scope}/{scope_id}/affected?key=K` — the affected-instances reverse-index. Answers the question \"if I edit `key` at this scope, which instances does that change actually flow to, and which are shielded by a narrower override?\" See `IMDS_DESIGN.md` §1.5 for the precedence rules.",
+        "description": "Response body for `GET /v1/meta/{scope}/{scope_id}/affected?key=K` \u2014 the affected-instances reverse-index. Answers the question \"if I edit `key` at this scope, which instances does that change actually flow to, and which are shielded by a narrower override?\" See `IMDS_DESIGN.md` \u00a71.5 for the precedence rules.",
         "type": "object",
         "properties": {
           "shadowed": {
@@ -10555,7 +10351,7 @@
           },
           "value_at_scope": {
             "nullable": true,
-            "description": "The value stored at the request scope (`null` when the key is not set there). Returned for context — the UI doesn't have to make a separate `GET /v2/meta/.../entry` call.",
+            "description": "The value stored at the request scope (`null` when the key is not set there). Returned for context \u2014 the UI doesn't have to make a separate `GET /v1/meta/.../entry` call.",
             "allOf": [
               {
                 "$ref": "#/components/schemas/MetaValue"
@@ -10602,7 +10398,7 @@
         ]
       },
       "AgentPeerInvalidationsResponse": {
-        "description": "Response body for `GET /v2/agent/peer-invalidations`.",
+        "description": "Response body for `GET /v1/agent/peer-invalidations`.",
         "type": "object",
         "properties": {
           "invalidations": {
@@ -10624,7 +10420,7 @@
         ]
       },
       "AgentPeerResolveResponse": {
-        "description": "Response body for `GET /v2/agent/peer`. Matches the on-wire shape of [`proteus_api::peer::PeerEntry`] (guest MAC + underlay IPv6) plus a server-suggested TTL the agent should honour when calling [`proteus_api::peer::AddPeerEntryRequest`].",
+        "description": "Response body for `GET /v1/agent/peer`. Matches the on-wire shape of [`proteus_api::peer::PeerEntry`] (guest MAC + underlay IPv6) plus a server-suggested TTL the agent should honour when calling [`proteus_api::peer::AddPeerEntryRequest`].",
         "type": "object",
         "properties": {
           "guest_mac": {
@@ -10672,7 +10468,7 @@
         ]
       },
       "AgentStatusRequest": {
-        "description": "Request body for `POST /v2/agent/status`.\n\n`payload` is opaque to tritond — agents pick the shape — but the Triton-classic shape is `{ vms, zpools, meminfo, diskinfo, boot_time, timestamp }`. Stored verbatim on the `Cn` record's `last_status` field; surfaced via `tcadm cn show`.",
+        "description": "Request body for `POST /v1/agent/status`.\n\n`payload` is opaque to tritond \u2014 agents pick the shape \u2014 but the Triton-classic shape is `{ vms, zpools, meminfo, diskinfo, boot_time, timestamp }`. Stored verbatim on the `Cn` record's `last_status` field; surfaced via `tcadm cn show`.",
         "type": "object",
         "properties": {
           "payload": {}
@@ -10682,7 +10478,7 @@
         ]
       },
       "ApiKeyCreated": {
-        "description": "Response body for `POST /v2/auth/api-keys`.\n\n`secret` is the wire-form key. It is shown to the operator **once**; the server retains only a bcrypt hash.",
+        "description": "Response body for `POST /v1/auth/api-keys`.\n\n`secret` is the wire-form key. It is shown to the operator **once**; the server retains only a bcrypt hash.",
         "type": "object",
         "properties": {
           "bound_to_cn": {
@@ -10723,10 +10519,10 @@
         ]
       },
       "ApiKeyScope": {
-        "description": "Permission scope attached to an [`ApiKey`]. Determines which Cedar actions the key may authorise *beyond* what its owning user could do natively. The scope check runs at the auth layer, before Cedar — see `services/tritond/src/auth.rs`. Mapping from scope to allowed actions is exhaustive there so the compiler flags any new [`crate::types`] action that hasn't been classified.\n\nRecords persisted before this field existed deserialise as [`ApiKeyScope::Full`] thanks to `#[serde(default)]` on [`ApiKey::scope`]; this preserves the pre-scope behaviour where every minted key had the full permissions of the owning user.",
+        "description": "Permission scope attached to an [`ApiKey`]. Determines which Cedar actions the key may authorise *beyond* what its owning user could do natively. The scope check runs at the auth layer, before Cedar \u2014 see `services/tritond/src/auth.rs`. Mapping from scope to allowed actions is exhaustive there so the compiler flags any new [`crate::types`] action that hasn't been classified.\n\nRecords persisted before this field existed deserialise as [`ApiKeyScope::Full`] thanks to `#[serde(default)]` on [`ApiKey::scope`]; this preserves the pre-scope behaviour where every minted key had the full permissions of the owning user.",
         "oneOf": [
           {
-            "description": "Full access — equivalent to authenticating as the owning user. Default when no scope is specified.",
+            "description": "Full access \u2014 equivalent to authenticating as the owning user. Default when no scope is specified.",
             "type": "string",
             "enum": [
               "full"
@@ -10747,7 +10543,7 @@
             ]
           },
           {
-            "description": "Provisioning-agent scope: `agent_claim` and `agent_complete` only. A key with this scope cannot read tenant resources or audit events; it can only pull jobs from the queue and report outcomes. Used by the per-CN `tritonagent` to authenticate to tritond's `/v2/agent/*` surface.",
+            "description": "Provisioning-agent scope: `agent_claim` and `agent_complete` only. A key with this scope cannot read tenant resources or audit events; it can only pull jobs from the queue and report outcomes. Used by the per-CN `tritonagent` to authenticate to tritond's `/v1/agent/*` surface.",
             "type": "string",
             "enum": [
               "agent"
@@ -10793,7 +10589,7 @@
         ]
       },
       "ApproveCnRequest": {
-        "description": "Request body for `POST /v2/cns/approve`.\n\nThe operator presents the claim code displayed on the CN's console (or syslog, or the `/var/lib/tritonagent/claim-code` file). Hyphens and case are normalized server-side.",
+        "description": "Request body for `POST /v1/cns/approve`.\n\nThe operator presents the claim code displayed on the CN's console (or syslog, or the `/var/lib/tritonagent/claim-code` file). Hyphens and case are normalized server-side.",
         "type": "object",
         "properties": {
           "code": {
@@ -10872,7 +10668,7 @@
         ]
       },
       "AuditEventList": {
-        "description": "Response body for `GET /v2/audit/events`.",
+        "description": "Response body for `GET /v1/audit/events`.",
         "type": "object",
         "properties": {
           "events": {
@@ -10895,7 +10691,7 @@
         ]
       },
       "AuditVerifyResponse": {
-        "description": "Response body for `GET /v2/audit/verify`.",
+        "description": "Response body for `GET /v1/audit/verify`.",
         "type": "object",
         "properties": {
           "head": {
@@ -10945,7 +10741,7 @@
         ]
       },
       "Capability": {
-        "description": "Operator capability that gates access to `/v1/system/` endpoints.\n\nPer RFD 00007 D-Ap-13, the v1 capability set is intentionally small. Each `/v1/system/` endpoint declares the capability it requires; the auth layer's `require_capability` helper checks `Principal::Operator.capabilities` against the requirement and returns `404 NotFound` on a mismatch (the same shape as cross-tenant deny; an attacker cannot distinguish \"no access\" from \"no such resource\").\n\nAdding a new capability is non-breaking on deserialise (`#[serde(other)]` would mask the unknown variant, but we deliberately do *not* use it here — an unknown capability in a persisted row is a fail-loud signal that the cluster is reading data from a newer writer). Adding a variant is breaking on the auth-layer match (compile error if not classified), which is the fail-loud check.",
+        "description": "Operator capability that gates access to `/v1/system/` endpoints.\n\nPer RFD 00007 D-Ap-13, the v1 capability set is intentionally small. Each `/v1/system/` endpoint declares the capability it requires; the auth layer's `require_capability` helper checks `Principal::Operator.capabilities` against the requirement and returns `404 NotFound` on a mismatch (the same shape as cross-tenant deny; an attacker cannot distinguish \"no access\" from \"no such resource\").\n\nAdding a new capability is non-breaking on deserialise (`#[serde(other)]` would mask the unknown variant, but we deliberately do *not* use it here \u2014 an unknown capability in a persisted row is a fail-loud signal that the cluster is reading data from a newer writer). Adding a variant is breaking on the auth-layer match (compile error if not classified), which is the fail-loud check.",
         "oneOf": [
           {
             "description": "Read any `/v1/system/` resource: fleet inventories (instances, disks, NICs, CNs), sagas, migrations, audit log, cluster config reads, storage cluster inventory reads, silo + utilization views. Includes drain-preview (dry-run).",
@@ -10982,7 +10778,7 @@
         "type": "object",
         "properties": {
           "hash": {
-            "description": "Its `hash` — the value the next append will use as `prev_hash`.",
+            "description": "Its `hash` \u2014 the value the next append will use as `prev_hash`.",
             "type": "string"
           },
           "seq": {
@@ -10998,7 +10794,7 @@
         ]
       },
       "ClaimJobRequest": {
-        "description": "Request body for `POST /v2/agent/jobs/claim`.\n\n`claimed_by` is the agent's own identity — used by the store as the [`ProvisioningJob::claimed_by`] field, and rolled into audit events so concurrent agents can be told apart.",
+        "description": "Request body for `POST /v1/agent/jobs/claim`.\n\n`claimed_by` is the agent's own identity \u2014 used by the store as the [`ProvisioningJob::claimed_by`] field, and rolled into audit events so concurrent agents can be told apart.",
         "type": "object",
         "properties": {
           "claimed_by": {
@@ -11010,7 +10806,7 @@
         ]
       },
       "ClaimJobResponse": {
-        "description": "Response body for `POST /v2/agent/jobs/claim`.\n\n`job` is `Some(...)` when the queue had a Pending job and the claim succeeded; `None` when the queue is empty. The HTTP status is always `200 OK`; the agent reads the `job` field to decide whether to do work or sleep until the next poll.",
+        "description": "Response body for `POST /v1/agent/jobs/claim`.\n\n`job` is `Some(...)` when the queue had a Pending job and the claim succeeded; `None` when the queue is empty. The HTTP status is always `200 OK`; the agent reads the `job` field to decide whether to do work or sleep until the next poll.",
         "type": "object",
         "properties": {
           "job": {
@@ -11061,14 +10857,14 @@
             ]
           },
           {
-            "description": "Approved and active. The per-CN API key bound via [`ApiKey::bound_to_cn`] is the agent's credential for the rest of the `/v2/agent/*` surface.",
+            "description": "Approved and active. The per-CN API key bound via [`ApiKey::bound_to_cn`] is the agent's credential for the rest of the `/v1/agent/*` surface.",
             "type": "string",
             "enum": [
               "approved"
             ]
           },
           {
-            "description": "Explicitly disabled by an operator. The bound API key is revoked and the record stays for audit visibility. A fresh registration from the same `server_uuid` re-arms the record back to `Pending` (awaiting approval) — i.e. \"re-enable with fresh credentials\"; the disable event remains in the audit chain.",
+            "description": "Explicitly disabled by an operator. The bound API key is revoked and the record stays for audit visibility. A fresh registration from the same `server_uuid` re-arms the record back to `Pending` (awaiting approval) \u2014 i.e. \"re-enable with fresh credentials\"; the disable event remains in the audit chain.",
             "type": "string",
             "enum": [
               "disabled"
@@ -11143,7 +10939,7 @@
         ]
       },
       "CompleteJobRequest": {
-        "description": "Request body for `POST /v2/agent/jobs/{job_id}/complete`.",
+        "description": "Request body for `POST /v1/agent/jobs/{job_id}/complete`.",
         "type": "object",
         "properties": {
           "outcome": {
@@ -11165,7 +10961,7 @@
         ]
       },
       "ConfigEntry": {
-        "description": "One cluster-wide configuration key with its current value, default, description, and operational metadata. Returned by the `/v2/config` endpoints; consumed by `tcadm config` and the admin console.",
+        "description": "One cluster-wide configuration key with its current value, default, description, and operational metadata. Returned by the `/v1/config` endpoints; consumed by `tcadm config` and the admin console.",
         "type": "object",
         "properties": {
           "default": {
@@ -11294,7 +11090,7 @@
         ]
       },
       "DhcpLease": {
-        "description": "One lease the IPAM has handed out. Written when tritond pre-assigns an IP (γ.4 hook on `create_instance`); updated by the lease-renewal event consumer (δ slice, not yet wired).",
+        "description": "One lease the IPAM has handed out. Written when tritond pre-assigns an IP (\u03b3.4 hook on `create_instance`); updated by the lease-renewal event consumer (\u03b4 slice, not yet wired).",
         "type": "object",
         "properties": {
           "created_at": {
@@ -11312,7 +11108,7 @@
           },
           "last_msg_type": {
             "nullable": true,
-            "description": "Last DHCP message type observed by the kmod for this MAC (DISCOVER, REQUEST, RELEASE, …). `None` until tritonagent starts forwarding events (δ slice).",
+            "description": "Last DHCP message type observed by the kmod for this MAC (DISCOVER, REQUEST, RELEASE, \u2026). `None` until tritonagent starts forwarding events (\u03b4 slice).",
             "default": null,
             "type": "integer",
             "format": "uint8",
@@ -11368,7 +11164,7 @@
             "minimum": 0
           },
           "port_id": {
-            "description": "Proteus port id — equal to the NIC id.",
+            "description": "Proteus port id \u2014 equal to the NIC id.",
             "type": "string",
             "format": "uuid"
           },
@@ -11387,7 +11183,7 @@
         ]
       },
       "DhcpLeaseActivityReport": {
-        "description": "Request body for `POST /v2/agent/dhcp-lease-activity`. A batch — the agent drains the event ring on each poll and forwards every DHCP request it found in one round-trip.",
+        "description": "Request body for `POST /v1/agent/dhcp-lease-activity`. A batch \u2014 the agent drains the event ring on each poll and forwards every DHCP request it found in one round-trip.",
         "type": "object",
         "properties": {
           "items": {
@@ -11472,7 +11268,7 @@
         ]
       },
       "DhcpReservation": {
-        "description": "Operator-pinned MAC→IP mapping. Survives instance delete; an instance booting later with a matching MAC reuses this IP.\n\nPer-MAC additional options are merged on top of the per-VPC pool's `additional_options` and the per-port blueprint's options at response synthesis time.",
+        "description": "Operator-pinned MAC\u2192IP mapping. Survives instance delete; an instance booting later with a matching MAC reuses this IP.\n\nPer-MAC additional options are merged on top of the per-VPC pool's `additional_options` and the per-port blueprint's options at response synthesis time.",
         "type": "object",
         "properties": {
           "created_at": {
@@ -11512,7 +11308,7 @@
         ]
       },
       "Disk": {
-        "description": "Per-instance persistent storage. Phase 0 auto-creates a single boot disk per instance, sized from the source image and tagged with that image's id. Bhyve images are clamped to the M1 default VM boot-disk floor until packages/SKUs expose an explicit size. The disk record is the metadata view; the actual content (zfs dataset, mantafs object, etc.) is materialized by the agent at provisioning time.\n\nMulti-disk attach (data disks beyond boot) lands as a follow-on slice. The wire shape here is stable across that change — a `kind: Data` disk is a strict superset of what `Boot` carries once `source_image_id` is allowed to be `None`.",
+        "description": "Per-instance persistent storage. Phase 0 auto-creates a single boot disk per instance, sized from the source image and tagged with that image's id. Bhyve images are clamped to the M1 default VM boot-disk floor until packages/SKUs expose an explicit size. The disk record is the metadata view; the actual content (zfs dataset, mantafs object, etc.) is materialized by the agent at provisioning time.\n\nMulti-disk attach (data disks beyond boot) lands as a follow-on slice. The wire shape here is stable across that change \u2014 a `kind: Data` disk is a strict superset of what `Boot` carries once `source_image_id` is allowed to be `None`.",
         "type": "object",
         "properties": {
           "created_at": {
@@ -11645,7 +11441,7 @@
         ]
       },
       "DrainPreviewResponse": {
-        "description": "Response from `POST /v2/cns/{server_uuid}/drain/preview`. Used by the operator console's `BlastRadiusCard` to show the actual migration plan + capacity / quorum signals before commit.\n\n`placeable` + `not_placeable` partition the instances currently hosted on the source CN. Iff `not_placeable` is empty the drain can proceed without operator intervention (capacity_ok = true).",
+        "description": "Response from `POST /v1/cns/{server_uuid}/drain/preview`. Used by the operator console's `BlastRadiusCard` to show the actual migration plan + capacity / quorum signals before commit.\n\n`placeable` + `not_placeable` partition the instances currently hosted on the source CN. Iff `not_placeable` is empty the drain can proceed without operator intervention (capacity_ok = true).",
         "type": "object",
         "properties": {
           "capacity_ok": {
@@ -11673,7 +11469,7 @@
             }
           },
           "quorum_at_risk": {
-            "description": "Names of instances whose name matches a quorum-service heuristic (vault / etcd / consul / tritond-sec / fdb / cockroach). Coarse — replaces nothing in the placement engine, just a UI hint that the operator should look twice.",
+            "description": "Names of instances whose name matches a quorum-service heuristic (vault / etcd / consul / tritond-sec / fdb / cockroach). Coarse \u2014 replaces nothing in the placement engine, just a UI hint that the operator should look twice.",
             "type": "array",
             "items": {
               "type": "string"
@@ -11757,7 +11553,7 @@
         ]
       },
       "FirewallIcmpFilter": {
-        "description": "ICMP type + code pair carried as a struct (instead of `(u8, u8)`) so the JSON schema is OpenAPI v3.0–compatible (tuple arrays are not representable until v3.1).",
+        "description": "ICMP type + code pair carried as a struct (instead of `(u8, u8)`) so the JSON schema is OpenAPI v3.0\u2013compatible (tuple arrays are not representable until v3.1).",
         "type": "object",
         "properties": {
           "code": {
@@ -11806,7 +11602,7 @@
         ]
       },
       "FirewallRule": {
-        "description": "Per-VPC firewall rule. Slice 1 ships a flat per-VPC list — every NIC in the VPC inherits every rule (no security-group attachment yet). Tritond translates this directly into proteus `triton_vpc::tritond_intent_v1::FirewallRuleIntentV1` when computing the per-port blueprint, which the dataplane compiles into one `SecurityGroupRule` per record.",
+        "description": "Per-VPC firewall rule. Slice 1 ships a flat per-VPC list \u2014 every NIC in the VPC inherits every rule (no security-group attachment yet). Tritond translates this directly into proteus `triton_vpc::tritond_intent_v1::FirewallRuleIntentV1` when computing the per-port blueprint, which the dataplane compiles into one `SecurityGroupRule` per record.",
         "type": "object",
         "properties": {
           "action": {
@@ -11821,7 +11617,7 @@
           },
           "destination_cidr": {
             "nullable": true,
-            "description": "`None` ⇒ match any destination.",
+            "description": "`None` \u21d2 match any destination.",
             "default": null,
             "type": "string"
           },
@@ -11869,13 +11665,13 @@
           },
           "source_cidr": {
             "nullable": true,
-            "description": "`None` ⇒ match any source.",
+            "description": "`None` \u21d2 match any source.",
             "default": null,
             "type": "string"
           },
           "source_ports": {
             "nullable": true,
-            "description": "Inclusive port range. `None` ⇒ any port. Ignored for non-TCP/UDP.",
+            "description": "Inclusive port range. `None` \u21d2 any port. Ignored for non-TCP/UDP.",
             "default": null,
             "allOf": [
               {
@@ -11907,7 +11703,7 @@
         ]
       },
       "FloatingIp": {
-        "description": "Tenant-managed external IP, allocated from a fleet pool and attachable to any NIC in the same project. Persists independent of any single instance: when the attached instance is deleted, the `attached_to` field clears but the FloatingIp itself stays owned by the project and reusable.\n\nEach FloatingIp represents *one* address — the wire shape does not bifurcate IPv4 and IPv6. The address family is implicit in the `address` bits.\n\nPhase 0 invariants vs other clouds:\n\n* **Project-owned, not instance-owned.** Instance delete → auto-detach, never auto-release. (AWS detaches but leaves the IP at the account level, which loses the project-scoping story; we keep the project envelope.) * **Symmetric IPv4 + IPv6.** No \"v6 floating IPs are a separate type\" wart. * **Atomic attach replaces.** A second attach with a different NIC swaps the binding in one transaction; no detach-then-attach window in the control plane. * **Delete is explicit.** Detaching does not auto-release; the FloatingIp persists and is visible in `tcadm` listings until the operator deletes it.",
+        "description": "Tenant-managed external IP, allocated from a fleet pool and attachable to any NIC in the same project. Persists independent of any single instance: when the attached instance is deleted, the `attached_to` field clears but the FloatingIp itself stays owned by the project and reusable.\n\nEach FloatingIp represents *one* address \u2014 the wire shape does not bifurcate IPv4 and IPv6. The address family is implicit in the `address` bits.\n\nPhase 0 invariants vs other clouds:\n\n* **Project-owned, not instance-owned.** Instance delete \u2192 auto-detach, never auto-release. (AWS detaches but leaves the IP at the account level, which loses the project-scoping story; we keep the project envelope.) * **Symmetric IPv4 + IPv6.** No \"v6 floating IPs are a separate type\" wart. * **Atomic attach replaces.** A second attach with a different NIC swaps the binding in one transaction; no detach-then-attach window in the control plane. * **Delete is explicit.** Detaching does not auto-release; the FloatingIp persists and is visible in `tcadm` listings until the operator deletes it.",
         "type": "object",
         "properties": {
           "address": {
@@ -11964,7 +11760,7 @@
         ]
       },
       "FloatingIpAttachment": {
-        "description": "Where a [`FloatingIp`] is currently attached. `None` (i.e. the `FloatingIp::attached_to` field is `None`) means the IP is allocated to the project but not bound to any NIC — it persists across attach/detach cycles and across instance deletes.",
+        "description": "Where a [`FloatingIp`] is currently attached. `None` (i.e. the `FloatingIp::attached_to` field is `None`) means the IP is allocated to the project but not bound to any NIC \u2014 it persists across attach/detach cycles and across instance deletes.",
         "type": "object",
         "properties": {
           "attached_at": {
@@ -12003,7 +11799,7 @@
         ]
       },
       "IdpConfigView": {
-        "description": "Wire-safe view of an [`IdpConfig`] with the client secret redacted. Returned by `GET /v2/silos/{silo_id}/idp`.",
+        "description": "Wire-safe view of an [`IdpConfig`] with the client secret redacted. Returned by `GET /v1/silos/{silo_id}/idp`.",
         "type": "object",
         "properties": {
           "audience": {
@@ -12023,7 +11819,7 @@
         ]
       },
       "Image": {
-        "description": "Image catalog entry. Multi-scope as of Slice F: see [`ImageScope`] for the variants. Phase 0 ships only the metadata record — image content lives in mantafs / object storage and is not modelled here. Operators register images by URL + sha256 and trust the caller for the content match; an eventual import pipeline will pre-stage content in storage and verify the digest before the record is persisted.",
+        "description": "Image catalog entry. Multi-scope as of Slice F: see [`ImageScope`] for the variants. Phase 0 ships only the metadata record \u2014 image content lives in mantafs / object storage and is not modelled here. Operators register images by URL + sha256 and trust the caller for the content match; an eventual import pipeline will pre-stage content in storage and verify the digest before the record is persisted.",
         "type": "object",
         "properties": {
           "compatibility": {
@@ -12055,7 +11851,7 @@
             "type": "string"
           },
           "scope": {
-            "description": "Visibility scope. The variant carries the parent identity (silo_id / tenant_id / project_id / user_id) for the non-Public scopes; visibility checks resolve up the project → tenant → silo chain when needed.",
+            "description": "Visibility scope. The variant carries the parent identity (silo_id / tenant_id / project_id / user_id) for the non-Public scopes; visibility checks resolve up the project \u2192 tenant \u2192 silo chain when needed.",
             "allOf": [
               {
                 "$ref": "#/components/schemas/ImageScope"
@@ -12095,7 +11891,7 @@
         ]
       },
       "ImageCompatibility": {
-        "description": "Host-compatibility constraints on an [`Image`]. Mirrors `tritond_image_manifest::Compatibility` exactly — the bundle ingest path copies the manifest's compatibility block in without translation. The per-CN agent enforces these gates at provision time.",
+        "description": "Host-compatibility constraints on an [`Image`]. Mirrors `tritond_image_manifest::Compatibility` exactly \u2014 the bundle ingest path copies the manifest's compatibility block in without translation. The per-CN agent enforces these gates at provision time.",
         "type": "object",
         "properties": {
           "arch": {
@@ -12119,7 +11915,7 @@
         ]
       },
       "ImageScope": {
-        "description": "Visibility scope of an [`Image`]. The variant determines who can see and use the image: `Public` is everyone (including anonymous probes on the public listing endpoint); `Silo` is every member of any tenant under that silo; `Tenant` is every member of that tenant; `Project` is every tenant member with project access (Phase 0: every tenant member); `User` is one specific user.\n\nThe variant carries everything the visibility predicate needs — there are no denormalised silo_id / tenant_id fields on `Image`. For `Project`, the resolver looks up the project to derive its tenant + silo when needed; for `Tenant`, the resolver looks up the tenant for its silo when needed. Cold path; correctness > one extra read.",
+        "description": "Visibility scope of an [`Image`]. The variant determines who can see and use the image: `Public` is everyone (including anonymous probes on the public listing endpoint); `Silo` is every member of any tenant under that silo; `Tenant` is every member of that tenant; `Project` is every tenant member with project access (Phase 0: every tenant member); `User` is one specific user.\n\nThe variant carries everything the visibility predicate needs \u2014 there are no denormalised silo_id / tenant_id fields on `Image`. For `Project`, the resolver looks up the project to derive its tenant + silo when needed; for `Tenant`, the resolver looks up the tenant for its silo when needed. Cold path; correctness > one extra read.",
         "oneOf": [
           {
             "type": "object",
@@ -12254,7 +12050,7 @@
         ]
       },
       "ImdsBindingWire": {
-        "description": "Per-port IMDS binding shipped from tritond to tritonagent in the provisioning blueprint -- the data the agent's `imds_bindings` reverse-lookup table needs so the IMDS HTTP listener can resolve caller identity from a connection's peer address (the design's \"Nitro card\" caller-ID rule). See `IMDS_DESIGN.md` §2.1.\n\n`pseudo_src` is the CN-unique address the proteus kmod SNATs this port's IMDS-bound traffic to; `port_id` is the kmod-side port identifier; `instance_id` is the VM this port belongs to.\n\nOn the wire this is one entry per port that has IMDS wired; a blueprint may carry zero, one, or several (one per VPC the instance has a NIC on, when multi-VPC IMDS lands; today: 0 or 1).",
+        "description": "Per-port IMDS binding shipped from tritond to tritonagent in the provisioning blueprint -- the data the agent's `imds_bindings` reverse-lookup table needs so the IMDS HTTP listener can resolve caller identity from a connection's peer address (the design's \"Nitro card\" caller-ID rule). See `IMDS_DESIGN.md` \u00a72.1.\n\n`pseudo_src` is the CN-unique address the proteus kmod SNATs this port's IMDS-bound traffic to; `port_id` is the kmod-side port identifier; `instance_id` is the VM this port belongs to.\n\nOn the wire this is one entry per port that has IMDS wired; a blueprint may carry zero, one, or several (one per VPC the instance has a NIC on, when multi-VPC IMDS lands; today: 0 or 1).",
         "type": "object",
         "properties": {
           "instance_id": {
@@ -12372,7 +12168,7 @@
         ]
       },
       "InstanceBrand": {
-        "description": "SmartOS brand the instance's host-side VM runs as.\n\nDerived at create time from the boot [`Image`]'s [`ImageCompatibility::brand`] (the only place tritond currently learns it). `NotApplicable` is the default — it covers both records created before this field existed and images registered via the explicit-fields path that carries no compatibility block.\n\nUsed by the console surface (VNC framebuffer is only meaningful for `Bhyve` / `Kvm`) and by the UI to label instances. It is `#[serde(other)]` on `NotApplicable` so an unrecognised future brand string round-trips harmlessly rather than failing deserialization.",
+        "description": "SmartOS brand the instance's host-side VM runs as.\n\nDerived at create time from the boot [`Image`]'s [`ImageCompatibility::brand`] (the only place tritond currently learns it). `NotApplicable` is the default \u2014 it covers both records created before this field existed and images registered via the explicit-fields path that carries no compatibility block.\n\nUsed by the console surface (VNC framebuffer is only meaningful for `Bhyve` / `Kvm`) and by the UI to label instances. It is `#[serde(other)]` on `NotApplicable` so an unrecognised future brand string round-trips harmlessly rather than failing deserialization.",
         "oneOf": [
           {
             "description": "`kvm` HVM zone (legacy hypervisor; serial + VNC consoles).",
@@ -12415,7 +12211,7 @@
         "description": "What a control-plane job asks an agent to do.\n\nInstance variants carry a target `instance_id` so an agent can look up VM state and drive the lifecycle forward. Edge variants carry an `edge_instance_id`; `manifest_bytes` is the exact fhrun manifest payload the target CN should apply.\n\nThis enum is `#[non_exhaustive]` so adding post-v1 variants (for example Migrate, Resize, or AF_XDP-specific edge work) is not a breaking change for downstream matchers.",
         "oneOf": [
           {
-            "description": "Drive a Pending instance through Provisioning → Running. Used both for first-time create and for `start` (which transitions Stopped → Pending and then enqueues a Provision).",
+            "description": "Drive a Pending instance through Provisioning \u2192 Running. Used both for first-time create and for `start` (which transitions Stopped \u2192 Pending and then enqueues a Provision).",
             "type": "object",
             "properties": {
               "instance_id": {
@@ -12435,7 +12231,7 @@
             ]
           },
           {
-            "description": "Drive a Running instance through Stopping → Stopped.",
+            "description": "Drive a Running instance through Stopping \u2192 Stopped.",
             "type": "object",
             "properties": {
               "instance_id": {
@@ -12455,7 +12251,7 @@
             ]
           },
           {
-            "description": "Drive a Running instance through Stopping → Pending → Provisioning → Running. The agent is responsible for the whole cycle; the operator never sees Pending in between.",
+            "description": "Drive a Running instance through Stopping \u2192 Pending \u2192 Provisioning \u2192 Running. The agent is responsible for the whole cycle; the operator never sees Pending in between.",
             "type": "object",
             "properties": {
               "instance_id": {
@@ -12475,7 +12271,7 @@
             ]
           },
           {
-            "description": "Best-effort `vmadm delete` follow-up, enqueued by the `instance_delete` handler *after* the tritond record is already cleared. The agent's vmadm-delete must be idempotent — on a host where the zone never existed (e.g. agent crashed before its prior Provision), the agent reports `Completed` rather than `Failed`. v0 trade-off: if the agent is unreachable, the zone leaks until an operator runs `vmadm delete` manually. A future slice promotes this to a Deleting → Deleted lifecycle gated on agent ack.",
+            "description": "Best-effort `vmadm delete` follow-up, enqueued by the `instance_delete` handler *after* the tritond record is already cleared. The agent's vmadm-delete must be idempotent \u2014 on a host where the zone never existed (e.g. agent crashed before its prior Provision), the agent reports `Completed` rather than `Failed`. v0 trade-off: if the agent is unreachable, the zone leaks until an operator runs `vmadm delete` manually. A future slice promotes this to a Deleting \u2192 Deleted lifecycle gated on agent ack.",
             "type": "object",
             "properties": {
               "instance_id": {
@@ -12583,7 +12379,7 @@
               },
               "peer_endpoint": {
                 "nullable": true,
-                "description": "Source-only: `wss://<target_admin_ip>:<port>` base for the dial. The target side of the pair leaves this `None` — its handler listens, doesn't dial. The saga reads `Cn.admin_ip` + `migrate_listen_port` for the target CN and writes this when enqueuing the Source job.",
+                "description": "Source-only: `wss://<target_admin_ip>:<port>` base for the dial. The target side of the pair leaves this `None` \u2014 its handler listens, doesn't dial. The saga reads `Cn.admin_ip` + `migrate_listen_port` for the target CN and writes this when enqueuing the Source job.",
                 "default": null,
                 "type": "string"
               },
@@ -12678,7 +12474,7 @@
             ]
           },
           {
-            "description": "Proteus port deactivation on the source (`pause_port` → `delete_port`). Runs in parallel with target-side [`ProteusActivate`] after the FDB ownership flip; loss of the deactivation surfaces as an audit warning, not a migration failure, because the target is already canonical.",
+            "description": "Proteus port deactivation on the source (`pause_port` \u2192 `delete_port`). Runs in parallel with target-side [`ProteusActivate`] after the FDB ownership flip; loss of the deactivation surfaces as an audit warning, not a migration failure, because the target is already canonical.",
             "type": "object",
             "properties": {
               "instance_id": {
@@ -12763,7 +12559,7 @@
         ]
       },
       "JobOutcome": {
-        "description": "Outcome a worker reports when finishing a job.\n\nWire-stable: rides as the body of `POST /v2/agent/jobs/{id}/complete` when a real `tritonagent` is reporting back. The serde tag is `kind` and the case is snake_case — matches every other tagged enum on the wire (e.g. [`JobStatus`]).",
+        "description": "Outcome a worker reports when finishing a job.\n\nWire-stable: rides as the body of `POST /v1/agent/jobs/{id}/complete` when a real `tritonagent` is reporting back. The serde tag is `kind` and the case is snake_case \u2014 matches every other tagged enum on the wire (e.g. [`JobStatus`]).",
         "oneOf": [
           {
             "type": "object",
@@ -12800,7 +12596,7 @@
         ]
       },
       "JobStatus": {
-        "description": "Lifecycle of a single provisioning job.\n\n`Pending` → claimable by the next agent that polls. `InProgress` → an agent has claimed it; the agent is responsible for driving to `Completed` or `Failed`. Terminal states (`Completed`, `Failed`) are not re-queued automatically — operators retry by issuing the originating action again.",
+        "description": "Lifecycle of a single provisioning job.\n\n`Pending` \u2192 claimable by the next agent that polls. `InProgress` \u2192 an agent has claimed it; the agent is responsible for driving to `Completed` or `Failed`. Terminal states (`Completed`, `Failed`) are not re-queued automatically \u2014 operators retry by issuing the originating action again.",
         "oneOf": [
           {
             "type": "object",
@@ -12865,7 +12661,7 @@
         ]
       },
       "LegacyCnSummary": {
-        "description": "Per-CN summary returned by `GET /v2/admin/legacy/cns`.\n\nDistinct from [`CnView`]: this view rolls up the discovery classifier's per-CN counts (how many tritond-managed instances vs unmanaged legacy zones) so a fleet-admin operator can spot CNs that still have legacy zones to adopt.",
+        "description": "Per-CN summary returned by `GET /v1/admin/legacy/cns`.\n\nDistinct from [`CnView`]: this view rolls up the discovery classifier's per-CN counts (how many tritond-managed instances vs unmanaged legacy zones) so a fleet-admin operator can spot CNs that still have legacy zones to adopt.",
         "type": "object",
         "properties": {
           "hostname": {
@@ -12944,7 +12740,7 @@
         }
       },
       "LegacyVm": {
-        "description": "A SmartOS zone observed on a registered CN that does not carry the tritond `internal_metadata` identity tags -- i.e. it pre-existed before tritonagent was installed on the CN, or was created by an operator running `vmadm create` directly.\n\nLegacy VMs live in their own FDB keyspace (`legacy_vm/...`) and are visible only to fleet-admin operators via `/v2/admin/legacy/vms`. They are NOT part of any tenant's workload tree until adopted (deferred Phase D).",
+        "description": "A SmartOS zone observed on a registered CN that does not carry the tritond `internal_metadata` identity tags -- i.e. it pre-existed before tritonagent was installed on the CN, or was created by an operator running `vmadm create` directly.\n\nLegacy VMs live in their own FDB keyspace (`legacy_vm/...`) and are visible only to fleet-admin operators via `/v1/admin/legacy/vms`. They are NOT part of any tenant's workload tree until adopted (deferred Phase D).",
         "type": "object",
         "properties": {
           "adoptable": {
@@ -13047,7 +12843,7 @@
         ]
       },
       "LifecycleState": {
-        "description": "Lifecycle state of a tenant instance. The state machine:\n\n```text create ↓ Pending ──→ Provisioning ──┬→ Running ←──┬── Stopped │             │      ↑ │             │      │ ↓             ↓      │ Failed        Stopping─┘ ```\n\nPhase 0 collapses Pending → Provisioning → Running into a synchronous transition inside the create handler (there is no agent yet). The full async path lands when the provisioning intent queue + stub executor slice ships.\n\nOperator-driven transitions: start (Stopped → Pending), stop (Running → Stopping), restart (Running → Stopping → Pending). Agent-driven transitions: Pending → Provisioning → Running, Provisioning → Failed, Stopping → Stopped.\n\nDelete is allowed only from Stopped or Failed; deleting a Running instance returns 409.",
+        "description": "Lifecycle state of a tenant instance. The state machine:\n\n```text create \u2193 Pending \u2500\u2500\u2192 Provisioning \u2500\u2500\u252c\u2192 Running \u2190\u2500\u2500\u252c\u2500\u2500 Stopped \u2502             \u2502      \u2191 \u2502             \u2502      \u2502 \u2193             \u2193      \u2502 Failed        Stopping\u2500\u2518 ```\n\nPhase 0 collapses Pending \u2192 Provisioning \u2192 Running into a synchronous transition inside the create handler (there is no agent yet). The full async path lands when the provisioning intent queue + stub executor slice ships.\n\nOperator-driven transitions: start (Stopped \u2192 Pending), stop (Running \u2192 Stopping), restart (Running \u2192 Stopping \u2192 Pending). Agent-driven transitions: Pending \u2192 Provisioning \u2192 Running, Provisioning \u2192 Failed, Stopping \u2192 Stopped.\n\nDelete is allowed only from Stopped or Failed; deleting a Running instance returns 409.",
         "oneOf": [
           {
             "description": "Newly created; not yet picked up by an agent.",
@@ -13265,7 +13061,7 @@
         ]
       },
       "LoginRequest": {
-        "description": "Request body for `POST /v2/auth/login`.\n\n`password` is a [`RedactedString`] so a stray `Debug` of this struct does not print the credential and so the in-memory copy is zeroed when the value drops.",
+        "description": "Request body for `POST /v1/auth/login`.\n\n`password` is a [`RedactedString`] so a stray `Debug` of this struct does not print the credential and so the in-memory copy is zeroed when the value drops.",
         "type": "object",
         "properties": {
           "password": {
@@ -13322,7 +13118,7 @@
             }
           },
           "channels": {
-            "description": "Channels this image is published to (IMGAPI-channel flavor — distinct from our Manta publish channel). Preserved for round-trip; tritond currently ignores.",
+            "description": "Channels this image is published to (IMGAPI-channel flavor \u2014 distinct from our Manta publish channel). Preserved for round-trip; tritond currently ignores.",
             "type": "array",
             "items": {
               "type": "string"
@@ -13395,7 +13191,7 @@
             "type": "boolean"
           },
           "published_at": {
-            "description": "When the image was published. Zero value means \"unpublished draft\" — generally only seen on `Creating` or `Unactivated` states.",
+            "description": "When the image was published. Zero value means \"unpublished draft\" \u2014 generally only seen on `Creating` or `Unactivated` states.",
             "type": "string",
             "format": "date-time"
           },
@@ -13417,7 +13213,7 @@
             ]
           },
           "tags": {
-            "description": "Free-form key/value tags. Surfaces in `tritonadm image list --tag …`.",
+            "description": "Free-form key/value tags. Surfaces in `tritonadm image list --tag \u2026`.",
             "type": "object",
             "additionalProperties": {
               "type": "string"
@@ -13521,7 +13317,7 @@
         ]
       },
       "MetaValue": {
-        "description": "One metadata entry at one scope. JSON-encoded in FDB under `meta/{silo,tenant,project,instance}/<uuid>/<key>`.\n\n`value` is an arbitrary JSON value (strings are the common case; IMDS serves a JSON string as `text/plain` and any other JSON as `application/json`). The two boolean flags control the in-VM view: `guest_visible` gates whether IMDS exposes the key at all, and `guest_writable` gates whether the in-VM `PUT` may modify it (only ever true for `guest/*` keys at instance scope on a writeback- enabled instance — enforced by [`validate_meta_entry`] and the store layer).",
+        "description": "One metadata entry at one scope. JSON-encoded in FDB under `meta/{silo,tenant,project,instance}/<uuid>/<key>`.\n\n`value` is an arbitrary JSON value (strings are the common case; IMDS serves a JSON string as `text/plain` and any other JSON as `application/json`). The two boolean flags control the in-VM view: `guest_visible` gates whether IMDS exposes the key at all, and `guest_writable` gates whether the in-VM `PUT` may modify it (only ever true for `guest/*` keys at instance scope on a writeback- enabled instance \u2014 enforced by [`validate_meta_entry`] and the store layer).",
         "type": "object",
         "properties": {
           "guest_visible": {
@@ -13581,7 +13377,7 @@
           },
           "target_server_uuid": {
             "nullable": true,
-            "description": "Operator-supplied target CN. When set, the placement chain force-places to this CN (still subject to the migration filters); operator-only — the tenant-scoped Cedar policy doesn't grant cross-tenant force-place, so a tenant member supplying this field gets a 403.",
+            "description": "Operator-supplied target CN. When set, the placement chain force-places to this CN (still subject to the migration filters); operator-only \u2014 the tenant-scoped Cedar policy doesn't grant cross-tenant force-place, so a tenant member supplying this field gets a 403.",
             "default": null,
             "type": "string",
             "format": "uuid"
@@ -13589,7 +13385,7 @@
         }
       },
       "MigrateInstanceResponse": {
-        "description": "Response body for `POST .../instances/{instance_id}/migrate` when the action is `Begin`. The operation id is the Steno saga id; clients poll `GET /v2/operations/{operation_id}` for saga-level progress and `GET /v2/migrations/{migration_id}` for the migration-specific timeline.",
+        "description": "Response body for `POST .../instances/{instance_id}/migrate` when the action is `Begin`. The operation id is the Steno saga id; clients poll `GET /v1/operations/{operation_id}` for saga-level progress and `GET /v1/migrations/{migration_id}` for the migration-specific timeline.",
         "type": "object",
         "properties": {
           "migration_id": {
@@ -13607,7 +13403,7 @@
         ]
       },
       "MigrationAction": {
-        "description": "Operator-initiated action against a migration record. The HTTP handler at `POST /v2/instances/{id}/actions/migrate` (LM-1 task #16 / LM-5) dispatches on this enum; `Begin` starts a saga, the others address an existing migration.",
+        "description": "Operator-initiated action against a migration record. The HTTP handler at `POST /v1/instances/{id}/actions/migrate` (LM-1 task #16 / LM-5) dispatches on this enum; `Begin` starts a saga, the others address an existing migration.",
         "type": "string",
         "enum": [
           "begin",
@@ -13836,7 +13632,7 @@
         ]
       },
       "MigrationState": {
-        "description": "Lifecycle state of a migration row.\n\nThe state machine is:\n\n```text begin → sync ⇄ paused │       │ │       └──→ switch → successful | failed │ └──→ aborted | failed | rolled_back ```\n\n`running` is a holding state used in legacy JSON for in-flight records that don't fit the strict phase enum; vnext writes the concrete phase but accepts `running` on read for forward compat. `unknown` catches values we don't recognise yet.",
+        "description": "Lifecycle state of a migration row.\n\nThe state machine is:\n\n```text begin \u2192 sync \u21c4 paused \u2502       \u2502 \u2502       \u2514\u2500\u2500\u2192 switch \u2192 successful | failed \u2502 \u2514\u2500\u2500\u2192 aborted | failed | rolled_back ```\n\n`running` is a holding state used in legacy JSON for in-flight records that don't fit the strict phase enum; vnext writes the concrete phase but accepts `running` on read for forward compat. `unknown` catches values we don't recognise yet.",
         "type": "string",
         "enum": [
           "begin",
@@ -13937,7 +13733,7 @@
         ]
       },
       "NetworkRealizationRequest": {
-        "description": "Request body for `POST /v2/agent/network-realization`.\n\nAgents report one `(resource, realizer)` row at a time. Tritond validates the resource exists and then lets the store enforce monotonic generation reporting for that tuple.",
+        "description": "Request body for `POST /v1/agent/network-realization`.\n\nAgents report one `(resource, realizer)` row at a time. Tritond validates the resource exists and then lets the store enforce monotonic generation reporting for that tuple.",
         "type": "object",
         "properties": {
           "generation": {
@@ -13986,7 +13782,7 @@
         "additionalProperties": true
       },
       "NetworkResourceId": {
-        "description": "Tagged identity of a network resource that may have realization rows. The realization endpoint (Slice H-13) dispatches into the matching record by `(kind, id)`. v1 ships variants for every resource the design doc names (§6); the `#[non_exhaustive]` posture allows post-v1 additions.\n\nWire shape: `{ \"kind\": \"nat_gateway\", \"id\": \"<uuid>\" }`.",
+        "description": "Tagged identity of a network resource that may have realization rows. The realization endpoint (Slice H-13) dispatches into the matching record by `(kind, id)`. v1 ships variants for every resource the design doc names (\u00a76); the `#[non_exhaustive]` posture allows post-v1 additions.\n\nWire shape: `{ \"kind\": \"nat_gateway\", \"id\": \"<uuid>\" }`.",
         "oneOf": [
           {
             "description": "A `Vpc`. Populated after H-4 widens `Vpc` with `desired_generation`.",
@@ -14109,7 +13905,7 @@
             ]
           },
           {
-            "description": "A NIC↔SG attachment. Populated when H-9 lands.",
+            "description": "A NIC\u2194SG attachment. Populated when H-9 lands.",
             "type": "object",
             "properties": {
               "id": {
@@ -14191,7 +13987,7 @@
         ]
       },
       "NewApiKey": {
-        "description": "Request body for `POST /v2/auth/api-keys`.\n\n`scope` defaults to [`ApiKeyScope::Full`] when omitted on the wire — preserves the pre-scope behaviour where every minted key has the full permissions of the owning user. Operators who want a least-privilege key (e.g. for a CI pipeline that only reads audit logs) pass `scope: \"read_only\"` or `scope: \"audit_only\"` at create time.",
+        "description": "Request body for `POST /v1/auth/api-keys`.\n\n`scope` defaults to [`ApiKeyScope::Full`] when omitted on the wire \u2014 preserves the pre-scope behaviour where every minted key has the full permissions of the owning user. Operators who want a least-privilege key (e.g. for a CI pipeline that only reads audit logs) pass `scope: \"read_only\"` or `scope: \"audit_only\"` at create time.",
         "type": "object",
         "properties": {
           "description": {
@@ -14211,7 +14007,7 @@
         ]
       },
       "NewDhcpPool": {
-        "description": "Request body for `PUT /v2/.../vpcs/{vpc_id}/dhcp/pool`.",
+        "description": "Request body for `PUT /v1/.../vpcs/{vpc_id}/dhcp/pool`.",
         "type": "object",
         "properties": {
           "additional_options": {
@@ -14239,7 +14035,7 @@
         ]
       },
       "NewDhcpReservation": {
-        "description": "Request body for `POST /v2/.../vpcs/{vpc_id}/dhcp/reservations`.",
+        "description": "Request body for `POST /v1/.../vpcs/{vpc_id}/dhcp/reservations`.",
         "type": "object",
         "properties": {
           "hostname": {
@@ -14361,7 +14157,7 @@
         ]
       },
       "NewIdpConfig": {
-        "description": "Request body for `POST /v2/tenants/{tenant_id}/idp`. tritond **eagerly** fetches the IdP's discovery document on this call; a 4xx/5xx return means the IdP isn't reachable or doesn't speak OIDC, and the config is not persisted.",
+        "description": "Request body for `POST /v1/tenants/{tenant_id}/idp`. tritond **eagerly** fetches the IdP's discovery document on this call; a 4xx/5xx return means the IdP isn't reachable or doesn't speak OIDC, and the config is not persisted.",
         "type": "object",
         "properties": {
           "audience": {
@@ -14407,7 +14203,7 @@
           },
           "id": {
             "nullable": true,
-            "description": "Optional UUID to pin for the new image. When `None` (the usual case), the server derives the UUID deterministically from `(scope, sha256)` via [`derive_image_id`] — same content in the same scope always yields the same id across hosts and replays, so the per-CN agent's content-addressed ZFS dataset (`zones/<image_id>`) collapses identical bytes into one import. Different scopes registering the same content yield distinct ids (no cross-scope collisions). `Some(...)` is only useful for cross-cluster mirroring scenarios where the operator wants tritond's id to match a UUID minted elsewhere; the store rejects the create with [`StoreError::Conflict`] if the id is already in use.",
+            "description": "Optional UUID to pin for the new image. When `None` (the usual case), the server derives the UUID deterministically from `(scope, sha256)` via [`derive_image_id`] \u2014 same content in the same scope always yields the same id across hosts and replays, so the per-CN agent's content-addressed ZFS dataset (`zones/<image_id>`) collapses identical bytes into one import. Different scopes registering the same content yield distinct ids (no cross-scope collisions). `Some(...)` is only useful for cross-cluster mirroring scenarios where the operator wants tritond's id to match a UUID minted elsewhere; the store rejects the create with [`StoreError::Conflict`] if the id is already in use.",
             "default": null,
             "type": "string",
             "format": "uuid"
@@ -14444,7 +14240,7 @@
         ]
       },
       "NewImageFromBundle": {
-        "description": "Request body for `POST /v2/silos/{silo_id}/image-bundles`. (Bundle ingest stays silo-scoped through slice F; multi-scope bundle ingest is a future concern.)\n\n`bundle_url` points at a tritond image bundle (an uncompressed tar with `manifest.json` + `content.zfs.gz`, produced by the `tritonimg-build` CLI). tritond fetches the bundle once at registration time, validates the manifest, re-hashes the content against the manifest's claimed sha256, and populates the Image record's `name`, `version`, `os`, `size_bytes`, `sha256`, and `compatibility` from the manifest. Operators don't pass any of those fields by hand — the bundle is the source of truth.\n\nThe bundle URL is also recorded as the Image's `source_url` so the per-CN agent fetches the same bundle at provision time (extracts manifest, sha256-verifies content, ZFS- receives).",
+        "description": "Request body for `POST /v1/silos/{silo_id}/image-bundles`. (Bundle ingest stays silo-scoped through slice F; multi-scope bundle ingest is a future concern.)\n\n`bundle_url` points at a tritond image bundle (an uncompressed tar with `manifest.json` + `content.zfs.gz`, produced by the `tritonimg-build` CLI). tritond fetches the bundle once at registration time, validates the manifest, re-hashes the content against the manifest's claimed sha256, and populates the Image record's `name`, `version`, `os`, `size_bytes`, `sha256`, and `compatibility` from the manifest. Operators don't pass any of those fields by hand \u2014 the bundle is the source of truth.\n\nThe bundle URL is also recorded as the Image's `source_url` so the per-CN agent fetches the same bundle at provision time (extracts manifest, sha256-verifies content, ZFS- receives).",
         "type": "object",
         "properties": {
           "bundle_url": {
@@ -14456,7 +14252,7 @@
         ]
       },
       "NewImageFromImgapi": {
-        "description": "Request body for `POST /v2/silos/{silo_id}/images/from-imgapi`.\n\nThe IMGAPI v2 manifest is the canonical Joyent / Triton image wire format. Operators (and the `tcadm image fetch-nocloud` pipeline once it lands) upload the binary blob to Manta out of band, then POST this body to register the image with tritond. tritond derives every `Image` field from the manifest plus the operator-supplied integrity metadata.\n\n## Why we carry our own sha256\n\nIMGAPI's `files[].sha1` is the spec-mandated digest; our per-CN agent verifies SHA-256 for defense-in-depth (the existing bundle ingest path uses SHA-256 too). The publisher computes both digests during the same streaming hash on the way to Manta and supplies both, so the agent's existing verifier needs no SHA-1 path.\n\n## URL derivation\n\n`manta_url` is the public HTTPS URL the per-CN agent will fetch the blob from. Conventionally `<imgapi-blob-manta prefix>/<uuid>/file`, but tritond does not enforce a layout — operators may host blobs anywhere HTTPS-reachable. The agent re-hashes the bytes against `sha256` regardless.",
+        "description": "Request body for `POST /v1/silos/{silo_id}/images/from-imgapi`.\n\nThe IMGAPI v2 manifest is the canonical Joyent / Triton image wire format. Operators (and the `tcadm image fetch-nocloud` pipeline once it lands) upload the binary blob to Manta out of band, then POST this body to register the image with tritond. tritond derives every `Image` field from the manifest plus the operator-supplied integrity metadata.\n\n## Why we carry our own sha256\n\nIMGAPI's `files[].sha1` is the spec-mandated digest; our per-CN agent verifies SHA-256 for defense-in-depth (the existing bundle ingest path uses SHA-256 too). The publisher computes both digests during the same streaming hash on the way to Manta and supplies both, so the agent's existing verifier needs no SHA-1 path.\n\n## URL derivation\n\n`manta_url` is the public HTTPS URL the per-CN agent will fetch the blob from. Conventionally `<imgapi-blob-manta prefix>/<uuid>/file`, but tritond does not enforce a layout \u2014 operators may host blobs anywhere HTTPS-reachable. The agent re-hashes the bytes against `sha256` regardless.",
         "type": "object",
         "properties": {
           "manifest": {
@@ -14497,7 +14293,7 @@
             "type": "string"
           },
           "extra_nics": {
-            "description": "Additional NICs beyond the primary one on `primary_subnet_id`. Each entry causes the store to allocate one NIC + IP from the named subnet at create time. The `InstanceCreateResult.nics` Vec returns all of them in declaration order (primary at index 0). The agent's vmadm payload iterates over the Vec and attaches `net0`, `net1`, …",
+            "description": "Additional NICs beyond the primary one on `primary_subnet_id`. Each entry causes the store to allocate one NIC + IP from the named subnet at create time. The `InstanceCreateResult.nics` Vec returns all of them in declaration order (primary at index 0). The agent's vmadm payload iterates over the Vec and attaches `net0`, `net1`, \u2026",
             "default": [],
             "type": "array",
             "items": {
@@ -14510,7 +14306,7 @@
           },
           "mac": {
             "nullable": true,
-            "description": "Optional MAC address to pin on the primary NIC. Accepted in any case + any of the usual separator styles (`02:08:20:ab:cd:ef`, `02-08-20-AB-CD-EF`, `0208.20ab.cdef`). Used to opt into sticky-by-MAC IPAM (γ.2): if a reservation or prior lease in the parent VPC matches this MAC and that address is free, the instance is allocated that IP. None (the default) keeps the legacy auto-generated MAC behaviour.",
+            "description": "Optional MAC address to pin on the primary NIC. Accepted in any case + any of the usual separator styles (`02:08:20:ab:cd:ef`, `02-08-20-AB-CD-EF`, `0208.20ab.cdef`). Used to opt into sticky-by-MAC IPAM (\u03b3.2): if a reservation or prior lease in the parent VPC matches this MAC and that address is free, the instance is allocated that IP. None (the default) keeps the legacy auto-generated MAC behaviour.",
             "default": null,
             "type": "string"
           },
@@ -14548,7 +14344,7 @@
         "type": "object",
         "properties": {
           "name": {
-            "description": "Operator-friendly NIC label (`primary`, `db-tier`, …). Must be unique within the instance.",
+            "description": "Operator-friendly NIC label (`primary`, `db-tier`, \u2026). Must be unique within the instance.",
             "type": "string"
           },
           "subnet_id": {
@@ -14714,7 +14510,7 @@
         ]
       },
       "NewStorageCluster": {
-        "description": "Body of `POST /v2/storage/clusters`.",
+        "description": "Body of `POST /v1/storage/clusters`.",
         "type": "object",
         "properties": {
           "admin_token": {
@@ -14817,7 +14613,7 @@
         ]
       },
       "Nic": {
-        "description": "Per-instance network interface. Auto-created at instance create time with a single \"primary\" NIC; multi-NIC attach/detach is a future slice. Mirrors what the dataplane (OPTE per-NIC config) will eventually consume — guest MAC, primary IPv4/IPv6 in the subnet's CIDR.\n\nPhase 0 stores only the per-NIC fields the agent needs to open the overlay attachment for an instance:\n\n* `mac` — guest MAC address. Locally-administered (`02:` prefix) + 5 random bytes; uniqueness is rack-wide. * `primary_ipv4` / `primary_ipv6` — addresses allocated from the parent subnet's CIDR. Each family is `Some` only if the subnet has a CIDR for that family.\n\nExternal IPs, attached_subnets (other-subnet routing), and firewall rules are *not* on the NIC record — they live on future External-IP / Route / FirewallRule resources.",
+        "description": "Per-instance network interface. Auto-created at instance create time with a single \"primary\" NIC; multi-NIC attach/detach is a future slice. Mirrors what the dataplane (OPTE per-NIC config) will eventually consume \u2014 guest MAC, primary IPv4/IPv6 in the subnet's CIDR.\n\nPhase 0 stores only the per-NIC fields the agent needs to open the overlay attachment for an instance:\n\n* `mac` \u2014 guest MAC address. Locally-administered (`02:` prefix) + 5 random bytes; uniqueness is rack-wide. * `primary_ipv4` / `primary_ipv6` \u2014 addresses allocated from the parent subnet's CIDR. Each family is `Some` only if the subnet has a CIDR for that family.\n\nExternal IPs, attached_subnets (other-subnet routing), and firewall rules are *not* on the NIC record \u2014 they live on future External-IP / Route / FirewallRule resources.",
         "type": "object",
         "properties": {
           "created_at": {
@@ -14881,7 +14677,7 @@
         ]
       },
       "OpenAutoApproveRequest": {
-        "description": "Request body for `POST /v2/cns/auto-approve`.\n\nOpens (or replaces) the global auto-approve window. Bounded by both wall-time and a remaining-count budget so a forgotten window can't stay open forever; tritond clamps `duration_secs` to the 24h hard cap server-side.",
+        "description": "Request body for `POST /v1/cns/auto-approve`.\n\nOpens (or replaces) the global auto-approve window. Bounded by both wall-time and a remaining-count budget so a forgotten window can't stay open forever; tritond clamps `duration_secs` to the 24h hard cap server-side.",
         "type": "object",
         "properties": {
           "count": {
@@ -14903,7 +14699,7 @@
         ]
       },
       "OperationDetail": {
-        "description": "Detail view: the summary plus the persisted DAG + event log. Used by `GET /v2/operations/{operation_id}` and rendered by `tcadm operations get` / adminUI Operations detail panel.",
+        "description": "Detail view: the summary plus the persisted DAG + event log. Used by `GET /v1/operations/{operation_id}` and rendered by `tcadm operations get` / adminUI Operations detail panel.",
         "type": "object",
         "properties": {
           "adopt_generation": {
@@ -14937,7 +14733,7 @@
             "format": "uuid"
           },
           "kind": {
-            "description": "Saga `NAME` (`instance-create`, `instance-delete`, …). Kebab.",
+            "description": "Saga `NAME` (`instance-create`, `instance-delete`, \u2026). Kebab.",
             "type": "string"
           },
           "progress": {
@@ -15010,7 +14806,7 @@
         ]
       },
       "OperationProgress": {
-        "description": "Step-by-step progress of an operation. Stable across `tritond` restarts because both inputs (the DAG and the node-event log) are persisted by the SEC.\n\n* `total_steps` — count of Action nodes in the DAG (Start / End markers are excluded; an operator who wants to count them should walk the raw `dag` themselves). * `completed_steps` — count of Action nodes whose log carries a terminal event (`succeeded` or `failed`). Counts the forward pass only; undos don't push this number up. * `current_step` — label of the action that is currently in flight (a `started` event with no terminal counterpart), or `None` when the saga is terminal or has not started any action yet. The label is the catalog's `label` field, not the internal node name.",
+        "description": "Step-by-step progress of an operation. Stable across `tritond` restarts because both inputs (the DAG and the node-event log) are persisted by the SEC.\n\n* `total_steps` \u2014 count of Action nodes in the DAG (Start / End markers are excluded; an operator who wants to count them should walk the raw `dag` themselves). * `completed_steps` \u2014 count of Action nodes whose log carries a terminal event (`succeeded` or `failed`). Counts the forward pass only; undos don't push this number up. * `current_step` \u2014 label of the action that is currently in flight (a `started` event with no terminal counterpart), or `None` when the saga is terminal or has not started any action yet. The label is the catalog's `label` field, not the internal node name.",
         "type": "object",
         "properties": {
           "completed_steps": {
@@ -15035,7 +14831,7 @@
         ]
       },
       "OperationState": {
-        "description": "Public state of a long-running operation (RFD 00004 D-Sg-13). String values are stable on the wire.\n\nThe list endpoint (`GET /v2/operations`) projects coarse state — Pending / Running / Unwinding / Done / Stuck — derived from the saga record alone (cheap). The detail endpoint (`GET /v2/operations/{id}`) refines `Done` into one of `Succeeded` / `Failed` / `Unwound` by walking the persisted node-event log. Operators reading a row in the list see the coarse view; expanding the row reveals the refined outcome.",
+        "description": "Public state of a long-running operation (RFD 00004 D-Sg-13). String values are stable on the wire.\n\nThe list endpoint (`GET /v1/operations`) projects coarse state \u2014 Pending / Running / Unwinding / Done / Stuck \u2014 derived from the saga record alone (cheap). The detail endpoint (`GET /v1/operations/{id}`) refines `Done` into one of `Succeeded` / `Failed` / `Unwound` by walking the persisted node-event log. Operators reading a row in the list see the coarse view; expanding the row reveals the refined outcome.",
         "oneOf": [
           {
             "description": "Saga has been created and the record is durable, but no action body has reported a `started` event yet. Brief window between `saga_create` and the first action's first log line.",
@@ -15073,21 +14869,21 @@
             ]
           },
           {
-            "description": "A forward action failed and one or more committed actions were compensated by their undos in reverse. Terminal — the saga's net effect is \"nothing happened\" if every undo ran cleanly.",
+            "description": "A forward action failed and one or more committed actions were compensated by their undos in reverse. Terminal \u2014 the saga's net effect is \"nothing happened\" if every undo ran cleanly.",
             "type": "string",
             "enum": [
               "unwound"
             ]
           },
           {
-            "description": "At least one undo errored or the saga's persisted version is no longer registered. Terminal in the \"operator action needed\" sense — automatic recovery does not retry these.",
+            "description": "At least one undo errored or the saga's persisted version is no longer registered. Terminal in the \"operator action needed\" sense \u2014 automatic recovery does not retry these.",
             "type": "string",
             "enum": [
               "stuck"
             ]
           },
           {
-            "description": "Coarse \"saga reached Done\" used by the list projection before events are walked. The detail endpoint never returns this — it refines to one of Succeeded / Failed / Unwound. Kept on the wire so old clients see a familiar value during the staged rollout of D-Sg-13.",
+            "description": "Coarse \"saga reached Done\" used by the list projection before events are walked. The detail endpoint never returns this \u2014 it refines to one of Succeeded / Failed / Unwound. Kept on the wire so old clients see a familiar value during the staged rollout of D-Sg-13.",
             "type": "string",
             "enum": [
               "done"
@@ -15105,7 +14901,7 @@
           },
           "error": {
             "nullable": true,
-            "description": "Structured error JSON from a `Failed` event, if any. Carries whatever the action body packed into `ActionError` — typically `{ \"kind\": \"...\", \"message\": \"...\" }` for our catalog (e.g. `decode_store_error_kind` in `instance_create`).",
+            "description": "Structured error JSON from a `Failed` event, if any. Carries whatever the action body packed into `ActionError` \u2014 typically `{ \"kind\": \"...\", \"message\": \"...\" }` for our catalog (e.g. `decode_store_error_kind` in `instance_create`).",
             "default": null
           },
           "error_message": {
@@ -15125,7 +14921,7 @@
             "type": "string"
           },
           "name": {
-            "description": "Internal node name (the `name` field on the catalog declaration — e.g. `\"instance\"`, `\"final_instance\"`).",
+            "description": "Internal node name (the `name` field on the catalog declaration \u2014 e.g. `\"instance\"`, `\"final_instance\"`).",
             "type": "string"
           },
           "output": {
@@ -15156,7 +14952,7 @@
         ]
       },
       "OperationSummary": {
-        "description": "One operation as it appears in `GET /v2/operations`. Minimal shape suitable for an adminUI list view; clients fetch the detail surface for the full DAG / event log.",
+        "description": "One operation as it appears in `GET /v1/operations`. Minimal shape suitable for an adminUI list view; clients fetch the detail surface for the full DAG / event log.",
         "type": "object",
         "properties": {
           "creator_sec": {
@@ -15175,7 +14971,7 @@
             "format": "uuid"
           },
           "kind": {
-            "description": "Saga `NAME` (`instance-create`, `instance-delete`, …). Kebab.",
+            "description": "Saga `NAME` (`instance-create`, `instance-delete`, \u2026). Kebab.",
             "type": "string"
           },
           "references": {
@@ -15343,7 +15139,7 @@
         ]
       },
       "PresignGetRequest": {
-        "description": "Body of `POST /v2/storage/clusters/{id}/s3/presign/get`. Same shape as the PUT request — kept as a distinct type for audit and API-doc clarity.",
+        "description": "Body of `POST /v1/storage/clusters/{id}/s3/presign/get`. Same shape as the PUT request \u2014 kept as a distinct type for audit and API-doc clarity.",
         "type": "object",
         "properties": {
           "bucket": {
@@ -15365,7 +15161,7 @@
         ]
       },
       "PresignPutRequest": {
-        "description": "Body of `POST /v2/storage/clusters/{id}/s3/presign/put`.",
+        "description": "Body of `POST /v1/storage/clusters/{id}/s3/presign/put`.",
         "type": "object",
         "properties": {
           "bucket": {
@@ -15388,7 +15184,7 @@
         ]
       },
       "PresignResponse": {
-        "description": "Response shared by `presign/put` and `presign/get`. The browser uses these fields verbatim — the URL is fully signed; `method` tells the client which verb to issue; `headers` is reserved for future use when we sign headers beyond `host` (today empty).",
+        "description": "Response shared by `presign/put` and `presign/get`. The browser uses these fields verbatim \u2014 the URL is fully signed; `method` tells the client which verb to issue; `headers` is reserved for future use when we sign headers beyond `host` (today empty).",
         "type": "object",
         "properties": {
           "headers": {
@@ -15444,7 +15240,7 @@
         ]
       },
       "ProvisioningBlueprint": {
-        "description": "Materialised view of everything the agent needs to act on a claimed [`ProvisioningJob`]. Returned by `GET /v2/agent/jobs/{job_id}/blueprint`.\n\nThe shape is intentionally a flat bundle: instance + image + nics + subnets + disks + ssh public keys, all in one response. That lets the agent issue exactly one round-trip per claimed job, and keeps the queue payload itself opaque to the agent's needs (a Provision job will eventually want different fields than a hypothetical Migrate or Resize, and embedding everything in the [`ProvisioningJob`] would force lockstep schema migration).\n\nTritond's `Instance::id` is the canonical identity reused downstream: the agent passes it as the SmartOS zone UUID at `vmadm create`, so subsequent Stop/Restart jobs can address the zone by the same id without a separate mapping table.\n\nOptional fields reflect the per-`JobKind` shape:\n\n* `Provision` — `instance`, `image`, `nics`, `disks`, and any `ssh_public_keys` are populated. `subnets` carries the referenced subnet records so the agent can derive static guest network metadata without relying on dataplane DHCP. The agent has everything it needs to call `vmadm create`. * `Stop` / `Restart` — `instance` populated, others may be empty. The agent only needs `instance.id` to call `vmadm stop` / `vmadm reboot`.",
+        "description": "Materialised view of everything the agent needs to act on a claimed [`ProvisioningJob`]. Returned by `GET /v1/agent/jobs/{job_id}/blueprint`.\n\nThe shape is intentionally a flat bundle: instance + image + nics + subnets + disks + ssh public keys, all in one response. That lets the agent issue exactly one round-trip per claimed job, and keeps the queue payload itself opaque to the agent's needs (a Provision job will eventually want different fields than a hypothetical Migrate or Resize, and embedding everything in the [`ProvisioningJob`] would force lockstep schema migration).\n\nTritond's `Instance::id` is the canonical identity reused downstream: the agent passes it as the SmartOS zone UUID at `vmadm create`, so subsequent Stop/Restart jobs can address the zone by the same id without a separate mapping table.\n\nOptional fields reflect the per-`JobKind` shape:\n\n* `Provision` \u2014 `instance`, `image`, `nics`, `disks`, and any `ssh_public_keys` are populated. `subnets` carries the referenced subnet records so the agent can derive static guest network metadata without relying on dataplane DHCP. The agent has everything it needs to call `vmadm create`. * `Stop` / `Restart` \u2014 `instance` populated, others may be empty. The agent only needs `instance.id` to call `vmadm stop` / `vmadm reboot`.",
         "type": "object",
         "properties": {
           "disks": {
@@ -15466,7 +15262,7 @@
             ]
           },
           "imds_bindings": {
-            "description": "Per-port IMDS bindings: `(pseudo_src, port_id, instance_id)` tuples the agent registers in its `ImdsBindingTable` after a successful `proteus::apply_blueprint`. tritond populates this when it has allocated a pseudo-source on the CN for an IMDS- enabled instance (today: empty; the populate-side commit lands alongside the proteus stateful DNAT/SNAT compile). See `IMDS_DESIGN.md` §2.1.",
+            "description": "Per-port IMDS bindings: `(pseudo_src, port_id, instance_id)` tuples the agent registers in its `ImdsBindingTable` after a successful `proteus::apply_blueprint`. tritond populates this when it has allocated a pseudo-source on the CN for an IMDS- enabled instance (today: empty; the populate-side commit lands alongside the proteus stateful DNAT/SNAT compile). See `IMDS_DESIGN.md` \u00a72.1.",
             "default": [],
             "type": "array",
             "items": {
@@ -15539,7 +15335,7 @@
         ]
       },
       "ProvisioningJob": {
-        "description": "A unit of work for a provisioning agent. Created by the tritond instance handlers; consumed by an agent (the in-process stub today; a real `tritonagent` per CN in the future).\n\nThe wire shape is stable across Phase 0 and the eventual real agent — the only thing that changes is *who* claims and completes jobs.",
+        "description": "A unit of work for a provisioning agent. Created by the tritond instance handlers; consumed by an agent (the in-process stub today; a real `tritonagent` per CN in the future).\n\nThe wire shape is stable across Phase 0 and the eventual real agent \u2014 the only thing that changes is *who* claims and completes jobs.",
         "type": "object",
         "properties": {
           "claimed_at": {
@@ -15599,7 +15395,7 @@
         ]
       },
       "Quota": {
-        "description": "Per-project resource quota. Singleton: each project has at most one quota record. Set with PUT, read with GET, remove with DELETE (project becomes \"unlimited\" — no record means no enforcement).\n\nEnforcement is *not* shipped in Phase 0 — these limits are stored and readable but no instance-create flow consults them yet. The shape is fixed now so the enforcement layer (Tier 3) has a stable contract to build against.\n\nLimits are absolute caps, not reservations: `cpu_limit = 8` means \"this project may have up to 8 vCPUs across all running instances.\" Storage and memory are bytes; cpu and instance counts are simple `u32`.",
+        "description": "Per-project resource quota. Singleton: each project has at most one quota record. Set with PUT, read with GET, remove with DELETE (project becomes \"unlimited\" \u2014 no record means no enforcement).\n\nEnforcement is *not* shipped in Phase 0 \u2014 these limits are stored and readable but no instance-create flow consults them yet. The shape is fixed now so the enforcement layer (Tier 3) has a stable contract to build against.\n\nLimits are absolute caps, not reservations: `cpu_limit = 8` means \"this project may have up to 8 vCPUs across all running instances.\" Storage and memory are bytes; cpu and instance counts are simple `u32`.",
         "type": "object",
         "properties": {
           "cpu_limit": {
@@ -15701,7 +15497,7 @@
           },
           "message": {
             "nullable": true,
-            "description": "Free-form short diagnostic from the realizer. Surfaced verbatim in `tcadm net realized`. Kept short — detailed stderr belongs in agent logs and future support bundles, not in unbounded control-plane rows.",
+            "description": "Free-form short diagnostic from the realizer. Surfaced verbatim in `tcadm net realized`. Kept short \u2014 detailed stderr belongs in agent logs and future support bundles, not in unbounded control-plane rows.",
             "type": "string"
           },
           "realizer": {
@@ -15755,7 +15551,7 @@
         ]
       },
       "RealizedMetaEntry": {
-        "description": "One leaf of the realized view: the effective key + value + the scope provenance (`silo|tenant|project|instance|system`). The computed system keys (`meta-data/*`, `triton/system/*`) appear with `from = system`; everything else with the storage scope that won the precedence merge. See `IMDS_DESIGN.md` §1.5.",
+        "description": "One leaf of the realized view: the effective key + value + the scope provenance (`silo|tenant|project|instance|system`). The computed system keys (`meta-data/*`, `triton/system/*`) appear with `from = system`; everything else with the storage scope that won the precedence merge. See `IMDS_DESIGN.md` \u00a71.5.",
         "type": "object",
         "properties": {
           "from": {
@@ -15851,7 +15647,7 @@
         ]
       },
       "RefreshRequest": {
-        "description": "Request body for `POST /v2/auth/refresh`.",
+        "description": "Request body for `POST /v1/auth/refresh`.",
         "type": "object",
         "properties": {
           "refresh_token": {
@@ -15863,7 +15659,7 @@
         ]
       },
       "RegisterCnRequest": {
-        "description": "Request body for `POST /v2/agent/register`. Anonymous endpoint (no auth header required); the agent has no credentials yet at this point in its lifecycle.",
+        "description": "Request body for `POST /v1/agent/register`. Anonymous endpoint (no auth header required); the agent has no credentials yet at this point in its lifecycle.",
         "type": "object",
         "properties": {
           "admin_ip": {
@@ -15875,7 +15671,7 @@
           },
           "console_listen_port": {
             "nullable": true,
-            "description": "TCP port the agent's on-CN console listener binds on the admin IP. Reported on every (re-)registration. `None` when the agent was started without a console listener — serial / VNC consoles are unavailable for the CN until a registration carries it.",
+            "description": "TCP port the agent's on-CN console listener binds on the admin IP. Reported on every (re-)registration. `None` when the agent was started without a console listener \u2014 serial / VNC consoles are unavailable for the CN until a registration carries it.",
             "default": null,
             "type": "integer",
             "format": "uint16",
@@ -15906,7 +15702,7 @@
         ]
       },
       "RegisterCnResponse": {
-        "description": "Response body for `POST /v2/agent/register`.\n\nThe agent gets back its `poll_token` — needed for every subsequent call to `GET /v2/agent/register/status` — plus, when in Pending state, the `claim_code` it must display on the console for the operator to pair.",
+        "description": "Response body for `POST /v1/agent/register`.\n\nThe agent gets back its `poll_token` \u2014 needed for every subsequent call to `GET /v1/agent/register/status` \u2014 plus, when in Pending state, the `claim_code` it must display on the console for the operator to pair.",
         "type": "object",
         "properties": {
           "claim_code": {
@@ -15939,7 +15735,7 @@
         ]
       },
       "RegisterStatusResponse": {
-        "description": "Response body for `GET /v2/agent/register/status`.\n\n`api_key` is populated exactly once — on the first call after the operator approves (or auto-approve fires). Subsequent calls return `state = Approved` with `api_key = None`. The agent persists the key locally on receipt; if the agent loses the key file, an operator must `tcadm cn disable` and re-approve.",
+        "description": "Response body for `GET /v1/agent/register/status`.\n\n`api_key` is populated exactly once \u2014 on the first call after the operator approves (or auto-approve fires). Subsequent calls return `state = Approved` with `api_key = None`. The agent persists the key locally on receipt; if the agent loses the key file, an operator must `tcadm cn disable` and re-approve.",
         "type": "object",
         "properties": {
           "api_key": {
@@ -15949,19 +15745,19 @@
           },
           "console_ticket_key_hex": {
             "nullable": true,
-            "description": "Per-CN HS256 console-ticket key, lowercase hex (32 bytes / 64 hex chars). Delivered exactly once, alongside `api_key`, on the first long-poll after the operator approves (or auto-approve fires). The agent persists it next to its credential file and uses it to verify the short-lived console tickets tritond mints when proxying a serial / VNC session. Secret — never logged. `None` on every subsequent poll and whenever `api_key` is `None`.",
+            "description": "Per-CN HS256 console-ticket key, lowercase hex (32 bytes / 64 hex chars). Delivered exactly once, alongside `api_key`, on the first long-poll after the operator approves (or auto-approve fires). The agent persists it next to its credential file and uses it to verify the short-lived console tickets tritond mints when proxying a serial / VNC session. Secret \u2014 never logged. `None` on every subsequent poll and whenever `api_key` is `None`.",
             "default": null,
             "type": "string"
           },
           "imds_token_key_hex": {
             "nullable": true,
-            "description": "Per-CN HS256 IMDSv2 session-token key, lowercase hex (32 bytes / 64 hex chars). Same delivery contract as `console_ticket_key_hex` -- handed exactly once alongside `api_key`, then `None` thereafter. The agent uses it to mint + verify the IMDSv2 session tokens guests obtain via `PUT /latest/api/token`. Secret -- never logged. See `IMDS_DESIGN.md` §3.",
+            "description": "Per-CN HS256 IMDSv2 session-token key, lowercase hex (32 bytes / 64 hex chars). Same delivery contract as `console_ticket_key_hex` -- handed exactly once alongside `api_key`, then `None` thereafter. The agent uses it to mint + verify the IMDSv2 session tokens guests obtain via `PUT /latest/api/token`. Secret -- never logged. See `IMDS_DESIGN.md` \u00a73.",
             "default": null,
             "type": "string"
           },
           "migrate_ticket_key_hex": {
             "nullable": true,
-            "description": "Per-CN HS256 live-migration ticket key, lowercase hex (32 bytes / 64 hex chars). Same one-shot delivery contract as `console_ticket_key_hex` / `imds_token_key_hex`. The agent persists this alongside the other ticket keys and uses it to verify migrate tickets the source-side agent presents when dialing the target's `/migrate/{id}` and `/migrate/{id}/zfs` listener routes. Secret — never logged. See `tritond_auth::MigrateTicketKey`.",
+            "description": "Per-CN HS256 live-migration ticket key, lowercase hex (32 bytes / 64 hex chars). Same one-shot delivery contract as `console_ticket_key_hex` / `imds_token_key_hex`. The agent persists this alongside the other ticket keys and uses it to verify migrate tickets the source-side agent presents when dialing the target's `/migrate/{id}` and `/migrate/{id}/zfs` listener routes. Secret \u2014 never logged. See `tritond_auth::MigrateTicketKey`.",
             "default": null,
             "type": "string"
           },
@@ -16029,7 +15825,7 @@
         ]
       },
       "ResourceScope": {
-        "description": "Wire mirror of `tritond_saga::ResourceScope`. Stable snake_case strings; safe to extend (callers that don't recognise a new value fall through to whatever default behavior they have — the value is opaque to most clients).",
+        "description": "Wire mirror of `tritond_saga::ResourceScope`. Stable snake_case strings; safe to extend (callers that don't recognise a new value fall through to whatever default behavior they have \u2014 the value is opaque to most clients).",
         "type": "string",
         "enum": [
           "fleet",
@@ -16656,7 +16452,7 @@
         ]
       },
       "SetCnRoleRequest": {
-        "description": "Request body for `POST /v2/cns/{server_uuid}/role`.",
+        "description": "Request body for `POST /v1/cns/{server_uuid}/role`.",
         "type": "object",
         "properties": {
           "role": {
@@ -16668,7 +16464,7 @@
         ]
       },
       "SetConfigRequest": {
-        "description": "Request body for `PUT /v2/config/{key}`.",
+        "description": "Request body for `PUT /v1/config/{key}`.",
         "type": "object",
         "properties": {
           "value": {
@@ -16680,7 +16476,7 @@
         ]
       },
       "SetGuestMetaRequest": {
-        "description": "Request body for `PUT /v2/agent/instances/{instance_id}/meta`. The agent-facing variant of [`SetMetaRequest`]; the agent can only ever write `guest/*` keys at instance scope, so the visibility + writable flags are fixed server-side (`guest_visible: true`, `guest_writable: true`) and not under guest control. The agent (and therefore the guest VM speaking to it) only supplies the value.",
+        "description": "Request body for `PUT /v1/agent/instances/{instance_id}/meta`. The agent-facing variant of [`SetMetaRequest`]; the agent can only ever write `guest/*` keys at instance scope, so the visibility + writable flags are fixed server-side (`guest_visible: true`, `guest_writable: true`) and not under guest control. The agent (and therefore the guest VM speaking to it) only supplies the value.",
         "type": "object",
         "properties": {
           "value": {}
@@ -16690,7 +16486,7 @@
         ]
       },
       "SetMetaRequest": {
-        "description": "Request body for `PUT /v2/meta/{scope}/{scope_id}/entry`. `value` is required; the two flags are optional and default to the values from [`tritond_store::default_guest_visible`] (and `false` for `guest_writable`).",
+        "description": "Request body for `PUT /v1/meta/{scope}/{scope_id}/entry`. `value` is required; the two flags are optional and default to the values from [`tritond_store::default_guest_visible`] (and `false` for `guest_writable`).",
         "type": "object",
         "properties": {
           "guest_visible": {
@@ -16710,7 +16506,7 @@
         ]
       },
       "SetMetaResponse": {
-        "description": "Response body for `PUT /v2/meta/{scope}/{scope_id}/entry`. Carries the stored entry and the scope's new generation counter (the realized-view cache key on the agent side).",
+        "description": "Response body for `PUT /v1/meta/{scope}/{scope_id}/entry`. Carries the stored entry and the scope's new generation counter (the realized-view cache key on the agent side).",
         "type": "object",
         "properties": {
           "entry": {
@@ -16728,7 +16524,7 @@
         ]
       },
       "SetPresignerRequest": {
-        "description": "Body of `POST /v2/storage/clusters/{id}/presigner`. Operator configures the IAM credential tritond signs presigned S3 URLs with. To clear the presigner, send empty strings — the handler treats empty as \"unset\". `s3_endpoint` is the data-plane URL (port 7443); leave `None` to keep the existing value during credential rotation.",
+        "description": "Body of `POST /v1/storage/clusters/{id}/presigner`. Operator configures the IAM credential tritond signs presigned S3 URLs with. To clear the presigner, send empty strings \u2014 the handler treats empty as \"unset\". `s3_endpoint` is the data-plane URL (port 7443); leave `None` to keep the existing value during credential rotation.",
         "type": "object",
         "properties": {
           "access_key_id": {
@@ -16748,7 +16544,7 @@
         ]
       },
       "ShadowedInstance": {
-        "description": "One row of the `shadowed` list returned by `GET /v2/meta/{scope}/{scope_id}/affected?key=K`. Carries the instance plus the scope that actually wins for it (a narrower scope's override, or `System` for a computed system key that shadows operator metadata).",
+        "description": "One row of the `shadowed` list returned by `GET /v1/meta/{scope}/{scope_id}/affected?key=K`. Carries the instance plus the scope that actually wins for it (a narrower scope's override, or `System` for a computed system key that shadows operator metadata).",
         "type": "object",
         "properties": {
           "id": {
@@ -16816,11 +16612,11 @@
         ]
       },
       "SourceFilesystemDetails": {
-        "description": "Source-dataset details captured at migration start so the saga can restore them on abort or rollback. The quota dance for bhyve (legacy compatibility — see plan §5) requires temporarily zeroing the source's `quota` and `refreservation` so snapshot send works; the original values live here and the terminal action either restores them on the source (abort) or applies them to the target (successful migration).",
+        "description": "Source-dataset details captured at migration start so the saga can restore them on abort or rollback. The quota dance for bhyve (legacy compatibility \u2014 see plan \u00a75) requires temporarily zeroing the source's `quota` and `refreservation` so snapshot send works; the original values live here and the terminal action either restores them on the source (abort) or applies them to the target (successful migration).",
         "type": "object",
         "properties": {
           "dataset": {
-            "description": "`zones/<instance>` or similar — the dataset that hosts the instance's root.",
+            "description": "`zones/<instance>` or similar \u2014 the dataset that hosts the instance's root.",
             "type": "string"
           },
           "encrypted": {
@@ -16880,11 +16676,11 @@
             "type": "string"
           },
           "public_key": {
-            "description": "OpenSSH-formatted public key — `<algo> <base64> [comment]`. Server-validated at create time; rejected with 400 if the `ssh-key` crate refuses to parse it.",
+            "description": "OpenSSH-formatted public key \u2014 `<algo> <base64> [comment]`. Server-validated at create time; rejected with 400 if the `ssh-key` crate refuses to parse it.",
             "type": "string"
           },
           "scope": {
-            "description": "Visibility scope. The variant carries the parent identity (silo_id / tenant_id / project_id / user_id) for the non-Public scopes; visibility checks resolve up the project → tenant → silo chain when needed.",
+            "description": "Visibility scope. The variant carries the parent identity (silo_id / tenant_id / project_id / user_id) for the non-Public scopes; visibility checks resolve up the project \u2192 tenant \u2192 silo chain when needed.",
             "allOf": [
               {
                 "$ref": "#/components/schemas/SshKeyScope"
@@ -16903,7 +16699,7 @@
         ]
       },
       "SshKeyScope": {
-        "description": "Visibility scope of an [`SshKey`]. Same shape as [`ImageScope`] — see Slice F. User scope is the most common in practice (every user owns their own personal keys); Public is for operator-distributed emergency-access keys; Silo / Tenant / Project are for shared deployment keys.\n\nThe variant carries everything the visibility predicate needs — there are no denormalised silo_id / tenant_id fields on [`SshKey`]. For `Project`, the resolver looks up the project to derive its tenant + silo when needed; for `Tenant`, the resolver looks up the tenant for its silo when needed. Cold path; correctness > one extra read.",
+        "description": "Visibility scope of an [`SshKey`]. Same shape as [`ImageScope`] \u2014 see Slice F. User scope is the most common in practice (every user owns their own personal keys); Public is for operator-distributed emergency-access keys; Silo / Tenant / Project are for shared deployment keys.\n\nThe variant carries everything the visibility predicate needs \u2014 there are no denormalised silo_id / tenant_id fields on [`SshKey`]. For `Project`, the resolver looks up the project to derive its tenant + silo when needed; for `Tenant`, the resolver looks up the tenant for its silo when needed. Cold path; correctness > one extra read.",
         "oneOf": [
           {
             "type": "object",
@@ -17038,7 +16834,7 @@
         ]
       },
       "StepStatus": {
-        "description": "Per-step status used in [`OperationStep::status`]. Lifecycle: `pending → running → (succeeded | failed)`. If the saga unwinds, each prior-Succeeded step transitions `succeeded → undo_running → (undone | undo_failed)`. A `succeeded` step that didn't need to be unwound (the saga succeeded overall) stays `succeeded`.",
+        "description": "Per-step status used in [`OperationStep::status`]. Lifecycle: `pending \u2192 running \u2192 (succeeded | failed)`. If the saga unwinds, each prior-Succeeded step transitions `succeeded \u2192 undo_running \u2192 (undone | undo_failed)`. A `succeeded` step that didn't need to be unwound (the saga succeeded overall) stays `succeeded`.",
         "oneOf": [
           {
             "description": "No events for this node yet.",
@@ -17076,14 +16872,14 @@
             ]
           },
           {
-            "description": "`UndoFinished` — the compensation completed cleanly.",
+            "description": "`UndoFinished` \u2014 the compensation completed cleanly.",
             "type": "string",
             "enum": [
               "undone"
             ]
           },
           {
-            "description": "`UndoFailed` — the compensation itself errored. Saga is terminal-stuck on this node.",
+            "description": "`UndoFailed` \u2014 the compensation itself errored. Saga is terminal-stuck on this node.",
             "type": "string",
             "enum": [
               "undo_failed"
@@ -17092,7 +16888,7 @@
         ]
       },
       "StorageAccessKey": {
-        "description": "Mirror of `mantad_client::types::AccessKey`. `secret_access_key` is `Some(_)` only on the `POST .../access-keys` create response — mantad does not retain the cleartext after that one return.",
+        "description": "Mirror of `mantad_client::types::AccessKey`. `secret_access_key` is `Some(_)` only on the `POST .../access-keys` create response \u2014 mantad does not retain the cleartext after that one return.",
         "type": "object",
         "properties": {
           "access_key_id": {
@@ -17122,7 +16918,7 @@
         ]
       },
       "StorageAddNodeRequest": {
-        "description": "Body for `POST /v2/storage/clusters/{id}/nodes`.",
+        "description": "Body for `POST /v1/storage/clusters/{id}/nodes`.",
         "type": "object",
         "properties": {
           "id": {
@@ -17144,7 +16940,7 @@
         ]
       },
       "StorageBucket": {
-        "description": "Mirror of `mantad_client::types::Bucket`. Returned by `GET /v2/storage/clusters/{id}/buckets` (and per-bucket get).",
+        "description": "Mirror of `mantad_client::types::Bucket`. Returned by `GET /v1/storage/clusters/{id}/buckets` (and per-bucket get).",
         "type": "object",
         "properties": {
           "created_at": {
@@ -17178,7 +16974,7 @@
         ]
       },
       "StorageClusterStatus": {
-        "description": "Operator-observed health of a registered storage cluster.\n\nPopulated by the `/v2/storage/clusters/{id}/health` endpoint, which runs a probe against the cluster's `/admin/v1/cluster` summary.",
+        "description": "Operator-observed health of a registered storage cluster.\n\nPopulated by the `/v1/storage/clusters/{id}/health` endpoint, which runs a probe against the cluster's `/admin/v1/cluster` summary.",
         "oneOf": [
           {
             "description": "Last probe succeeded and all nodes were alive.",
@@ -17211,7 +17007,7 @@
         ]
       },
       "StorageClusterSummary": {
-        "description": "Mirror of `mantad_client::types::ClusterSummary`. Returned by `GET /v2/storage/clusters/{id}/cluster`.",
+        "description": "Mirror of `mantad_client::types::ClusterSummary`. Returned by `GET /v1/storage/clusters/{id}/cluster`.",
         "type": "object",
         "properties": {
           "buckets": {
@@ -17284,7 +17080,7 @@
         ]
       },
       "StorageClusterSurface": {
-        "description": "Discriminator for the storage surface a registered cluster serves.\n\nEach surface has its own forwarder endpoint family (`/v2/storage/clusters/{id}/s3/*` etc.); attempting to call a surface's endpoint family on a cluster registered under a different surface returns a `409 Conflict`.",
+        "description": "Discriminator for the storage surface a registered cluster serves.\n\nEach surface has its own forwarder endpoint family (`/v1/storage/clusters/{id}/s3/*` etc.); attempting to call a surface's endpoint family on a cluster registered under a different surface returns a `409 Conflict`.",
         "oneOf": [
           {
             "description": "S3-compatible object surface (mantad / mantas3-cluster `/admin/v1/*`).",
@@ -17310,7 +17106,7 @@
         ]
       },
       "StorageClusterView": {
-        "description": "Wire-side projection of [`StorageCluster`] that **redacts every secret field** (admin token, presigner secret access key). This is what `GET /v2/storage/clusters` and `GET /v2/storage/clusters/{id}` return.",
+        "description": "Wire-side projection of [`StorageCluster`] that **redacts every secret field** (admin token, presigner secret access key). This is what `GET /v1/storage/clusters` and `GET /v1/storage/clusters/{id}` return.",
         "type": "object",
         "properties": {
           "created_at": {
@@ -17367,7 +17163,7 @@
         ]
       },
       "StorageCreateBucketRequest": {
-        "description": "Body for `POST /v2/storage/clusters/{id}/buckets`.",
+        "description": "Body for `POST /v1/storage/clusters/{id}/buckets`.",
         "type": "object",
         "properties": {
           "durability": {
@@ -17387,7 +17183,7 @@
         ]
       },
       "StorageCreateUserRequest": {
-        "description": "Body for `POST /v2/storage/clusters/{id}/users`.",
+        "description": "Body for `POST /v1/storage/clusters/{id}/users`.",
         "type": "object",
         "properties": {
           "name": {
@@ -17399,7 +17195,7 @@
         ]
       },
       "StorageMembership": {
-        "description": "Mirror of `mantad_client::types::Membership`. Returned by `GET /v2/storage/clusters/{id}/membership` and by every node-mutation endpoint (drain / undrain / reweight / add / remove) that mantad answers with the refreshed view.",
+        "description": "Mirror of `mantad_client::types::Membership`. Returned by `GET /v1/storage/clusters/{id}/membership` and by every node-mutation endpoint (drain / undrain / reweight / add / remove) that mantad answers with the refreshed view.",
         "type": "object",
         "properties": {
           "auto_membership": {
@@ -17424,7 +17220,7 @@
         ]
       },
       "StorageNode": {
-        "description": "Mirror of `mantad_client::types::Node`. Returned by `GET /v2/storage/clusters/{id}/nodes` (and the per-node lookup).",
+        "description": "Mirror of `mantad_client::types::Node`. Returned by `GET /v1/storage/clusters/{id}/nodes` (and the per-node lookup).",
         "type": "object",
         "properties": {
           "alive": {
@@ -17507,7 +17303,7 @@
         ]
       },
       "StorageObjectsPage": {
-        "description": "Mirror of `mantad_client::types::ObjectsPage`. Paged `GET /v2/storage/clusters/{id}/buckets/{bucket}/objects` response.",
+        "description": "Mirror of `mantad_client::types::ObjectsPage`. Paged `GET /v1/storage/clusters/{id}/buckets/{bucket}/objects` response.",
         "type": "object",
         "properties": {
           "common_prefixes": {
@@ -17559,7 +17355,7 @@
         ]
       },
       "StorageReweightRequest": {
-        "description": "Body for `POST /v2/storage/clusters/{id}/nodes/{node_id}/reweight`.",
+        "description": "Body for `POST /v1/storage/clusters/{id}/nodes/{node_id}/reweight`.",
         "type": "object",
         "properties": {
           "factor": {
@@ -17626,7 +17422,7 @@
         ]
       },
       "Subnet": {
-        "description": "Layer-3 subnet inside a VPC. Each subnet carves a CIDR out of its parent VPC's IPv4 and/or IPv6 block. Multiple subnets may exist per VPC; their CIDRs must not overlap. NIC attach points to a specific subnet at instance-launch time.\n\nInvariants enforced at create time: * Every present subnet CIDR must be a strict subnet of the parent VPC's same-family CIDR (`ipv4_block ⊆ vpc.ipv4_block`, `ipv6_block ⊆ vpc.ipv6_block`). * No subnet CIDR (in either family) may overlap an existing subnet CIDR in the same VPC. * At least one of `ipv4_block` / `ipv6_block` must be `Some`, and each present family must also be present on the parent VPC (an IPv4-only VPC cannot host an IPv6 subnet).",
+        "description": "Layer-3 subnet inside a VPC. Each subnet carves a CIDR out of its parent VPC's IPv4 and/or IPv6 block. Multiple subnets may exist per VPC; their CIDRs must not overlap. NIC attach points to a specific subnet at instance-launch time.\n\nInvariants enforced at create time: * Every present subnet CIDR must be a strict subnet of the parent VPC's same-family CIDR (`ipv4_block \u2286 vpc.ipv4_block`, `ipv6_block \u2286 vpc.ipv6_block`). * No subnet CIDR (in either family) may overlap an existing subnet CIDR in the same VPC. * At least one of `ipv4_block` / `ipv6_block` must be `Some`, and each present family must also be present on the parent VPC (an IPv4-only VPC cannot host an IPv6 subnet).",
         "type": "object",
         "properties": {
           "created_at": {
@@ -17876,7 +17672,7 @@
         ]
       },
       "Vpc": {
-        "description": "Tenant VPC. Project-scoped, tenant-rooted. Mirrors the per-VPC fields OPTE consumes in `oxide_vpc::api::VpcCfg`: a 24-bit Geneve VNI plus an optional primary IPv4 CIDR and optional primary IPv6 CIDR (matching OPTE's `IpCfg` enum: Ipv4-only, Ipv6-only, or dual-stack). Per-NIC concerns (guest MAC, private IPs, external IPs, attached_subnets, DHCP) are *not* on the VPC record — those land on subnet/instance/NIC resources in later slices.",
+        "description": "Tenant VPC. Project-scoped, tenant-rooted. Mirrors the per-VPC fields OPTE consumes in `oxide_vpc::api::VpcCfg`: a 24-bit Geneve VNI plus an optional primary IPv4 CIDR and optional primary IPv6 CIDR (matching OPTE's `IpCfg` enum: Ipv4-only, Ipv6-only, or dual-stack). Per-NIC concerns (guest MAC, private IPs, external IPs, attached_subnets, DHCP) are *not* on the VPC record \u2014 those land on subnet/instance/NIC resources in later slices.",
         "type": "object",
         "properties": {
           "created_at": {

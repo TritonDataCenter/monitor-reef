@@ -57,7 +57,7 @@ pub struct ImdsListenerConfig {
     /// doesn't pay a tritond round trip per request; cache misses
     /// fetch through this source. See `IMDS_DESIGN.md` §3 -- the
     /// swappable data-source trait whose default impl is the
-    /// tritond `/v2/instances/{id}/realized-meta` client (later, a
+    /// tritond `/v1/instances/{id}/realized-meta` client (later, a
     /// direct restricted FDB read).
     pub realized_source: Arc<dyn RealizedDataSource>,
     /// Tritond client used by the PUT writeback path
@@ -463,7 +463,7 @@ async fn triton_guest_get(
 /// written is `guest/{*key}`.
 ///
 /// Server-side rules live in tritond
-/// (`/v2/agent/instances/{id}/meta`): the key must already exist in
+/// (`/v1/agent/instances/{id}/meta`): the key must already exist in
 /// the realized view AND the existing entry must be
 /// `guest_writable: true` AND the write lands at whichever scope
 /// the entry already lives in (silo / tenant / project / instance).
