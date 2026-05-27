@@ -216,15 +216,6 @@ async fn load_config() -> Result<ApiServerConfig> {
 struct OperatorCreds {
     /// CloudAPI base URL (e.g. `https://cloudapi.example.com`).
     cloudapi_url: String,
-    /// Operator account login name (e.g. `travis`).
-    /// Used as `TRITON_ACCOUNT` in the controller ConfigMap; must be the
-    /// login name, not the UUID, for HTTP Signature keyId to resolve.
-    account_login: String,
-    /// Key fingerprint in MD5 colon-hex format (e.g. `aa:bb:cc:...`).
-    /// Used as `TRITON_KEY_ID` in the controller Secret.
-    key_id: String,
-    /// Raw PEM content of the operator private key.
-    key_pem: String,
     /// Whether to skip TLS verification when connecting to CloudAPI.
     insecure: bool,
 }
@@ -2548,7 +2539,6 @@ async fn build_cloudapi_client(
 /// which is what Triton CloudAPI uses in HTTP Signature `keyId` paths.
 fn ssh_md5_fingerprint(key_pem: &str) -> anyhow::Result<String> {
     use md5::Digest as _;
-    use ssh_encoding::Encode as _;
 
     let pk = ssh_key::PrivateKey::from_openssh(key_pem.trim())
         .context("parse SSH private key for fingerprint computation")?;
@@ -2561,32 +2551,17 @@ fn ssh_md5_fingerprint(key_pem: &str) -> anyhow::Result<String> {
     Ok(parts.join(":"))
 }
 
-/// Load operator credential material for lb install.
+/// Load operator CloudAPI connection parameters for lb install.
 ///
-/// Returns `None` when no cloudapi config is present or when
-/// `key_fingerprint` is not set (lb install will return 503 in that case).
+/// Returns `None` when no cloudapi config is present.
 async fn build_operator_creds(
     cfg: Option<&CloudApiConfigFile>,
 ) -> Result<Option<Arc<OperatorCreds>>> {
     let Some(cfg) = cfg else {
         return Ok(None);
     };
-    let Some(ref fp) = cfg.key_fingerprint else {
-        return Ok(None);
-    };
-    let key_pem = tokio::fs::read_to_string(&cfg.key_file)
-        .await
-        .with_context(|| {
-            format!(
-                "read operator key file {} for lb credentials",
-                cfg.key_file.display()
-            )
-        })?;
     Ok(Some(Arc::new(OperatorCreds {
         cloudapi_url: cfg.url.to_string(),
-        account_login: cfg.account.clone(),
-        key_id: fp.clone(),
-        key_pem,
         insecure: cfg.insecure,
     })))
 }
