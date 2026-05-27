@@ -124,6 +124,15 @@ pub struct ClusterPath {
     pub cluster: Uuid,
 }
 
+/// Path parameters for `GET /v1/k8s/relay/{cluster}/info`.
+///
+/// Accepts a cluster UUID or name.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RelayClusterPath {
+    /// Cluster UUID or name.
+    pub cluster: String,
+}
+
 /// Response for `GET /v1/k8s/relay/{cluster}/info`.
 ///
 /// Returns the control-plane IP so `triton-relay-bridge` can derive the

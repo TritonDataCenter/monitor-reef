@@ -421,6 +421,6 @@ pub trait TritonApi {
     }]
     async fn k8s_relay_cluster_info(
         rqctx: RequestContext<Self::Context>,
-        path: Path<ClusterPath>,
+        path: Path<RelayClusterPath>,
     ) -> Result<HttpResponseOk<RelayInfo>, HttpError>;
 }

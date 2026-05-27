@@ -185,6 +185,10 @@ pub trait ClusterStore: Send + Sync {
     /// Delete a cluster by id. Returns `true` if a record was removed,
     /// `false` if it did not exist.
     async fn delete(&self, id: Uuid) -> Result<bool, StoreError>;
+
+    /// Find a cluster by name (case-sensitive). Returns the first match across
+    /// all accounts, or `None` if not found. Used by unauthed relay endpoints.
+    async fn find_by_name(&self, name: &str) -> Result<Option<ClusterRecord>, StoreError>;
 }
 
 /// File-backed [`ClusterStore`].
@@ -281,6 +285,36 @@ impl ClusterStore for FileClusterStore {
         let bytes = serde_json::to_vec_pretty(record)?;
         write_atomic(&final_path, &bytes).await?;
         Ok(())
+    }
+
+    async fn find_by_name(&self, name: &str) -> Result<Option<ClusterRecord>, StoreError> {
+        let mut entries = fs::read_dir(&self.state_dir).await?;
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            if uuid::Uuid::parse_str(stem).is_err() {
+                continue;
+            }
+            let bytes = match fs::read(&path).await {
+                Ok(b) => b,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(e) => return Err(e.into()),
+            };
+            let record: ClusterRecord = match serde_json::from_slice(&bytes) {
+                Ok(r) => r,
+                Err(e) => {
+                    warn!(?path, error = %e, "skipping unparseable cluster record");
+                    continue;
+                }
+            };
+            if record.name == name {
+                return Ok(Some(record));
+            }
+        }
+        Ok(None)
     }
 
     async fn delete(&self, id: Uuid) -> Result<bool, StoreError> {

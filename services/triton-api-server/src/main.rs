@@ -27,8 +27,8 @@ use triton_api::{
     ClusterList, ClusterPath, ClusterState, CreateClusterRequest, InstallLbRequest, Jwk, JwkSet,
     KubeconfigResponse, LbStatus, LoginChallenge, LoginOutcome, LoginRequest, LoginResponse,
     LoginVerifyRequest, LogoutResponse, NodeBootstrapRole, NodeBootstrapSpec, PingResponse,
-    RefreshRequest, RefreshResponse, RelayInfo, SessionResponse, TritonApi, UpgradeClusterRequest,
-    UserInfo,
+    RefreshRequest, RefreshResponse, RelayClusterPath, RelayInfo, SessionResponse, TritonApi,
+    UpgradeClusterRequest, UserInfo,
 };
 use triton_auth::{auth_scheme, http_sig};
 use triton_auth_session::{
@@ -1257,16 +1257,25 @@ impl TritonApi for TritonApiImpl {
 
     async fn k8s_relay_cluster_info(
         rqctx: RequestContext<Self::Context>,
-        path: Path<ClusterPath>,
+        path: Path<RelayClusterPath>,
     ) -> Result<HttpResponseOk<RelayInfo>, HttpError> {
-        let id = path.into_inner().cluster;
-        let record = rqctx
-            .context()
-            .cluster_store
-            .get(id)
-            .await
-            .map_err(store_error_to_http)?
-            .ok_or_else(|| cluster_not_found(id))?;
+        let raw = path.into_inner().cluster;
+        let store = &rqctx.context().cluster_store;
+        let record = if let Ok(id) = Uuid::parse_str(&raw) {
+            store
+                .get(id)
+                .await
+                .map_err(store_error_to_http)?
+                .ok_or_else(|| cluster_not_found(id))?
+        } else {
+            store
+                .find_by_name(&raw)
+                .await
+                .map_err(store_error_to_http)?
+                .ok_or_else(|| {
+                    HttpError::for_not_found(None, format!("cluster {raw:?} not found"))
+                })?
+        };
         let endpoint = record
             .control_plane_config
             .ok_or_else(|| {
