@@ -1933,6 +1933,7 @@ async fn run_lb_install(
         operator_creds.cloudapi_url.clone(),
     );
     configmap_data.insert("triton-account".to_string(), operator_creds.account_login.clone());
+    configmap_data.insert("triton-act-as".to_string(), provision_account.clone());
     configmap_data.insert(
         "triton-insecure".to_string(),
         operator_creds.insecure.to_string(),

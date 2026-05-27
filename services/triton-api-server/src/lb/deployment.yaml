@@ -46,6 +46,11 @@ spec:
                 configMapKeyRef:
                   name: triton-lb-controller-config
                   key: triton-account
+            - name: TRITON_ACT_AS
+              valueFrom:
+                configMapKeyRef:
+                  name: triton-lb-controller-config
+                  key: triton-act-as
             - name: TRITON_INSECURE
               valueFrom:
                 configMapKeyRef:
