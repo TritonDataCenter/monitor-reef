@@ -416,7 +416,7 @@ pub trait TritonApi {
     /// which is already the trust boundary in the POC.
     #[endpoint {
         method = GET,
-        path = "/v1/k8s/relay/{cluster}/info",
+        path = "/v1/k8s/relay/info/{cluster}",
         tags = ["k8s-relay"],
     }]
     async fn k8s_relay_cluster_info(

@@ -97,7 +97,7 @@ async fn main() -> Result<()> {
         .join("/");
 
     // Fetch the control-plane IP from the relay-info endpoint.
-    let info_url = format!("{http_base}/v1/k8s/relay/{}/info", args.cluster);
+    let info_url = format!("{http_base}/v1/k8s/relay/info/{}", args.cluster);
     info!("fetching relay info from {info_url}");
     let relay_info: RelayInfo = reqwest::get(&info_url)
         .await
