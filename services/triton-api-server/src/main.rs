@@ -27,7 +27,8 @@ use triton_api::{
     ClusterList, ClusterPath, ClusterState, CreateClusterRequest, InstallLbRequest, Jwk, JwkSet,
     KubeconfigResponse, LbStatus, LoginChallenge, LoginOutcome, LoginRequest, LoginResponse,
     LoginVerifyRequest, LogoutResponse, NodeBootstrapRole, NodeBootstrapSpec, PingResponse,
-    RefreshRequest, RefreshResponse, SessionResponse, TritonApi, UpgradeClusterRequest, UserInfo,
+    RefreshRequest, RefreshResponse, RelayInfo, SessionResponse, TritonApi, UpgradeClusterRequest,
+    UserInfo,
 };
 use triton_auth::{auth_scheme, http_sig};
 use triton_auth_session::{
@@ -1252,6 +1253,38 @@ impl TritonApi for TritonApiImpl {
         }
 
         Ok(())
+    }
+
+    async fn k8s_relay_cluster_info(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+    ) -> Result<HttpResponseOk<RelayInfo>, HttpError> {
+        let id = path.into_inner().cluster;
+        let record = rqctx
+            .context()
+            .cluster_store
+            .get(id)
+            .await
+            .map_err(store_error_to_http)?
+            .ok_or_else(|| cluster_not_found(id))?;
+        let endpoint = record
+            .control_plane_config
+            .ok_or_else(|| {
+                HttpError::for_unavail(
+                    Some("NotProvisioned".to_string()),
+                    "cluster has no control plane provisioned".to_string(),
+                )
+            })?
+            .endpoint;
+        // endpoint is "https://ip:port" — extract just the IP.
+        let control_plane_ip = endpoint
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .split(':')
+            .next()
+            .unwrap_or("")
+            .to_string();
+        Ok(HttpResponseOk(RelayInfo { control_plane_ip }))
     }
 }
 

@@ -408,4 +408,19 @@ pub trait TritonApi {
         rqctx: RequestContext<Self::Context>,
         upgraded: WebsocketConnection,
     ) -> WebsocketChannelResult;
+
+    /// Return the control-plane IP for a cluster so `triton-relay-bridge`
+    /// can derive its `--target` automatically.
+    ///
+    /// No authentication — the fabric IP is only useful through the relay,
+    /// which is already the trust boundary in the POC.
+    #[endpoint {
+        method = GET,
+        path = "/v1/k8s/relay/{cluster}/info",
+        tags = ["k8s-relay"],
+    }]
+    async fn k8s_relay_cluster_info(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+    ) -> Result<HttpResponseOk<RelayInfo>, HttpError>;
 }

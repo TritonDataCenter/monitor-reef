@@ -124,6 +124,16 @@ pub struct ClusterPath {
     pub cluster: Uuid,
 }
 
+/// Response for `GET /v1/k8s/relay/{cluster}/info`.
+///
+/// Returns the control-plane IP so `triton-relay-bridge` can derive the
+/// forwarding target without requiring Triton credentials.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RelayInfo {
+    /// Fabric IP of the control-plane node (e.g. `"192.168.128.172"`).
+    pub control_plane_ip: String,
+}
+
 /// Response body for `GET /v1/k8s/clusters`.
 ///
 /// A wrapper struct (rather than a bare `Vec<Cluster>`) so future
