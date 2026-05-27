@@ -21,157 +21,10 @@
 //!
 //! # Schema
 //!
-//! Phase 0 lays down the following key prefixes:
-//!
-//! ```text
-//! silo/by_id/<uuid>                 -> JSON-encoded Silo
-//! silo/by_name/<name>               -> uuid hyphenated bytes
-//! user/by_id/<uuid>                 -> JSON-encoded User
-//! user/by_name/<username>           -> uuid hyphenated bytes
-//! user/by_federation/<tenant>/<sha256>
-//!                                   -> uuid hyphenated bytes
-//! apikey/by_id/<uuid>               -> JSON-encoded ApiKey
-//! apikey/by_lookup/<lookup_id>      -> uuid hyphenated bytes
-//! apikey/by_user/<uuid>/<key-uuid>  -> empty (membership index)
-//! idp/by_tenant/<uuid>              -> JSON-encoded IdpConfig
-//! idp/by_issuer/<sha256-hex>        -> tenant uuid hyphenated bytes
-//!                                      (issuer-uniqueness reverse index;
-//!                                       sha256 keeps URLs out of the keyspace)
-//! project/by_id/<uuid>              -> JSON-encoded Project
-//! project/by_silo/<silo>/<name>     -> uuid hyphenated bytes
-//! project/in_silo/<silo>/<proj>     -> empty (membership index)
-//! tenant/by_id/<uuid>               -> JSON-encoded Tenant
-//! tenant/by_silo/<silo>/<name>      -> uuid hyphenated bytes
-//! tenant/in_silo/<silo>/<tenant>    -> empty (membership index)
-//! vpc/by_id/<uuid>                  -> JSON-encoded Vpc
-//! vpc/by_project/<proj>/<name>      -> uuid hyphenated bytes
-//! vpc/in_project/<proj>/<vpc>       -> empty (membership index)
-//! vpc/by_vni/<vni-hex8>             -> uuid hyphenated bytes
-//! subnet/by_id/<uuid>               -> JSON-encoded Subnet
-//! subnet/by_vpc/<vpc>/<name>        -> uuid hyphenated bytes
-//! subnet/in_vpc/<vpc>/<subnet>      -> empty (membership index)
-//! route_table/by_id/<uuid>          -> JSON-encoded RouteTable
-//! route_table/by_vpc/<vpc>/<name>   -> uuid hyphenated bytes
-//! route_table/in_vpc/<vpc>/<rt>     -> empty (membership index)
-//! route_table/main/<vpc>            -> uuid hyphenated bytes
-//! route/by_id/<uuid>                -> JSON-encoded Route
-//! route/by_table/<rt>/<destination> -> uuid hyphenated bytes
-//! route/in_table/<rt>/<route>       -> empty (membership index)
-//! nat_gateway/by_id/<uuid>          -> JSON-encoded NatGatewayRecord
-//! nat_gateway/by_vpc/<vpc>/<name>   -> uuid hyphenated bytes
-//! nat_gateway/in_vpc/<vpc>/<nat>    -> empty (membership index)
-//! edge_cluster/by_id/<uuid>         -> JSON-encoded EdgeClusterRecord
-//! edge_cluster/by_name/<name>        -> uuid hyphenated bytes
-//! edge_cluster/all/<uuid>           -> empty (membership index)
-//! edge_cluster/by_resource/<kind>/<resource>/<edge>
-//!                                   -> empty (reverse resource index)
-//! ssh_key/by_id/<uuid>              -> JSON-encoded SshKey
-//! ssh_key/by_public/<name>          -> uuid hyphenated bytes
-//! ssh_key/by_silo/<silo>/<name>     -> uuid hyphenated bytes
-//! ssh_key/by_tenant/<tenant>/<name> -> uuid hyphenated bytes
-//! ssh_key/by_project/<proj>/<name>  -> uuid hyphenated bytes
-//! ssh_key/by_user/<user>/<name>     -> uuid hyphenated bytes
-//! ssh_key/by_public_fp/<fp>         -> uuid hyphenated bytes
-//! ssh_key/by_silo_fp/<silo>/<fp>    -> uuid hyphenated bytes
-//! ssh_key/by_tenant_fp/<tenant>/<fp>
-//!                                   -> uuid hyphenated bytes
-//! ssh_key/by_project_fp/<proj>/<fp> -> uuid hyphenated bytes
-//! ssh_key/by_user_fp/<user>/<fp>    -> uuid hyphenated bytes
-//! ssh_key/in_public/<key>           -> empty (membership index, public)
-//! ssh_key/in_silo/<silo>/<key>      -> empty (membership index, silo)
-//! ssh_key/in_tenant/<tenant>/<key>  -> empty (membership index, tenant)
-//! ssh_key/in_project/<proj>/<key>   -> empty (membership index, project)
-//! ssh_key/by_user_idx/<user>/<key>  -> empty (membership index, user)
-//! image/by_id/<uuid>                -> JSON-encoded Image
-//! image/by_public/<name>            -> uuid hyphenated bytes
-//! image/by_silo/<silo>/<name>       -> uuid hyphenated bytes
-//! image/by_tenant/<tenant>/<name>   -> uuid hyphenated bytes
-//! image/by_project/<proj>/<name>    -> uuid hyphenated bytes
-//! image/by_user/<user>/<name>       -> uuid hyphenated bytes
-//! image/in_public/<image>           -> empty (membership index, public scope)
-//! image/in_silo/<silo>/<image>      -> empty (membership index, silo scope)
-//! image/in_tenant/<tenant>/<image>  -> empty (membership index, tenant scope)
-//! image/in_project/<proj>/<image>   -> empty (membership index, project scope)
-//! image/by_user_idx/<user>/<image>  -> empty (membership index, user scope)
-//! quota/by_project/<project>        -> JSON-encoded Quota
-//! instance/by_id/<uuid>             -> JSON-encoded Instance
-//! instance/by_project/<proj>/<name> -> uuid hyphenated bytes
-//! instance/in_project/<proj>/<inst> -> empty (membership index)
-//! nic/by_id/<uuid>                  -> JSON-encoded Nic
-//! nic/in_instance/<inst>/<nic>      -> empty (membership index)
-//! nic/ip_alloc/<subnet>/v4/<addr>   -> empty (allocation index, v4)
-//! nic/ip_alloc/<subnet>/v6/<addr>   -> empty (allocation index, v6)
-//! disk/by_id/<uuid>                 -> JSON-encoded Disk
-//! disk/in_instance/<inst>/<disk>    -> empty (membership index)
-//! floating_ip/by_id/<uuid>          -> JSON-encoded FloatingIp
-//! floating_ip/by_project/<p>/<name> -> uuid hyphenated bytes
-//! floating_ip/in_project/<p>/<fip>  -> empty (membership index)
-//! floating_ip/alloc/v4/<addr>       -> holder bytes, e.g. floating_ip:<uuid>
-//!                                      or nat_gateway:<uuid>
-//! floating_ip/alloc/v6/<addr>       -> holder bytes, e.g. floating_ip:<uuid>
-//!                                      or nat_gateway:<uuid>
-//! job/by_id/<uuid>                  -> JSON-encoded ProvisioningJob
-//! job/pending/<seq-be-u64>          -> uuid hyphenated bytes (FIFO queue)
-//! job/seq/counter                   -> next seq, big-endian u64
-//! cn/by_uuid/<server_uuid>          -> JSON-encoded Cn
-//! cn/by_claim/<normalized_code>     -> server_uuid hyphenated bytes
-//! cn/by_poll/<poll_token>           -> server_uuid hyphenated bytes
-//! cn/by_state/<state>/<server_uuid> -> empty (membership index)
-//! auto_approve/window               -> JSON-encoded AutoApproveWindow (singleton)
-//! config/settings                   -> JSON-encoded Settings (singleton; absent
-//!                                      key means "all defaults")
-//! system/<tag>                      -> raw bytes (e.g. JWT signing key)
-//! network_realization/<kind>/<resource_id>/<realizer_kind>/<realizer_id>
-//!                                   -> JSON-encoded Realization
-//!                                      (Slice H-1; <kind> matches the
-//!                                       NetworkResourceId serde wire tag,
-//!                                       <realizer_kind> matches the
-//!                                       RealizerId serde wire tag —
-//!                                       both kept in lockstep with
-//!                                       `NetworkResourceId::kind_tag` and
-//!                                       `RealizerId::kind_tag`.)
-//! dhcp_pool/by_vpc/<vpc>            -> JSON-encoded DhcpPool (singleton per VPC)
-//! dhcp_reservation/by_vpc/<vpc>/<mac>
-//!                                   -> JSON-encoded DhcpReservation (mac is
-//!                                      canonical lowercase colon form;
-//!                                      list-by-vpc range-scans the
-//!                                      `dhcp_reservation/by_vpc/<vpc>/`
-//!                                      prefix)
-//! dhcp_lease/by_vpc/<vpc>/<mac>     -> JSON-encoded DhcpLease (same shape;
-//!                                      `list_all_dhcp_leases` range-scans
-//!                                      `dhcp_lease/by_vpc/`)
-//! storage_cluster/by_id/<uuid>      -> JSON-encoded StorageCluster
-//! storage_cluster/by_name/<name>    -> uuid hyphenated bytes
-//! storage_cluster/all/<uuid>        -> empty (membership index)
-//! meta/<scope>/<uuid>/<key>         -> JSON-encoded MetaValue
-//!                                      (<scope> in silo|tenant|
-//!                                       project|instance)
-//! meta/gen/<scope>/<uuid>           -> big-endian u64 generation,
-//!                                      bumped per metadata write
-//!                                      (absent == 0)
-//!
-//! ## RFD 00007 AP-1c secondary indexes
-//!
-//! Each row is written in the same transaction as the indexed
-//! primary row (no async indexer, no rebuild step). Payloads are
-//! empty unless the index needs to carry a reverse pointer the
-//! reader cannot reconstruct from the key alone.
-//!
-//! instance/in_image/<image>/<inst>  -> empty
-//!                                      (drives ?image= filters)
-//! nic/in_subnet/<subnet>/<nic>      -> empty
-//!                                      (drives ?subnet= filters)
-//! nic/by_ip/<ip>                    -> nic_uuid hyphenated bytes
-//!                                      (unique by invariant; one
-//!                                       NIC per IP per rack)
-//! dhcp_lease/by_mac/<mac>           -> vpc_uuid hyphenated bytes
-//!                                      (combined with the MAC,
-//!                                       reconstructs the lease's
-//!                                       (vpc_id, mac) primary key
-//!                                       without a per-VPC scan)
-//! ```
-//!
-//! Each multi-key write happens in a single transaction so name
+//! Every key shape lives in [`keys`]. The parity tests in
+//! `keys::tests` pin the on-disk bytes; any drift between this
+//! module and the index/lookup expectations breaks them. Writes
+//! that touch multiple keys ride a single transaction so name
 //! uniqueness and index consistency are enforced atomically.
 
 use std::collections::HashSet;
@@ -207,6 +60,8 @@ use crate::{
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
 /// in-memory store's cap; with ~16.7M candidates this is operationally
 /// unreachable.
+mod keys;
+
 const VNI_RETRY_ATTEMPTS: usize = 8;
 const MAIN_ROUTE_TABLE_NAME: &str = "main";
 
@@ -287,187 +142,6 @@ impl FdbStore {
         Arc::clone(&self.db)
     }
 
-    fn silo_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("silo/by_id/{id}").into_bytes()
-    }
-
-    fn silo_by_name_key(name: &str) -> Vec<u8> {
-        format!("silo/by_name/{name}").into_bytes()
-    }
-
-    fn tenant_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("tenant/by_id/{id}").into_bytes()
-    }
-
-    fn tenant_by_silo_name_key(silo_id: Uuid, name: &str) -> Vec<u8> {
-        format!("tenant/by_silo/{silo_id}/{name}").into_bytes()
-    }
-
-    fn tenant_in_silo_key(silo_id: Uuid, tenant_id: Uuid) -> Vec<u8> {
-        format!("tenant/in_silo/{silo_id}/{tenant_id}").into_bytes()
-    }
-
-    fn tenant_in_silo_prefix(silo_id: Uuid) -> Vec<u8> {
-        format!("tenant/in_silo/{silo_id}/").into_bytes()
-    }
-
-    fn user_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("user/by_id/{id}").into_bytes()
-    }
-
-    fn user_by_name_key(name: &str) -> Vec<u8> {
-        format!("user/by_name/{name}").into_bytes()
-    }
-
-    fn user_prefix() -> &'static [u8] {
-        b"user/by_id/"
-    }
-
-    fn apikey_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("apikey/by_id/{id}").into_bytes()
-    }
-
-    fn apikey_by_lookup_key(lookup_id: &str) -> Vec<u8> {
-        format!("apikey/by_lookup/{lookup_id}").into_bytes()
-    }
-
-    fn apikey_user_index_key(user_id: Uuid, key_id: Uuid) -> Vec<u8> {
-        format!("apikey/by_user/{user_id}/{key_id}").into_bytes()
-    }
-
-    fn apikey_user_index_prefix(user_id: Uuid) -> Vec<u8> {
-        format!("apikey/by_user/{user_id}/").into_bytes()
-    }
-
-    fn system_key(key: SystemKey) -> Vec<u8> {
-        format!("system/{}", key.tag()).into_bytes()
-    }
-
-    fn user_federation_key(tenant_id: Uuid, issuer: &str, subject: &str) -> Vec<u8> {
-        // SHA-256 of `issuer\0subject` → fixed-length, no escaping
-        // worries for arbitrary issuer URLs that contain slashes.
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(issuer.as_bytes());
-        hasher.update(b"\0");
-        hasher.update(subject.as_bytes());
-        let digest = hasher.finalize();
-        let hex = digest_to_hex(&digest);
-        format!("user/by_federation/{tenant_id}/{hex}").into_bytes()
-    }
-
-    fn idp_config_key(tenant_id: Uuid) -> Vec<u8> {
-        format!("idp/by_tenant/{tenant_id}").into_bytes()
-    }
-
-    fn idp_config_prefix() -> &'static [u8] {
-        b"idp/by_tenant/"
-    }
-
-    /// Reverse index: SHA-256(issuer) → owning tenant uuid. Hashing
-    /// keeps arbitrary issuer URLs (slashes, ports, paths) out of
-    /// the key space the same way ssh-key fingerprint indices do.
-    fn idp_by_issuer_key(issuer: &str) -> Vec<u8> {
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(issuer.as_bytes());
-        let digest = hasher.finalize();
-        let hex = digest_to_hex(&digest);
-        format!("idp/by_issuer/{hex}").into_bytes()
-    }
-
-    fn project_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("project/by_id/{id}").into_bytes()
-    }
-
-    fn project_by_tenant_name_key(tenant_id: Uuid, name: &str) -> Vec<u8> {
-        format!("project/by_tenant/{tenant_id}/{name}").into_bytes()
-    }
-
-    fn project_in_tenant_key(tenant_id: Uuid, project_id: Uuid) -> Vec<u8> {
-        format!("project/in_tenant/{tenant_id}/{project_id}").into_bytes()
-    }
-
-    fn project_in_tenant_prefix(tenant_id: Uuid) -> Vec<u8> {
-        format!("project/in_tenant/{tenant_id}/").into_bytes()
-    }
-
-    fn vpc_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("vpc/by_id/{id}").into_bytes()
-    }
-
-    fn vpc_by_project_name_key(project_id: Uuid, name: &str) -> Vec<u8> {
-        format!("vpc/by_project/{project_id}/{name}").into_bytes()
-    }
-
-    fn vpc_in_project_key(project_id: Uuid, vpc_id: Uuid) -> Vec<u8> {
-        format!("vpc/in_project/{project_id}/{vpc_id}").into_bytes()
-    }
-
-    fn vpc_in_project_prefix(project_id: Uuid) -> Vec<u8> {
-        format!("vpc/in_project/{project_id}/").into_bytes()
-    }
-
-    fn vpc_by_vni_key(vni: u32) -> Vec<u8> {
-        format!("vpc/by_vni/{vni:08x}").into_bytes()
-    }
-
-    fn subnet_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("subnet/by_id/{id}").into_bytes()
-    }
-
-    fn subnet_by_vpc_name_key(vpc_id: Uuid, name: &str) -> Vec<u8> {
-        format!("subnet/by_vpc/{vpc_id}/{name}").into_bytes()
-    }
-
-    fn subnet_in_vpc_key(vpc_id: Uuid, subnet_id: Uuid) -> Vec<u8> {
-        format!("subnet/in_vpc/{vpc_id}/{subnet_id}").into_bytes()
-    }
-
-    fn subnet_in_vpc_prefix(vpc_id: Uuid) -> Vec<u8> {
-        format!("subnet/in_vpc/{vpc_id}/").into_bytes()
-    }
-
-    fn route_table_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("route_table/by_id/{id}").into_bytes()
-    }
-
-    fn route_table_by_vpc_name_key(vpc_id: Uuid, name: &str) -> Vec<u8> {
-        format!("route_table/by_vpc/{vpc_id}/{name}").into_bytes()
-    }
-
-    fn route_table_in_vpc_key(vpc_id: Uuid, route_table_id: Uuid) -> Vec<u8> {
-        format!("route_table/in_vpc/{vpc_id}/{route_table_id}").into_bytes()
-    }
-
-    fn route_table_in_vpc_prefix(vpc_id: Uuid) -> Vec<u8> {
-        format!("route_table/in_vpc/{vpc_id}/").into_bytes()
-    }
-
-    fn route_table_main_key(vpc_id: Uuid) -> Vec<u8> {
-        format!("route_table/main/{vpc_id}").into_bytes()
-    }
-
-    fn route_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("route/by_id/{id}").into_bytes()
-    }
-
-    fn route_by_id_prefix() -> Vec<u8> {
-        b"route/by_id/".to_vec()
-    }
-
-    fn route_by_table_destination_key(route_table_id: Uuid, destination: IpNetwork) -> Vec<u8> {
-        format!("route/by_table/{route_table_id}/{destination}").into_bytes()
-    }
-
-    fn route_in_table_key(route_table_id: Uuid, route_id: Uuid) -> Vec<u8> {
-        format!("route/in_table/{route_table_id}/{route_id}").into_bytes()
-    }
-
-    fn route_in_table_prefix(route_table_id: Uuid) -> Vec<u8> {
-        format!("route/in_table/{route_table_id}/").into_bytes()
-    }
-
     fn validate_nat_gateway_route_target(
         nat: &NatGatewayRecord,
         tenant_id: Uuid,
@@ -481,561 +155,6 @@ impl FdbStore {
         }
         Ok(())
     }
-
-    fn nat_gateway_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("nat_gateway/by_id/{id}").into_bytes()
-    }
-
-    fn nat_gateway_by_vpc_name_key(vpc_id: Uuid, name: &str) -> Vec<u8> {
-        format!("nat_gateway/by_vpc/{vpc_id}/{name}").into_bytes()
-    }
-
-    fn nat_gateway_in_vpc_key(vpc_id: Uuid, nat_gateway_id: Uuid) -> Vec<u8> {
-        format!("nat_gateway/in_vpc/{vpc_id}/{nat_gateway_id}").into_bytes()
-    }
-
-    fn nat_gateway_in_vpc_prefix(vpc_id: Uuid) -> Vec<u8> {
-        format!("nat_gateway/in_vpc/{vpc_id}/").into_bytes()
-    }
-
-    fn edge_cluster_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("edge_cluster/by_id/{id}").into_bytes()
-    }
-
-    fn edge_cluster_by_name_key(name: &str) -> Vec<u8> {
-        format!("edge_cluster/by_name/{name}").into_bytes()
-    }
-
-    fn edge_cluster_all_key(id: Uuid) -> Vec<u8> {
-        format!("edge_cluster/all/{id}").into_bytes()
-    }
-
-    fn edge_cluster_all_prefix() -> &'static [u8] {
-        b"edge_cluster/all/"
-    }
-
-    fn edge_cluster_by_resource_key(resource: EdgeClusterResource, id: Uuid) -> Vec<u8> {
-        format!(
-            "edge_cluster/by_resource/{}/{}/{id}",
-            resource.kind_tag(),
-            resource.id()
-        )
-        .into_bytes()
-    }
-
-    fn edge_cluster_by_resource_prefix(resource: EdgeClusterResource) -> Vec<u8> {
-        format!(
-            "edge_cluster/by_resource/{}/{}/",
-            resource.kind_tag(),
-            resource.id()
-        )
-        .into_bytes()
-    }
-
-    fn storage_cluster_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("storage_cluster/by_id/{id}").into_bytes()
-    }
-
-    fn storage_cluster_by_name_key(name: &str) -> Vec<u8> {
-        format!("storage_cluster/by_name/{name}").into_bytes()
-    }
-
-    fn storage_cluster_all_key(id: Uuid) -> Vec<u8> {
-        format!("storage_cluster/all/{id}").into_bytes()
-    }
-
-    fn storage_cluster_all_prefix() -> &'static [u8] {
-        b"storage_cluster/all/"
-    }
-
-    fn ssh_key_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("ssh_key/by_id/{id}").into_bytes()
-    }
-
-    fn ssh_key_by_public_name_key(name: &str) -> Vec<u8> {
-        format!("ssh_key/by_public/{name}").into_bytes()
-    }
-
-    fn ssh_key_by_silo_name_key(silo_id: Uuid, name: &str) -> Vec<u8> {
-        format!("ssh_key/by_silo/{silo_id}/{name}").into_bytes()
-    }
-
-    fn ssh_key_by_tenant_name_key(tenant_id: Uuid, name: &str) -> Vec<u8> {
-        format!("ssh_key/by_tenant/{tenant_id}/{name}").into_bytes()
-    }
-
-    fn ssh_key_by_project_name_key(project_id: Uuid, name: &str) -> Vec<u8> {
-        format!("ssh_key/by_project/{project_id}/{name}").into_bytes()
-    }
-
-    fn ssh_key_by_user_name_key(user_id: Uuid, name: &str) -> Vec<u8> {
-        format!("ssh_key/by_user/{user_id}/{name}").into_bytes()
-    }
-
-    fn ssh_key_by_public_fp_key(fingerprint: &str) -> Vec<u8> {
-        format!("ssh_key/by_public_fp/{fingerprint}").into_bytes()
-    }
-
-    fn ssh_key_by_silo_fp_key(silo_id: Uuid, fingerprint: &str) -> Vec<u8> {
-        format!("ssh_key/by_silo_fp/{silo_id}/{fingerprint}").into_bytes()
-    }
-
-    fn ssh_key_by_tenant_fp_key(tenant_id: Uuid, fingerprint: &str) -> Vec<u8> {
-        format!("ssh_key/by_tenant_fp/{tenant_id}/{fingerprint}").into_bytes()
-    }
-
-    fn ssh_key_by_project_fp_key(project_id: Uuid, fingerprint: &str) -> Vec<u8> {
-        format!("ssh_key/by_project_fp/{project_id}/{fingerprint}").into_bytes()
-    }
-
-    fn ssh_key_by_user_fp_key(user_id: Uuid, fingerprint: &str) -> Vec<u8> {
-        format!("ssh_key/by_user_fp/{user_id}/{fingerprint}").into_bytes()
-    }
-
-    fn ssh_key_in_public_key(key_id: Uuid) -> Vec<u8> {
-        format!("ssh_key/in_public/{key_id}").into_bytes()
-    }
-
-    fn ssh_key_in_public_prefix() -> Vec<u8> {
-        b"ssh_key/in_public/".to_vec()
-    }
-
-    fn ssh_key_in_silo_key(silo_id: Uuid, key_id: Uuid) -> Vec<u8> {
-        format!("ssh_key/in_silo/{silo_id}/{key_id}").into_bytes()
-    }
-
-    fn ssh_key_in_silo_prefix(silo_id: Uuid) -> Vec<u8> {
-        format!("ssh_key/in_silo/{silo_id}/").into_bytes()
-    }
-
-    fn ssh_key_in_tenant_key(tenant_id: Uuid, key_id: Uuid) -> Vec<u8> {
-        format!("ssh_key/in_tenant/{tenant_id}/{key_id}").into_bytes()
-    }
-
-    fn ssh_key_in_tenant_prefix(tenant_id: Uuid) -> Vec<u8> {
-        format!("ssh_key/in_tenant/{tenant_id}/").into_bytes()
-    }
-
-    fn ssh_key_in_project_key(project_id: Uuid, key_id: Uuid) -> Vec<u8> {
-        format!("ssh_key/in_project/{project_id}/{key_id}").into_bytes()
-    }
-
-    fn ssh_key_in_project_prefix(project_id: Uuid) -> Vec<u8> {
-        format!("ssh_key/in_project/{project_id}/").into_bytes()
-    }
-
-    fn ssh_key_by_user_idx_key(user_id: Uuid, key_id: Uuid) -> Vec<u8> {
-        format!("ssh_key/by_user_idx/{user_id}/{key_id}").into_bytes()
-    }
-
-    fn ssh_key_by_user_idx_prefix(user_id: Uuid) -> Vec<u8> {
-        format!("ssh_key/by_user_idx/{user_id}/").into_bytes()
-    }
-
-    fn image_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("image/by_id/{id}").into_bytes()
-    }
-
-    fn image_by_public_name_key(name: &str) -> Vec<u8> {
-        format!("image/by_public/{name}").into_bytes()
-    }
-
-    fn image_by_silo_name_key(silo_id: Uuid, name: &str) -> Vec<u8> {
-        format!("image/by_silo/{silo_id}/{name}").into_bytes()
-    }
-
-    fn image_by_tenant_name_key(tenant_id: Uuid, name: &str) -> Vec<u8> {
-        format!("image/by_tenant/{tenant_id}/{name}").into_bytes()
-    }
-
-    fn image_by_project_name_key(project_id: Uuid, name: &str) -> Vec<u8> {
-        format!("image/by_project/{project_id}/{name}").into_bytes()
-    }
-
-    fn image_by_user_name_key(user_id: Uuid, name: &str) -> Vec<u8> {
-        format!("image/by_user/{user_id}/{name}").into_bytes()
-    }
-
-    fn image_in_public_key(image_id: Uuid) -> Vec<u8> {
-        format!("image/in_public/{image_id}").into_bytes()
-    }
-
-    fn image_in_public_prefix() -> Vec<u8> {
-        b"image/in_public/".to_vec()
-    }
-
-    fn image_in_silo_key(silo_id: Uuid, image_id: Uuid) -> Vec<u8> {
-        format!("image/in_silo/{silo_id}/{image_id}").into_bytes()
-    }
-
-    fn image_in_silo_prefix(silo_id: Uuid) -> Vec<u8> {
-        format!("image/in_silo/{silo_id}/").into_bytes()
-    }
-
-    fn image_in_tenant_key(tenant_id: Uuid, image_id: Uuid) -> Vec<u8> {
-        format!("image/in_tenant/{tenant_id}/{image_id}").into_bytes()
-    }
-
-    fn image_in_tenant_prefix(tenant_id: Uuid) -> Vec<u8> {
-        format!("image/in_tenant/{tenant_id}/").into_bytes()
-    }
-
-    fn image_in_project_key(project_id: Uuid, image_id: Uuid) -> Vec<u8> {
-        format!("image/in_project/{project_id}/{image_id}").into_bytes()
-    }
-
-    fn image_in_project_prefix(project_id: Uuid) -> Vec<u8> {
-        format!("image/in_project/{project_id}/").into_bytes()
-    }
-
-    fn image_by_user_idx_key(user_id: Uuid, image_id: Uuid) -> Vec<u8> {
-        format!("image/by_user_idx/{user_id}/{image_id}").into_bytes()
-    }
-
-    fn image_by_user_idx_prefix(user_id: Uuid) -> Vec<u8> {
-        format!("image/by_user_idx/{user_id}/").into_bytes()
-    }
-
-    fn quota_by_project_key(project_id: Uuid) -> Vec<u8> {
-        format!("quota/by_project/{project_id}").into_bytes()
-    }
-
-    fn instance_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("instance/by_id/{id}").into_bytes()
-    }
-
-    fn instance_by_project_name_key(project_id: Uuid, name: &str) -> Vec<u8> {
-        format!("instance/by_project/{project_id}/{name}").into_bytes()
-    }
-
-    fn instance_in_project_key(project_id: Uuid, instance_id: Uuid) -> Vec<u8> {
-        format!("instance/in_project/{project_id}/{instance_id}").into_bytes()
-    }
-
-    fn instance_in_project_prefix(project_id: Uuid) -> Vec<u8> {
-        format!("instance/in_project/{project_id}/").into_bytes()
-    }
-
-    fn instance_in_host_cn_key(host_cn_uuid: Uuid, instance_id: Uuid) -> Vec<u8> {
-        format!("instance/in_host_cn/{host_cn_uuid}/{instance_id}").into_bytes()
-    }
-
-    fn instance_in_host_cn_prefix(host_cn_uuid: Uuid) -> Vec<u8> {
-        format!("instance/in_host_cn/{host_cn_uuid}/").into_bytes()
-    }
-
-    // RFD 00007 AP-1c: image -> instance secondary index. Membership
-    // key (empty payload); the existence of the row is the assertion.
-    // Written by create_instance in the same transaction as the row,
-    // cleared by delete_instance.
-    fn instance_in_image_key(image_id: Uuid, instance_id: Uuid) -> Vec<u8> {
-        format!("instance/in_image/{image_id}/{instance_id}").into_bytes()
-    }
-
-    fn instance_in_image_prefix(image_id: Uuid) -> Vec<u8> {
-        format!("instance/in_image/{image_id}/").into_bytes()
-    }
-
-    fn nic_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("nic/by_id/{id}").into_bytes()
-    }
-
-    // RFD 00007 AP-1c: subnet -> nic secondary index.
-    fn nic_in_subnet_key(subnet_id: Uuid, nic_id: Uuid) -> Vec<u8> {
-        format!("nic/in_subnet/{subnet_id}/{nic_id}").into_bytes()
-    }
-
-    fn nic_in_subnet_prefix(subnet_id: Uuid) -> Vec<u8> {
-        format!("nic/in_subnet/{subnet_id}/").into_bytes()
-    }
-
-    // RFD 00007 AP-1c: IP -> nic unique index. The value carries the
-    // owning NIC's UUID hyphenated bytes so a point read resolves the
-    // owner without re-deserialising the NIC row. The IP is rendered
-    // in its canonical text form (`Display`) so equal addresses hash
-    // to equal keys regardless of how the caller constructed them.
-    fn nic_by_ip_key(ip: std::net::IpAddr) -> Vec<u8> {
-        format!("nic/by_ip/{ip}").into_bytes()
-    }
-
-    // RFD 00007 AP-1c: MAC -> dhcp_lease index. The value is the
-    // owning VPC's UUID hyphenated bytes; combined with the MAC
-    // itself this reconstructs the lease's composite primary key
-    // `(vpc_id, mac)` without a scan.
-    fn dhcp_lease_by_mac_key(mac: &str) -> Vec<u8> {
-        format!("dhcp_lease/by_mac/{mac}").into_bytes()
-    }
-
-    fn nic_in_instance_key(instance_id: Uuid, nic_id: Uuid) -> Vec<u8> {
-        format!("nic/in_instance/{instance_id}/{nic_id}").into_bytes()
-    }
-
-    fn nic_in_instance_prefix(instance_id: Uuid) -> Vec<u8> {
-        format!("nic/in_instance/{instance_id}/").into_bytes()
-    }
-
-    fn nic_ip_alloc_v4_key(subnet_id: Uuid, ip: std::net::Ipv4Addr) -> Vec<u8> {
-        format!("nic/ip_alloc/{subnet_id}/v4/{ip}").into_bytes()
-    }
-
-    fn nic_ip_alloc_v6_key(subnet_id: Uuid, ip: std::net::Ipv6Addr) -> Vec<u8> {
-        format!("nic/ip_alloc/{subnet_id}/v6/{ip}").into_bytes()
-    }
-
-    fn nic_ip_alloc_v4_prefix(subnet_id: Uuid) -> Vec<u8> {
-        format!("nic/ip_alloc/{subnet_id}/v4/").into_bytes()
-    }
-
-    fn nic_ip_alloc_v6_prefix(subnet_id: Uuid) -> Vec<u8> {
-        format!("nic/ip_alloc/{subnet_id}/v6/").into_bytes()
-    }
-
-    fn disk_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("disk/by_id/{id}").into_bytes()
-    }
-
-    fn disk_in_instance_key(instance_id: Uuid, disk_id: Uuid) -> Vec<u8> {
-        format!("disk/in_instance/{instance_id}/{disk_id}").into_bytes()
-    }
-
-    fn disk_in_instance_prefix(instance_id: Uuid) -> Vec<u8> {
-        format!("disk/in_instance/{instance_id}/").into_bytes()
-    }
-
-    fn floating_ip_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("floating_ip/by_id/{id}").into_bytes()
-    }
-
-    fn floating_ip_by_project_name_key(project_id: Uuid, name: &str) -> Vec<u8> {
-        format!("floating_ip/by_project/{project_id}/{name}").into_bytes()
-    }
-
-    fn floating_ip_in_project_key(project_id: Uuid, fip_id: Uuid) -> Vec<u8> {
-        format!("floating_ip/in_project/{project_id}/{fip_id}").into_bytes()
-    }
-
-    fn floating_ip_in_project_prefix(project_id: Uuid) -> Vec<u8> {
-        format!("floating_ip/in_project/{project_id}/").into_bytes()
-    }
-
-    fn floating_ip_alloc_v4_key(ip: std::net::Ipv4Addr) -> Vec<u8> {
-        format!("floating_ip/alloc/v4/{ip}").into_bytes()
-    }
-
-    fn floating_ip_alloc_v6_key(ip: std::net::Ipv6Addr) -> Vec<u8> {
-        format!("floating_ip/alloc/v6/{ip}").into_bytes()
-    }
-
-    fn floating_ip_alloc_v4_prefix() -> &'static [u8] {
-        b"floating_ip/alloc/v4/"
-    }
-
-    fn floating_ip_alloc_v6_prefix() -> &'static [u8] {
-        b"floating_ip/alloc/v6/"
-    }
-
-    fn public_ip_holder_value(resource: NetworkResourceId) -> Vec<u8> {
-        format!("{}:{}", resource.kind_tag(), resource.id()).into_bytes()
-    }
-
-    fn job_by_id_key(id: Uuid) -> Vec<u8> {
-        format!("job/by_id/{id}").into_bytes()
-    }
-
-    fn job_pending_key(seq: u64) -> Vec<u8> {
-        // 16-char zero-padded hex so the FDB key sort matches the
-        // numeric u64 sort. (Big-endian raw bytes would also work,
-        // but the prefix `job/pending/` is utf8 so we stay readable.)
-        format!("job/pending/{seq:016x}").into_bytes()
-    }
-
-    fn job_pending_prefix() -> &'static [u8] {
-        b"job/pending/"
-    }
-
-    fn job_seq_counter_key() -> &'static [u8] {
-        b"job/seq/counter"
-    }
-
-    fn cn_by_uuid_key(server_uuid: Uuid) -> Vec<u8> {
-        format!("cn/by_uuid/{server_uuid}").into_bytes()
-    }
-
-    fn cn_by_claim_key(normalized_code: &str) -> Vec<u8> {
-        format!("cn/by_claim/{normalized_code}").into_bytes()
-    }
-
-    fn cn_by_poll_key(poll_token: &str) -> Vec<u8> {
-        format!("cn/by_poll/{poll_token}").into_bytes()
-    }
-
-    fn cn_by_state_key(state: CnState, server_uuid: Uuid) -> Vec<u8> {
-        format!("cn/by_state/{}/{server_uuid}", cn_state_tag(state)).into_bytes()
-    }
-
-    fn cn_by_state_prefix(state: CnState) -> Vec<u8> {
-        format!("cn/by_state/{}/", cn_state_tag(state)).into_bytes()
-    }
-
-    fn auto_approve_window_key() -> &'static [u8] {
-        b"auto_approve/window"
-    }
-
-    fn settings_key() -> &'static [u8] {
-        b"config/settings"
-    }
-
-    /// Prefix for all metadata entries at one `(scope, scope_id)`:
-    /// `meta/<scope>/<uuid>/`. Range-scanning this yields that scope's
-    /// whole `key`->`MetaValue` map in key-sorted order.
-    fn meta_scope_prefix(scope: MetaScope, scope_id: Uuid) -> Vec<u8> {
-        format!("meta/{}/{}/", scope.as_str(), scope_id).into_bytes()
-    }
-
-    /// Storage key for one metadata entry: `meta/<scope>/<uuid>/<key>`.
-    fn meta_entry_key(scope: MetaScope, scope_id: Uuid, key: &str) -> Vec<u8> {
-        let mut k = Self::meta_scope_prefix(scope, scope_id);
-        k.extend_from_slice(key.as_bytes());
-        k
-    }
-
-    /// Storage key for a scope's generation counter:
-    /// `meta/gen/<scope>/<uuid>` -> big-endian u64 (absent == 0).
-    fn meta_gen_key(scope: MetaScope, scope_id: Uuid) -> Vec<u8> {
-        format!("meta/gen/{}/{}", scope.as_str(), scope_id).into_bytes()
-    }
-
-    fn legacy_vm_by_id_key(smartos_uuid: Uuid) -> Vec<u8> {
-        format!("legacy_vm/by_id/{smartos_uuid}").into_bytes()
-    }
-
-    fn legacy_vm_in_host_cn_key(host_cn_uuid: Uuid, smartos_uuid: Uuid) -> Vec<u8> {
-        format!("legacy_vm/in_host_cn/{host_cn_uuid}/{smartos_uuid}").into_bytes()
-    }
-
-    fn legacy_vm_in_host_cn_prefix(host_cn_uuid: Uuid) -> Vec<u8> {
-        format!("legacy_vm/in_host_cn/{host_cn_uuid}/").into_bytes()
-    }
-
-    fn legacy_vm_by_id_prefix() -> &'static [u8] {
-        b"legacy_vm/by_id/"
-    }
-
-    /// Key for one realization row. `network_realization/<kind>/<resource_id>/<realizer_kind>/<realizer_id>`.
-    fn network_realization_key(resource: NetworkResourceId, realizer: RealizerId) -> Vec<u8> {
-        format!(
-            "network_realization/{}/{}/{}/{}",
-            resource.kind_tag(),
-            resource.id(),
-            realizer.kind_tag(),
-            realizer.id(),
-        )
-        .into_bytes()
-    }
-
-    /// Prefix scan for every realizer's row on a given resource.
-    fn network_realization_resource_prefix(resource: NetworkResourceId) -> Vec<u8> {
-        format!(
-            "network_realization/{}/{}/",
-            resource.kind_tag(),
-            resource.id(),
-        )
-        .into_bytes()
-    }
-
-    fn dhcp_pool_by_vpc_key(vpc_id: Uuid) -> Vec<u8> {
-        format!("dhcp_pool/by_vpc/{vpc_id}").into_bytes()
-    }
-
-    fn dhcp_reservation_by_vpc_mac_key(vpc_id: Uuid, mac: &str) -> Vec<u8> {
-        format!("dhcp_reservation/by_vpc/{vpc_id}/{mac}").into_bytes()
-    }
-
-    fn dhcp_reservation_by_vpc_prefix(vpc_id: Uuid) -> Vec<u8> {
-        format!("dhcp_reservation/by_vpc/{vpc_id}/").into_bytes()
-    }
-
-    fn dhcp_lease_by_vpc_mac_key(vpc_id: Uuid, mac: &str) -> Vec<u8> {
-        format!("dhcp_lease/by_vpc/{vpc_id}/{mac}").into_bytes()
-    }
-
-    fn dhcp_lease_by_vpc_prefix(vpc_id: Uuid) -> Vec<u8> {
-        format!("dhcp_lease/by_vpc/{vpc_id}/").into_bytes()
-    }
-
-    fn dhcp_lease_global_prefix() -> &'static [u8] {
-        b"dhcp_lease/by_vpc/"
-    }
-
-    // ---- RFD 00005 PL-2: placement keyspaces ----
-
-    fn cn_capacity_key(server_uuid: Uuid) -> Vec<u8> {
-        format!("cn_capacity/{server_uuid}").into_bytes()
-    }
-
-    fn cn_capacity_prefix() -> &'static [u8] {
-        b"cn_capacity/"
-    }
-
-    fn cn_placement_key(server_uuid: Uuid) -> Vec<u8> {
-        format!("cn_placement/{server_uuid}").into_bytes()
-    }
-
-    fn cn_placement_prefix() -> &'static [u8] {
-        b"cn_placement/"
-    }
-
-    fn cn_reservation_key(server_uuid: Uuid, saga_id: Uuid) -> Vec<u8> {
-        format!("cn_reservation/{server_uuid}/{saga_id}").into_bytes()
-    }
-
-    fn cn_reservation_per_cn_prefix(server_uuid: Uuid) -> Vec<u8> {
-        format!("cn_reservation/{server_uuid}/").into_bytes()
-    }
-
-    fn cn_reservation_prefix() -> &'static [u8] {
-        b"cn_reservation/"
-    }
-
-    fn cn_load_summary_key(server_uuid: Uuid) -> Vec<u8> {
-        format!("cn_load_summary/{server_uuid}").into_bytes()
-    }
-
-    fn cn_load_summary_prefix() -> &'static [u8] {
-        b"cn_load_summary/"
-    }
-
-    fn instance_affinity_key(instance_id: Uuid) -> Vec<u8> {
-        format!("instance_affinity/{instance_id}").into_bytes()
-    }
-
-    fn instance_affinity_by_tenant_key(tenant_id: Uuid, instance_id: Uuid) -> Vec<u8> {
-        format!("instance_affinity_by_tenant/{tenant_id}/{instance_id}").into_bytes()
-    }
-
-    fn instance_affinity_by_tenant_prefix(tenant_id: Uuid) -> Vec<u8> {
-        format!("instance_affinity_by_tenant/{tenant_id}/").into_bytes()
-    }
-}
-
-/// Map [`CnState`] to its serde wire-format tag (matching the
-/// `#[serde(rename_all = "snake_case")]` on the enum).
-fn cn_state_tag(state: CnState) -> &'static str {
-    match state {
-        CnState::Pending => "pending",
-        CnState::Approved => "approved",
-        CnState::Disabled => "disabled",
-    }
-}
-
-fn digest_to_hex(digest: &[u8]) -> String {
-    static HEX: &[u8] = b"0123456789abcdef";
-    let mut out = String::with_capacity(digest.len() * 2);
-    for b in digest {
-        out.push(HEX[(b >> 4) as usize] as char);
-        out.push(HEX[(b & 0xF) as usize] as char);
-    }
-    out
 }
 
 /// Outcome carried out of a transaction closure when the conflict
@@ -1151,11 +270,11 @@ impl Store for FdbStore {
             .map_err(ser_err("silo"))?;
         let tenant_value = serde_json::to_vec(&tenant)
             .map_err(ser_err("tenant"))?;
-        let silo_by_id_key = Self::silo_by_id_key(silo.id);
-        let silo_by_name_key = Self::silo_by_name_key(&silo.name);
-        let tenant_by_id_key = Self::tenant_by_id_key(tenant.id);
-        let tenant_by_name_key = Self::tenant_by_silo_name_key(silo_id, &tenant.name);
-        let tenant_in_silo_key = Self::tenant_in_silo_key(silo_id, tenant.id);
+        let silo_by_id_key = keys::silo_by_id_key(silo.id);
+        let silo_by_name_key = keys::silo_by_name_key(&silo.name);
+        let tenant_by_id_key = keys::tenant_by_id_key(tenant.id);
+        let tenant_by_name_key = keys::tenant_by_silo_name_key(silo_id, &tenant.name);
+        let tenant_in_silo_key = keys::tenant_in_silo_key(silo_id, tenant.id);
         let silo_id_str = silo.id.to_string();
         let tenant_id_str = tenant.id.to_string();
 
@@ -1196,7 +315,7 @@ impl Store for FdbStore {
     }
 
     async fn get_silo(&self, id: Uuid) -> Result<Silo, StoreError> {
-        let key = Self::silo_by_id_key(id);
+        let key = keys::silo_by_id_key(id);
         let bytes = self.read_bytes(&key).await?;
         match bytes {
             Some(bytes) => serde_json::from_slice(&bytes)
@@ -1208,8 +327,8 @@ impl Store for FdbStore {
     async fn create_user(&self, user: User) -> Result<User, StoreError> {
         let value = serde_json::to_vec(&user)
             .map_err(ser_err("user"))?;
-        let by_id_key = Self::user_by_id_key(user.id);
-        let by_name_key = Self::user_by_name_key(&user.username);
+        let by_id_key = keys::user_by_id_key(user.id);
+        let by_name_key = keys::user_by_name_key(&user.username);
         // Federation index is keyed by (tenant_id, issuer, subject) —
         // post E-5 the IdP is tenant-scoped, so the index is rooted
         // directly at the tenant. The defensive tenant existence
@@ -1219,7 +338,7 @@ impl Store for FdbStore {
             (Some(tenant_id), Some(fed)) => {
                 // Confirm the tenant exists; fail clean otherwise.
                 let _ = self.get_tenant(tenant_id).await?;
-                Some(Self::user_federation_key(
+                Some(keys::user_federation_key(
                     tenant_id,
                     &fed.issuer,
                     &fed.subject,
@@ -1267,7 +386,7 @@ impl Store for FdbStore {
     }
 
     async fn get_user_by_username(&self, username: &str) -> Result<User, StoreError> {
-        let by_name_key = Self::user_by_name_key(username);
+        let by_name_key = keys::user_by_name_key(username);
         let id_bytes = self
             .read_bytes(&by_name_key)
             .await?
@@ -1280,7 +399,7 @@ impl Store for FdbStore {
     }
 
     async fn get_user_by_id(&self, id: Uuid) -> Result<User, StoreError> {
-        let key = Self::user_by_id_key(id);
+        let key = keys::user_by_id_key(id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("user"))
@@ -1291,7 +410,7 @@ impl Store for FdbStore {
         username: &str,
         password_hash: String,
     ) -> Result<User, StoreError> {
-        let by_name_key = Self::user_by_name_key(username);
+        let by_name_key = keys::user_by_name_key(username);
         let username = username.to_string();
         let result: Result<Option<User>, FdbBindingError> = self
             .db
@@ -1305,7 +424,7 @@ impl Store for FdbStore {
                     };
                     let id_str = std::str::from_utf8(id_bytes.as_ref()).map_err(txn_err("user index value not utf8"))?;
                     let id = Uuid::parse_str(id_str).map_err(txn_err("user index value not uuid"))?;
-                    let by_id_key = Self::user_by_id_key(id);
+                    let by_id_key = keys::user_by_id_key(id);
                     let Some(user_bytes) = tr.get(&by_id_key, false).await? else {
                         return Ok(None);
                     };
@@ -1337,7 +456,7 @@ impl Store for FdbStore {
         // single-key transaction; not batched into a 5.0MB FDB
         // transaction because the User keyspace is small and the
         // migration runs once at bootstrap.
-        let (begin, end) = prefix_range(Self::user_prefix());
+        let (begin, end) = prefix_range(keys::user_prefix());
         let users: Result<Vec<User>, FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -1379,7 +498,7 @@ impl Store for FdbStore {
             };
             let mut updated = user.clone();
             updated.capabilities = new_caps;
-            let by_id_key = Self::user_by_id_key(updated.id);
+            let by_id_key = keys::user_by_id_key(updated.id);
             let value = serde_json::to_vec(&updated)
                 .map_err(ser_err("user"))?;
             let result: Result<(), FdbBindingError> = self
@@ -1404,7 +523,7 @@ impl Store for FdbStore {
         user_id: Uuid,
         capabilities: std::collections::BTreeSet<crate::Capability>,
     ) -> Result<User, StoreError> {
-        let by_id_key = Self::user_by_id_key(user_id);
+        let by_id_key = keys::user_by_id_key(user_id);
         enum Out {
             Updated(Box<User>),
             Vanished,
@@ -1441,7 +560,7 @@ impl Store for FdbStore {
     }
 
     async fn has_any_user(&self) -> Result<bool, StoreError> {
-        let (begin, end) = prefix_range(Self::user_prefix());
+        let (begin, end) = prefix_range(keys::user_prefix());
         let result: Result<bool, FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -1465,9 +584,9 @@ impl Store for FdbStore {
     async fn create_api_key(&self, key: ApiKey) -> Result<ApiKey, StoreError> {
         let value = serde_json::to_vec(&key)
             .map_err(ser_err("api key"))?;
-        let by_id_key = Self::apikey_by_id_key(key.id);
-        let by_lookup_key = Self::apikey_by_lookup_key(&key.lookup_id);
-        let user_index_key = Self::apikey_user_index_key(key.user_id, key.id);
+        let by_id_key = keys::apikey_by_id_key(key.id);
+        let by_lookup_key = keys::apikey_by_lookup_key(&key.lookup_id);
+        let user_index_key = keys::apikey_user_index_key(key.user_id, key.id);
         let id_str = key.id.to_string();
         let lookup_id = key.lookup_id.clone();
 
@@ -1501,7 +620,7 @@ impl Store for FdbStore {
     }
 
     async fn list_api_keys(&self, user_id: Uuid) -> Result<Vec<ApiKey>, StoreError> {
-        let prefix = Self::apikey_user_index_prefix(user_id);
+        let prefix = keys::apikey_user_index_prefix(user_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -1535,7 +654,7 @@ impl Store for FdbStore {
         for s in id_strs {
             let id = Uuid::parse_str(&s)
                 .map_err(|e| StoreError::Backend(format!("api key index uuid: {e}")))?;
-            let by_id_key = Self::apikey_by_id_key(id);
+            let by_id_key = keys::apikey_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let key: ApiKey = serde_json::from_slice(&bytes)
                     .map_err(de_err("api key"))?;
@@ -1546,7 +665,7 @@ impl Store for FdbStore {
     }
 
     async fn get_api_key_by_lookup_id(&self, lookup_id: &str) -> Result<ApiKey, StoreError> {
-        let by_lookup_key = Self::apikey_by_lookup_key(lookup_id);
+        let by_lookup_key = keys::apikey_by_lookup_key(lookup_id);
         let id_bytes = self
             .read_bytes(&by_lookup_key)
             .await?
@@ -1555,7 +674,7 @@ impl Store for FdbStore {
             .map_err(|e| StoreError::Backend(format!("api key lookup index not utf8: {e}")))?;
         let id = Uuid::parse_str(id_str)
             .map_err(|e| StoreError::Backend(format!("api key lookup index not uuid: {e}")))?;
-        let by_id_key = Self::apikey_by_id_key(id);
+        let by_id_key = keys::apikey_by_id_key(id);
         let bytes = self
             .read_bytes(&by_id_key)
             .await?
@@ -1565,8 +684,8 @@ impl Store for FdbStore {
     }
 
     async fn delete_api_key(&self, user_id: Uuid, key_id: Uuid) -> Result<(), StoreError> {
-        let by_id_key = Self::apikey_by_id_key(key_id);
-        let user_index_key = Self::apikey_user_index_key(user_id, key_id);
+        let by_id_key = keys::apikey_by_id_key(key_id);
+        let user_index_key = keys::apikey_user_index_key(user_id, key_id);
 
         // We need the lookup_id to clear the by_lookup index. Read
         // the record outside the transaction; the rare race where it
@@ -1580,7 +699,7 @@ impl Store for FdbStore {
         if record.user_id != user_id {
             return Err(StoreError::NotFound);
         }
-        let by_lookup_key = Self::apikey_by_lookup_key(&record.lookup_id);
+        let by_lookup_key = keys::apikey_by_lookup_key(&record.lookup_id);
 
         let outcome: Result<DeleteOutcome, FdbBindingError> = self
             .db
@@ -1611,7 +730,7 @@ impl Store for FdbStore {
     }
 
     async fn get_settings(&self) -> Result<Settings, StoreError> {
-        let key = Self::settings_key().to_vec();
+        let key = keys::settings_key().to_vec();
         match self.read_bytes(&key).await? {
             Some(bytes) => serde_json::from_slice(&bytes)
                 .map_err(de_err("settings")),
@@ -1622,7 +741,7 @@ impl Store for FdbStore {
     async fn put_settings(&self, settings: Settings) -> Result<(), StoreError> {
         let value = serde_json::to_vec(&settings)
             .map_err(ser_err("settings"))?;
-        let key = Self::settings_key().to_vec();
+        let key = keys::settings_key().to_vec();
         let result: Result<(), FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -1638,14 +757,14 @@ impl Store for FdbStore {
     }
 
     async fn get_system_key(&self, key: SystemKey) -> Result<Vec<u8>, StoreError> {
-        let storage_key = Self::system_key(key);
+        let storage_key = keys::system_key(key);
         self.read_bytes(&storage_key)
             .await?
             .ok_or(StoreError::NotFound)
     }
 
     async fn put_system_key(&self, key: SystemKey, value: Vec<u8>) -> Result<(), StoreError> {
-        let storage_key = Self::system_key(key);
+        let storage_key = keys::system_key(key);
         let result: Result<(), FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -1675,8 +794,8 @@ impl Store for FdbStore {
         key: &str,
         value: MetaValue,
     ) -> Result<u64, StoreError> {
-        let entry_key = Self::meta_entry_key(scope, scope_id, key);
-        let gen_key = Self::meta_gen_key(scope, scope_id);
+        let entry_key = keys::meta_entry_key(scope, scope_id, key);
+        let gen_key = keys::meta_gen_key(scope, scope_id);
         let encoded = serde_json::to_vec(&value)
             .map_err(ser_err("MetaValue"))?;
         let result: Result<u64, FdbBindingError> = self
@@ -1708,7 +827,7 @@ impl Store for FdbStore {
         scope_id: Uuid,
         key: &str,
     ) -> Result<MetaValue, StoreError> {
-        let entry_key = Self::meta_entry_key(scope, scope_id, key);
+        let entry_key = keys::meta_entry_key(scope, scope_id, key);
         match self.read_bytes(&entry_key).await? {
             Some(bytes) => serde_json::from_slice(&bytes)
                 .map_err(de_err("MetaValue")),
@@ -1722,8 +841,8 @@ impl Store for FdbStore {
         scope_id: Uuid,
         key: &str,
     ) -> Result<u64, StoreError> {
-        let entry_key = Self::meta_entry_key(scope, scope_id, key);
-        let gen_key = Self::meta_gen_key(scope, scope_id);
+        let entry_key = keys::meta_entry_key(scope, scope_id, key);
+        let gen_key = keys::meta_gen_key(scope, scope_id);
         let result: Result<Option<u64>, FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -1757,7 +876,7 @@ impl Store for FdbStore {
         scope: MetaScope,
         scope_id: Uuid,
     ) -> Result<Vec<(String, MetaValue)>, StoreError> {
-        let prefix = Self::meta_scope_prefix(scope, scope_id);
+        let prefix = keys::meta_scope_prefix(scope, scope_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
         let raw: Result<Vec<(String, Vec<u8>)>, FdbBindingError> = self
@@ -1797,7 +916,7 @@ impl Store for FdbStore {
     }
 
     async fn get_meta_gen(&self, scope: MetaScope, scope_id: Uuid) -> Result<u64, StoreError> {
-        let gen_key = Self::meta_gen_key(scope, scope_id);
+        let gen_key = keys::meta_gen_key(scope, scope_id);
         Ok(self
             .read_bytes(&gen_key)
             .await?
@@ -1812,7 +931,7 @@ impl Store for FdbStore {
         issuer: &str,
         subject: &str,
     ) -> Result<User, StoreError> {
-        let federation_key = Self::user_federation_key(tenant_id, issuer, subject);
+        let federation_key = keys::user_federation_key(tenant_id, issuer, subject);
         let id_bytes = self
             .read_bytes(&federation_key)
             .await?
@@ -1829,8 +948,8 @@ impl Store for FdbStore {
         tenant_id: Uuid,
         config: IdpConfig,
     ) -> Result<IdpConfig, StoreError> {
-        let by_tenant_key = Self::idp_config_key(tenant_id);
-        let by_issuer_key = Self::idp_by_issuer_key(&config.issuer_url);
+        let by_tenant_key = keys::idp_config_key(tenant_id);
+        let by_issuer_key = keys::idp_by_issuer_key(&config.issuer_url);
         let value = serde_json::to_vec(&config)
             .map_err(ser_err("idp config"))?;
         let tenant_id_str = tenant_id.to_string();
@@ -1882,14 +1001,14 @@ impl Store for FdbStore {
     }
 
     async fn get_idp_config(&self, tenant_id: Uuid) -> Result<IdpConfig, StoreError> {
-        let key = Self::idp_config_key(tenant_id);
+        let key = keys::idp_config_key(tenant_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("idp config"))
     }
 
     async fn delete_idp_config(&self, tenant_id: Uuid) -> Result<(), StoreError> {
-        let by_tenant_key = Self::idp_config_key(tenant_id);
+        let by_tenant_key = keys::idp_config_key(tenant_id);
         let outcome: Result<DeleteOutcome, FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -1920,8 +1039,8 @@ impl Store for FdbStore {
     }
 
     async fn list_idp_configs(&self) -> Result<Vec<(Uuid, IdpConfig)>, StoreError> {
-        let (begin, end) = prefix_range(Self::idp_config_prefix());
-        let prefix_len = Self::idp_config_prefix().len();
+        let (begin, end) = prefix_range(keys::idp_config_prefix());
+        let prefix_len = keys::idp_config_prefix().len();
 
         let result: Result<Vec<(Vec<u8>, Vec<u8>)>, FdbBindingError> = self
             .db
@@ -1961,7 +1080,7 @@ impl Store for FdbStore {
         &self,
         issuer: &str,
     ) -> Result<(Uuid, IdpConfig), StoreError> {
-        let by_issuer_key = Self::idp_by_issuer_key(issuer);
+        let by_issuer_key = keys::idp_by_issuer_key(issuer);
         let id_bytes = self
             .read_bytes(&by_issuer_key)
             .await?
@@ -1988,10 +1107,10 @@ impl Store for FdbStore {
         };
         let value = serde_json::to_vec(&project)
             .map_err(ser_err("project"))?;
-        let by_id_key = Self::project_by_id_key(project.id);
-        let by_name_key = Self::project_by_tenant_name_key(tenant_id, &project.name);
-        let in_tenant_key = Self::project_in_tenant_key(tenant_id, project.id);
-        let tenant_check_key = Self::tenant_by_id_key(tenant_id);
+        let by_id_key = keys::project_by_id_key(project.id);
+        let by_name_key = keys::project_by_tenant_name_key(tenant_id, &project.name);
+        let in_tenant_key = keys::project_in_tenant_key(tenant_id, project.id);
+        let tenant_check_key = keys::tenant_by_id_key(tenant_id);
         let id_str = project.id.to_string();
         let name_str = project.name.clone();
 
@@ -2039,14 +1158,14 @@ impl Store for FdbStore {
     }
 
     async fn get_project(&self, project_id: Uuid) -> Result<Project, StoreError> {
-        let key = Self::project_by_id_key(project_id);
+        let key = keys::project_by_id_key(project_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("project"))
     }
 
     async fn list_projects_in_tenant(&self, tenant_id: Uuid) -> Result<Vec<Project>, StoreError> {
-        let prefix = Self::project_in_tenant_prefix(tenant_id);
+        let prefix = keys::project_in_tenant_prefix(tenant_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -2079,7 +1198,7 @@ impl Store for FdbStore {
         for s in id_strs {
             let id = Uuid::parse_str(&s)
                 .map_err(|e| StoreError::Backend(format!("project index uuid: {e}")))?;
-            let by_id_key = Self::project_by_id_key(id);
+            let by_id_key = keys::project_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let project: Project = serde_json::from_slice(&bytes)
                     .map_err(de_err("project"))?;
@@ -2093,15 +1212,15 @@ impl Store for FdbStore {
         // Read the row outside the transaction so we know the
         // tenant_id + name to clear from the indices. Concurrent
         // delete shows up as Outcome::Vanished below.
-        let by_id_key = Self::project_by_id_key(project_id);
+        let by_id_key = keys::project_by_id_key(project_id);
         let bytes = match self.read_bytes(&by_id_key).await? {
             Some(b) => b,
             None => return Err(StoreError::NotFound),
         };
         let project: Project = serde_json::from_slice(&bytes)
             .map_err(de_err("project"))?;
-        let by_name_key = Self::project_by_tenant_name_key(project.tenant_id, &project.name);
-        let in_tenant_key = Self::project_in_tenant_key(project.tenant_id, project.id);
+        let by_name_key = keys::project_by_tenant_name_key(project.tenant_id, &project.name);
+        let in_tenant_key = keys::project_in_tenant_key(project.tenant_id, project.id);
 
         enum DelOut {
             Deleted,
@@ -2142,10 +1261,10 @@ impl Store for FdbStore {
         };
         let value = serde_json::to_vec(&tenant)
             .map_err(ser_err("tenant"))?;
-        let by_id_key = Self::tenant_by_id_key(tenant.id);
-        let by_name_key = Self::tenant_by_silo_name_key(silo_id, &tenant.name);
-        let in_silo_key = Self::tenant_in_silo_key(silo_id, tenant.id);
-        let silo_check_key = Self::silo_by_id_key(silo_id);
+        let by_id_key = keys::tenant_by_id_key(tenant.id);
+        let by_name_key = keys::tenant_by_silo_name_key(silo_id, &tenant.name);
+        let in_silo_key = keys::tenant_in_silo_key(silo_id, tenant.id);
+        let silo_check_key = keys::silo_by_id_key(silo_id);
         let id_str = tenant.id.to_string();
         let name_str = tenant.name.clone();
 
@@ -2193,7 +1312,7 @@ impl Store for FdbStore {
     }
 
     async fn get_tenant(&self, tenant_id: Uuid) -> Result<Tenant, StoreError> {
-        let key = Self::tenant_by_id_key(tenant_id);
+        let key = keys::tenant_by_id_key(tenant_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("tenant"))
@@ -2203,12 +1322,12 @@ impl Store for FdbStore {
         // Confirm the silo exists first so callers can distinguish
         // "silo missing" (NotFound) from "silo present but empty"
         // (empty Vec).
-        let silo_check_key = Self::silo_by_id_key(silo_id);
+        let silo_check_key = keys::silo_by_id_key(silo_id);
         if self.read_bytes(&silo_check_key).await?.is_none() {
             return Err(StoreError::NotFound);
         }
 
-        let prefix = Self::tenant_in_silo_prefix(silo_id);
+        let prefix = keys::tenant_in_silo_prefix(silo_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -2241,7 +1360,7 @@ impl Store for FdbStore {
         for s in id_strs {
             let id = Uuid::parse_str(&s)
                 .map_err(|e| StoreError::Backend(format!("tenant index uuid: {e}")))?;
-            let by_id_key = Self::tenant_by_id_key(id);
+            let by_id_key = keys::tenant_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let tenant: Tenant = serde_json::from_slice(&bytes)
                     .map_err(de_err("tenant"))?;
@@ -2255,15 +1374,15 @@ impl Store for FdbStore {
         // Read the row outside the transaction so we know the
         // silo_id + name to clear from the indices. Concurrent
         // delete shows up as DelOut::Vanished below.
-        let by_id_key = Self::tenant_by_id_key(tenant_id);
+        let by_id_key = keys::tenant_by_id_key(tenant_id);
         let bytes = match self.read_bytes(&by_id_key).await? {
             Some(b) => b,
             None => return Err(StoreError::NotFound),
         };
         let tenant: Tenant = serde_json::from_slice(&bytes)
             .map_err(de_err("tenant"))?;
-        let by_name_key = Self::tenant_by_silo_name_key(tenant.silo_id, &tenant.name);
-        let in_silo_key = Self::tenant_in_silo_key(tenant.silo_id, tenant.id);
+        let by_name_key = keys::tenant_by_silo_name_key(tenant.silo_id, &tenant.name);
+        let in_silo_key = keys::tenant_in_silo_key(tenant.silo_id, tenant.id);
 
         // TODO(slice E-3): reject deletion when child projects exist
         let outcome: Result<DeleteOutcome, FdbBindingError> = self
@@ -2308,8 +1427,8 @@ impl Store for FdbStore {
             VniTaken,
         }
 
-        let project_check_key = Self::project_by_id_key(project_id);
-        let by_name_key = Self::vpc_by_project_name_key(project_id, &req.name);
+        let project_check_key = keys::project_by_id_key(project_id);
+        let by_name_key = keys::vpc_by_project_name_key(project_id, &req.name);
 
         for _ in 0..VNI_RETRY_ATTEMPTS {
             let vni = rand::rng().random_range(VPC_VNI_RESERVED_CEILING..VPC_VNI_MAX);
@@ -2342,13 +1461,13 @@ impl Store for FdbStore {
                 .map_err(ser_err("vpc"))?;
             let main_route_table_value = serde_json::to_vec(&main_route_table)
                 .map_err(ser_err("route table"))?;
-            let by_id_key = Self::vpc_by_id_key(candidate.id);
-            let in_project_key = Self::vpc_in_project_key(project_id, candidate.id);
-            let by_vni_key = Self::vpc_by_vni_key(vni);
-            let rt_by_id_key = Self::route_table_by_id_key(route_table_id);
-            let rt_by_name_key = Self::route_table_by_vpc_name_key(vpc_id, MAIN_ROUTE_TABLE_NAME);
-            let rt_in_vpc_key = Self::route_table_in_vpc_key(vpc_id, route_table_id);
-            let rt_main_key = Self::route_table_main_key(vpc_id);
+            let by_id_key = keys::vpc_by_id_key(candidate.id);
+            let in_project_key = keys::vpc_in_project_key(project_id, candidate.id);
+            let by_vni_key = keys::vpc_by_vni_key(vni);
+            let rt_by_id_key = keys::route_table_by_id_key(route_table_id);
+            let rt_by_name_key = keys::route_table_by_vpc_name_key(vpc_id, MAIN_ROUTE_TABLE_NAME);
+            let rt_in_vpc_key = keys::route_table_in_vpc_key(vpc_id, route_table_id);
+            let rt_main_key = keys::route_table_main_key(vpc_id);
             let id_str = candidate.id.to_string();
             let route_table_id_str = route_table_id.to_string();
 
@@ -2424,14 +1543,14 @@ impl Store for FdbStore {
     }
 
     async fn get_vpc(&self, vpc_id: Uuid) -> Result<Vpc, StoreError> {
-        let key = Self::vpc_by_id_key(vpc_id);
+        let key = keys::vpc_by_id_key(vpc_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("vpc"))
     }
 
     async fn list_vpcs_in_project(&self, project_id: Uuid) -> Result<Vec<Vpc>, StoreError> {
-        let prefix = Self::vpc_in_project_prefix(project_id);
+        let prefix = keys::vpc_in_project_prefix(project_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -2464,7 +1583,7 @@ impl Store for FdbStore {
         for s in id_strs {
             let id = Uuid::parse_str(&s)
                 .map_err(|e| StoreError::Backend(format!("vpc index uuid: {e}")))?;
-            let by_id_key = Self::vpc_by_id_key(id);
+            let by_id_key = keys::vpc_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let vpc: Vpc = serde_json::from_slice(&bytes)
                     .map_err(de_err("vpc"))?;
@@ -2477,26 +1596,26 @@ impl Store for FdbStore {
     async fn delete_vpc(&self, vpc_id: Uuid) -> Result<(), StoreError> {
         // Read the row outside the transaction so we know project_id +
         // name + vni for the index clears.
-        let by_id_key = Self::vpc_by_id_key(vpc_id);
+        let by_id_key = keys::vpc_by_id_key(vpc_id);
         let bytes = match self.read_bytes(&by_id_key).await? {
             Some(b) => b,
             None => return Err(StoreError::NotFound),
         };
         let vpc: Vpc = serde_json::from_slice(&bytes)
             .map_err(de_err("vpc"))?;
-        let by_name_key = Self::vpc_by_project_name_key(vpc.project_id, &vpc.name);
-        let in_project_key = Self::vpc_in_project_key(vpc.project_id, vpc.id);
-        let by_vni_key = Self::vpc_by_vni_key(vpc.vni);
-        let subnet_prefix = Self::subnet_in_vpc_prefix(vpc_id);
+        let by_name_key = keys::vpc_by_project_name_key(vpc.project_id, &vpc.name);
+        let in_project_key = keys::vpc_in_project_key(vpc.project_id, vpc.id);
+        let by_vni_key = keys::vpc_by_vni_key(vpc.vni);
+        let subnet_prefix = keys::subnet_in_vpc_prefix(vpc_id);
         let (subnet_begin, subnet_end) = prefix_range(&subnet_prefix);
-        let route_table_prefix = Self::route_table_in_vpc_prefix(vpc_id);
+        let route_table_prefix = keys::route_table_in_vpc_prefix(vpc_id);
         let (route_table_begin, route_table_end) = prefix_range(&route_table_prefix);
         let route_table_prefix_len = route_table_prefix.len();
         let main_route_table_id = vpc.main_route_table_id;
-        let main_rt_by_id_key = Self::route_table_by_id_key(main_route_table_id);
-        let main_rt_by_name_key = Self::route_table_by_vpc_name_key(vpc_id, MAIN_ROUTE_TABLE_NAME);
-        let main_rt_in_vpc_key = Self::route_table_in_vpc_key(vpc_id, main_route_table_id);
-        let main_rt_singleton_key = Self::route_table_main_key(vpc_id);
+        let main_rt_by_id_key = keys::route_table_by_id_key(main_route_table_id);
+        let main_rt_by_name_key = keys::route_table_by_vpc_name_key(vpc_id, MAIN_ROUTE_TABLE_NAME);
+        let main_rt_in_vpc_key = keys::route_table_in_vpc_key(vpc_id, main_route_table_id);
+        let main_rt_singleton_key = keys::route_table_main_key(vpc_id);
 
         enum DelOut {
             Deleted,
@@ -2585,16 +1704,16 @@ impl Store for FdbStore {
         vpc_id: Uuid,
         req: NewSubnet,
     ) -> Result<Subnet, StoreError> {
-        let vpc_check_key = Self::vpc_by_id_key(vpc_id);
-        let subnet_prefix = Self::subnet_in_vpc_prefix(vpc_id);
+        let vpc_check_key = keys::vpc_by_id_key(vpc_id);
+        let subnet_prefix = keys::subnet_in_vpc_prefix(vpc_id);
         let (peer_begin, peer_end) = prefix_range(&subnet_prefix);
 
         // The candidate is finalized inside the transaction so
         // `created_at` and the new uuid are stable across the run.
         let candidate_id = Uuid::new_v4();
-        let by_id_key = Self::subnet_by_id_key(candidate_id);
-        let by_name_key = Self::subnet_by_vpc_name_key(vpc_id, &req.name);
-        let in_vpc_key = Self::subnet_in_vpc_key(vpc_id, candidate_id);
+        let by_id_key = keys::subnet_by_id_key(candidate_id);
+        let by_name_key = keys::subnet_by_vpc_name_key(vpc_id, &req.name);
+        let in_vpc_key = keys::subnet_in_vpc_key(vpc_id, candidate_id);
         let id_str = candidate_id.to_string();
 
         enum Outcome {
@@ -2660,7 +1779,7 @@ impl Store for FdbStore {
                     drop(peer_index);
                     let mut peers: Vec<Subnet> = Vec::with_capacity(peer_ids.len());
                     for peer_id in peer_ids {
-                        let peer_key = format!("subnet/by_id/{peer_id}").into_bytes();
+                        let peer_key = keys::subnet_by_id_key(peer_id);
                         let peer_bytes = match tr.get(&peer_key, false).await? {
                             Some(b) => b,
                             None => continue,
@@ -2727,14 +1846,14 @@ impl Store for FdbStore {
     }
 
     async fn get_subnet(&self, subnet_id: Uuid) -> Result<Subnet, StoreError> {
-        let key = Self::subnet_by_id_key(subnet_id);
+        let key = keys::subnet_by_id_key(subnet_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("subnet"))
     }
 
     async fn list_subnets_in_vpc(&self, vpc_id: Uuid) -> Result<Vec<Subnet>, StoreError> {
-        let prefix = Self::subnet_in_vpc_prefix(vpc_id);
+        let prefix = keys::subnet_in_vpc_prefix(vpc_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -2767,7 +1886,7 @@ impl Store for FdbStore {
         for s in id_strs {
             let id = Uuid::parse_str(&s)
                 .map_err(|e| StoreError::Backend(format!("subnet index uuid: {e}")))?;
-            let by_id_key = Self::subnet_by_id_key(id);
+            let by_id_key = keys::subnet_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let subnet: Subnet = serde_json::from_slice(&bytes)
                     .map_err(de_err("subnet"))?;
@@ -2778,15 +1897,15 @@ impl Store for FdbStore {
     }
 
     async fn delete_subnet(&self, subnet_id: Uuid) -> Result<(), StoreError> {
-        let by_id_key = Self::subnet_by_id_key(subnet_id);
+        let by_id_key = keys::subnet_by_id_key(subnet_id);
         let bytes = match self.read_bytes(&by_id_key).await? {
             Some(b) => b,
             None => return Err(StoreError::NotFound),
         };
         let subnet: Subnet = serde_json::from_slice(&bytes)
             .map_err(de_err("subnet"))?;
-        let by_name_key = Self::subnet_by_vpc_name_key(subnet.vpc_id, &subnet.name);
-        let in_vpc_key = Self::subnet_in_vpc_key(subnet.vpc_id, subnet.id);
+        let by_name_key = keys::subnet_by_vpc_name_key(subnet.vpc_id, &subnet.name);
+        let in_vpc_key = keys::subnet_in_vpc_key(subnet.vpc_id, subnet.id);
 
         enum DelOut {
             Deleted,
@@ -2824,11 +1943,11 @@ impl Store for FdbStore {
         vpc_id: Uuid,
         req: NewRouteTable,
     ) -> Result<RouteTable, StoreError> {
-        let vpc_check_key = Self::vpc_by_id_key(vpc_id);
-        let by_name_key = Self::route_table_by_vpc_name_key(vpc_id, &req.name);
+        let vpc_check_key = keys::vpc_by_id_key(vpc_id);
+        let by_name_key = keys::route_table_by_vpc_name_key(vpc_id, &req.name);
         let route_table_id = Uuid::new_v4();
-        let by_id_key = Self::route_table_by_id_key(route_table_id);
-        let in_vpc_key = Self::route_table_in_vpc_key(vpc_id, route_table_id);
+        let by_id_key = keys::route_table_by_id_key(route_table_id);
+        let in_vpc_key = keys::route_table_in_vpc_key(vpc_id, route_table_id);
         let id_str = route_table_id.to_string();
 
         enum Outcome {
@@ -2901,14 +2020,14 @@ impl Store for FdbStore {
     }
 
     async fn get_route_table(&self, route_table_id: Uuid) -> Result<RouteTable, StoreError> {
-        let key = Self::route_table_by_id_key(route_table_id);
+        let key = keys::route_table_by_id_key(route_table_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("route table"))
     }
 
     async fn list_route_tables_in_vpc(&self, vpc_id: Uuid) -> Result<Vec<RouteTable>, StoreError> {
-        let prefix = Self::route_table_in_vpc_prefix(vpc_id);
+        let prefix = keys::route_table_in_vpc_prefix(vpc_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -2951,7 +2070,7 @@ impl Store for FdbStore {
     }
 
     async fn delete_route_table(&self, route_table_id: Uuid) -> Result<(), StoreError> {
-        let by_id_key = Self::route_table_by_id_key(route_table_id);
+        let by_id_key = keys::route_table_by_id_key(route_table_id);
 
         enum Out {
             Deleted,
@@ -2979,7 +2098,7 @@ impl Store for FdbStore {
                         return Ok(Out::Main);
                     }
 
-                    let route_prefix = Self::route_in_table_prefix(route_table_id);
+                    let route_prefix = keys::route_in_table_prefix(route_table_id);
                     let (route_begin, route_end) = prefix_range(&route_prefix);
                     let opt = RangeOption {
                         begin: KeySelector::first_greater_or_equal(route_begin),
@@ -2993,7 +2112,7 @@ impl Store for FdbStore {
                     }
                     drop(route_kvs);
 
-                    let subnet_prefix = Self::subnet_in_vpc_prefix(route_table.vpc_id);
+                    let subnet_prefix = keys::subnet_in_vpc_prefix(route_table.vpc_id);
                     let (subnet_begin, subnet_end) = prefix_range(&subnet_prefix);
                     let prefix_len = subnet_prefix.len();
                     let opt = RangeOption {
@@ -3013,7 +2132,7 @@ impl Store for FdbStore {
                     }
                     drop(kvs);
                     for subnet_id in subnet_ids {
-                        let subnet_key = Self::subnet_by_id_key(subnet_id);
+                        let subnet_key = keys::subnet_by_id_key(subnet_id);
                         let Some(subnet_bytes) = tr.get(&subnet_key, false).await? else {
                             continue;
                         };
@@ -3026,9 +2145,9 @@ impl Store for FdbStore {
                     }
 
                     let by_name_key =
-                        Self::route_table_by_vpc_name_key(route_table.vpc_id, &route_table.name);
+                        keys::route_table_by_vpc_name_key(route_table.vpc_id, &route_table.name);
                     let in_vpc_key =
-                        Self::route_table_in_vpc_key(route_table.vpc_id, route_table.id);
+                        keys::route_table_in_vpc_key(route_table.vpc_id, route_table.id);
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&in_vpc_key);
@@ -3065,17 +2184,17 @@ impl Store for FdbStore {
         req: NewRoute,
     ) -> Result<Route, StoreError> {
         let destination = crate::types::canonical_ip_network(req.destination);
-        let route_table_key = Self::route_table_by_id_key(route_table_id);
-        let vpc_key = Self::vpc_by_id_key(vpc_id);
-        let by_destination_key = Self::route_by_table_destination_key(route_table_id, destination);
+        let route_table_key = keys::route_table_by_id_key(route_table_id);
+        let vpc_key = keys::vpc_by_id_key(vpc_id);
+        let by_destination_key = keys::route_by_table_destination_key(route_table_id, destination);
         let route_id = Uuid::new_v4();
-        let by_id_key = Self::route_by_id_key(route_id);
-        let in_table_key = Self::route_in_table_key(route_table_id, route_id);
+        let by_id_key = keys::route_by_id_key(route_id);
+        let in_table_key = keys::route_in_table_key(route_table_id, route_id);
         let id_str = route_id.to_string();
 
         if let RouteTarget::NatGateway { nat_gateway_id } = &req.target {
             let nat = self.read_nat_gateway_record(*nat_gateway_id).await?;
-            Self::validate_nat_gateway_route_target(&nat, tenant_id, project_id, vpc_id)?;
+            keys::validate_nat_gateway_route_target(&nat, tenant_id, project_id, vpc_id)?;
         }
 
         enum Outcome {
@@ -3169,14 +2288,14 @@ impl Store for FdbStore {
     }
 
     async fn get_route(&self, route_id: Uuid) -> Result<Route, StoreError> {
-        let key = Self::route_by_id_key(route_id);
+        let key = keys::route_by_id_key(route_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("route"))
     }
 
     async fn list_routes_in_table(&self, route_table_id: Uuid) -> Result<Vec<Route>, StoreError> {
-        let prefix = Self::route_in_table_prefix(route_table_id);
+        let prefix = keys::route_in_table_prefix(route_table_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -3219,7 +2338,7 @@ impl Store for FdbStore {
     }
 
     async fn delete_route(&self, route_id: Uuid) -> Result<(), StoreError> {
-        let by_id_key = Self::route_by_id_key(route_id);
+        let by_id_key = keys::route_by_id_key(route_id);
 
         enum Out {
             Deleted,
@@ -3240,11 +2359,11 @@ impl Store for FdbStore {
                         Err(e) => return Ok(Out::Corrupt(e.to_string())),
                     };
                     tr.clear(&by_id_key);
-                    tr.clear(&Self::route_by_table_destination_key(
+                    tr.clear(&keys::route_by_table_destination_key(
                         route.route_table_id,
                         route.destination,
                     ));
-                    tr.clear(&Self::route_in_table_key(route.route_table_id, route.id));
+                    tr.clear(&keys::route_in_table_key(route.route_table_id, route.id));
                     Ok(Out::Deleted)
                 }
             })
@@ -3265,18 +2384,18 @@ impl Store for FdbStore {
         vpc_id: Uuid,
         req: NewNatGateway,
     ) -> Result<NatGateway, StoreError> {
-        let vpc_check_key = Self::vpc_by_id_key(vpc_id);
-        let by_name_key = Self::nat_gateway_by_vpc_name_key(vpc_id, &req.name);
-        let alloc_v4_prefix = Self::floating_ip_alloc_v4_prefix().to_vec();
-        let alloc_v6_prefix = Self::floating_ip_alloc_v6_prefix().to_vec();
+        let vpc_check_key = keys::vpc_by_id_key(vpc_id);
+        let by_name_key = keys::nat_gateway_by_vpc_name_key(vpc_id, &req.name);
+        let alloc_v4_prefix = keys::floating_ip_alloc_v4_prefix().to_vec();
+        let alloc_v6_prefix = keys::floating_ip_alloc_v6_prefix().to_vec();
         let (v4_begin, v4_end) = prefix_range(&alloc_v4_prefix);
         let (v6_begin, v6_end) = prefix_range(&alloc_v6_prefix);
         let v4_prefix_len = alloc_v4_prefix.len();
         let v6_prefix_len = alloc_v6_prefix.len();
 
         let nat_gateway_id = Uuid::new_v4();
-        let by_id_key = Self::nat_gateway_by_id_key(nat_gateway_id);
-        let in_vpc_key = Self::nat_gateway_in_vpc_key(vpc_id, nat_gateway_id);
+        let by_id_key = keys::nat_gateway_by_id_key(nat_gateway_id);
+        let in_vpc_key = keys::nat_gateway_in_vpc_key(vpc_id, nat_gateway_id);
         let id_str = nat_gateway_id.to_string();
 
         enum Outcome {
@@ -3388,15 +2507,15 @@ impl Store for FdbStore {
                     tr.set(&by_id_key, &value);
                     tr.set(&by_name_key, &id_bytes);
                     tr.set(&in_vpc_key, b"");
-                    let holder = Self::public_ip_holder_value(NetworkResourceId::NatGateway {
+                    let holder = keys::public_ip_holder_value(NetworkResourceId::NatGateway {
                         id: nat_gateway_id,
                     });
                     match public_address {
                         std::net::IpAddr::V4(v4) => {
-                            tr.set(&Self::floating_ip_alloc_v4_key(v4), &holder);
+                            tr.set(&keys::floating_ip_alloc_v4_key(v4), &holder);
                         }
                         std::net::IpAddr::V6(v6) => {
-                            tr.set(&Self::floating_ip_alloc_v6_key(v6), &holder);
+                            tr.set(&keys::floating_ip_alloc_v6_key(v6), &holder);
                         }
                     }
                     Ok(Outcome::Created(Box::new(record)))
@@ -3436,7 +2555,7 @@ impl Store for FdbStore {
     }
 
     async fn list_nat_gateways_in_vpc(&self, vpc_id: Uuid) -> Result<Vec<NatGateway>, StoreError> {
-        let prefix = Self::nat_gateway_in_vpc_prefix(vpc_id);
+        let prefix = keys::nat_gateway_in_vpc_prefix(vpc_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -3479,7 +2598,7 @@ impl Store for FdbStore {
     }
 
     async fn delete_nat_gateway(&self, nat_gateway_id: Uuid) -> Result<(), StoreError> {
-        let by_id_key = Self::nat_gateway_by_id_key(nat_gateway_id);
+        let by_id_key = keys::nat_gateway_by_id_key(nat_gateway_id);
 
         enum Out {
             Deleted,
@@ -3500,7 +2619,7 @@ impl Store for FdbStore {
                         Ok(n) => n,
                         Err(e) => return Ok(Out::Corrupt(e.to_string())),
                     };
-                    let route_prefix = Self::route_by_id_prefix();
+                    let route_prefix = keys::route_by_id_prefix();
                     let (route_begin, route_end) = prefix_range(&route_prefix);
                     let opt = RangeOption {
                         begin: KeySelector::first_greater_or_equal(route_begin),
@@ -3523,17 +2642,17 @@ impl Store for FdbStore {
                         }
                     }
                     let by_name_key =
-                        Self::nat_gateway_by_vpc_name_key(record.vpc_id, &record.name);
-                    let in_vpc_key = Self::nat_gateway_in_vpc_key(record.vpc_id, record.id);
+                        keys::nat_gateway_by_vpc_name_key(record.vpc_id, &record.name);
+                    let in_vpc_key = keys::nat_gateway_in_vpc_key(record.vpc_id, record.id);
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&in_vpc_key);
                     match record.public_address {
                         std::net::IpAddr::V4(v4) => {
-                            tr.clear(&Self::floating_ip_alloc_v4_key(v4));
+                            tr.clear(&keys::floating_ip_alloc_v4_key(v4));
                         }
                         std::net::IpAddr::V6(v6) => {
-                            tr.clear(&Self::floating_ip_alloc_v6_key(v6));
+                            tr.clear(&keys::floating_ip_alloc_v6_key(v6));
                         }
                     }
                     Ok(Out::Deleted)
@@ -3558,9 +2677,9 @@ impl Store for FdbStore {
         validate_edge_cluster_bound_resource_shape(req.kind, &req.bound_resources)?;
 
         let edge_cluster_id = Uuid::new_v4();
-        let by_id_key = Self::edge_cluster_by_id_key(edge_cluster_id);
-        let by_name_key = Self::edge_cluster_by_name_key(&req.name);
-        let all_key = Self::edge_cluster_all_key(edge_cluster_id);
+        let by_id_key = keys::edge_cluster_by_id_key(edge_cluster_id);
+        let by_name_key = keys::edge_cluster_by_name_key(&req.name);
+        let all_key = keys::edge_cluster_all_key(edge_cluster_id);
         let id_str = edge_cluster_id.to_string();
 
         enum Outcome {
@@ -3625,7 +2744,7 @@ impl Store for FdbStore {
                     tr.set(&by_name_key, &id_bytes);
                     tr.set(&all_key, b"");
                     for resource in &record.bound_resources {
-                        let key = Self::edge_cluster_by_resource_key(*resource, record.id);
+                        let key = keys::edge_cluster_by_resource_key(*resource, record.id);
                         tr.set(&key, b"");
                     }
                     Ok(Outcome::Created(Box::new(record)))
@@ -3657,7 +2776,7 @@ impl Store for FdbStore {
     }
 
     async fn list_edge_clusters(&self) -> Result<Vec<EdgeCluster>, StoreError> {
-        let prefix = Self::edge_cluster_all_prefix().to_vec();
+        let prefix = keys::edge_cluster_all_prefix().to_vec();
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -3703,7 +2822,7 @@ impl Store for FdbStore {
         &self,
         resource: EdgeClusterResource,
     ) -> Result<Vec<EdgeCluster>, StoreError> {
-        let prefix = Self::edge_cluster_by_resource_prefix(resource);
+        let prefix = keys::edge_cluster_by_resource_prefix(resource);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -3746,7 +2865,7 @@ impl Store for FdbStore {
     }
 
     async fn delete_edge_cluster(&self, edge_cluster_id: Uuid) -> Result<(), StoreError> {
-        let by_id_key = Self::edge_cluster_by_id_key(edge_cluster_id);
+        let by_id_key = keys::edge_cluster_by_id_key(edge_cluster_id);
 
         enum Out {
             Deleted,
@@ -3768,11 +2887,11 @@ impl Store for FdbStore {
                         Err(e) => return Ok(Out::Corrupt(e.to_string())),
                     };
                     tr.clear(&by_id_key);
-                    tr.clear(&Self::edge_cluster_by_name_key(&record.name));
-                    tr.clear(&Self::edge_cluster_all_key(record.id));
+                    tr.clear(&keys::edge_cluster_by_name_key(&record.name));
+                    tr.clear(&keys::edge_cluster_all_key(record.id));
                     let now = Utc::now();
                     for resource in &record.bound_resources {
-                        tr.clear(&Self::edge_cluster_by_resource_key(*resource, record.id));
+                        tr.clear(&keys::edge_cluster_by_resource_key(*resource, record.id));
                         if let EdgeClusterResource::NatGateway { .. } = resource {
                             let resource_key = edge_cluster_resource_record_key(*resource);
                             if let Some(bytes) = tr.get(&resource_key, false).await? {
@@ -3814,9 +2933,9 @@ impl Store for FdbStore {
         fingerprint: String,
     ) -> Result<SshKey, StoreError> {
         let scope = SshKeyScope::Public;
-        let by_name_key = Self::ssh_key_by_public_name_key(&req.name);
-        let by_fp_key = Self::ssh_key_by_public_fp_key(&fingerprint);
-        let in_scope_key_for = |id: Uuid| Self::ssh_key_in_public_key(id);
+        let by_name_key = keys::ssh_key_by_public_name_key(&req.name);
+        let by_fp_key = keys::ssh_key_by_public_fp_key(&fingerprint);
+        let in_scope_key_for = |id: Uuid| keys::ssh_key_in_public_key(id);
         self.create_ssh_key_inner(
             scope,
             req,
@@ -3837,10 +2956,10 @@ impl Store for FdbStore {
         fingerprint: String,
     ) -> Result<SshKey, StoreError> {
         let scope = SshKeyScope::Silo { silo_id };
-        let by_name_key = Self::ssh_key_by_silo_name_key(silo_id, &req.name);
-        let by_fp_key = Self::ssh_key_by_silo_fp_key(silo_id, &fingerprint);
-        let parent_check_key = Self::silo_by_id_key(silo_id);
-        let in_scope_key_for = move |id: Uuid| Self::ssh_key_in_silo_key(silo_id, id);
+        let by_name_key = keys::ssh_key_by_silo_name_key(silo_id, &req.name);
+        let by_fp_key = keys::ssh_key_by_silo_fp_key(silo_id, &fingerprint);
+        let parent_check_key = keys::silo_by_id_key(silo_id);
+        let in_scope_key_for = move |id: Uuid| keys::ssh_key_in_silo_key(silo_id, id);
         self.create_ssh_key_inner(
             scope,
             req,
@@ -3861,10 +2980,10 @@ impl Store for FdbStore {
         fingerprint: String,
     ) -> Result<SshKey, StoreError> {
         let scope = SshKeyScope::Tenant { tenant_id };
-        let by_name_key = Self::ssh_key_by_tenant_name_key(tenant_id, &req.name);
-        let by_fp_key = Self::ssh_key_by_tenant_fp_key(tenant_id, &fingerprint);
-        let parent_check_key = Self::tenant_by_id_key(tenant_id);
-        let in_scope_key_for = move |id: Uuid| Self::ssh_key_in_tenant_key(tenant_id, id);
+        let by_name_key = keys::ssh_key_by_tenant_name_key(tenant_id, &req.name);
+        let by_fp_key = keys::ssh_key_by_tenant_fp_key(tenant_id, &fingerprint);
+        let parent_check_key = keys::tenant_by_id_key(tenant_id);
+        let in_scope_key_for = move |id: Uuid| keys::ssh_key_in_tenant_key(tenant_id, id);
         self.create_ssh_key_inner(
             scope,
             req,
@@ -3885,10 +3004,10 @@ impl Store for FdbStore {
         fingerprint: String,
     ) -> Result<SshKey, StoreError> {
         let scope = SshKeyScope::Project { project_id };
-        let by_name_key = Self::ssh_key_by_project_name_key(project_id, &req.name);
-        let by_fp_key = Self::ssh_key_by_project_fp_key(project_id, &fingerprint);
-        let parent_check_key = Self::project_by_id_key(project_id);
-        let in_scope_key_for = move |id: Uuid| Self::ssh_key_in_project_key(project_id, id);
+        let by_name_key = keys::ssh_key_by_project_name_key(project_id, &req.name);
+        let by_fp_key = keys::ssh_key_by_project_fp_key(project_id, &fingerprint);
+        let parent_check_key = keys::project_by_id_key(project_id);
+        let in_scope_key_for = move |id: Uuid| keys::ssh_key_in_project_key(project_id, id);
         self.create_ssh_key_inner(
             scope,
             req,
@@ -3909,10 +3028,10 @@ impl Store for FdbStore {
         fingerprint: String,
     ) -> Result<SshKey, StoreError> {
         let scope = SshKeyScope::User { user_id };
-        let by_name_key = Self::ssh_key_by_user_name_key(user_id, &req.name);
-        let by_fp_key = Self::ssh_key_by_user_fp_key(user_id, &fingerprint);
-        let parent_check_key = Self::user_by_id_key(user_id);
-        let in_scope_key_for = move |id: Uuid| Self::ssh_key_by_user_idx_key(user_id, id);
+        let by_name_key = keys::ssh_key_by_user_name_key(user_id, &req.name);
+        let by_fp_key = keys::ssh_key_by_user_fp_key(user_id, &fingerprint);
+        let parent_check_key = keys::user_by_id_key(user_id);
+        let in_scope_key_for = move |id: Uuid| keys::ssh_key_by_user_idx_key(user_id, id);
         self.create_ssh_key_inner(
             scope,
             req,
@@ -3927,34 +3046,34 @@ impl Store for FdbStore {
     }
 
     async fn get_ssh_key(&self, key_id: Uuid) -> Result<SshKey, StoreError> {
-        let key = Self::ssh_key_by_id_key(key_id);
+        let key = keys::ssh_key_by_id_key(key_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("ssh key"))
     }
 
     async fn list_ssh_keys_public(&self) -> Result<Vec<SshKey>, StoreError> {
-        let prefix = Self::ssh_key_in_public_prefix();
+        let prefix = keys::ssh_key_in_public_prefix();
         self.list_ssh_keys_via_index(prefix).await
     }
 
     async fn list_ssh_keys_in_silo(&self, silo_id: Uuid) -> Result<Vec<SshKey>, StoreError> {
-        let prefix = Self::ssh_key_in_silo_prefix(silo_id);
+        let prefix = keys::ssh_key_in_silo_prefix(silo_id);
         self.list_ssh_keys_via_index(prefix).await
     }
 
     async fn list_ssh_keys_in_tenant(&self, tenant_id: Uuid) -> Result<Vec<SshKey>, StoreError> {
-        let prefix = Self::ssh_key_in_tenant_prefix(tenant_id);
+        let prefix = keys::ssh_key_in_tenant_prefix(tenant_id);
         self.list_ssh_keys_via_index(prefix).await
     }
 
     async fn list_ssh_keys_in_project(&self, project_id: Uuid) -> Result<Vec<SshKey>, StoreError> {
-        let prefix = Self::ssh_key_in_project_prefix(project_id);
+        let prefix = keys::ssh_key_in_project_prefix(project_id);
         self.list_ssh_keys_via_index(prefix).await
     }
 
     async fn list_ssh_keys_for_user(&self, user_id: Uuid) -> Result<Vec<SshKey>, StoreError> {
-        let prefix = Self::ssh_key_by_user_idx_prefix(user_id);
+        let prefix = keys::ssh_key_by_user_idx_prefix(user_id);
         self.list_ssh_keys_via_index(prefix).await
     }
 
@@ -3963,7 +3082,7 @@ impl Store for FdbStore {
         tenant_id: Uuid,
     ) -> Result<Vec<SshKey>, StoreError> {
         let tenant_bytes = self
-            .read_bytes(&Self::tenant_by_id_key(tenant_id))
+            .read_bytes(&keys::tenant_by_id_key(tenant_id))
             .await?
             .ok_or(StoreError::NotFound)?;
         let tenant: Tenant = serde_json::from_slice(&tenant_bytes)
@@ -3979,13 +3098,13 @@ impl Store for FdbStore {
         project_id: Uuid,
     ) -> Result<Vec<SshKey>, StoreError> {
         let project_bytes = self
-            .read_bytes(&Self::project_by_id_key(project_id))
+            .read_bytes(&keys::project_by_id_key(project_id))
             .await?
             .ok_or(StoreError::NotFound)?;
         let project: Project = serde_json::from_slice(&project_bytes)
             .map_err(de_err("project"))?;
         let tenant_bytes = self
-            .read_bytes(&Self::tenant_by_id_key(project.tenant_id))
+            .read_bytes(&keys::tenant_by_id_key(project.tenant_id))
             .await?
             .ok_or(StoreError::NotFound)?;
         let tenant: Tenant = serde_json::from_slice(&tenant_bytes)
@@ -3998,7 +3117,7 @@ impl Store for FdbStore {
     }
 
     async fn delete_ssh_key(&self, key_id: Uuid) -> Result<(), StoreError> {
-        let by_id_key = Self::ssh_key_by_id_key(key_id);
+        let by_id_key = keys::ssh_key_by_id_key(key_id);
         let bytes = match self.read_bytes(&by_id_key).await? {
             Some(b) => b,
             None => return Err(StoreError::NotFound),
@@ -4007,29 +3126,29 @@ impl Store for FdbStore {
             .map_err(de_err("ssh key"))?;
         let (by_name_key, by_fp_key, in_scope_key) = match &key.scope {
             SshKeyScope::Public => (
-                Self::ssh_key_by_public_name_key(&key.name),
-                Self::ssh_key_by_public_fp_key(&key.fingerprint),
-                Self::ssh_key_in_public_key(key.id),
+                keys::ssh_key_by_public_name_key(&key.name),
+                keys::ssh_key_by_public_fp_key(&key.fingerprint),
+                keys::ssh_key_in_public_key(key.id),
             ),
             SshKeyScope::Silo { silo_id } => (
-                Self::ssh_key_by_silo_name_key(*silo_id, &key.name),
-                Self::ssh_key_by_silo_fp_key(*silo_id, &key.fingerprint),
-                Self::ssh_key_in_silo_key(*silo_id, key.id),
+                keys::ssh_key_by_silo_name_key(*silo_id, &key.name),
+                keys::ssh_key_by_silo_fp_key(*silo_id, &key.fingerprint),
+                keys::ssh_key_in_silo_key(*silo_id, key.id),
             ),
             SshKeyScope::Tenant { tenant_id } => (
-                Self::ssh_key_by_tenant_name_key(*tenant_id, &key.name),
-                Self::ssh_key_by_tenant_fp_key(*tenant_id, &key.fingerprint),
-                Self::ssh_key_in_tenant_key(*tenant_id, key.id),
+                keys::ssh_key_by_tenant_name_key(*tenant_id, &key.name),
+                keys::ssh_key_by_tenant_fp_key(*tenant_id, &key.fingerprint),
+                keys::ssh_key_in_tenant_key(*tenant_id, key.id),
             ),
             SshKeyScope::Project { project_id } => (
-                Self::ssh_key_by_project_name_key(*project_id, &key.name),
-                Self::ssh_key_by_project_fp_key(*project_id, &key.fingerprint),
-                Self::ssh_key_in_project_key(*project_id, key.id),
+                keys::ssh_key_by_project_name_key(*project_id, &key.name),
+                keys::ssh_key_by_project_fp_key(*project_id, &key.fingerprint),
+                keys::ssh_key_in_project_key(*project_id, key.id),
             ),
             SshKeyScope::User { user_id } => (
-                Self::ssh_key_by_user_name_key(*user_id, &key.name),
-                Self::ssh_key_by_user_fp_key(*user_id, &key.fingerprint),
-                Self::ssh_key_by_user_idx_key(*user_id, key.id),
+                keys::ssh_key_by_user_name_key(*user_id, &key.name),
+                keys::ssh_key_by_user_fp_key(*user_id, &key.fingerprint),
+                keys::ssh_key_by_user_idx_key(*user_id, key.id),
             ),
         };
 
@@ -4066,8 +3185,8 @@ impl Store for FdbStore {
 
     async fn create_image_public(&self, req: NewImage) -> Result<Image, StoreError> {
         let scope = ImageScope::Public;
-        let by_name_key = Self::image_by_public_name_key(&req.name);
-        let in_scope_key_for = |id: Uuid| Self::image_in_public_key(id);
+        let by_name_key = keys::image_by_public_name_key(&req.name);
+        let in_scope_key_for = |id: Uuid| keys::image_in_public_key(id);
         self.create_image_inner(
             scope,
             req,
@@ -4081,9 +3200,9 @@ impl Store for FdbStore {
 
     async fn create_image_silo(&self, silo_id: Uuid, req: NewImage) -> Result<Image, StoreError> {
         let scope = ImageScope::Silo { silo_id };
-        let by_name_key = Self::image_by_silo_name_key(silo_id, &req.name);
-        let parent_check_key = Self::silo_by_id_key(silo_id);
-        let in_scope_key_for = move |id: Uuid| Self::image_in_silo_key(silo_id, id);
+        let by_name_key = keys::image_by_silo_name_key(silo_id, &req.name);
+        let parent_check_key = keys::silo_by_id_key(silo_id);
+        let in_scope_key_for = move |id: Uuid| keys::image_in_silo_key(silo_id, id);
         self.create_image_inner(
             scope,
             req,
@@ -4101,9 +3220,9 @@ impl Store for FdbStore {
         req: NewImage,
     ) -> Result<Image, StoreError> {
         let scope = ImageScope::Tenant { tenant_id };
-        let by_name_key = Self::image_by_tenant_name_key(tenant_id, &req.name);
-        let parent_check_key = Self::tenant_by_id_key(tenant_id);
-        let in_scope_key_for = move |id: Uuid| Self::image_in_tenant_key(tenant_id, id);
+        let by_name_key = keys::image_by_tenant_name_key(tenant_id, &req.name);
+        let parent_check_key = keys::tenant_by_id_key(tenant_id);
+        let in_scope_key_for = move |id: Uuid| keys::image_in_tenant_key(tenant_id, id);
         self.create_image_inner(
             scope,
             req,
@@ -4121,9 +3240,9 @@ impl Store for FdbStore {
         req: NewImage,
     ) -> Result<Image, StoreError> {
         let scope = ImageScope::Project { project_id };
-        let by_name_key = Self::image_by_project_name_key(project_id, &req.name);
-        let parent_check_key = Self::project_by_id_key(project_id);
-        let in_scope_key_for = move |id: Uuid| Self::image_in_project_key(project_id, id);
+        let by_name_key = keys::image_by_project_name_key(project_id, &req.name);
+        let parent_check_key = keys::project_by_id_key(project_id);
+        let in_scope_key_for = move |id: Uuid| keys::image_in_project_key(project_id, id);
         self.create_image_inner(
             scope,
             req,
@@ -4137,9 +3256,9 @@ impl Store for FdbStore {
 
     async fn create_image_user(&self, user_id: Uuid, req: NewImage) -> Result<Image, StoreError> {
         let scope = ImageScope::User { user_id };
-        let by_name_key = Self::image_by_user_name_key(user_id, &req.name);
-        let parent_check_key = Self::user_by_id_key(user_id);
-        let in_scope_key_for = move |id: Uuid| Self::image_by_user_idx_key(user_id, id);
+        let by_name_key = keys::image_by_user_name_key(user_id, &req.name);
+        let parent_check_key = keys::user_by_id_key(user_id);
+        let in_scope_key_for = move |id: Uuid| keys::image_by_user_idx_key(user_id, id);
         self.create_image_inner(
             scope,
             req,
@@ -4152,34 +3271,34 @@ impl Store for FdbStore {
     }
 
     async fn get_image(&self, image_id: Uuid) -> Result<Image, StoreError> {
-        let key = Self::image_by_id_key(image_id);
+        let key = keys::image_by_id_key(image_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("image"))
     }
 
     async fn list_images_public(&self) -> Result<Vec<Image>, StoreError> {
-        let prefix = Self::image_in_public_prefix();
+        let prefix = keys::image_in_public_prefix();
         self.list_images_via_index(prefix).await
     }
 
     async fn list_images_in_silo(&self, silo_id: Uuid) -> Result<Vec<Image>, StoreError> {
-        let prefix = Self::image_in_silo_prefix(silo_id);
+        let prefix = keys::image_in_silo_prefix(silo_id);
         self.list_images_via_index(prefix).await
     }
 
     async fn list_images_in_tenant(&self, tenant_id: Uuid) -> Result<Vec<Image>, StoreError> {
-        let prefix = Self::image_in_tenant_prefix(tenant_id);
+        let prefix = keys::image_in_tenant_prefix(tenant_id);
         self.list_images_via_index(prefix).await
     }
 
     async fn list_images_in_project(&self, project_id: Uuid) -> Result<Vec<Image>, StoreError> {
-        let prefix = Self::image_in_project_prefix(project_id);
+        let prefix = keys::image_in_project_prefix(project_id);
         self.list_images_via_index(prefix).await
     }
 
     async fn list_images_for_user(&self, user_id: Uuid) -> Result<Vec<Image>, StoreError> {
-        let prefix = Self::image_by_user_idx_prefix(user_id);
+        let prefix = keys::image_by_user_idx_prefix(user_id);
         self.list_images_via_index(prefix).await
     }
 
@@ -4191,7 +3310,7 @@ impl Store for FdbStore {
         // tenant → NotFound (handler-side authorize_in_tenant
         // would already have 404'd a cross-tenant probe).
         let tenant_bytes = self
-            .read_bytes(&Self::tenant_by_id_key(tenant_id))
+            .read_bytes(&keys::tenant_by_id_key(tenant_id))
             .await?
             .ok_or(StoreError::NotFound)?;
         let tenant: Tenant = serde_json::from_slice(&tenant_bytes)
@@ -4207,13 +3326,13 @@ impl Store for FdbStore {
         project_id: Uuid,
     ) -> Result<Vec<Image>, StoreError> {
         let project_bytes = self
-            .read_bytes(&Self::project_by_id_key(project_id))
+            .read_bytes(&keys::project_by_id_key(project_id))
             .await?
             .ok_or(StoreError::NotFound)?;
         let project: Project = serde_json::from_slice(&project_bytes)
             .map_err(de_err("project"))?;
         let tenant_bytes = self
-            .read_bytes(&Self::tenant_by_id_key(project.tenant_id))
+            .read_bytes(&keys::tenant_by_id_key(project.tenant_id))
             .await?
             .ok_or(StoreError::NotFound)?;
         let tenant: Tenant = serde_json::from_slice(&tenant_bytes)
@@ -4226,7 +3345,7 @@ impl Store for FdbStore {
     }
 
     async fn delete_image(&self, image_id: Uuid) -> Result<(), StoreError> {
-        let by_id_key = Self::image_by_id_key(image_id);
+        let by_id_key = keys::image_by_id_key(image_id);
         let bytes = match self.read_bytes(&by_id_key).await? {
             Some(b) => b,
             None => return Err(StoreError::NotFound),
@@ -4235,24 +3354,24 @@ impl Store for FdbStore {
             .map_err(de_err("image"))?;
         let (by_name_key, in_scope_key) = match &image.scope {
             ImageScope::Public => (
-                Self::image_by_public_name_key(&image.name),
-                Self::image_in_public_key(image.id),
+                keys::image_by_public_name_key(&image.name),
+                keys::image_in_public_key(image.id),
             ),
             ImageScope::Silo { silo_id } => (
-                Self::image_by_silo_name_key(*silo_id, &image.name),
-                Self::image_in_silo_key(*silo_id, image.id),
+                keys::image_by_silo_name_key(*silo_id, &image.name),
+                keys::image_in_silo_key(*silo_id, image.id),
             ),
             ImageScope::Tenant { tenant_id } => (
-                Self::image_by_tenant_name_key(*tenant_id, &image.name),
-                Self::image_in_tenant_key(*tenant_id, image.id),
+                keys::image_by_tenant_name_key(*tenant_id, &image.name),
+                keys::image_in_tenant_key(*tenant_id, image.id),
             ),
             ImageScope::Project { project_id } => (
-                Self::image_by_project_name_key(*project_id, &image.name),
-                Self::image_in_project_key(*project_id, image.id),
+                keys::image_by_project_name_key(*project_id, &image.name),
+                keys::image_in_project_key(*project_id, image.id),
             ),
             ImageScope::User { user_id } => (
-                Self::image_by_user_name_key(*user_id, &image.name),
-                Self::image_by_user_idx_key(*user_id, image.id),
+                keys::image_by_user_name_key(*user_id, &image.name),
+                keys::image_by_user_idx_key(*user_id, image.id),
             ),
         };
 
@@ -4291,8 +3410,8 @@ impl Store for FdbStore {
         project_id: Uuid,
         req: NewQuota,
     ) -> Result<Quota, StoreError> {
-        let project_check_key = Self::project_by_id_key(project_id);
-        let quota_key = Self::quota_by_project_key(project_id);
+        let project_check_key = keys::project_by_id_key(project_id);
+        let quota_key = keys::quota_by_project_key(project_id);
         let quota = Quota {
             tenant_id,
             project_id,
@@ -4344,8 +3463,8 @@ impl Store for FdbStore {
     async fn get_quota(&self, tenant_id: Uuid, project_id: Uuid) -> Result<Quota, StoreError> {
         // Read project + quota inside a single transaction so the
         // tenant check is consistent with the read.
-        let project_check_key = Self::project_by_id_key(project_id);
-        let quota_key = Self::quota_by_project_key(project_id);
+        let project_check_key = keys::project_by_id_key(project_id);
+        let quota_key = keys::quota_by_project_key(project_id);
 
         enum Outcome {
             Found(Quota),
@@ -4393,8 +3512,8 @@ impl Store for FdbStore {
     }
 
     async fn delete_quota(&self, tenant_id: Uuid, project_id: Uuid) -> Result<(), StoreError> {
-        let project_check_key = Self::project_by_id_key(project_id);
-        let quota_key = Self::quota_by_project_key(project_id);
+        let project_check_key = keys::project_by_id_key(project_id);
+        let quota_key = keys::quota_by_project_key(project_id);
 
         enum Outcome {
             Deleted,
@@ -4449,18 +3568,18 @@ impl Store for FdbStore {
         // delete of any referenced resource aborts cleanly; a
         // concurrent NIC create that would race for the same IP
         // is serialized by FDB's optimistic concurrency.
-        let tenant_check_key = Self::tenant_by_id_key(tenant_id);
-        let project_check_key = Self::project_by_id_key(project_id);
-        let image_check_key = Self::image_by_id_key(req.image_id);
-        let subnet_check_key = Self::subnet_by_id_key(req.primary_subnet_id);
+        let tenant_check_key = keys::tenant_by_id_key(tenant_id);
+        let project_check_key = keys::project_by_id_key(project_id);
+        let image_check_key = keys::image_by_id_key(req.image_id);
+        let subnet_check_key = keys::subnet_by_id_key(req.primary_subnet_id);
         let ssh_key_check_keys: Vec<(Uuid, Vec<u8>)> = req
             .ssh_key_ids
             .iter()
-            .map(|id| (*id, Self::ssh_key_by_id_key(*id)))
+            .map(|id| (*id, keys::ssh_key_by_id_key(*id)))
             .collect();
-        let by_name_key = Self::instance_by_project_name_key(project_id, &req.name);
-        let alloc_v4_prefix = Self::nic_ip_alloc_v4_prefix(req.primary_subnet_id);
-        let alloc_v6_prefix = Self::nic_ip_alloc_v6_prefix(req.primary_subnet_id);
+        let by_name_key = keys::instance_by_project_name_key(project_id, &req.name);
+        let alloc_v4_prefix = keys::nic_ip_alloc_v4_prefix(req.primary_subnet_id);
+        let alloc_v6_prefix = keys::nic_ip_alloc_v6_prefix(req.primary_subnet_id);
         let (v4_begin, v4_end) = prefix_range(&alloc_v4_prefix);
         let (v6_begin, v6_end) = prefix_range(&alloc_v6_prefix);
         let v4_prefix_len = alloc_v4_prefix.len();
@@ -4469,12 +3588,12 @@ impl Store for FdbStore {
         let instance_id = Uuid::new_v4();
         let nic_id = Uuid::new_v4();
         let disk_id = Uuid::new_v4();
-        let by_id_key = Self::instance_by_id_key(instance_id);
-        let in_project_key = Self::instance_in_project_key(project_id, instance_id);
-        let nic_by_id_key = Self::nic_by_id_key(nic_id);
-        let nic_in_instance_key = Self::nic_in_instance_key(instance_id, nic_id);
-        let disk_by_id_key = Self::disk_by_id_key(disk_id);
-        let disk_in_instance_key = Self::disk_in_instance_key(instance_id, disk_id);
+        let by_id_key = keys::instance_by_id_key(instance_id);
+        let in_project_key = keys::instance_in_project_key(project_id, instance_id);
+        let nic_by_id_key = keys::nic_by_id_key(nic_id);
+        let nic_in_instance_key = keys::nic_in_instance_key(instance_id, nic_id);
+        let disk_by_id_key = keys::disk_by_id_key(disk_id);
+        let disk_in_instance_key = keys::disk_in_instance_key(instance_id, disk_id);
         let instance_id_str = instance_id.to_string();
 
         // Per-extra-NIC precomputed keys + ids. Cloned into the
@@ -4499,8 +3618,8 @@ impl Store for FdbStore {
             .extra_nics
             .iter()
             .map(|spec| {
-                let v4_prefix = Self::nic_ip_alloc_v4_prefix(spec.subnet_id);
-                let v6_prefix = Self::nic_ip_alloc_v6_prefix(spec.subnet_id);
+                let v4_prefix = keys::nic_ip_alloc_v4_prefix(spec.subnet_id);
+                let v6_prefix = keys::nic_ip_alloc_v6_prefix(spec.subnet_id);
                 let (v4_begin, v4_end) = prefix_range(&v4_prefix);
                 let (v6_begin, v6_end) = prefix_range(&v6_prefix);
                 let nid = Uuid::new_v4();
@@ -4508,15 +3627,15 @@ impl Store for FdbStore {
                     spec_subnet_id: spec.subnet_id,
                     name: spec.name.clone(),
                     nic_id: nid,
-                    subnet_check_key: Self::subnet_by_id_key(spec.subnet_id),
+                    subnet_check_key: keys::subnet_by_id_key(spec.subnet_id),
                     v4_prefix_len: v4_prefix.len(),
                     v6_prefix_len: v6_prefix.len(),
                     v4_begin,
                     v4_end,
                     v6_begin,
                     v6_end,
-                    nic_by_id_key: Self::nic_by_id_key(nid),
-                    nic_in_instance_key: Self::nic_in_instance_key(instance_id, nid),
+                    nic_by_id_key: keys::nic_by_id_key(nid),
+                    nic_in_instance_key: keys::nic_in_instance_key(instance_id, nid),
                 }
             })
             .collect();
@@ -4741,27 +3860,27 @@ impl Store for FdbStore {
                     // RFD 00007 AP-1c: image -> instance membership
                     // index. Image_id is fixed on the instance row;
                     // delete_instance clears the matching key.
-                    tr.set(&Self::instance_in_image_key(req.image_id, instance_id), b"");
+                    tr.set(&keys::instance_in_image_key(req.image_id, instance_id), b"");
                     tr.set(&nic_by_id_key, &nic_value);
                     tr.set(&nic_in_instance_key, b"");
                     // RFD 00007 AP-1c: subnet -> nic membership and
                     // ip -> nic unique indexes for the primary NIC.
-                    tr.set(&Self::nic_in_subnet_key(subnet.id, nic_id), b"");
+                    tr.set(&keys::nic_in_subnet_key(subnet.id, nic_id), b"");
                     tr.set(&disk_by_id_key, &disk_value);
                     tr.set(&disk_in_instance_key, b"");
                     if let Some(ip) = primary_ipv4 {
-                        let alloc_key = Self::nic_ip_alloc_v4_key(subnet.id, ip);
+                        let alloc_key = keys::nic_ip_alloc_v4_key(subnet.id, ip);
                         tr.set(&alloc_key, b"");
                         tr.set(
-                            &Self::nic_by_ip_key(std::net::IpAddr::V4(ip)),
+                            &keys::nic_by_ip_key(std::net::IpAddr::V4(ip)),
                             nic_id.to_string().as_bytes(),
                         );
                     }
                     if let Some(ip) = primary_ipv6 {
-                        let alloc_key = Self::nic_ip_alloc_v6_key(subnet.id, ip);
+                        let alloc_key = keys::nic_ip_alloc_v6_key(subnet.id, ip);
                         tr.set(&alloc_key, b"");
                         tr.set(
-                            &Self::nic_by_ip_key(std::net::IpAddr::V6(ip)),
+                            &keys::nic_by_ip_key(std::net::IpAddr::V6(ip)),
                             nic_id.to_string().as_bytes(),
                         );
                     }
@@ -4888,20 +4007,20 @@ impl Store for FdbStore {
                         tr.set(&plan.nic_in_instance_key, b"");
                         // RFD 00007 AP-1c: subnet/IP indexes for the
                         // extra NIC, same as the primary above.
-                        tr.set(&Self::nic_in_subnet_key(extra_subnet.id, plan.nic_id), b"");
+                        tr.set(&keys::nic_in_subnet_key(extra_subnet.id, plan.nic_id), b"");
                         if let Some(ip) = extra_v4 {
-                            let alloc_key = Self::nic_ip_alloc_v4_key(extra_subnet.id, ip);
+                            let alloc_key = keys::nic_ip_alloc_v4_key(extra_subnet.id, ip);
                             tr.set(&alloc_key, b"");
                             tr.set(
-                                &Self::nic_by_ip_key(std::net::IpAddr::V4(ip)),
+                                &keys::nic_by_ip_key(std::net::IpAddr::V4(ip)),
                                 plan.nic_id.to_string().as_bytes(),
                             );
                         }
                         if let Some(ip) = extra_v6 {
-                            let alloc_key = Self::nic_ip_alloc_v6_key(extra_subnet.id, ip);
+                            let alloc_key = keys::nic_ip_alloc_v6_key(extra_subnet.id, ip);
                             tr.set(&alloc_key, b"");
                             tr.set(
-                                &Self::nic_by_ip_key(std::net::IpAddr::V6(ip)),
+                                &keys::nic_by_ip_key(std::net::IpAddr::V6(ip)),
                                 plan.nic_id.to_string().as_bytes(),
                             );
                         }
@@ -4940,7 +4059,7 @@ impl Store for FdbStore {
     }
 
     async fn get_instance(&self, instance_id: Uuid) -> Result<Instance, StoreError> {
-        let key = Self::instance_by_id_key(instance_id);
+        let key = keys::instance_by_id_key(instance_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("instance"))
@@ -4950,7 +4069,7 @@ impl Store for FdbStore {
         &self,
         project_id: Uuid,
     ) -> Result<Vec<Instance>, StoreError> {
-        let prefix = Self::instance_in_project_prefix(project_id);
+        let prefix = keys::instance_in_project_prefix(project_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -4983,7 +4102,7 @@ impl Store for FdbStore {
         for s in id_strs {
             let id = Uuid::parse_str(&s)
                 .map_err(|e| StoreError::Backend(format!("instance index uuid: {e}")))?;
-            let by_id_key = Self::instance_by_id_key(id);
+            let by_id_key = keys::instance_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let instance: Instance = serde_json::from_slice(&bytes)
                     .map_err(de_err("instance"))?;
@@ -4998,7 +4117,7 @@ impl Store for FdbStore {
         instance_id: Uuid,
         host_cn_uuid: Option<Uuid>,
     ) -> Result<Instance, StoreError> {
-        let by_id_key = Self::instance_by_id_key(instance_id);
+        let by_id_key = keys::instance_by_id_key(instance_id);
 
         enum Outcome {
             Updated(Box<Instance>),
@@ -5026,10 +4145,10 @@ impl Store for FdbStore {
                         Err(_) => return Ok(Outcome::Serialize),
                     };
                     if let Some(old_host) = previous {
-                        tr.clear(&Self::instance_in_host_cn_key(old_host, instance_id));
+                        tr.clear(&keys::instance_in_host_cn_key(old_host, instance_id));
                     }
                     if let Some(new_host) = host_cn_uuid {
-                        tr.set(&Self::instance_in_host_cn_key(new_host, instance_id), b"");
+                        tr.set(&keys::instance_in_host_cn_key(new_host, instance_id), b"");
                     }
                     tr.set(&by_id_key, &value);
                     Ok(Outcome::Updated(Box::new(instance)))
@@ -5052,7 +4171,7 @@ impl Store for FdbStore {
         instance_id: Uuid,
         brand: InstanceBrand,
     ) -> Result<(), StoreError> {
-        let by_id_key = Self::instance_by_id_key(instance_id);
+        let by_id_key = keys::instance_by_id_key(instance_id);
 
         enum Outcome {
             Updated,
@@ -5098,7 +4217,7 @@ impl Store for FdbStore {
     // single FDB range read against the secondary index, parses the
     // uuid suffix(es), then point-reads the matching primary rows.
     async fn list_instances_by_image(&self, image_id: Uuid) -> Result<Vec<Instance>, StoreError> {
-        let prefix = Self::instance_in_image_prefix(image_id);
+        let prefix = keys::instance_in_image_prefix(image_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -5131,7 +4250,7 @@ impl Store for FdbStore {
         for s in id_strs {
             let id = Uuid::parse_str(&s)
                 .map_err(|e| StoreError::Backend(format!("instance image index uuid: {e}")))?;
-            let by_id_key = Self::instance_by_id_key(id);
+            let by_id_key = keys::instance_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let instance: Instance = serde_json::from_slice(&bytes)
                     .map_err(de_err("instance"))?;
@@ -5148,7 +4267,7 @@ impl Store for FdbStore {
     }
 
     async fn list_nics_by_subnet(&self, subnet_id: Uuid) -> Result<Vec<Nic>, StoreError> {
-        let prefix = Self::nic_in_subnet_prefix(subnet_id);
+        let prefix = keys::nic_in_subnet_prefix(subnet_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -5181,7 +4300,7 @@ impl Store for FdbStore {
         for s in id_strs {
             let id = Uuid::parse_str(&s)
                 .map_err(|e| StoreError::Backend(format!("nic subnet index uuid: {e}")))?;
-            let by_id_key = Self::nic_by_id_key(id);
+            let by_id_key = keys::nic_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let nic: Nic = serde_json::from_slice(&bytes)
                     .map_err(de_err("nic"))?;
@@ -5192,13 +4311,13 @@ impl Store for FdbStore {
     }
 
     async fn find_nic_by_ip(&self, ip: std::net::IpAddr) -> Result<Nic, StoreError> {
-        let key = Self::nic_by_ip_key(ip);
+        let key = keys::nic_by_ip_key(ip);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         let id_str = std::str::from_utf8(&bytes)
             .map_err(|e| StoreError::Backend(format!("nic by_ip index utf8: {e}")))?;
         let nic_id = Uuid::parse_str(id_str)
             .map_err(|e| StoreError::Backend(format!("nic by_ip index uuid: {e}")))?;
-        let nic_key = Self::nic_by_id_key(nic_id);
+        let nic_key = keys::nic_by_id_key(nic_id);
         let nic_bytes = self
             .read_bytes(&nic_key)
             .await?
@@ -5209,7 +4328,7 @@ impl Store for FdbStore {
 
     async fn find_dhcp_lease_by_mac(&self, mac: &str) -> Result<DhcpLease, StoreError> {
         let mac = crate::types::canonical_mac(mac)?;
-        let by_mac_key = Self::dhcp_lease_by_mac_key(&mac);
+        let by_mac_key = keys::dhcp_lease_by_mac_key(&mac);
         let bytes = self
             .read_bytes(&by_mac_key)
             .await?
@@ -5218,7 +4337,7 @@ impl Store for FdbStore {
             .map_err(|e| StoreError::Backend(format!("dhcp_lease by_mac utf8: {e}")))?;
         let vpc_id = Uuid::parse_str(vpc_str)
             .map_err(|e| StoreError::Backend(format!("dhcp_lease by_mac uuid: {e}")))?;
-        let lease_key = Self::dhcp_lease_by_vpc_mac_key(vpc_id, &mac);
+        let lease_key = keys::dhcp_lease_by_vpc_mac_key(vpc_id, &mac);
         let lease_bytes = self
             .read_bytes(&lease_key)
             .await?
@@ -5228,7 +4347,7 @@ impl Store for FdbStore {
     }
 
     async fn list_instances_for_cn(&self, host_cn_uuid: Uuid) -> Result<Vec<Instance>, StoreError> {
-        let prefix = Self::instance_in_host_cn_prefix(host_cn_uuid);
+        let prefix = keys::instance_in_host_cn_prefix(host_cn_uuid);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -5261,7 +4380,7 @@ impl Store for FdbStore {
         for s in id_strs {
             let id = Uuid::parse_str(&s)
                 .map_err(|e| StoreError::Backend(format!("instance host index uuid: {e}")))?;
-            let by_id_key = Self::instance_by_id_key(id);
+            let by_id_key = keys::instance_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let instance: Instance = serde_json::from_slice(&bytes)
                     .map_err(de_err("instance"))?;
@@ -5272,11 +4391,11 @@ impl Store for FdbStore {
     }
 
     async fn delete_instance(&self, instance_id: Uuid, force: bool) -> Result<(), StoreError> {
-        let by_id_key = Self::instance_by_id_key(instance_id);
-        let nic_prefix = Self::nic_in_instance_prefix(instance_id);
+        let by_id_key = keys::instance_by_id_key(instance_id);
+        let nic_prefix = keys::nic_in_instance_prefix(instance_id);
         let (nic_begin, nic_end) = prefix_range(&nic_prefix);
         let nic_prefix_len = nic_prefix.len();
-        let disk_prefix = Self::disk_in_instance_prefix(instance_id);
+        let disk_prefix = keys::disk_in_instance_prefix(instance_id);
         let (disk_begin, disk_end) = prefix_range(&disk_prefix);
         let disk_prefix_len = disk_prefix.len();
 
@@ -5337,9 +4456,9 @@ impl Store for FdbStore {
                     drop(kvs);
 
                     for nic_id in nic_ids {
-                        let nic_key = format!("nic/by_id/{nic_id}").into_bytes();
+                        let nic_key = keys::nic_by_id_key(nic_id);
                         let nic_in_instance_key =
-                            format!("nic/in_instance/{instance_id}/{nic_id}").into_bytes();
+                            keys::nic_in_instance_key(instance_id, nic_id);
                         let nic_bytes = match tr.get(&nic_key, false).await? {
                             Some(b) => b,
                             None => {
@@ -5360,16 +4479,16 @@ impl Store for FdbStore {
                             }
                         };
                         if let Some(ip) = nic.primary_ipv4 {
-                            tr.clear(&Self::nic_ip_alloc_v4_key(nic.subnet_id, ip));
+                            tr.clear(&keys::nic_ip_alloc_v4_key(nic.subnet_id, ip));
                             // RFD 00007 AP-1c: drop the IP index entry.
-                            tr.clear(&Self::nic_by_ip_key(std::net::IpAddr::V4(ip)));
+                            tr.clear(&keys::nic_by_ip_key(std::net::IpAddr::V4(ip)));
                         }
                         if let Some(ip) = nic.primary_ipv6 {
-                            tr.clear(&Self::nic_ip_alloc_v6_key(nic.subnet_id, ip));
-                            tr.clear(&Self::nic_by_ip_key(std::net::IpAddr::V6(ip)));
+                            tr.clear(&keys::nic_ip_alloc_v6_key(nic.subnet_id, ip));
+                            tr.clear(&keys::nic_by_ip_key(std::net::IpAddr::V6(ip)));
                         }
                         // RFD 00007 AP-1c: drop the subnet membership index.
-                        tr.clear(&Self::nic_in_subnet_key(nic.subnet_id, nic.id));
+                        tr.clear(&keys::nic_in_subnet_key(nic.subnet_id, nic.id));
                         tr.clear(&nic_key);
                         tr.clear(&nic_in_instance_key);
                     }
@@ -5393,8 +4512,8 @@ impl Store for FdbStore {
                     }
                     drop(disk_kvs);
                     for disk_id in disk_ids {
-                        let dk = format!("disk/by_id/{disk_id}").into_bytes();
-                        let dki = format!("disk/in_instance/{instance_id}/{disk_id}").into_bytes();
+                        let dk = keys::disk_by_id_key(disk_id);
+                        let dki = keys::disk_in_instance_key(instance_id, disk_id);
                         tr.clear(&dk);
                         tr.clear(&dki);
                     }
@@ -5406,7 +4525,7 @@ impl Store for FdbStore {
                     // floating-ip membership index and matching on
                     // attached_to.instance_id.
                     let fip_prefix =
-                        format!("floating_ip/in_project/{}/", instance.project_id).into_bytes();
+                        keys::floating_ip_in_project_prefix(instance.project_id);
                     let (fip_begin, fip_end) = prefix_range(&fip_prefix);
                     let fip_prefix_len = fip_prefix.len();
                     let fip_opt = RangeOption {
@@ -5427,7 +4546,7 @@ impl Store for FdbStore {
                     drop(fip_kvs);
                     let now = Utc::now();
                     for fip_id in fip_ids {
-                        let fk = format!("floating_ip/by_id/{fip_id}").into_bytes();
+                        let fk = keys::floating_ip_by_id_key(fip_id);
                         let Some(fb) = tr.get(&fk, false).await? else {
                             continue;
                         };
@@ -5453,9 +4572,9 @@ impl Store for FdbStore {
                     tr.clear(&by_name_key);
                     tr.clear(&in_project_key);
                     // RFD 00007 AP-1c: drop the image index entry.
-                    tr.clear(&Self::instance_in_image_key(instance.image_id, instance.id));
+                    tr.clear(&keys::instance_in_image_key(instance.image_id, instance.id));
                     if let Some(host_cn_uuid) = instance.host_cn_uuid {
-                        tr.clear(&Self::instance_in_host_cn_key(host_cn_uuid, instance.id));
+                        tr.clear(&keys::instance_in_host_cn_key(host_cn_uuid, instance.id));
                     }
                     Ok(Outcome::Deleted)
                 }
@@ -5478,7 +4597,7 @@ impl Store for FdbStore {
         expected_from: &[LifecycleStateKind],
         to: LifecycleState,
     ) -> Result<Instance, StoreError> {
-        let by_id_key = Self::instance_by_id_key(instance_id);
+        let by_id_key = keys::instance_by_id_key(instance_id);
         let expected_from_owned = expected_from.to_vec();
 
         enum Outcome {
@@ -5528,21 +4647,21 @@ impl Store for FdbStore {
     }
 
     async fn get_nic(&self, nic_id: Uuid) -> Result<Nic, StoreError> {
-        let key = Self::nic_by_id_key(nic_id);
+        let key = keys::nic_by_id_key(nic_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("nic"))
     }
 
     async fn get_disk(&self, disk_id: Uuid) -> Result<Disk, StoreError> {
-        let key = Self::disk_by_id_key(disk_id);
+        let key = keys::disk_by_id_key(disk_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("disk"))
     }
 
     async fn list_disks_for_instance(&self, instance_id: Uuid) -> Result<Vec<Disk>, StoreError> {
-        let prefix = Self::disk_in_instance_prefix(instance_id);
+        let prefix = keys::disk_in_instance_prefix(instance_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -5575,7 +4694,7 @@ impl Store for FdbStore {
         for s in id_strs {
             let id = Uuid::parse_str(&s)
                 .map_err(|e| StoreError::Backend(format!("disk index uuid: {e}")))?;
-            let by_id_key = Self::disk_by_id_key(id);
+            let by_id_key = keys::disk_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let disk: Disk = serde_json::from_slice(&bytes)
                     .map_err(de_err("disk"))?;
@@ -5586,7 +4705,7 @@ impl Store for FdbStore {
     }
 
     async fn list_nics_for_instance(&self, instance_id: Uuid) -> Result<Vec<Nic>, StoreError> {
-        let prefix = Self::nic_in_instance_prefix(instance_id);
+        let prefix = keys::nic_in_instance_prefix(instance_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -5619,7 +4738,7 @@ impl Store for FdbStore {
         for s in id_strs {
             let id = Uuid::parse_str(&s)
                 .map_err(|e| StoreError::Backend(format!("nic index uuid: {e}")))?;
-            let by_id_key = Self::nic_by_id_key(id);
+            let by_id_key = keys::nic_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let nic: Nic = serde_json::from_slice(&bytes)
                     .map_err(de_err("nic"))?;
@@ -5635,18 +4754,18 @@ impl Store for FdbStore {
         project_id: Uuid,
         req: NewFloatingIp,
     ) -> Result<FloatingIp, StoreError> {
-        let project_check_key = Self::project_by_id_key(project_id);
-        let by_name_key = Self::floating_ip_by_project_name_key(project_id, &req.name);
-        let alloc_v4_prefix = Self::floating_ip_alloc_v4_prefix().to_vec();
-        let alloc_v6_prefix = Self::floating_ip_alloc_v6_prefix().to_vec();
+        let project_check_key = keys::project_by_id_key(project_id);
+        let by_name_key = keys::floating_ip_by_project_name_key(project_id, &req.name);
+        let alloc_v4_prefix = keys::floating_ip_alloc_v4_prefix().to_vec();
+        let alloc_v6_prefix = keys::floating_ip_alloc_v6_prefix().to_vec();
         let (v4_begin, v4_end) = prefix_range(&alloc_v4_prefix);
         let (v6_begin, v6_end) = prefix_range(&alloc_v6_prefix);
         let v4_prefix_len = alloc_v4_prefix.len();
         let v6_prefix_len = alloc_v6_prefix.len();
 
         let fip_id = Uuid::new_v4();
-        let by_id_key = Self::floating_ip_by_id_key(fip_id);
-        let in_project_key = Self::floating_ip_in_project_key(project_id, fip_id);
+        let by_id_key = keys::floating_ip_by_id_key(fip_id);
+        let in_project_key = keys::floating_ip_in_project_key(project_id, fip_id);
         let id_str = fip_id.to_string();
 
         enum Outcome {
@@ -5756,13 +4875,13 @@ impl Store for FdbStore {
                     tr.set(&by_name_key, &id_bytes);
                     tr.set(&in_project_key, b"");
                     let holder =
-                        Self::public_ip_holder_value(NetworkResourceId::FloatingIp { id: fip_id });
+                        keys::public_ip_holder_value(NetworkResourceId::FloatingIp { id: fip_id });
                     match address {
                         std::net::IpAddr::V4(v4) => {
-                            tr.set(&Self::floating_ip_alloc_v4_key(v4), &holder);
+                            tr.set(&keys::floating_ip_alloc_v4_key(v4), &holder);
                         }
                         std::net::IpAddr::V6(v6) => {
-                            tr.set(&Self::floating_ip_alloc_v6_key(v6), &holder);
+                            tr.set(&keys::floating_ip_alloc_v6_key(v6), &holder);
                         }
                     }
                     Ok(Outcome::Created(Box::new(fip)))
@@ -5785,7 +4904,7 @@ impl Store for FdbStore {
     }
 
     async fn get_floating_ip(&self, fip_id: Uuid) -> Result<FloatingIp, StoreError> {
-        let key = Self::floating_ip_by_id_key(fip_id);
+        let key = keys::floating_ip_by_id_key(fip_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("floating ip"))
@@ -5795,7 +4914,7 @@ impl Store for FdbStore {
         &self,
         project_id: Uuid,
     ) -> Result<Vec<FloatingIp>, StoreError> {
-        let prefix = Self::floating_ip_in_project_prefix(project_id);
+        let prefix = keys::floating_ip_in_project_prefix(project_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -5828,7 +4947,7 @@ impl Store for FdbStore {
         for s in id_strs {
             let id = Uuid::parse_str(&s)
                 .map_err(|e| StoreError::Backend(format!("floating ip index uuid: {e}")))?;
-            let by_id_key = Self::floating_ip_by_id_key(id);
+            let by_id_key = keys::floating_ip_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let fip: FloatingIp = serde_json::from_slice(&bytes)
                     .map_err(de_err("floating ip"))?;
@@ -5839,7 +4958,7 @@ impl Store for FdbStore {
     }
 
     async fn delete_floating_ip(&self, fip_id: Uuid) -> Result<(), StoreError> {
-        let by_id_key = Self::floating_ip_by_id_key(fip_id);
+        let by_id_key = keys::floating_ip_by_id_key(fip_id);
 
         enum Out {
             Deleted,
@@ -5863,20 +4982,20 @@ impl Store for FdbStore {
                         return Ok(Out::Attached);
                     }
                     let by_name_key =
-                        format!("floating_ip/by_project/{}/{}", fip.project_id, fip.name)
+                        keys::floating_ip_by_project_name_key(fip.project_id, &fip.name)
                             .into_bytes();
                     let in_project_key =
-                        format!("floating_ip/in_project/{}/{}", fip.project_id, fip.id)
+                        keys::floating_ip_in_project_key(fip.project_id, fip.id)
                             .into_bytes();
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&in_project_key);
                     match fip.address {
                         std::net::IpAddr::V4(v4) => {
-                            tr.clear(&Self::floating_ip_alloc_v4_key(v4));
+                            tr.clear(&keys::floating_ip_alloc_v4_key(v4));
                         }
                         std::net::IpAddr::V6(v6) => {
-                            tr.clear(&Self::floating_ip_alloc_v6_key(v6));
+                            tr.clear(&keys::floating_ip_alloc_v6_key(v6));
                         }
                     }
                     Ok(Out::Deleted)
@@ -5899,8 +5018,8 @@ impl Store for FdbStore {
         fip_id: Uuid,
         target_nic_id: Uuid,
     ) -> Result<FloatingIp, StoreError> {
-        let by_id_key = Self::floating_ip_by_id_key(fip_id);
-        let nic_check_key = Self::nic_by_id_key(target_nic_id);
+        let by_id_key = keys::floating_ip_by_id_key(fip_id);
+        let nic_check_key = keys::nic_by_id_key(target_nic_id);
 
         enum Out {
             Attached(Box<FloatingIp>),
@@ -5956,7 +5075,7 @@ impl Store for FdbStore {
     }
 
     async fn detach_floating_ip(&self, fip_id: Uuid) -> Result<FloatingIp, StoreError> {
-        let by_id_key = Self::floating_ip_by_id_key(fip_id);
+        let by_id_key = keys::floating_ip_by_id_key(fip_id);
 
         enum Out {
             Detached(Box<FloatingIp>),
@@ -5995,9 +5114,9 @@ impl Store for FdbStore {
     }
 
     async fn enqueue_job(&self, req: NewJob) -> Result<ProvisioningJob, StoreError> {
-        let counter_key = Self::job_seq_counter_key().to_vec();
+        let counter_key = keys::job_seq_counter_key().to_vec();
         let job_id = Uuid::new_v4();
-        let by_id_key = Self::job_by_id_key(job_id);
+        let by_id_key = keys::job_by_id_key(job_id);
         let id_str = job_id.to_string();
 
         let outcome: Result<ProvisioningJob, FdbBindingError> = self
@@ -6015,7 +5134,7 @@ impl Store for FdbStore {
                         None => 0,
                     };
                     let next_seq = current_seq.saturating_add(1);
-                    let pending_key = Self::job_pending_key(current_seq);
+                    let pending_key = keys::job_pending_key(current_seq);
                     let job = ProvisioningJob {
                         id: job_id,
                         kind,
@@ -6082,7 +5201,7 @@ impl Store for FdbStore {
         claimed_by: &str,
         claimer_cn: Option<Uuid>,
     ) -> Result<ProvisioningJob, StoreError> {
-        let prefix = Self::job_pending_prefix().to_vec();
+        let prefix = keys::job_pending_prefix().to_vec();
         let (begin, end) = prefix_range(&prefix);
         let claimed_by = claimed_by.to_string();
 
@@ -6119,7 +5238,7 @@ impl Store for FdbStore {
                     for (pending_key, job_id_bytes) in entries {
                         let id_str = std::str::from_utf8(&job_id_bytes).map_err(txn_err("pending index value not utf8"))?;
                         let job_id = Uuid::parse_str(id_str).map_err(txn_err("pending index value not uuid"))?;
-                        let by_id_key = format!("job/by_id/{job_id}").into_bytes();
+                        let by_id_key = keys::job_by_id_key(job_id);
                         let bytes = match tr.get(&by_id_key, false).await? {
                             Some(b) => b,
                             None => {
@@ -6163,7 +5282,7 @@ impl Store for FdbStore {
         job_id: Uuid,
         outcome: JobOutcome,
     ) -> Result<ProvisioningJob, StoreError> {
-        let by_id_key = Self::job_by_id_key(job_id);
+        let by_id_key = keys::job_by_id_key(job_id);
 
         enum Out {
             Completed(Box<ProvisioningJob>),
@@ -6215,7 +5334,7 @@ impl Store for FdbStore {
     }
 
     async fn get_job(&self, job_id: Uuid) -> Result<ProvisioningJob, StoreError> {
-        let key = Self::job_by_id_key(job_id);
+        let key = keys::job_by_id_key(job_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("job"))
@@ -6302,8 +5421,8 @@ impl Store for FdbStore {
         let record_bytes = serde_json::to_vec(&record)
             .map_err(|e| StoreError::Backend(format!("encode MigrationRecord: {e}")))?;
 
-        let by_id_key = format!("migration/by_id/{}", record.id).into_bytes();
-        let active_key = format!("migration/active/{}", record.instance_id).into_bytes();
+        let by_id_key = keys::migration_by_id_key(record.id);
+        let active_key = keys::migration_active_key(record.instance_id);
         let inv_ts = u64::MAX - (now.timestamp_micros() as u64);
         let by_instance_key = format!(
             "migration/by_instance/{}/{:016x}/{}",
@@ -6348,7 +5467,7 @@ impl Store for FdbStore {
     }
 
     async fn get_migration(&self, migration_id: Uuid) -> Result<MigrationRecord, StoreError> {
-        let key = format!("migration/by_id/{migration_id}").into_bytes();
+        let key = keys::migration_by_id_key(migration_id);
         let raw: Result<Option<Vec<u8>>, FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -6363,7 +5482,7 @@ impl Store for FdbStore {
     }
 
     async fn put_migration(&self, record: MigrationRecord) -> Result<MigrationRecord, StoreError> {
-        let by_id_key = format!("migration/by_id/{}", record.id).into_bytes();
+        let by_id_key = keys::migration_by_id_key(record.id);
         let bytes = serde_json::to_vec(&record)
             .map_err(|e| StoreError::Backend(format!("encode MigrationRecord: {e}")))?;
         let result: Result<(), FdbBindingError> = self
@@ -6441,7 +5560,7 @@ impl Store for FdbStore {
         // Range scan of `migration/by_instance/<inst>/` returns ids
         // in newest-first order (inv_ts encoding); for each id fetch
         // the canonical record.
-        let prefix = format!("migration/by_instance/{instance_id}/").into_bytes();
+        let prefix = keys::migration_by_instance_prefix(instance_id);
         let (begin, end) = prefix_range(&prefix);
         let id_strs: Result<Vec<String>, FdbBindingError> = self
             .db
@@ -6479,7 +5598,7 @@ impl Store for FdbStore {
         migration_id: Uuid,
         mut event: MigrationProgressEvent,
     ) -> Result<MigrationProgressEvent, StoreError> {
-        let record_key = format!("migration/by_id/{migration_id}").into_bytes();
+        let record_key = keys::migration_by_id_key(migration_id);
         let event_clone = event.clone();
         let result: Result<MigrationProgressEvent, FdbBindingError> = self
             .db
@@ -6500,8 +5619,7 @@ impl Store for FdbStore {
                     event_out.seq = next_seq;
                     let record_bytes = serde_json::to_vec(&record).map_err(txn_err("encode MigrationRecord"))?;
                     let event_bytes = serde_json::to_vec(&event_out).map_err(txn_err("encode MigrationProgressEvent"))?;
-                    let event_key = format!("migration/progress/{migration_id}/{:016x}", next_seq,)
-                        .into_bytes();
+                    let event_key = keys::migration_progress_key(migration_id, next_seq);
                     tr.set(&record_key, &record_bytes);
                     tr.set(&event_key, &event_bytes);
                     Ok(event_out)
@@ -6531,7 +5649,7 @@ impl Store for FdbStore {
         // Confirm the record exists so we can distinguish "no
         // progress yet" (empty Vec) from "no such migration".
         self.get_migration(migration_id).await?;
-        let prefix = format!("migration/progress/{migration_id}/").into_bytes();
+        let prefix = keys::migration_progress_prefix(migration_id);
         let (begin, end) = prefix_range(&prefix);
         let raws: Result<Vec<Vec<u8>>, FdbBindingError> = self
             .db
@@ -6574,8 +5692,8 @@ impl Store for FdbStore {
             ClaimCodeExhausted,
         }
 
-        let by_uuid_key = Self::cn_by_uuid_key(server_uuid);
-        let window_key = Self::auto_approve_window_key().to_vec();
+        let by_uuid_key = keys::cn_by_uuid_key(server_uuid);
+        let window_key = keys::auto_approve_window_key().to_vec();
         let server_uuid_bytes = server_uuid.to_string().into_bytes();
 
         let outcome: Result<Outcome, FdbBindingError> = self
@@ -6613,9 +5731,9 @@ impl Store for FdbStore {
                             // fresh ones (with collision check).
                             CnState::Pending | CnState::Disabled => {
                                 if let Some(old_code) = &existing.claim_code {
-                                    tr.clear(&Self::cn_by_claim_key(old_code));
+                                    tr.clear(&keys::cn_by_claim_key(old_code));
                                 }
-                                tr.clear(&Self::cn_by_poll_key(&existing.poll_token));
+                                tr.clear(&keys::cn_by_poll_key(&existing.poll_token));
 
                                 let (claim_code, poll_token) =
                                     match mint_unique_claim_and_poll(&tr).await? {
@@ -6652,13 +5770,13 @@ impl Store for FdbStore {
                                 };
                                 let value = serde_json::to_vec(&cn).map_err(txn_ser_err("cn"))?;
                                 tr.set(&by_uuid_key, &value);
-                                tr.set(&Self::cn_by_claim_key(&claim_code), &server_uuid_bytes);
-                                tr.set(&Self::cn_by_poll_key(&poll_token), &server_uuid_bytes);
+                                tr.set(&keys::cn_by_claim_key(&claim_code), &server_uuid_bytes);
+                                tr.set(&keys::cn_by_poll_key(&poll_token), &server_uuid_bytes);
                                 // Move the by_state membership to
                                 // Pending (a no-op clear+set when the
                                 // record was already Pending).
-                                tr.clear(&Self::cn_by_state_key(prev_state, server_uuid));
-                                tr.set(&Self::cn_by_state_key(CnState::Pending, server_uuid), b"");
+                                tr.clear(&keys::cn_by_state_key(prev_state, server_uuid));
+                                tr.set(&keys::cn_by_state_key(CnState::Pending, server_uuid), b"");
                                 return Ok(Outcome::Created(Box::new(cn)));
                             }
                         }
@@ -6712,10 +5830,10 @@ impl Store for FdbStore {
                     let value = serde_json::to_vec(&cn).map_err(txn_ser_err("cn"))?;
                     tr.set(&by_uuid_key, &value);
                     if let Some(code) = &claim_code {
-                        tr.set(&Self::cn_by_claim_key(code), &server_uuid_bytes);
+                        tr.set(&keys::cn_by_claim_key(code), &server_uuid_bytes);
                     }
-                    tr.set(&Self::cn_by_poll_key(&poll_token), &server_uuid_bytes);
-                    tr.set(&Self::cn_by_state_key(state, server_uuid), b"");
+                    tr.set(&keys::cn_by_poll_key(&poll_token), &server_uuid_bytes);
+                    tr.set(&keys::cn_by_state_key(state, server_uuid), b"");
                     Ok(Outcome::Created(Box::new(cn)))
                 }
             })
@@ -6731,14 +5849,14 @@ impl Store for FdbStore {
     }
 
     async fn get_cn(&self, server_uuid: Uuid) -> Result<Cn, StoreError> {
-        let key = Self::cn_by_uuid_key(server_uuid);
+        let key = keys::cn_by_uuid_key(server_uuid);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("cn"))
     }
 
     async fn get_cn_by_poll_token(&self, poll_token: &str) -> Result<Cn, StoreError> {
-        let key = Self::cn_by_poll_key(poll_token);
+        let key = keys::cn_by_poll_key(poll_token);
         let id_bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         let id_str = std::str::from_utf8(&id_bytes)
             .map_err(|e| StoreError::Backend(format!("cn poll index not utf8: {e}")))?;
@@ -6748,7 +5866,7 @@ impl Store for FdbStore {
     }
 
     async fn get_cn_by_claim_code(&self, code: &str) -> Result<Cn, StoreError> {
-        let key = Self::cn_by_claim_key(code);
+        let key = keys::cn_by_claim_key(code);
         let id_bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         let id_str = std::str::from_utf8(&id_bytes)
             .map_err(|e| StoreError::Backend(format!("cn claim index not utf8: {e}")))?;
@@ -6777,7 +5895,7 @@ impl Store for FdbStore {
         let mut out = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for state in states {
-            let prefix = Self::cn_by_state_prefix(state);
+            let prefix = keys::cn_by_state_prefix(state);
             let (begin, end) = prefix_range(&prefix);
             let prefix_len = prefix.len();
 
@@ -6813,7 +5931,7 @@ impl Store for FdbStore {
                 if !seen.insert(id) {
                     continue;
                 }
-                let by_id_key = Self::cn_by_uuid_key(id);
+                let by_id_key = keys::cn_by_uuid_key(id);
                 if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                     let cn: Cn = serde_json::from_slice(&bytes)
                         .map_err(de_err("cn"))?;
@@ -6830,7 +5948,7 @@ impl Store for FdbStore {
             NotFound,
         }
 
-        let by_uuid_key = Self::cn_by_uuid_key(server_uuid);
+        let by_uuid_key = keys::cn_by_uuid_key(server_uuid);
         let outcome: Result<Outcome, FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -6867,7 +5985,7 @@ impl Store for FdbStore {
             NotFound,
         }
 
-        let by_uuid_key = Self::cn_by_uuid_key(server_uuid);
+        let by_uuid_key = keys::cn_by_uuid_key(server_uuid);
         let outcome: Result<Outcome, FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -6910,7 +6028,7 @@ impl Store for FdbStore {
             AlreadyBound,
         }
 
-        let by_uuid_key = Self::cn_by_uuid_key(server_uuid);
+        let by_uuid_key = keys::cn_by_uuid_key(server_uuid);
         let outcome: Result<Outcome, FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -6933,13 +6051,13 @@ impl Store for FdbStore {
                     }
                     let prev_state = cn.state;
                     if let Some(old_code) = &cn.claim_code {
-                        tr.clear(&Self::cn_by_claim_key(old_code));
+                        tr.clear(&keys::cn_by_claim_key(old_code));
                     }
                     // If the record was Pending, drop the by_state/pending
                     // membership before adding the new approved one.
                     // (Auto-approve case: register_cn already wrote
                     // by_state/approved, so this is a no-op clear.)
-                    tr.clear(&Self::cn_by_state_key(prev_state, server_uuid));
+                    tr.clear(&keys::cn_by_state_key(prev_state, server_uuid));
 
                     cn.state = CnState::Approved;
                     // Preserve approved_at when register_cn already
@@ -6958,7 +6076,7 @@ impl Store for FdbStore {
 
                     let value = serde_json::to_vec(&cn).map_err(txn_ser_err("cn"))?;
                     tr.set(&by_uuid_key, &value);
-                    tr.set(&Self::cn_by_state_key(CnState::Approved, server_uuid), b"");
+                    tr.set(&keys::cn_by_state_key(CnState::Approved, server_uuid), b"");
                     Ok(Outcome::Approved(Box::new(cn)))
                 }
             })
@@ -6978,7 +6096,7 @@ impl Store for FdbStore {
         &self,
         poll_token: &str,
     ) -> Result<Option<String>, StoreError> {
-        let by_poll_key = Self::cn_by_poll_key(poll_token);
+        let by_poll_key = keys::cn_by_poll_key(poll_token);
 
         enum Outcome {
             Consumed(Option<String>),
@@ -6996,7 +6114,7 @@ impl Store for FdbStore {
                     };
                     let id_str = std::str::from_utf8(&id_bytes).map_err(txn_err("cn poll index not utf8"))?;
                     let id = Uuid::parse_str(id_str).map_err(txn_err("cn poll index not uuid"))?;
-                    let by_uuid_key = Self::cn_by_uuid_key(id);
+                    let by_uuid_key = keys::cn_by_uuid_key(id);
                     let cn_bytes = match tr.get(&by_uuid_key, false).await? {
                         Some(b) => b,
                         None => return Ok(Outcome::NotFound),
@@ -7025,7 +6143,7 @@ impl Store for FdbStore {
             NotFound,
         }
 
-        let by_uuid_key = Self::cn_by_uuid_key(server_uuid);
+        let by_uuid_key = keys::cn_by_uuid_key(server_uuid);
         let outcome: Result<Outcome, FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -7037,10 +6155,10 @@ impl Store for FdbStore {
                     };
                     let mut cn: Cn = serde_json::from_slice(&bytes).map_err(txn_de_err("cn"))?;
                     if let Some(old_code) = &cn.claim_code {
-                        tr.clear(&Self::cn_by_claim_key(old_code));
+                        tr.clear(&keys::cn_by_claim_key(old_code));
                     }
                     let old_state = cn.state;
-                    tr.clear(&Self::cn_by_state_key(old_state, server_uuid));
+                    tr.clear(&keys::cn_by_state_key(old_state, server_uuid));
 
                     cn.state = CnState::Disabled;
                     cn.claim_code = None;
@@ -7049,7 +6167,7 @@ impl Store for FdbStore {
 
                     let value = serde_json::to_vec(&cn).map_err(txn_ser_err("cn"))?;
                     tr.set(&by_uuid_key, &value);
-                    tr.set(&Self::cn_by_state_key(CnState::Disabled, server_uuid), b"");
+                    tr.set(&keys::cn_by_state_key(CnState::Disabled, server_uuid), b"");
                     Ok(Outcome::Disabled(Box::new(cn)))
                 }
             })
@@ -7072,7 +6190,7 @@ impl Store for FdbStore {
             NotFound,
         }
 
-        let by_uuid_key = Self::cn_by_uuid_key(server_uuid);
+        let by_uuid_key = keys::cn_by_uuid_key(server_uuid);
         let outcome: Result<Outcome, FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -7109,7 +6227,7 @@ impl Store for FdbStore {
             NotFound,
         }
 
-        let by_uuid_key = Self::cn_by_uuid_key(server_uuid);
+        let by_uuid_key = keys::cn_by_uuid_key(server_uuid);
         let outcome: Result<Outcome, FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -7142,7 +6260,7 @@ impl Store for FdbStore {
     // ------------------------------------------------------------------
 
     async fn put_cn_capacity(&self, row: CnCapacity) -> Result<(), StoreError> {
-        let key = Self::cn_capacity_key(row.server_uuid);
+        let key = keys::cn_capacity_key(row.server_uuid);
         let value = serde_json::to_vec(&row)
             .map_err(ser_err("cn_capacity"))?;
         self.db
@@ -7159,7 +6277,7 @@ impl Store for FdbStore {
     }
 
     async fn get_cn_capacity(&self, server_uuid: Uuid) -> Result<CnCapacity, StoreError> {
-        let key = Self::cn_capacity_key(server_uuid);
+        let key = keys::cn_capacity_key(server_uuid);
         let bytes: Result<Option<Vec<u8>>, FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -7175,7 +6293,7 @@ impl Store for FdbStore {
     }
 
     async fn list_cn_capacities(&self) -> Result<Vec<CnCapacity>, StoreError> {
-        let prefix = Self::cn_capacity_prefix().to_vec();
+        let prefix = keys::cn_capacity_prefix().to_vec();
         let (begin, end) = prefix_range(&prefix);
         let bytes_list: Result<Vec<Vec<u8>>, FdbBindingError> = self
             .db
@@ -7211,7 +6329,7 @@ impl Store for FdbStore {
         // transaction as the write so a concurrent edit can't sneak
         // past. Look up the tenant's silo row by id; reject if it
         // disagrees with the pinned silo.
-        let placement_key = Self::cn_placement_key(row.server_uuid);
+        let placement_key = keys::cn_placement_key(row.server_uuid);
         let payload = serde_json::to_vec(&row)
             .map_err(ser_err("cn_placement"))?;
 
@@ -7233,7 +6351,7 @@ impl Store for FdbStore {
                 let pin = pin;
                 async move {
                     if let Some((tenant_uuid, pinned_silo)) = pin {
-                        let tenant_key = Self::tenant_by_id_key(tenant_uuid);
+                        let tenant_key = keys::tenant_by_id_key(tenant_uuid);
                         let tenant_bytes = match tr.get(&tenant_key, false).await? {
                             Some(b) => b,
                             None => {
@@ -7265,7 +6383,7 @@ impl Store for FdbStore {
     }
 
     async fn get_cn_placement(&self, server_uuid: Uuid) -> Result<CnPlacement, StoreError> {
-        let key = Self::cn_placement_key(server_uuid);
+        let key = keys::cn_placement_key(server_uuid);
         let bytes: Result<Option<Vec<u8>>, FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -7281,7 +6399,7 @@ impl Store for FdbStore {
     }
 
     async fn list_cn_placements(&self) -> Result<Vec<CnPlacement>, StoreError> {
-        let prefix = Self::cn_placement_prefix().to_vec();
+        let prefix = keys::cn_placement_prefix().to_vec();
         let (begin, end) = prefix_range(&prefix);
         let bytes_list: Result<Vec<Vec<u8>>, FdbBindingError> = self
             .db
@@ -7313,7 +6431,7 @@ impl Store for FdbStore {
     }
 
     async fn reserve_cn_capacity(&self, row: CnReservation) -> Result<(), StoreError> {
-        let key = Self::cn_reservation_key(row.server_uuid, row.saga_id);
+        let key = keys::cn_reservation_key(row.server_uuid, row.saga_id);
         let value = serde_json::to_vec(&row)
             .map_err(ser_err("cn_reservation"))?;
         let server_uuid = row.server_uuid;
@@ -7353,7 +6471,7 @@ impl Store for FdbStore {
         server_uuid: Uuid,
         saga_id: Uuid,
     ) -> Result<(), StoreError> {
-        let key = Self::cn_reservation_key(server_uuid, saga_id);
+        let key = keys::cn_reservation_key(server_uuid, saga_id);
 
         enum Outcome {
             Deleted,
@@ -7386,8 +6504,8 @@ impl Store for FdbStore {
         server_uuid: Option<Uuid>,
     ) -> Result<Vec<CnReservation>, StoreError> {
         let prefix = match server_uuid {
-            Some(cn) => Self::cn_reservation_per_cn_prefix(cn),
-            None => Self::cn_reservation_prefix().to_vec(),
+            Some(cn) => keys::cn_reservation_per_cn_prefix(cn),
+            None => keys::cn_reservation_prefix().to_vec(),
         };
         let (begin, end) = prefix_range(&prefix);
         let bytes_list: Result<Vec<Vec<u8>>, FdbBindingError> = self
@@ -7420,7 +6538,7 @@ impl Store for FdbStore {
     }
 
     async fn put_cn_load_summary(&self, row: CnLoadSummary) -> Result<(), StoreError> {
-        let key = Self::cn_load_summary_key(row.server_uuid);
+        let key = keys::cn_load_summary_key(row.server_uuid);
         let value = serde_json::to_vec(&row)
             .map_err(ser_err("cn_load_summary"))?;
         self.db
@@ -7440,7 +6558,7 @@ impl Store for FdbStore {
         &self,
         server_uuid: Uuid,
     ) -> Result<Option<CnLoadSummary>, StoreError> {
-        let key = Self::cn_load_summary_key(server_uuid);
+        let key = keys::cn_load_summary_key(server_uuid);
         let bytes: Result<Option<Vec<u8>>, FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -7455,7 +6573,7 @@ impl Store for FdbStore {
     }
 
     async fn list_cn_load_summaries(&self) -> Result<Vec<CnLoadSummary>, StoreError> {
-        let prefix = Self::cn_load_summary_prefix().to_vec();
+        let prefix = keys::cn_load_summary_prefix().to_vec();
         let (begin, end) = prefix_range(&prefix);
         let bytes_list: Result<Vec<Vec<u8>>, FdbBindingError> = self
             .db
@@ -7487,8 +6605,8 @@ impl Store for FdbStore {
     }
 
     async fn put_instance_affinity(&self, row: InstanceAffinity) -> Result<(), StoreError> {
-        let by_id_key = Self::instance_affinity_key(row.instance_id);
-        let by_tenant_key = Self::instance_affinity_by_tenant_key(row.tenant_uuid, row.instance_id);
+        let by_id_key = keys::instance_affinity_key(row.instance_id);
+        let by_tenant_key = keys::instance_affinity_by_tenant_key(row.tenant_uuid, row.instance_id);
         let value = serde_json::to_vec(&row)
             .map_err(ser_err("instance_affinity"))?;
         // If the row's tenant changed across edits we'd leak the old
@@ -7515,7 +6633,7 @@ impl Store for FdbStore {
         &self,
         instance_id: Uuid,
     ) -> Result<InstanceAffinity, StoreError> {
-        let key = Self::instance_affinity_key(instance_id);
+        let key = keys::instance_affinity_key(instance_id);
         let bytes: Result<Option<Vec<u8>>, FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -7534,7 +6652,7 @@ impl Store for FdbStore {
         &self,
         tenant_id: Uuid,
     ) -> Result<Vec<InstanceAffinity>, StoreError> {
-        let prefix = Self::instance_affinity_by_tenant_prefix(tenant_id);
+        let prefix = keys::instance_affinity_by_tenant_prefix(tenant_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -7650,9 +6768,9 @@ impl Store for FdbStore {
     async fn upsert_legacy_vm(&self, legacy_vm: LegacyVm) -> Result<(), StoreError> {
         let smartos_uuid = legacy_vm.smartos_uuid;
         let new_host = legacy_vm.host_cn_uuid;
-        let by_id_key = Self::legacy_vm_by_id_key(smartos_uuid);
-        let instance_key = Self::instance_by_id_key(smartos_uuid);
-        let new_membership_key = Self::legacy_vm_in_host_cn_key(new_host, smartos_uuid);
+        let by_id_key = keys::legacy_vm_by_id_key(smartos_uuid);
+        let instance_key = keys::instance_by_id_key(smartos_uuid);
+        let new_membership_key = keys::legacy_vm_in_host_cn_key(new_host, smartos_uuid);
         let value = serde_json::to_vec(&legacy_vm)
             .map_err(ser_err("legacy_vm"))?;
 
@@ -7691,7 +6809,7 @@ impl Store for FdbStore {
                             serde_json::from_slice(&existing_bytes).map_err(txn_de_err("legacy_vm"))?;
                         if existing.host_cn_uuid != new_host {
                             let old_membership_key =
-                                Self::legacy_vm_in_host_cn_key(existing.host_cn_uuid, smartos_uuid);
+                                keys::legacy_vm_in_host_cn_key(existing.host_cn_uuid, smartos_uuid);
                             tr.clear(&old_membership_key);
                         }
                     }
@@ -7711,14 +6829,14 @@ impl Store for FdbStore {
     }
 
     async fn get_legacy_vm(&self, smartos_uuid: Uuid) -> Result<LegacyVm, StoreError> {
-        let key = Self::legacy_vm_by_id_key(smartos_uuid);
+        let key = keys::legacy_vm_by_id_key(smartos_uuid);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("legacy_vm"))
     }
 
     async fn list_legacy_vms(&self) -> Result<Vec<LegacyVm>, StoreError> {
-        let prefix = Self::legacy_vm_by_id_prefix().to_vec();
+        let prefix = keys::legacy_vm_by_id_prefix().to_vec();
         let (begin, end) = prefix_range(&prefix);
         let bytes_list: Result<Vec<Vec<u8>>, FdbBindingError> = self
             .db
@@ -7763,7 +6881,7 @@ impl Store for FdbStore {
         &self,
         host_cn_uuid: Uuid,
     ) -> Result<Vec<LegacyVm>, StoreError> {
-        let prefix = Self::legacy_vm_in_host_cn_prefix(host_cn_uuid);
+        let prefix = keys::legacy_vm_in_host_cn_prefix(host_cn_uuid);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -7797,7 +6915,7 @@ impl Store for FdbStore {
         for s in id_strs {
             let id = Uuid::parse_str(&s)
                 .map_err(|e| StoreError::Backend(format!("legacy_vm host index uuid: {e}")))?;
-            let by_id_key = Self::legacy_vm_by_id_key(id);
+            let by_id_key = keys::legacy_vm_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let v: LegacyVm = serde_json::from_slice(&bytes)
                     .map_err(de_err("legacy_vm"))?;
@@ -7809,7 +6927,7 @@ impl Store for FdbStore {
     }
 
     async fn delete_legacy_vm(&self, smartos_uuid: Uuid) -> Result<(), StoreError> {
-        let by_id_key = Self::legacy_vm_by_id_key(smartos_uuid);
+        let by_id_key = keys::legacy_vm_by_id_key(smartos_uuid);
         let result: Result<(), FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -7818,7 +6936,7 @@ impl Store for FdbStore {
                     if let Some(bytes) = tr.get(&by_id_key, false).await? {
                         let existing: LegacyVm = serde_json::from_slice(&bytes).map_err(txn_de_err("legacy_vm"))?;
                         let membership_key =
-                            Self::legacy_vm_in_host_cn_key(existing.host_cn_uuid, smartos_uuid);
+                            keys::legacy_vm_in_host_cn_key(existing.host_cn_uuid, smartos_uuid);
                         tr.clear(&membership_key);
                         tr.clear(&by_id_key);
                     }
@@ -7831,7 +6949,7 @@ impl Store for FdbStore {
     }
 
     async fn get_auto_approve_window(&self) -> Result<Option<AutoApproveWindow>, StoreError> {
-        let key = Self::auto_approve_window_key().to_vec();
+        let key = keys::auto_approve_window_key().to_vec();
         let bytes = self.read_bytes(&key).await?;
         match bytes {
             Some(bytes) => {
@@ -7845,7 +6963,7 @@ impl Store for FdbStore {
     async fn open_auto_approve_window(&self, w: AutoApproveWindow) -> Result<(), StoreError> {
         let value = serde_json::to_vec(&w)
             .map_err(ser_err("auto-approve window"))?;
-        let key = Self::auto_approve_window_key().to_vec();
+        let key = keys::auto_approve_window_key().to_vec();
         let result: Result<(), FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -7861,7 +6979,7 @@ impl Store for FdbStore {
     }
 
     async fn close_auto_approve_window(&self) -> Result<(), StoreError> {
-        let key = Self::auto_approve_window_key().to_vec();
+        let key = keys::auto_approve_window_key().to_vec();
         let result: Result<(), FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -7879,7 +6997,7 @@ impl Store for FdbStore {
         &self,
         now: chrono::DateTime<Utc>,
     ) -> Result<bool, StoreError> {
-        let key = Self::auto_approve_window_key().to_vec();
+        let key = keys::auto_approve_window_key().to_vec();
         let result: Result<bool, FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -7902,7 +7020,7 @@ impl Store for FdbStore {
         status: RealizationStatus,
         message: Option<String>,
     ) -> Result<(), StoreError> {
-        let key = Self::network_realization_key(resource, realizer);
+        let key = keys::network_realization_key(resource, realizer);
 
         enum Outcome {
             Stored,
@@ -7959,7 +7077,7 @@ impl Store for FdbStore {
         &self,
         resource: NetworkResourceId,
     ) -> Result<Vec<Realization>, StoreError> {
-        let prefix = Self::network_realization_resource_prefix(resource);
+        let prefix = keys::network_realization_resource_prefix(resource);
         let (begin, end) = prefix_range(&prefix);
 
         let result: Result<Vec<Realization>, FdbBindingError> = self
@@ -8081,7 +7199,7 @@ impl Store for FdbStore {
     // ------------------------------------------------------------------
 
     async fn get_dhcp_pool(&self, vpc_id: Uuid) -> Result<Option<DhcpPool>, StoreError> {
-        let key = Self::dhcp_pool_by_vpc_key(vpc_id);
+        let key = keys::dhcp_pool_by_vpc_key(vpc_id);
         match self.read_bytes(&key).await? {
             None => Ok(None),
             Some(bytes) => {
@@ -8093,8 +7211,8 @@ impl Store for FdbStore {
     }
 
     async fn set_dhcp_pool(&self, vpc_id: Uuid, req: NewDhcpPool) -> Result<DhcpPool, StoreError> {
-        let vpc_key = Self::vpc_by_id_key(vpc_id);
-        let pool_key = Self::dhcp_pool_by_vpc_key(vpc_id);
+        let vpc_key = keys::vpc_by_id_key(vpc_id);
+        let pool_key = keys::dhcp_pool_by_vpc_key(vpc_id);
 
         enum Outcome {
             Stored(Box<DhcpPool>),
@@ -8142,7 +7260,7 @@ impl Store for FdbStore {
     }
 
     async fn clear_dhcp_pool(&self, vpc_id: Uuid) -> Result<(), StoreError> {
-        let pool_key = Self::dhcp_pool_by_vpc_key(vpc_id);
+        let pool_key = keys::dhcp_pool_by_vpc_key(vpc_id);
 
         enum Out {
             Cleared,
@@ -8174,7 +7292,7 @@ impl Store for FdbStore {
         &self,
         vpc_id: Uuid,
     ) -> Result<Vec<DhcpReservation>, StoreError> {
-        let prefix = Self::dhcp_reservation_by_vpc_prefix(vpc_id);
+        let prefix = keys::dhcp_reservation_by_vpc_prefix(vpc_id);
         let (begin, end) = prefix_range(&prefix);
 
         let values: Result<Vec<Vec<u8>>, FdbBindingError> = self
@@ -8211,8 +7329,8 @@ impl Store for FdbStore {
         req: NewDhcpReservation,
     ) -> Result<DhcpReservation, StoreError> {
         let mac = crate::types::canonical_mac(&req.mac)?;
-        let vpc_key = Self::vpc_by_id_key(vpc_id);
-        let res_key = Self::dhcp_reservation_by_vpc_mac_key(vpc_id, &mac);
+        let vpc_key = keys::vpc_by_id_key(vpc_id);
+        let res_key = keys::dhcp_reservation_by_vpc_mac_key(vpc_id, &mac);
 
         enum Outcome {
             Created(Box<DhcpReservation>),
@@ -8289,7 +7407,7 @@ impl Store for FdbStore {
         mac: &str,
     ) -> Result<DhcpReservation, StoreError> {
         let mac = crate::types::canonical_mac(mac)?;
-        let key = Self::dhcp_reservation_by_vpc_mac_key(vpc_id, &mac);
+        let key = keys::dhcp_reservation_by_vpc_mac_key(vpc_id, &mac);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("dhcp reservation"))
@@ -8297,7 +7415,7 @@ impl Store for FdbStore {
 
     async fn delete_dhcp_reservation(&self, vpc_id: Uuid, mac: &str) -> Result<(), StoreError> {
         let mac = crate::types::canonical_mac(mac)?;
-        let key = Self::dhcp_reservation_by_vpc_mac_key(vpc_id, &mac);
+        let key = keys::dhcp_reservation_by_vpc_mac_key(vpc_id, &mac);
 
         enum Out {
             Deleted,
@@ -8325,7 +7443,7 @@ impl Store for FdbStore {
     }
 
     async fn list_dhcp_leases(&self, vpc_id: Uuid) -> Result<Vec<DhcpLease>, StoreError> {
-        let prefix = Self::dhcp_lease_by_vpc_prefix(vpc_id);
+        let prefix = keys::dhcp_lease_by_vpc_prefix(vpc_id);
         self.scan_dhcp_leases(prefix).await.map(|mut v| {
             v.sort_by(|a, b| a.created_at.cmp(&b.created_at));
             v
@@ -8334,7 +7452,7 @@ impl Store for FdbStore {
 
     async fn get_dhcp_lease(&self, vpc_id: Uuid, mac: &str) -> Result<DhcpLease, StoreError> {
         let mac = crate::types::canonical_mac(mac)?;
-        let key = Self::dhcp_lease_by_vpc_mac_key(vpc_id, &mac);
+        let key = keys::dhcp_lease_by_vpc_mac_key(vpc_id, &mac);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("dhcp lease"))
@@ -8342,13 +7460,13 @@ impl Store for FdbStore {
 
     async fn record_dhcp_lease(&self, mut lease: DhcpLease) -> Result<DhcpLease, StoreError> {
         lease.mac = crate::types::canonical_mac(&lease.mac)?;
-        let key = Self::dhcp_lease_by_vpc_mac_key(lease.vpc_id, &lease.mac);
+        let key = keys::dhcp_lease_by_vpc_mac_key(lease.vpc_id, &lease.mac);
         let value = serde_json::to_vec(&lease)
             .map_err(ser_err("dhcp lease"))?;
         // RFD 00007 AP-1c: MAC -> vpc index. Stored as the canonical
         // lease key components so a reader can resolve a bare MAC to
         // its parent VPC without scanning every VPC's lease prefix.
-        let by_mac_key = Self::dhcp_lease_by_mac_key(&lease.mac);
+        let by_mac_key = keys::dhcp_lease_by_mac_key(&lease.mac);
         let vpc_str = lease.vpc_id.to_string();
 
         let result: Result<(), FdbBindingError> = self
@@ -8371,8 +7489,8 @@ impl Store for FdbStore {
 
     async fn delete_dhcp_lease(&self, vpc_id: Uuid, mac: &str) -> Result<(), StoreError> {
         let mac = crate::types::canonical_mac(mac)?;
-        let key = Self::dhcp_lease_by_vpc_mac_key(vpc_id, &mac);
-        let by_mac_key = Self::dhcp_lease_by_mac_key(&mac);
+        let key = keys::dhcp_lease_by_vpc_mac_key(vpc_id, &mac);
+        let by_mac_key = keys::dhcp_lease_by_mac_key(&mac);
 
         enum Out {
             Deleted,
@@ -8412,7 +7530,7 @@ impl Store for FdbStore {
     }
 
     async fn list_all_dhcp_leases(&self) -> Result<Vec<DhcpLease>, StoreError> {
-        let prefix = Self::dhcp_lease_global_prefix().to_vec();
+        let prefix = keys::dhcp_lease_global_prefix().to_vec();
         self.scan_dhcp_leases(prefix).await.map(|mut v| {
             v.sort_by(|a, b| {
                 a.vpc_id
@@ -8432,9 +7550,9 @@ impl Store for FdbStore {
         req: NewStorageCluster,
     ) -> Result<StorageCluster, StoreError> {
         let id = Uuid::new_v4();
-        let by_id_key = Self::storage_cluster_by_id_key(id);
-        let by_name_key = Self::storage_cluster_by_name_key(&req.name);
-        let all_key = Self::storage_cluster_all_key(id);
+        let by_id_key = keys::storage_cluster_by_id_key(id);
+        let by_name_key = keys::storage_cluster_by_name_key(&req.name);
+        let all_key = keys::storage_cluster_all_key(id);
         let id_bytes = id.to_string().into_bytes();
 
         enum Outcome {
@@ -8498,14 +7616,14 @@ impl Store for FdbStore {
     }
 
     async fn get_storage_cluster(&self, id: Uuid) -> Result<StorageCluster, StoreError> {
-        let key = Self::storage_cluster_by_id_key(id);
+        let key = keys::storage_cluster_by_id_key(id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("storage cluster"))
     }
 
     async fn get_storage_cluster_by_name(&self, name: &str) -> Result<StorageCluster, StoreError> {
-        let by_name_key = Self::storage_cluster_by_name_key(name);
+        let by_name_key = keys::storage_cluster_by_name_key(name);
         let id_bytes = self
             .read_bytes(&by_name_key)
             .await?
@@ -8518,7 +7636,7 @@ impl Store for FdbStore {
     }
 
     async fn list_storage_clusters(&self) -> Result<Vec<StorageCluster>, StoreError> {
-        let prefix = Self::storage_cluster_all_prefix().to_vec();
+        let prefix = keys::storage_cluster_all_prefix().to_vec();
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -8562,7 +7680,7 @@ impl Store for FdbStore {
     }
 
     async fn delete_storage_cluster(&self, id: Uuid) -> Result<(), StoreError> {
-        let by_id_key = Self::storage_cluster_by_id_key(id);
+        let by_id_key = keys::storage_cluster_by_id_key(id);
 
         enum Out {
             Deleted,
@@ -8584,8 +7702,8 @@ impl Store for FdbStore {
                         Err(e) => return Ok(Out::Corrupt(e.to_string())),
                     };
                     tr.clear(&by_id_key);
-                    tr.clear(&Self::storage_cluster_by_name_key(&cluster.name));
-                    tr.clear(&Self::storage_cluster_all_key(cluster.id));
+                    tr.clear(&keys::storage_cluster_by_name_key(&cluster.name));
+                    tr.clear(&keys::storage_cluster_all_key(cluster.id));
                     Ok(Out::Deleted)
                 }
             })
@@ -8606,7 +7724,7 @@ impl Store for FdbStore {
         status: StorageClusterStatus,
         observed_at: chrono::DateTime<chrono::Utc>,
     ) -> Result<StorageCluster, StoreError> {
-        let by_id_key = Self::storage_cluster_by_id_key(id);
+        let by_id_key = keys::storage_cluster_by_id_key(id);
 
         enum Out {
             Updated(Box<StorageCluster>),
@@ -8668,7 +7786,7 @@ impl Store for FdbStore {
                 ));
             }
         }
-        let by_id_key = Self::storage_cluster_by_id_key(id);
+        let by_id_key = keys::storage_cluster_by_id_key(id);
 
         enum Out {
             Updated(Box<StorageCluster>),
@@ -8745,7 +7863,7 @@ fn parse_seq(bytes: &[u8]) -> Option<u64> {
 /// VPC id. Used inside the transaction to slice peer-id suffixes
 /// without recomputing the prefix on every iteration.
 fn subnet_prefix_len(vpc_id: Uuid) -> usize {
-    format!("subnet/in_vpc/{vpc_id}/").len()
+    keys::subnet_in_vpc_prefix(vpc_id).len()
 }
 
 /// `chrono::Duration` form of [`CLAIM_CODE_TTL`]. Hand-converted (the
@@ -8773,7 +7891,7 @@ async fn mint_unique_claim_code(
             let mut rng = rand::rng();
             generate_claim_code(&mut rng)
         };
-        let key = format!("cn/by_claim/{code}").into_bytes();
+        let key = keys::cn_by_claim_key(code);
         if tr.get(&key, false).await?.is_none() {
             return Ok(Some(code));
         }
@@ -8790,7 +7908,7 @@ async fn mint_unique_poll_token(
             let mut rng = rand::rng();
             generate_poll_token(&mut rng)
         };
-        let key = format!("cn/by_poll/{token}").into_bytes();
+        let key = keys::cn_by_poll_key(token);
         if tr.get(&key, false).await?.is_none() {
             return Ok(Some(token));
         }
@@ -8868,7 +7986,7 @@ impl FdbStore {
         &self,
         nat_gateway_id: Uuid,
     ) -> Result<NatGatewayRecord, StoreError> {
-        let key = Self::nat_gateway_by_id_key(nat_gateway_id);
+        let key = keys::nat_gateway_by_id_key(nat_gateway_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("nat gateway"))
@@ -8910,7 +8028,7 @@ impl FdbStore {
         &self,
         edge_cluster_id: Uuid,
     ) -> Result<EdgeClusterRecord, StoreError> {
-        let key = Self::edge_cluster_by_id_key(edge_cluster_id);
+        let key = keys::edge_cluster_by_id_key(edge_cluster_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(de_err("edge cluster"))
@@ -8956,7 +8074,7 @@ impl FdbStore {
         };
         let value = serde_json::to_vec(&image)
             .map_err(ser_err("image"))?;
-        let by_id_key = Self::image_by_id_key(image.id);
+        let by_id_key = keys::image_by_id_key(image.id);
         let in_scope_key = in_scope_key_for(image.id);
         let id_str = image.id.to_string();
 
@@ -9045,7 +8163,7 @@ impl FdbStore {
         for s in id_strs {
             let id = Uuid::parse_str(&s)
                 .map_err(|e| StoreError::Backend(format!("image index uuid: {e}")))?;
-            let by_id_key = Self::image_by_id_key(id);
+            let by_id_key = keys::image_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let image: Image = serde_json::from_slice(&bytes)
                     .map_err(de_err("image"))?;
@@ -9089,7 +8207,7 @@ impl FdbStore {
         };
         let value = serde_json::to_vec(&key)
             .map_err(ser_err("ssh key"))?;
-        let by_id_key = Self::ssh_key_by_id_key(key.id);
+        let by_id_key = keys::ssh_key_by_id_key(key.id);
         let in_scope_key = in_scope_key_for(key.id);
         let id_str = key.id.to_string();
 
@@ -9186,7 +8304,7 @@ impl FdbStore {
         for s in id_strs {
             let id = Uuid::parse_str(&s)
                 .map_err(|e| StoreError::Backend(format!("ssh key index uuid: {e}")))?;
-            let by_id_key = Self::ssh_key_by_id_key(id);
+            let by_id_key = keys::ssh_key_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let key: SshKey = serde_json::from_slice(&bytes)
                     .map_err(de_err("ssh key"))?;
