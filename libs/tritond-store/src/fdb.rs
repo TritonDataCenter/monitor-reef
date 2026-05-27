@@ -225,6 +225,44 @@ fn ensure_fdb_booted() {
     });
 }
 
+// ── Error mapping helpers ─────────────────────────────────────────────
+//
+// Every `Database::run` closure returns `Result<_, FdbBindingError>`;
+// every Store method maps that to `StoreError::Backend(...)`. These
+// helpers keep the contextual prefix consistent and let call sites
+// stay readable instead of repeating the same `.map_err(|e| ...)`.
+
+impl From<FdbBindingError> for StoreError {
+    fn from(e: FdbBindingError) -> Self {
+        StoreError::Backend(format!("FDB transaction: {e}"))
+    }
+}
+
+/// Outside-closure serialize error mapper.
+fn ser_err(name: &'static str) -> impl FnOnce(serde_json::Error) -> StoreError {
+    move |e| StoreError::Backend(format!("serialize {name}: {e}"))
+}
+
+/// Outside-closure deserialize error mapper.
+fn de_err(name: &'static str) -> impl FnOnce(serde_json::Error) -> StoreError {
+    move |e| StoreError::Backend(format!("deserialize {name}: {e}"))
+}
+
+/// Inside-closure serialize error mapper.
+fn txn_ser_err(name: &'static str) -> impl FnOnce(serde_json::Error) -> FdbBindingError {
+    move |e| FdbBindingError::CustomError(format!("serialize {name}: {e}").into())
+}
+
+/// Inside-closure deserialize error mapper.
+fn txn_de_err(name: &'static str) -> impl FnOnce(serde_json::Error) -> FdbBindingError {
+    move |e| FdbBindingError::CustomError(format!("deserialize {name}: {e}").into())
+}
+
+/// Inside-closure general error mapper (UTF-8 conversions, UUID parsing, etc.).
+fn txn_err<E: std::fmt::Display>(ctx: &'static str) -> impl FnOnce(E) -> FdbBindingError {
+    move |e| FdbBindingError::CustomError(format!("{ctx}: {e}").into())
+}
+
 /// FoundationDB-backed [`Store`].
 pub struct FdbStore {
     db: Arc<Database>,
@@ -1110,9 +1148,9 @@ impl Store for FdbStore {
             created_at: now,
         };
         let silo_value = serde_json::to_vec(&silo)
-            .map_err(|e| StoreError::Backend(format!("serialize silo: {e}")))?;
+            .map_err(ser_err("silo"))?;
         let tenant_value = serde_json::to_vec(&tenant)
-            .map_err(|e| StoreError::Backend(format!("serialize tenant: {e}")))?;
+            .map_err(ser_err("tenant"))?;
         let silo_by_id_key = Self::silo_by_id_key(silo.id);
         let silo_by_name_key = Self::silo_by_name_key(&silo.name);
         let tenant_by_id_key = Self::tenant_by_id_key(tenant.id);
@@ -1153,7 +1191,7 @@ impl Store for FdbStore {
                 "silo with name {:?} already exists",
                 silo.name
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -1162,14 +1200,14 @@ impl Store for FdbStore {
         let bytes = self.read_bytes(&key).await?;
         match bytes {
             Some(bytes) => serde_json::from_slice(&bytes)
-                .map_err(|e| StoreError::Backend(format!("deserialize silo: {e}"))),
+                .map_err(de_err("silo")),
             None => Err(StoreError::NotFound),
         }
     }
 
     async fn create_user(&self, user: User) -> Result<User, StoreError> {
         let value = serde_json::to_vec(&user)
-            .map_err(|e| StoreError::Backend(format!("serialize user: {e}")))?;
+            .map_err(ser_err("user"))?;
         let by_id_key = Self::user_by_id_key(user.id);
         let by_name_key = Self::user_by_name_key(&user.username);
         // Federation index is keyed by (tenant_id, issuer, subject) —
@@ -1224,7 +1262,7 @@ impl Store for FdbStore {
                 "user with username {:?} or federation triple already exists",
                 user.username
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -1245,7 +1283,7 @@ impl Store for FdbStore {
         let key = Self::user_by_id_key(id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize user: {e}")))
+            .map_err(de_err("user"))
     }
 
     async fn update_user_password_hash(
@@ -1265,31 +1303,19 @@ impl Store for FdbStore {
                     let Some(id_bytes) = tr.get(&by_name_key, false).await? else {
                         return Ok(None);
                     };
-                    let id_str = std::str::from_utf8(id_bytes.as_ref()).map_err(|e| {
-                        FdbBindingError::CustomError(
-                            format!("user index value not utf8: {e}").into(),
-                        )
-                    })?;
-                    let id = Uuid::parse_str(id_str).map_err(|e| {
-                        FdbBindingError::CustomError(
-                            format!("user index value not uuid: {e}").into(),
-                        )
-                    })?;
+                    let id_str = std::str::from_utf8(id_bytes.as_ref()).map_err(txn_err("user index value not utf8"))?;
+                    let id = Uuid::parse_str(id_str).map_err(txn_err("user index value not uuid"))?;
                     let by_id_key = Self::user_by_id_key(id);
                     let Some(user_bytes) = tr.get(&by_id_key, false).await? else {
                         return Ok(None);
                     };
                     let mut user: User =
-                        serde_json::from_slice(user_bytes.as_ref()).map_err(|e| {
-                            FdbBindingError::CustomError(format!("deserialize user: {e}").into())
-                        })?;
+                        serde_json::from_slice(user_bytes.as_ref()).map_err(txn_de_err("user"))?;
                     if user.username != username {
                         return Ok(None);
                     }
                     user.password_hash = password_hash;
-                    let value = serde_json::to_vec(&user).map_err(|e| {
-                        FdbBindingError::CustomError(format!("serialize user: {e}").into())
-                    })?;
+                    let value = serde_json::to_vec(&user).map_err(txn_ser_err("user"))?;
                     tr.set(&by_id_key, &value);
                     Ok(Some(user))
                 }
@@ -1299,7 +1325,7 @@ impl Store for FdbStore {
         match result {
             Ok(Some(user)) => Ok(user),
             Ok(None) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -1334,7 +1360,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let users = users.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let users = users.map_err(StoreError::from)?;
 
         let mut rewritten = 0usize;
         for user in users {
@@ -1355,7 +1381,7 @@ impl Store for FdbStore {
             updated.capabilities = new_caps;
             let by_id_key = Self::user_by_id_key(updated.id);
             let value = serde_json::to_vec(&updated)
-                .map_err(|e| StoreError::Backend(format!("serialize user: {e}")))?;
+                .map_err(ser_err("user"))?;
             let result: Result<(), FdbBindingError> = self
                 .db
                 .run(|tr, _| {
@@ -1367,7 +1393,7 @@ impl Store for FdbStore {
                     }
                 })
                 .await;
-            result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+            result.map_err(StoreError::from)?;
             rewritten += 1;
         }
         Ok(rewritten)
@@ -1410,7 +1436,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(Out::Updated(u)) => Ok(*u),
             Ok(Out::Vanished) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -1433,12 +1459,12 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+        result.map_err(StoreError::from)
     }
 
     async fn create_api_key(&self, key: ApiKey) -> Result<ApiKey, StoreError> {
         let value = serde_json::to_vec(&key)
-            .map_err(|e| StoreError::Backend(format!("serialize api key: {e}")))?;
+            .map_err(ser_err("api key"))?;
         let by_id_key = Self::apikey_by_id_key(key.id);
         let by_lookup_key = Self::apikey_by_lookup_key(&key.lookup_id);
         let user_index_key = Self::apikey_user_index_key(key.user_id, key.id);
@@ -1470,7 +1496,7 @@ impl Store for FdbStore {
             Ok(CreateOutcome::NameTaken) => Err(StoreError::Conflict(format!(
                 "api key with lookup id {lookup_id:?} already exists"
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -1503,7 +1529,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -1512,7 +1538,7 @@ impl Store for FdbStore {
             let by_id_key = Self::apikey_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let key: ApiKey = serde_json::from_slice(&bytes)
-                    .map_err(|e| StoreError::Backend(format!("deserialize api key: {e}")))?;
+                    .map_err(de_err("api key"))?;
                 out.push(key);
             }
         }
@@ -1535,7 +1561,7 @@ impl Store for FdbStore {
             .await?
             .ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize api key: {e}")))
+            .map_err(de_err("api key"))
     }
 
     async fn delete_api_key(&self, user_id: Uuid, key_id: Uuid) -> Result<(), StoreError> {
@@ -1550,7 +1576,7 @@ impl Store for FdbStore {
             None => return Err(StoreError::NotFound),
         };
         let record: ApiKey = serde_json::from_slice(&record_bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize api key: {e}")))?;
+            .map_err(de_err("api key"))?;
         if record.user_id != user_id {
             return Err(StoreError::NotFound);
         }
@@ -1580,7 +1606,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(DeleteOutcome::Deleted) => Ok(()),
             Ok(DeleteOutcome::NotFound) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -1588,14 +1614,14 @@ impl Store for FdbStore {
         let key = Self::settings_key().to_vec();
         match self.read_bytes(&key).await? {
             Some(bytes) => serde_json::from_slice(&bytes)
-                .map_err(|e| StoreError::Backend(format!("deserialize settings: {e}"))),
+                .map_err(de_err("settings")),
             None => Ok(Settings::default()),
         }
     }
 
     async fn put_settings(&self, settings: Settings) -> Result<(), StoreError> {
         let value = serde_json::to_vec(&settings)
-            .map_err(|e| StoreError::Backend(format!("serialize settings: {e}")))?;
+            .map_err(ser_err("settings"))?;
         let key = Self::settings_key().to_vec();
         let result: Result<(), FdbBindingError> = self
             .db
@@ -1608,7 +1634,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+        result.map_err(StoreError::from)
     }
 
     async fn get_system_key(&self, key: SystemKey) -> Result<Vec<u8>, StoreError> {
@@ -1631,7 +1657,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+        result.map_err(StoreError::from)
     }
 
     // ---- Layered instance metadata (IMDS) ----
@@ -1652,7 +1678,7 @@ impl Store for FdbStore {
         let entry_key = Self::meta_entry_key(scope, scope_id, key);
         let gen_key = Self::meta_gen_key(scope, scope_id);
         let encoded = serde_json::to_vec(&value)
-            .map_err(|e| StoreError::Backend(format!("serialize MetaValue: {e}")))?;
+            .map_err(ser_err("MetaValue"))?;
         let result: Result<u64, FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -1673,7 +1699,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+        result.map_err(StoreError::from)
     }
 
     async fn get_meta(
@@ -1685,7 +1711,7 @@ impl Store for FdbStore {
         let entry_key = Self::meta_entry_key(scope, scope_id, key);
         match self.read_bytes(&entry_key).await? {
             Some(bytes) => serde_json::from_slice(&bytes)
-                .map_err(|e| StoreError::Backend(format!("deserialize MetaValue: {e}"))),
+                .map_err(de_err("MetaValue")),
             None => Err(StoreError::NotFound),
         }
     }
@@ -1720,7 +1746,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        match result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))? {
+        match result.map_err(StoreError::from)? {
             Some(next) => Ok(next),
             None => Err(StoreError::NotFound),
         }
@@ -1760,11 +1786,11 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let raw = raw.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let raw = raw.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(raw.len());
         for (k, bytes) in raw {
             let v: MetaValue = serde_json::from_slice(&bytes)
-                .map_err(|e| StoreError::Backend(format!("deserialize MetaValue: {e}")))?;
+                .map_err(de_err("MetaValue"))?;
             out.push((k, v));
         }
         Ok(out)
@@ -1806,7 +1832,7 @@ impl Store for FdbStore {
         let by_tenant_key = Self::idp_config_key(tenant_id);
         let by_issuer_key = Self::idp_by_issuer_key(&config.issuer_url);
         let value = serde_json::to_vec(&config)
-            .map_err(|e| StoreError::Backend(format!("serialize idp config: {e}")))?;
+            .map_err(ser_err("idp config"))?;
         let tenant_id_str = tenant_id.to_string();
 
         // Single transaction:
@@ -1831,11 +1857,7 @@ impl Store for FdbStore {
                         return Ok(PutIdpOutcome::IssuerTaken);
                     }
                     if let Some(prev_bytes) = tr.get(&by_tenant_key, false).await? {
-                        let prev: IdpConfig = serde_json::from_slice(&prev_bytes).map_err(|e| {
-                            FdbBindingError::CustomError(
-                                format!("deserialize prev idp config: {e}").into(),
-                            )
-                        })?;
+                        let prev: IdpConfig = serde_json::from_slice(&prev_bytes).map_err(txn_de_err("prev idp config"))?;
                         // Drop the stale issuer→tenant entry when
                         // the tenant is moving to a different issuer.
                         let prev_issuer_key = FdbStore::idp_by_issuer_key(&prev.issuer_url);
@@ -1855,7 +1877,7 @@ impl Store for FdbStore {
                 "issuer {:?} already claimed by another tenant",
                 config.issuer_url
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -1863,7 +1885,7 @@ impl Store for FdbStore {
         let key = Self::idp_config_key(tenant_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize idp config: {e}")))
+            .map_err(de_err("idp config"))
     }
 
     async fn delete_idp_config(&self, tenant_id: Uuid) -> Result<(), StoreError> {
@@ -1893,7 +1915,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(DeleteOutcome::Deleted) => Ok(()),
             Ok(DeleteOutcome::NotFound) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -1920,7 +1942,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let raws = result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let raws = result.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(raws.len());
         for (key, value) in raws {
             let suffix = &key[prefix_len..];
@@ -1929,7 +1951,7 @@ impl Store for FdbStore {
             let tenant_id = Uuid::parse_str(tenant_str)
                 .map_err(|e| StoreError::Backend(format!("idp index key not uuid: {e}")))?;
             let config: IdpConfig = serde_json::from_slice(&value)
-                .map_err(|e| StoreError::Backend(format!("deserialize idp config: {e}")))?;
+                .map_err(de_err("idp config"))?;
             out.push((tenant_id, config));
         }
         Ok(out)
@@ -1965,7 +1987,7 @@ impl Store for FdbStore {
             created_at: Utc::now(),
         };
         let value = serde_json::to_vec(&project)
-            .map_err(|e| StoreError::Backend(format!("serialize project: {e}")))?;
+            .map_err(ser_err("project"))?;
         let by_id_key = Self::project_by_id_key(project.id);
         let by_name_key = Self::project_by_tenant_name_key(tenant_id, &project.name);
         let in_tenant_key = Self::project_in_tenant_key(tenant_id, project.id);
@@ -2012,7 +2034,7 @@ impl Store for FdbStore {
             Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
                 "project with name {name_str:?} already exists in tenant {tenant_id}"
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -2020,7 +2042,7 @@ impl Store for FdbStore {
         let key = Self::project_by_id_key(project_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize project: {e}")))
+            .map_err(de_err("project"))
     }
 
     async fn list_projects_in_tenant(&self, tenant_id: Uuid) -> Result<Vec<Project>, StoreError> {
@@ -2051,7 +2073,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -2060,7 +2082,7 @@ impl Store for FdbStore {
             let by_id_key = Self::project_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let project: Project = serde_json::from_slice(&bytes)
-                    .map_err(|e| StoreError::Backend(format!("deserialize project: {e}")))?;
+                    .map_err(de_err("project"))?;
                 out.push(project);
             }
         }
@@ -2077,7 +2099,7 @@ impl Store for FdbStore {
             None => return Err(StoreError::NotFound),
         };
         let project: Project = serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize project: {e}")))?;
+            .map_err(de_err("project"))?;
         let by_name_key = Self::project_by_tenant_name_key(project.tenant_id, &project.name);
         let in_tenant_key = Self::project_in_tenant_key(project.tenant_id, project.id);
 
@@ -2106,7 +2128,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(DelOut::Deleted) => Ok(()),
             Ok(DelOut::Vanished) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -2119,7 +2141,7 @@ impl Store for FdbStore {
             created_at: Utc::now(),
         };
         let value = serde_json::to_vec(&tenant)
-            .map_err(|e| StoreError::Backend(format!("serialize tenant: {e}")))?;
+            .map_err(ser_err("tenant"))?;
         let by_id_key = Self::tenant_by_id_key(tenant.id);
         let by_name_key = Self::tenant_by_silo_name_key(silo_id, &tenant.name);
         let in_silo_key = Self::tenant_in_silo_key(silo_id, tenant.id);
@@ -2166,7 +2188,7 @@ impl Store for FdbStore {
             Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
                 "tenant with name {name_str:?} already exists in silo {silo_id}"
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -2174,7 +2196,7 @@ impl Store for FdbStore {
         let key = Self::tenant_by_id_key(tenant_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize tenant: {e}")))
+            .map_err(de_err("tenant"))
     }
 
     async fn list_tenants_in_silo(&self, silo_id: Uuid) -> Result<Vec<Tenant>, StoreError> {
@@ -2213,7 +2235,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -2222,7 +2244,7 @@ impl Store for FdbStore {
             let by_id_key = Self::tenant_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let tenant: Tenant = serde_json::from_slice(&bytes)
-                    .map_err(|e| StoreError::Backend(format!("deserialize tenant: {e}")))?;
+                    .map_err(de_err("tenant"))?;
                 out.push(tenant);
             }
         }
@@ -2239,7 +2261,7 @@ impl Store for FdbStore {
             None => return Err(StoreError::NotFound),
         };
         let tenant: Tenant = serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize tenant: {e}")))?;
+            .map_err(de_err("tenant"))?;
         let by_name_key = Self::tenant_by_silo_name_key(tenant.silo_id, &tenant.name);
         let in_silo_key = Self::tenant_in_silo_key(tenant.silo_id, tenant.id);
 
@@ -2265,7 +2287,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(DeleteOutcome::Deleted) => Ok(()),
             Ok(DeleteOutcome::NotFound) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -2317,9 +2339,9 @@ impl Store for FdbStore {
                 created_at: now,
             };
             let value = serde_json::to_vec(&candidate)
-                .map_err(|e| StoreError::Backend(format!("serialize vpc: {e}")))?;
+                .map_err(ser_err("vpc"))?;
             let main_route_table_value = serde_json::to_vec(&main_route_table)
-                .map_err(|e| StoreError::Backend(format!("serialize route table: {e}")))?;
+                .map_err(ser_err("route table"))?;
             let by_id_key = Self::vpc_by_id_key(candidate.id);
             let in_project_key = Self::vpc_in_project_key(project_id, candidate.id);
             let by_vni_key = Self::vpc_by_vni_key(vni);
@@ -2392,7 +2414,7 @@ impl Store for FdbStore {
                     )));
                 }
                 Ok(Outcome::VniTaken) => continue,
-                Err(e) => return Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+                Err(e) => return Err(e.into()),
             }
         }
 
@@ -2405,7 +2427,7 @@ impl Store for FdbStore {
         let key = Self::vpc_by_id_key(vpc_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize vpc: {e}")))
+            .map_err(de_err("vpc"))
     }
 
     async fn list_vpcs_in_project(&self, project_id: Uuid) -> Result<Vec<Vpc>, StoreError> {
@@ -2436,7 +2458,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -2445,7 +2467,7 @@ impl Store for FdbStore {
             let by_id_key = Self::vpc_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let vpc: Vpc = serde_json::from_slice(&bytes)
-                    .map_err(|e| StoreError::Backend(format!("deserialize vpc: {e}")))?;
+                    .map_err(de_err("vpc"))?;
                 out.push(vpc);
             }
         }
@@ -2461,7 +2483,7 @@ impl Store for FdbStore {
             None => return Err(StoreError::NotFound),
         };
         let vpc: Vpc = serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize vpc: {e}")))?;
+            .map_err(de_err("vpc"))?;
         let by_name_key = Self::vpc_by_project_name_key(vpc.project_id, &vpc.name);
         let in_project_key = Self::vpc_in_project_key(vpc.project_id, vpc.id);
         let by_vni_key = Self::vpc_by_vni_key(vpc.vni);
@@ -2552,7 +2574,7 @@ impl Store for FdbStore {
             Ok(DelOut::HasRouteTables) => Err(StoreError::Conflict(format!(
                 "vpc {vpc_id} still has route tables attached; delete route tables first"
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -2700,7 +2722,7 @@ impl Store for FdbStore {
                 "subnet with name {:?} already exists in vpc {vpc_id}",
                 req.name
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -2708,7 +2730,7 @@ impl Store for FdbStore {
         let key = Self::subnet_by_id_key(subnet_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize subnet: {e}")))
+            .map_err(de_err("subnet"))
     }
 
     async fn list_subnets_in_vpc(&self, vpc_id: Uuid) -> Result<Vec<Subnet>, StoreError> {
@@ -2739,7 +2761,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -2748,7 +2770,7 @@ impl Store for FdbStore {
             let by_id_key = Self::subnet_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let subnet: Subnet = serde_json::from_slice(&bytes)
-                    .map_err(|e| StoreError::Backend(format!("deserialize subnet: {e}")))?;
+                    .map_err(de_err("subnet"))?;
                 out.push(subnet);
             }
         }
@@ -2762,7 +2784,7 @@ impl Store for FdbStore {
             None => return Err(StoreError::NotFound),
         };
         let subnet: Subnet = serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize subnet: {e}")))?;
+            .map_err(de_err("subnet"))?;
         let by_name_key = Self::subnet_by_vpc_name_key(subnet.vpc_id, &subnet.name);
         let in_vpc_key = Self::subnet_in_vpc_key(subnet.vpc_id, subnet.id);
 
@@ -2791,7 +2813,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(DelOut::Deleted) => Ok(()),
             Ok(DelOut::Vanished) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -2874,7 +2896,7 @@ impl Store for FdbStore {
             Ok(Outcome::SerializeFailed(e)) => {
                 Err(StoreError::Backend(format!("serialize route table: {e}")))
             }
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -2882,7 +2904,7 @@ impl Store for FdbStore {
         let key = Self::route_table_by_id_key(route_table_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize route table: {e}")))
+            .map_err(de_err("route table"))
     }
 
     async fn list_route_tables_in_vpc(&self, vpc_id: Uuid) -> Result<Vec<RouteTable>, StoreError> {
@@ -2913,7 +2935,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -3030,7 +3052,7 @@ impl Store for FdbStore {
             Ok(Out::Corrupt(e)) => {
                 Err(StoreError::Backend(format!("deserialize route table: {e}")))
             }
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -3142,7 +3164,7 @@ impl Store for FdbStore {
             Ok(Outcome::SerializeFailed(e)) => {
                 Err(StoreError::Backend(format!("serialize route: {e}")))
             }
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -3150,7 +3172,7 @@ impl Store for FdbStore {
         let key = Self::route_by_id_key(route_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize route: {e}")))
+            .map_err(de_err("route"))
     }
 
     async fn list_routes_in_table(&self, route_table_id: Uuid) -> Result<Vec<Route>, StoreError> {
@@ -3181,7 +3203,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -3232,7 +3254,7 @@ impl Store for FdbStore {
             Ok(Out::Deleted) => Ok(()),
             Ok(Out::Vanished) => Err(StoreError::NotFound),
             Ok(Out::Corrupt(e)) => Err(StoreError::Backend(format!("deserialize route: {e}"))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -3395,7 +3417,7 @@ impl Store for FdbStore {
             Ok(Outcome::SerializeFailed(e)) => {
                 Err(StoreError::Backend(format!("serialize nat gateway: {e}")))
             }
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -3441,7 +3463,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -3528,7 +3550,7 @@ impl Store for FdbStore {
             Ok(Out::Corrupt(e)) => {
                 Err(StoreError::Backend(format!("deserialize nat gateway: {e}")))
             }
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -3624,7 +3646,7 @@ impl Store for FdbStore {
             Ok(Outcome::SerializeFailed(e)) => {
                 Err(StoreError::Backend(format!("serialize edge cluster: {e}")))
             }
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -3662,7 +3684,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -3708,7 +3730,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -3782,7 +3804,7 @@ impl Store for FdbStore {
             Ok(Out::Corrupt(e)) => Err(StoreError::Backend(format!(
                 "deserialize edge cluster: {e}"
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -3908,7 +3930,7 @@ impl Store for FdbStore {
         let key = Self::ssh_key_by_id_key(key_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize ssh key: {e}")))
+            .map_err(de_err("ssh key"))
     }
 
     async fn list_ssh_keys_public(&self) -> Result<Vec<SshKey>, StoreError> {
@@ -3945,7 +3967,7 @@ impl Store for FdbStore {
             .await?
             .ok_or(StoreError::NotFound)?;
         let tenant: Tenant = serde_json::from_slice(&tenant_bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize tenant: {e}")))?;
+            .map_err(de_err("tenant"))?;
         let mut out = self.list_ssh_keys_public().await?;
         out.extend(self.list_ssh_keys_in_silo(tenant.silo_id).await?);
         out.extend(self.list_ssh_keys_in_tenant(tenant_id).await?);
@@ -3961,13 +3983,13 @@ impl Store for FdbStore {
             .await?
             .ok_or(StoreError::NotFound)?;
         let project: Project = serde_json::from_slice(&project_bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize project: {e}")))?;
+            .map_err(de_err("project"))?;
         let tenant_bytes = self
             .read_bytes(&Self::tenant_by_id_key(project.tenant_id))
             .await?
             .ok_or(StoreError::NotFound)?;
         let tenant: Tenant = serde_json::from_slice(&tenant_bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize tenant: {e}")))?;
+            .map_err(de_err("tenant"))?;
         let mut out = self.list_ssh_keys_public().await?;
         out.extend(self.list_ssh_keys_in_silo(tenant.silo_id).await?);
         out.extend(self.list_ssh_keys_in_tenant(project.tenant_id).await?);
@@ -3982,7 +4004,7 @@ impl Store for FdbStore {
             None => return Err(StoreError::NotFound),
         };
         let key: SshKey = serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize ssh key: {e}")))?;
+            .map_err(de_err("ssh key"))?;
         let (by_name_key, by_fp_key, in_scope_key) = match &key.scope {
             SshKeyScope::Public => (
                 Self::ssh_key_by_public_name_key(&key.name),
@@ -4038,7 +4060,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(DelOut::Deleted) => Ok(()),
             Ok(DelOut::Vanished) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -4133,7 +4155,7 @@ impl Store for FdbStore {
         let key = Self::image_by_id_key(image_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize image: {e}")))
+            .map_err(de_err("image"))
     }
 
     async fn list_images_public(&self) -> Result<Vec<Image>, StoreError> {
@@ -4173,7 +4195,7 @@ impl Store for FdbStore {
             .await?
             .ok_or(StoreError::NotFound)?;
         let tenant: Tenant = serde_json::from_slice(&tenant_bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize tenant: {e}")))?;
+            .map_err(de_err("tenant"))?;
         let mut out = self.list_images_public().await?;
         out.extend(self.list_images_in_silo(tenant.silo_id).await?);
         out.extend(self.list_images_in_tenant(tenant_id).await?);
@@ -4189,13 +4211,13 @@ impl Store for FdbStore {
             .await?
             .ok_or(StoreError::NotFound)?;
         let project: Project = serde_json::from_slice(&project_bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize project: {e}")))?;
+            .map_err(de_err("project"))?;
         let tenant_bytes = self
             .read_bytes(&Self::tenant_by_id_key(project.tenant_id))
             .await?
             .ok_or(StoreError::NotFound)?;
         let tenant: Tenant = serde_json::from_slice(&tenant_bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize tenant: {e}")))?;
+            .map_err(de_err("tenant"))?;
         let mut out = self.list_images_public().await?;
         out.extend(self.list_images_in_silo(tenant.silo_id).await?);
         out.extend(self.list_images_in_tenant(project.tenant_id).await?);
@@ -4210,7 +4232,7 @@ impl Store for FdbStore {
             None => return Err(StoreError::NotFound),
         };
         let image: Image = serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize image: {e}")))?;
+            .map_err(de_err("image"))?;
         let (by_name_key, in_scope_key) = match &image.scope {
             ImageScope::Public => (
                 Self::image_by_public_name_key(&image.name),
@@ -4259,7 +4281,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(DelOut::Deleted) => Ok(()),
             Ok(DelOut::Vanished) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -4281,7 +4303,7 @@ impl Store for FdbStore {
             updated_at: Utc::now(),
         };
         let value = serde_json::to_vec(&quota)
-            .map_err(|e| StoreError::Backend(format!("serialize quota: {e}")))?;
+            .map_err(ser_err("quota"))?;
 
         enum Outcome {
             Stored,
@@ -4315,7 +4337,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(Outcome::Stored) => Ok(quota),
             Ok(Outcome::ProjectMissingOrWrongTenant) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -4366,7 +4388,7 @@ impl Store for FdbStore {
             Ok(Outcome::ProjectMissingOrWrongTenant) | Ok(Outcome::QuotaUnset) => {
                 Err(StoreError::NotFound)
             }
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -4411,7 +4433,7 @@ impl Store for FdbStore {
             Ok(Outcome::ProjectMissingOrWrongTenant) | Ok(Outcome::QuotaUnset) => {
                 Err(StoreError::NotFound)
             }
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -4913,7 +4935,7 @@ impl Store for FdbStore {
             Ok(Outcome::DuplicateNicName(name)) => Err(StoreError::Conflict(format!(
                 "duplicate NIC name {name:?} on instance",
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -4921,7 +4943,7 @@ impl Store for FdbStore {
         let key = Self::instance_by_id_key(instance_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize instance: {e}")))
+            .map_err(de_err("instance"))
     }
 
     async fn list_instances_in_project(
@@ -4955,7 +4977,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -4964,7 +4986,7 @@ impl Store for FdbStore {
             let by_id_key = Self::instance_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let instance: Instance = serde_json::from_slice(&bytes)
-                    .map_err(|e| StoreError::Backend(format!("deserialize instance: {e}")))?;
+                    .map_err(de_err("instance"))?;
                 out.push(instance);
             }
         }
@@ -5021,7 +5043,7 @@ impl Store for FdbStore {
             Ok(Outcome::Serialize) => Err(StoreError::Backend(
                 "serialize instance host placement".to_string(),
             )),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -5068,7 +5090,7 @@ impl Store for FdbStore {
             Ok(Outcome::Serialize) => Err(StoreError::Backend(
                 "serialize instance brand backfill".to_string(),
             )),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -5103,7 +5125,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -5112,7 +5134,7 @@ impl Store for FdbStore {
             let by_id_key = Self::instance_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let instance: Instance = serde_json::from_slice(&bytes)
-                    .map_err(|e| StoreError::Backend(format!("deserialize instance: {e}")))?;
+                    .map_err(de_err("instance"))?;
                 out.push(instance);
             }
         }
@@ -5153,7 +5175,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -5162,7 +5184,7 @@ impl Store for FdbStore {
             let by_id_key = Self::nic_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let nic: Nic = serde_json::from_slice(&bytes)
-                    .map_err(|e| StoreError::Backend(format!("deserialize nic: {e}")))?;
+                    .map_err(de_err("nic"))?;
                 out.push(nic);
             }
         }
@@ -5182,7 +5204,7 @@ impl Store for FdbStore {
             .await?
             .ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&nic_bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize nic: {e}")))
+            .map_err(de_err("nic"))
     }
 
     async fn find_dhcp_lease_by_mac(&self, mac: &str) -> Result<DhcpLease, StoreError> {
@@ -5202,7 +5224,7 @@ impl Store for FdbStore {
             .await?
             .ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&lease_bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize dhcp lease: {e}")))
+            .map_err(de_err("dhcp lease"))
     }
 
     async fn list_instances_for_cn(&self, host_cn_uuid: Uuid) -> Result<Vec<Instance>, StoreError> {
@@ -5233,7 +5255,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -5242,7 +5264,7 @@ impl Store for FdbStore {
             let by_id_key = Self::instance_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let instance: Instance = serde_json::from_slice(&bytes)
-                    .map_err(|e| StoreError::Backend(format!("deserialize instance: {e}")))?;
+                    .map_err(de_err("instance"))?;
                 out.push(instance);
             }
         }
@@ -5446,7 +5468,7 @@ impl Store for FdbStore {
             Ok(Outcome::NotDeletable(kind)) => Err(StoreError::Conflict(format!(
                 "instance {instance_id} is not deletable in state {kind:?}; stop it first"
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -5501,7 +5523,7 @@ impl Store for FdbStore {
             Ok(Outcome::WrongState(kind)) => Err(StoreError::Conflict(format!(
                 "instance {instance_id} is in {kind:?}; expected one of {expected_from:?}"
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -5509,14 +5531,14 @@ impl Store for FdbStore {
         let key = Self::nic_by_id_key(nic_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize nic: {e}")))
+            .map_err(de_err("nic"))
     }
 
     async fn get_disk(&self, disk_id: Uuid) -> Result<Disk, StoreError> {
         let key = Self::disk_by_id_key(disk_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize disk: {e}")))
+            .map_err(de_err("disk"))
     }
 
     async fn list_disks_for_instance(&self, instance_id: Uuid) -> Result<Vec<Disk>, StoreError> {
@@ -5547,7 +5569,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -5556,7 +5578,7 @@ impl Store for FdbStore {
             let by_id_key = Self::disk_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let disk: Disk = serde_json::from_slice(&bytes)
-                    .map_err(|e| StoreError::Backend(format!("deserialize disk: {e}")))?;
+                    .map_err(de_err("disk"))?;
                 out.push(disk);
             }
         }
@@ -5591,7 +5613,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -5600,7 +5622,7 @@ impl Store for FdbStore {
             let by_id_key = Self::nic_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let nic: Nic = serde_json::from_slice(&bytes)
-                    .map_err(|e| StoreError::Backend(format!("deserialize nic: {e}")))?;
+                    .map_err(de_err("nic"))?;
                 out.push(nic);
             }
         }
@@ -5758,7 +5780,7 @@ impl Store for FdbStore {
             Ok(Outcome::PoolExhausted) => Err(StoreError::Backend(
                 "floating ip pool exhausted".to_string(),
             )),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -5766,7 +5788,7 @@ impl Store for FdbStore {
         let key = Self::floating_ip_by_id_key(fip_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize floating ip: {e}")))
+            .map_err(de_err("floating ip"))
     }
 
     async fn list_floating_ips_in_project(
@@ -5800,7 +5822,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -5809,7 +5831,7 @@ impl Store for FdbStore {
             let by_id_key = Self::floating_ip_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let fip: FloatingIp = serde_json::from_slice(&bytes)
-                    .map_err(|e| StoreError::Backend(format!("deserialize floating ip: {e}")))?;
+                    .map_err(de_err("floating ip"))?;
                 out.push(fip);
             }
         }
@@ -5868,7 +5890,7 @@ impl Store for FdbStore {
             Ok(Out::Attached) => Err(StoreError::Conflict(format!(
                 "floating ip {fip_id} is currently attached; detach first"
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -5929,7 +5951,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(Out::Attached(fip)) => Ok(*fip),
             Ok(Out::FipMissing) | Ok(Out::NicMissingOrWrongParent) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -5968,7 +5990,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(Out::Detached(fip)) => Ok(*fip),
             Ok(Out::Vanished) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -6005,9 +6027,7 @@ impl Store for FdbStore {
                         completed_at: None,
                         target_cn_uuid,
                     };
-                    let value = serde_json::to_vec(&job).map_err(|e| {
-                        FdbBindingError::CustomError(format!("serialize job: {e}").into())
-                    })?;
+                    let value = serde_json::to_vec(&job).map_err(txn_ser_err("job"))?;
                     tr.set(&counter_key, &next_seq.to_be_bytes());
                     tr.set(&by_id_key, &value);
                     tr.set(&pending_key, &id_bytes);
@@ -6015,7 +6035,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        outcome.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+        outcome.map_err(StoreError::from)
     }
 
     async fn list_stale_claims(
@@ -6046,7 +6066,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let raws = raws.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let raws = raws.map_err(StoreError::from)?;
 
         let stale = raws
             .into_iter()
@@ -6097,16 +6117,8 @@ impl Store for FdbStore {
                     drop(kvs);
 
                     for (pending_key, job_id_bytes) in entries {
-                        let id_str = std::str::from_utf8(&job_id_bytes).map_err(|e| {
-                            FdbBindingError::CustomError(
-                                format!("pending index value not utf8: {e}").into(),
-                            )
-                        })?;
-                        let job_id = Uuid::parse_str(id_str).map_err(|e| {
-                            FdbBindingError::CustomError(
-                                format!("pending index value not uuid: {e}").into(),
-                            )
-                        })?;
+                        let id_str = std::str::from_utf8(&job_id_bytes).map_err(txn_err("pending index value not utf8"))?;
+                        let job_id = Uuid::parse_str(id_str).map_err(txn_err("pending index value not uuid"))?;
                         let by_id_key = format!("job/by_id/{job_id}").into_bytes();
                         let bytes = match tr.get(&by_id_key, false).await? {
                             Some(b) => b,
@@ -6119,9 +6131,7 @@ impl Store for FdbStore {
                             }
                         };
                         let mut job: ProvisioningJob =
-                            serde_json::from_slice(&bytes).map_err(|e| {
-                                FdbBindingError::CustomError(format!("deserialize job: {e}").into())
-                            })?;
+                            serde_json::from_slice(&bytes).map_err(txn_de_err("job"))?;
                         // Targeting check: skip mis-routed jobs
                         // without clearing their pending index — a
                         // different agent will pick them up.
@@ -6131,9 +6141,7 @@ impl Store for FdbStore {
                         job.status = JobStatus::InProgress;
                         job.claimed_at = Some(Utc::now());
                         job.claimed_by = Some(claimed_by);
-                        let value = serde_json::to_vec(&job).map_err(|e| {
-                            FdbBindingError::CustomError(format!("serialize job: {e}").into())
-                        })?;
+                        let value = serde_json::to_vec(&job).map_err(txn_ser_err("job"))?;
                         tr.set(&by_id_key, &value);
                         tr.clear(&pending_key);
                         return Ok(Outcome::Claimed(Box::new(job)));
@@ -6146,7 +6154,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(Outcome::Claimed(job)) => Ok(*job),
             Ok(Outcome::Empty) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -6202,7 +6210,7 @@ impl Store for FdbStore {
             Ok(Out::AlreadyTerminal(k)) => Err(StoreError::Conflict(format!(
                 "job {job_id} is already terminal ({k:?})"
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -6210,7 +6218,7 @@ impl Store for FdbStore {
         let key = Self::job_by_id_key(job_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize job: {e}")))
+            .map_err(de_err("job"))
     }
 
     async fn list_recent_jobs(&self, limit: usize) -> Result<Vec<ProvisioningJob>, StoreError> {
@@ -6239,7 +6247,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let raws = raws.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let raws = raws.map_err(StoreError::from)?;
 
         let mut jobs: Vec<ProvisioningJob> = raws
             .into_iter()
@@ -6335,7 +6343,7 @@ impl Store for FdbStore {
                     req.instance_id,
                 )))
             }
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -6348,7 +6356,7 @@ impl Store for FdbStore {
                 async move { Ok(tr.get(&key, false).await?.map(|v| v.to_vec())) }
             })
             .await;
-        let raw = raw.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let raw = raw.map_err(StoreError::from)?;
         let bytes = raw.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(|e| StoreError::Backend(format!("decode MigrationRecord: {e}")))
@@ -6381,7 +6389,7 @@ impl Store for FdbStore {
             {
                 Err(StoreError::NotFound)
             }
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -6411,7 +6419,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let raws = raws.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let raws = raws.map_err(StoreError::from)?;
         let mut rows: Vec<MigrationRecord> = raws
             .into_iter()
             .filter_map(|b| serde_json::from_slice(&b).ok())
@@ -6454,7 +6462,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
         let mut rows = Vec::with_capacity(id_strs.len());
         for s in id_strs {
             if let Ok(id) = Uuid::parse_str(&s)
@@ -6485,23 +6493,13 @@ impl Store for FdbStore {
                         ));
                     };
                     let mut record: MigrationRecord =
-                        serde_json::from_slice(&bytes).map_err(|e| {
-                            FdbBindingError::CustomError(
-                                format!("decode MigrationRecord: {e}").into(),
-                            )
-                        })?;
+                        serde_json::from_slice(&bytes).map_err(txn_err("decode MigrationRecord"))?;
                     let next_seq = record.last_progress_seq.saturating_add(1);
                     record.last_progress_seq = next_seq;
                     let mut event_out = event_clone.clone();
                     event_out.seq = next_seq;
-                    let record_bytes = serde_json::to_vec(&record).map_err(|e| {
-                        FdbBindingError::CustomError(format!("encode MigrationRecord: {e}").into())
-                    })?;
-                    let event_bytes = serde_json::to_vec(&event_out).map_err(|e| {
-                        FdbBindingError::CustomError(
-                            format!("encode MigrationProgressEvent: {e}").into(),
-                        )
-                    })?;
+                    let record_bytes = serde_json::to_vec(&record).map_err(txn_err("encode MigrationRecord"))?;
+                    let event_bytes = serde_json::to_vec(&event_out).map_err(txn_err("encode MigrationProgressEvent"))?;
                     let event_key = format!("migration/progress/{migration_id}/{:016x}", next_seq,)
                         .into_bytes();
                     tr.set(&record_key, &record_bytes);
@@ -6520,7 +6518,7 @@ impl Store for FdbStore {
             {
                 Err(StoreError::NotFound)
             }
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -6551,7 +6549,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let raws = raws.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let raws = raws.map_err(StoreError::from)?;
         let rows: Vec<MigrationProgressEvent> = raws
             .into_iter()
             .filter_map(|b| serde_json::from_slice(&b).ok())
@@ -6591,9 +6589,7 @@ impl Store for FdbStore {
                 async move {
                     // Branch 1: existing record at by_uuid.
                     if let Some(bytes) = tr.get(&by_uuid_key, false).await? {
-                        let existing: Cn = serde_json::from_slice(&bytes).map_err(|e| {
-                            FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
-                        })?;
+                        let existing: Cn = serde_json::from_slice(&bytes).map_err(txn_de_err("cn"))?;
                         let prev_state = existing.state;
                         match prev_state {
                             CnState::Approved => {
@@ -6604,11 +6600,7 @@ impl Store for FdbStore {
                                 updated.admin_ip = admin_ip;
                                 updated.sysinfo = sysinfo;
                                 updated.last_seen = Some(now);
-                                let value = serde_json::to_vec(&updated).map_err(|e| {
-                                    FdbBindingError::CustomError(
-                                        format!("serialize cn: {e}").into(),
-                                    )
-                                })?;
+                                let value = serde_json::to_vec(&updated).map_err(txn_ser_err("cn"))?;
                                 tr.set(&by_uuid_key, &value);
                                 return Ok(Outcome::Created(Box::new(updated)));
                             }
@@ -6658,11 +6650,7 @@ impl Store for FdbStore {
                                     imds_token_key: None,
                                     migrate_ticket_key: None,
                                 };
-                                let value = serde_json::to_vec(&cn).map_err(|e| {
-                                    FdbBindingError::CustomError(
-                                        format!("serialize cn: {e}").into(),
-                                    )
-                                })?;
+                                let value = serde_json::to_vec(&cn).map_err(txn_ser_err("cn"))?;
                                 tr.set(&by_uuid_key, &value);
                                 tr.set(&Self::cn_by_claim_key(&claim_code), &server_uuid_bytes);
                                 tr.set(&Self::cn_by_poll_key(&poll_token), &server_uuid_bytes);
@@ -6721,9 +6709,7 @@ impl Store for FdbStore {
                         imds_token_key: None,
                         migrate_ticket_key: None,
                     };
-                    let value = serde_json::to_vec(&cn).map_err(|e| {
-                        FdbBindingError::CustomError(format!("serialize cn: {e}").into())
-                    })?;
+                    let value = serde_json::to_vec(&cn).map_err(txn_ser_err("cn"))?;
                     tr.set(&by_uuid_key, &value);
                     if let Some(code) = &claim_code {
                         tr.set(&Self::cn_by_claim_key(code), &server_uuid_bytes);
@@ -6740,7 +6726,7 @@ impl Store for FdbStore {
             Ok(Outcome::ClaimCodeExhausted) => {
                 Err(StoreError::Backend("claim code exhausted".to_string()))
             }
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -6748,7 +6734,7 @@ impl Store for FdbStore {
         let key = Self::cn_by_uuid_key(server_uuid);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize cn: {e}")))
+            .map_err(de_err("cn"))
     }
 
     async fn get_cn_by_poll_token(&self, poll_token: &str) -> Result<Cn, StoreError> {
@@ -6819,7 +6805,7 @@ impl Store for FdbStore {
                 })
                 .await;
             let id_strs =
-                id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+                id_strs.map_err(StoreError::from)?;
 
             for s in id_strs {
                 let id = Uuid::parse_str(&s)
@@ -6830,7 +6816,7 @@ impl Store for FdbStore {
                 let by_id_key = Self::cn_by_uuid_key(id);
                 if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                     let cn: Cn = serde_json::from_slice(&bytes)
-                        .map_err(|e| StoreError::Backend(format!("deserialize cn: {e}")))?;
+                        .map_err(de_err("cn"))?;
                     out.push(cn);
                 }
             }
@@ -6854,13 +6840,9 @@ impl Store for FdbStore {
                         Some(b) => b,
                         None => return Ok(Outcome::NotFound),
                     };
-                    let mut cn: Cn = serde_json::from_slice(&bytes).map_err(|e| {
-                        FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
-                    })?;
+                    let mut cn: Cn = serde_json::from_slice(&bytes).map_err(txn_de_err("cn"))?;
                     cn.role = role;
-                    let value = serde_json::to_vec(&cn).map_err(|e| {
-                        FdbBindingError::CustomError(format!("serialize cn: {e}").into())
-                    })?;
+                    let value = serde_json::to_vec(&cn).map_err(txn_ser_err("cn"))?;
                     tr.set(&by_uuid_key, &value);
                     Ok(Outcome::Updated(Box::new(cn)))
                 }
@@ -6870,7 +6852,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(Outcome::Updated(cn)) => Ok(*cn),
             Ok(Outcome::NotFound) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -6895,14 +6877,10 @@ impl Store for FdbStore {
                         Some(b) => b,
                         None => return Ok(Outcome::NotFound),
                     };
-                    let mut cn: Cn = serde_json::from_slice(&bytes).map_err(|e| {
-                        FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
-                    })?;
+                    let mut cn: Cn = serde_json::from_slice(&bytes).map_err(txn_de_err("cn"))?;
                     cn.console_listen_port = console_listen_port;
                     cn.console_tls_spki_sha256 = console_tls_spki_sha256;
-                    let value = serde_json::to_vec(&cn).map_err(|e| {
-                        FdbBindingError::CustomError(format!("serialize cn: {e}").into())
-                    })?;
+                    let value = serde_json::to_vec(&cn).map_err(txn_ser_err("cn"))?;
                     tr.set(&by_uuid_key, &value);
                     Ok(Outcome::Updated)
                 }
@@ -6912,7 +6890,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(Outcome::Updated) => Ok(()),
             Ok(Outcome::NotFound) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -6943,9 +6921,7 @@ impl Store for FdbStore {
                         Some(b) => b,
                         None => return Ok(Outcome::NotFound),
                     };
-                    let mut cn: Cn = serde_json::from_slice(&bytes).map_err(|e| {
-                        FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
-                    })?;
+                    let mut cn: Cn = serde_json::from_slice(&bytes).map_err(txn_de_err("cn"))?;
                     // Disabled: treat as gone.
                     if cn.state == CnState::Disabled {
                         return Ok(Outcome::NotFound);
@@ -6980,9 +6956,7 @@ impl Store for FdbStore {
                     cn.imds_token_key = Some(imds_token_key);
                     cn.migrate_ticket_key = Some(migrate_ticket_key);
 
-                    let value = serde_json::to_vec(&cn).map_err(|e| {
-                        FdbBindingError::CustomError(format!("serialize cn: {e}").into())
-                    })?;
+                    let value = serde_json::to_vec(&cn).map_err(txn_ser_err("cn"))?;
                     tr.set(&by_uuid_key, &value);
                     tr.set(&Self::cn_by_state_key(CnState::Approved, server_uuid), b"");
                     Ok(Outcome::Approved(Box::new(cn)))
@@ -6996,7 +6970,7 @@ impl Store for FdbStore {
             Ok(Outcome::AlreadyBound) => Err(StoreError::Conflict(
                 "cn already has a bound api key; disable + re-approve to rotate".to_string(),
             )),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -7020,25 +6994,17 @@ impl Store for FdbStore {
                         Some(b) => b,
                         None => return Ok(Outcome::NotFound),
                     };
-                    let id_str = std::str::from_utf8(&id_bytes).map_err(|e| {
-                        FdbBindingError::CustomError(format!("cn poll index not utf8: {e}").into())
-                    })?;
-                    let id = Uuid::parse_str(id_str).map_err(|e| {
-                        FdbBindingError::CustomError(format!("cn poll index not uuid: {e}").into())
-                    })?;
+                    let id_str = std::str::from_utf8(&id_bytes).map_err(txn_err("cn poll index not utf8"))?;
+                    let id = Uuid::parse_str(id_str).map_err(txn_err("cn poll index not uuid"))?;
                     let by_uuid_key = Self::cn_by_uuid_key(id);
                     let cn_bytes = match tr.get(&by_uuid_key, false).await? {
                         Some(b) => b,
                         None => return Ok(Outcome::NotFound),
                     };
-                    let mut cn: Cn = serde_json::from_slice(&cn_bytes).map_err(|e| {
-                        FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
-                    })?;
+                    let mut cn: Cn = serde_json::from_slice(&cn_bytes).map_err(txn_de_err("cn"))?;
                     let taken = cn.pending_credential.take();
                     if taken.is_some() {
-                        let value = serde_json::to_vec(&cn).map_err(|e| {
-                            FdbBindingError::CustomError(format!("serialize cn: {e}").into())
-                        })?;
+                        let value = serde_json::to_vec(&cn).map_err(txn_ser_err("cn"))?;
                         tr.set(&by_uuid_key, &value);
                     }
                     Ok(Outcome::Consumed(taken))
@@ -7049,7 +7015,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(Outcome::Consumed(opt)) => Ok(opt),
             Ok(Outcome::NotFound) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -7069,9 +7035,7 @@ impl Store for FdbStore {
                         Some(b) => b,
                         None => return Ok(Outcome::NotFound),
                     };
-                    let mut cn: Cn = serde_json::from_slice(&bytes).map_err(|e| {
-                        FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
-                    })?;
+                    let mut cn: Cn = serde_json::from_slice(&bytes).map_err(txn_de_err("cn"))?;
                     if let Some(old_code) = &cn.claim_code {
                         tr.clear(&Self::cn_by_claim_key(old_code));
                     }
@@ -7083,9 +7047,7 @@ impl Store for FdbStore {
                     cn.claim_code_expires_at = None;
                     cn.pending_credential = None;
 
-                    let value = serde_json::to_vec(&cn).map_err(|e| {
-                        FdbBindingError::CustomError(format!("serialize cn: {e}").into())
-                    })?;
+                    let value = serde_json::to_vec(&cn).map_err(txn_ser_err("cn"))?;
                     tr.set(&by_uuid_key, &value);
                     tr.set(&Self::cn_by_state_key(CnState::Disabled, server_uuid), b"");
                     Ok(Outcome::Disabled(Box::new(cn)))
@@ -7096,7 +7058,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(Outcome::Disabled(cn)) => Ok(*cn),
             Ok(Outcome::NotFound) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -7120,13 +7082,9 @@ impl Store for FdbStore {
                         Some(b) => b,
                         None => return Ok(Outcome::NotFound),
                     };
-                    let mut cn: Cn = serde_json::from_slice(&bytes).map_err(|e| {
-                        FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
-                    })?;
+                    let mut cn: Cn = serde_json::from_slice(&bytes).map_err(txn_de_err("cn"))?;
                     cn.last_seen = Some(at);
-                    let value = serde_json::to_vec(&cn).map_err(|e| {
-                        FdbBindingError::CustomError(format!("serialize cn: {e}").into())
-                    })?;
+                    let value = serde_json::to_vec(&cn).map_err(txn_ser_err("cn"))?;
                     tr.set(&by_uuid_key, &value);
                     Ok(Outcome::Updated)
                 }
@@ -7136,7 +7094,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(Outcome::Updated) => Ok(()),
             Ok(Outcome::NotFound) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -7162,14 +7120,10 @@ impl Store for FdbStore {
                         Some(b) => b,
                         None => return Ok(Outcome::NotFound),
                     };
-                    let mut cn: Cn = serde_json::from_slice(&bytes).map_err(|e| {
-                        FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
-                    })?;
+                    let mut cn: Cn = serde_json::from_slice(&bytes).map_err(txn_de_err("cn"))?;
                     cn.last_status = Some(payload);
                     cn.last_seen = Some(at);
-                    let value = serde_json::to_vec(&cn).map_err(|e| {
-                        FdbBindingError::CustomError(format!("serialize cn: {e}").into())
-                    })?;
+                    let value = serde_json::to_vec(&cn).map_err(txn_ser_err("cn"))?;
                     tr.set(&by_uuid_key, &value);
                     Ok(Outcome::Updated)
                 }
@@ -7179,7 +7133,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(Outcome::Updated) => Ok(()),
             Ok(Outcome::NotFound) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -7190,7 +7144,7 @@ impl Store for FdbStore {
     async fn put_cn_capacity(&self, row: CnCapacity) -> Result<(), StoreError> {
         let key = Self::cn_capacity_key(row.server_uuid);
         let value = serde_json::to_vec(&row)
-            .map_err(|e| StoreError::Backend(format!("serialize cn_capacity: {e}")))?;
+            .map_err(ser_err("cn_capacity"))?;
         self.db
             .run(|tr, _| {
                 let key = key.clone();
@@ -7201,7 +7155,7 @@ impl Store for FdbStore {
                 }
             })
             .await
-            .map_err(|e: FdbBindingError| StoreError::Backend(format!("FDB transaction: {e}")))
+            .map_err(StoreError::from)
     }
 
     async fn get_cn_capacity(&self, server_uuid: Uuid) -> Result<CnCapacity, StoreError> {
@@ -7214,10 +7168,10 @@ impl Store for FdbStore {
             })
             .await;
         let bytes = bytes
-            .map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?
+            .map_err(StoreError::from)?
             .ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize cn_capacity: {e}")))
+            .map_err(de_err("cn_capacity"))
     }
 
     async fn list_cn_capacities(&self) -> Result<Vec<CnCapacity>, StoreError> {
@@ -7241,11 +7195,11 @@ impl Store for FdbStore {
             })
             .await;
         let bytes_list =
-            bytes_list.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+            bytes_list.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(bytes_list.len());
         for bytes in bytes_list {
             let v: CnCapacity = serde_json::from_slice(&bytes)
-                .map_err(|e| StoreError::Backend(format!("deserialize cn_capacity: {e}")))?;
+                .map_err(de_err("cn_capacity"))?;
             out.push(v);
         }
         out.sort_by_key(|c| c.server_uuid);
@@ -7259,7 +7213,7 @@ impl Store for FdbStore {
         // disagrees with the pinned silo.
         let placement_key = Self::cn_placement_key(row.server_uuid);
         let payload = serde_json::to_vec(&row)
-            .map_err(|e| StoreError::Backend(format!("serialize cn_placement: {e}")))?;
+            .map_err(ser_err("cn_placement"))?;
 
         enum Outcome {
             Wrote,
@@ -7289,11 +7243,7 @@ impl Store for FdbStore {
                             }
                         };
                         let tenant: Tenant =
-                            serde_json::from_slice(&tenant_bytes).map_err(|e| {
-                                FdbBindingError::CustomError(
-                                    format!("deserialize tenant: {e}").into(),
-                                )
-                            })?;
+                            serde_json::from_slice(&tenant_bytes).map_err(txn_de_err("tenant"))?;
                         if tenant.silo_id != pinned_silo {
                             return Ok(Outcome::Conflict(format!(
                                 "pinned tenant {tenant_uuid} lives in silo {} but pinned silo is {pinned_silo}",
@@ -7310,7 +7260,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(Outcome::Wrote) => Ok(()),
             Ok(Outcome::Conflict(reason)) => Err(StoreError::PinConflict { reason }),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -7323,9 +7273,9 @@ impl Store for FdbStore {
                 async move { Ok(tr.get(&key, false).await?.map(|s| s.to_vec())) }
             })
             .await;
-        match bytes.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))? {
+        match bytes.map_err(StoreError::from)? {
             Some(bytes) => serde_json::from_slice(&bytes)
-                .map_err(|e| StoreError::Backend(format!("deserialize cn_placement: {e}"))),
+                .map_err(de_err("cn_placement")),
             None => Ok(CnPlacement::fresh(server_uuid, Utc::now())),
         }
     }
@@ -7351,11 +7301,11 @@ impl Store for FdbStore {
             })
             .await;
         let bytes_list =
-            bytes_list.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+            bytes_list.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(bytes_list.len());
         for bytes in bytes_list {
             let v: CnPlacement = serde_json::from_slice(&bytes)
-                .map_err(|e| StoreError::Backend(format!("deserialize cn_placement: {e}")))?;
+                .map_err(de_err("cn_placement"))?;
             out.push(v);
         }
         out.sort_by_key(|p| p.server_uuid);
@@ -7365,7 +7315,7 @@ impl Store for FdbStore {
     async fn reserve_cn_capacity(&self, row: CnReservation) -> Result<(), StoreError> {
         let key = Self::cn_reservation_key(row.server_uuid, row.saga_id);
         let value = serde_json::to_vec(&row)
-            .map_err(|e| StoreError::Backend(format!("serialize cn_reservation: {e}")))?;
+            .map_err(ser_err("cn_reservation"))?;
         let server_uuid = row.server_uuid;
         let saga_id = row.saga_id;
 
@@ -7394,7 +7344,7 @@ impl Store for FdbStore {
             Ok(Outcome::AlreadyExists) => Err(StoreError::AlreadyExists(format!(
                 "cn-reservation/{server_uuid}/{saga_id} already exists"
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -7427,7 +7377,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(Outcome::Deleted) => Ok(()),
             Ok(Outcome::NotFound) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -7458,11 +7408,11 @@ impl Store for FdbStore {
             })
             .await;
         let bytes_list =
-            bytes_list.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+            bytes_list.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(bytes_list.len());
         for bytes in bytes_list {
             let v: CnReservation = serde_json::from_slice(&bytes)
-                .map_err(|e| StoreError::Backend(format!("deserialize cn_reservation: {e}")))?;
+                .map_err(de_err("cn_reservation"))?;
             out.push(v);
         }
         out.sort_by_key(|r| (r.server_uuid, r.saga_id));
@@ -7472,7 +7422,7 @@ impl Store for FdbStore {
     async fn put_cn_load_summary(&self, row: CnLoadSummary) -> Result<(), StoreError> {
         let key = Self::cn_load_summary_key(row.server_uuid);
         let value = serde_json::to_vec(&row)
-            .map_err(|e| StoreError::Backend(format!("serialize cn_load_summary: {e}")))?;
+            .map_err(ser_err("cn_load_summary"))?;
         self.db
             .run(|tr, _| {
                 let key = key.clone();
@@ -7483,7 +7433,7 @@ impl Store for FdbStore {
                 }
             })
             .await
-            .map_err(|e: FdbBindingError| StoreError::Backend(format!("FDB transaction: {e}")))
+            .map_err(StoreError::from)
     }
 
     async fn get_cn_load_summary(
@@ -7498,10 +7448,8 @@ impl Store for FdbStore {
                 async move { Ok(tr.get(&key, false).await?.map(|s| s.to_vec())) }
             })
             .await;
-        match bytes.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))? {
-            Some(bytes) => Ok(Some(serde_json::from_slice(&bytes).map_err(|e| {
-                StoreError::Backend(format!("deserialize cn_load_summary: {e}"))
-            })?)),
+        match bytes.map_err(StoreError::from)? {
+            Some(bytes) => Ok(Some(serde_json::from_slice(&bytes).map_err(de_err("cn_load_summary"))?)),
             None => Ok(None),
         }
     }
@@ -7527,11 +7475,11 @@ impl Store for FdbStore {
             })
             .await;
         let bytes_list =
-            bytes_list.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+            bytes_list.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(bytes_list.len());
         for bytes in bytes_list {
             let v: CnLoadSummary = serde_json::from_slice(&bytes)
-                .map_err(|e| StoreError::Backend(format!("deserialize cn_load_summary: {e}")))?;
+                .map_err(de_err("cn_load_summary"))?;
             out.push(v);
         }
         out.sort_by_key(|s| s.server_uuid);
@@ -7542,7 +7490,7 @@ impl Store for FdbStore {
         let by_id_key = Self::instance_affinity_key(row.instance_id);
         let by_tenant_key = Self::instance_affinity_by_tenant_key(row.tenant_uuid, row.instance_id);
         let value = serde_json::to_vec(&row)
-            .map_err(|e| StoreError::Backend(format!("serialize instance_affinity: {e}")))?;
+            .map_err(ser_err("instance_affinity"))?;
         // If the row's tenant changed across edits we'd leak the old
         // by_tenant index entry; for v1 the tenant is fixed at create
         // time and never re-parented, so we don't pay for the read
@@ -7560,7 +7508,7 @@ impl Store for FdbStore {
                 }
             })
             .await
-            .map_err(|e: FdbBindingError| StoreError::Backend(format!("FDB transaction: {e}")))
+            .map_err(StoreError::from)
     }
 
     async fn get_instance_affinity(
@@ -7576,10 +7524,10 @@ impl Store for FdbStore {
             })
             .await;
         let bytes = bytes
-            .map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?
+            .map_err(StoreError::from)?
             .ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize instance_affinity: {e}")))
+            .map_err(de_err("instance_affinity"))
     }
 
     async fn list_instance_affinities_for_tenant(
@@ -7609,23 +7557,15 @@ impl Store for FdbStore {
                     let mut out = Vec::with_capacity(kvs.len());
                     for kv in kvs.iter() {
                         let suffix = &kv.key()[prefix_len..];
-                        let s = std::str::from_utf8(suffix).map_err(|e| {
-                            FdbBindingError::CustomError(
-                                format!("instance_affinity_by_tenant key utf-8: {e}").into(),
-                            )
-                        })?;
-                        let id = Uuid::parse_str(s).map_err(|e| {
-                            FdbBindingError::CustomError(
-                                format!("parse instance_id uuid: {e}").into(),
-                            )
-                        })?;
+                        let s = std::str::from_utf8(suffix).map_err(txn_err("instance_affinity_by_tenant key utf-8"))?;
+                        let id = Uuid::parse_str(s).map_err(txn_err("parse instance_id uuid"))?;
                         out.push(id);
                     }
                     Ok(out)
                 }
             })
             .await;
-        let ids = ids.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let ids = ids.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(ids.len());
         for id in ids {
             // Reads happen outside the index-scan transaction; PL-2
@@ -7714,7 +7654,7 @@ impl Store for FdbStore {
         let instance_key = Self::instance_by_id_key(smartos_uuid);
         let new_membership_key = Self::legacy_vm_in_host_cn_key(new_host, smartos_uuid);
         let value = serde_json::to_vec(&legacy_vm)
-            .map_err(|e| StoreError::Backend(format!("serialize legacy_vm: {e}")))?;
+            .map_err(ser_err("legacy_vm"))?;
 
         // Sentinel for the UUID-uniqueness check; outer match
         // converts to a typed StoreError without leaking FDB.
@@ -7748,11 +7688,7 @@ impl Store for FdbStore {
                     // entry inside the same txn so the move is atomic.
                     if let Some(existing_bytes) = tr.get(&by_id_key, false).await? {
                         let existing: LegacyVm =
-                            serde_json::from_slice(&existing_bytes).map_err(|e| {
-                                FdbBindingError::CustomError(
-                                    format!("deserialize legacy_vm: {e}").into(),
-                                )
-                            })?;
+                            serde_json::from_slice(&existing_bytes).map_err(txn_de_err("legacy_vm"))?;
                         if existing.host_cn_uuid != new_host {
                             let old_membership_key =
                                 Self::legacy_vm_in_host_cn_key(existing.host_cn_uuid, smartos_uuid);
@@ -7770,7 +7706,7 @@ impl Store for FdbStore {
             Ok(Outcome::ConflictWithInstance) => Err(StoreError::Conflict(format!(
                 "smartos_uuid {smartos_uuid} already exists as a managed Instance",
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -7778,7 +7714,7 @@ impl Store for FdbStore {
         let key = Self::legacy_vm_by_id_key(smartos_uuid);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize legacy_vm: {e}")))
+            .map_err(de_err("legacy_vm"))
     }
 
     async fn list_legacy_vms(&self) -> Result<Vec<LegacyVm>, StoreError> {
@@ -7812,11 +7748,11 @@ impl Store for FdbStore {
             })
             .await;
         let bytes_list =
-            bytes_list.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+            bytes_list.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(bytes_list.len());
         for bytes in bytes_list {
             let v: LegacyVm = serde_json::from_slice(&bytes)
-                .map_err(|e| StoreError::Backend(format!("deserialize legacy_vm: {e}")))?;
+                .map_err(de_err("legacy_vm"))?;
             out.push(v);
         }
         out.sort_by_key(|v| v.smartos_uuid);
@@ -7856,7 +7792,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
             let id = Uuid::parse_str(&s)
@@ -7864,7 +7800,7 @@ impl Store for FdbStore {
             let by_id_key = Self::legacy_vm_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let v: LegacyVm = serde_json::from_slice(&bytes)
-                    .map_err(|e| StoreError::Backend(format!("deserialize legacy_vm: {e}")))?;
+                    .map_err(de_err("legacy_vm"))?;
                 out.push(v);
             }
         }
@@ -7880,11 +7816,7 @@ impl Store for FdbStore {
                 let by_id_key = by_id_key.clone();
                 async move {
                     if let Some(bytes) = tr.get(&by_id_key, false).await? {
-                        let existing: LegacyVm = serde_json::from_slice(&bytes).map_err(|e| {
-                            FdbBindingError::CustomError(
-                                format!("deserialize legacy_vm: {e}").into(),
-                            )
-                        })?;
+                        let existing: LegacyVm = serde_json::from_slice(&bytes).map_err(txn_de_err("legacy_vm"))?;
                         let membership_key =
                             Self::legacy_vm_in_host_cn_key(existing.host_cn_uuid, smartos_uuid);
                         tr.clear(&membership_key);
@@ -7895,7 +7827,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+        result.map_err(StoreError::from)
     }
 
     async fn get_auto_approve_window(&self) -> Result<Option<AutoApproveWindow>, StoreError> {
@@ -7903,9 +7835,7 @@ impl Store for FdbStore {
         let bytes = self.read_bytes(&key).await?;
         match bytes {
             Some(bytes) => {
-                let w: AutoApproveWindow = serde_json::from_slice(&bytes).map_err(|e| {
-                    StoreError::Backend(format!("deserialize auto-approve window: {e}"))
-                })?;
+                let w: AutoApproveWindow = serde_json::from_slice(&bytes).map_err(de_err("auto-approve window"))?;
                 Ok(Some(w))
             }
             None => Ok(None),
@@ -7914,7 +7844,7 @@ impl Store for FdbStore {
 
     async fn open_auto_approve_window(&self, w: AutoApproveWindow) -> Result<(), StoreError> {
         let value = serde_json::to_vec(&w)
-            .map_err(|e| StoreError::Backend(format!("serialize auto-approve window: {e}")))?;
+            .map_err(ser_err("auto-approve window"))?;
         let key = Self::auto_approve_window_key().to_vec();
         let result: Result<(), FdbBindingError> = self
             .db
@@ -7927,7 +7857,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+        result.map_err(StoreError::from)
     }
 
     async fn close_auto_approve_window(&self) -> Result<(), StoreError> {
@@ -7942,7 +7872,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+        result.map_err(StoreError::from)
     }
 
     async fn try_consume_auto_approve_slot(
@@ -7957,7 +7887,7 @@ impl Store for FdbStore {
                 async move { consume_auto_approve_slot_in_txn(&tr, &key, now).await }
             })
             .await;
-        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+        result.map_err(StoreError::from)
     }
 
     // ------------------------------------------------------------------
@@ -8021,7 +7951,7 @@ impl Store for FdbStore {
             Ok(Outcome::SerializeFailed) => {
                 Err(StoreError::Backend("serialize realization row".to_string()))
             }
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -8055,7 +7985,7 @@ impl Store for FdbStore {
             })
             .await;
 
-        let mut rows = result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let mut rows = result.map_err(StoreError::from)?;
         rows.sort_by(|a, b| {
             a.realizer
                 .kind_tag()
@@ -8099,12 +8029,12 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let kvs = kvs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let kvs = kvs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(kvs.len());
         for bytes in kvs {
             let silo: Silo = serde_json::from_slice(&bytes)
-                .map_err(|e| StoreError::Backend(format!("deserialize silo: {e}")))?;
+                .map_err(de_err("silo"))?;
             out.push(silo);
         }
         out.sort_by(|a, b| a.name.cmp(&b.name));
@@ -8156,7 +8086,7 @@ impl Store for FdbStore {
             None => Ok(None),
             Some(bytes) => {
                 let pool: DhcpPool = serde_json::from_slice(&bytes)
-                    .map_err(|e| StoreError::Backend(format!("deserialize dhcp pool: {e}")))?;
+                    .map_err(de_err("dhcp pool"))?;
                 Ok(Some(pool))
             }
         }
@@ -8197,9 +8127,7 @@ impl Store for FdbStore {
                         created_at,
                         updated_at: now,
                     };
-                    let value = serde_json::to_vec(&pool).map_err(|e| {
-                        FdbBindingError::CustomError(format!("serialize dhcp pool: {e}").into())
-                    })?;
+                    let value = serde_json::to_vec(&pool).map_err(txn_ser_err("dhcp pool"))?;
                     tr.set(&pool_key, &value);
                     Ok(Outcome::Stored(Box::new(pool)))
                 }
@@ -8209,7 +8137,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(Outcome::Stored(pool)) => Ok(*pool),
             Ok(Outcome::VpcMissing) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -8238,7 +8166,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(Out::Cleared) => Ok(()),
             Ok(Out::Missing) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -8265,12 +8193,12 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let values = values.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let values = values.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(values.len());
         for bytes in values {
             let reservation: DhcpReservation = serde_json::from_slice(&bytes)
-                .map_err(|e| StoreError::Backend(format!("deserialize dhcp reservation: {e}")))?;
+                .map_err(de_err("dhcp reservation"))?;
             out.push(reservation);
         }
         out.sort_by(|a, b| a.mac.cmp(&b.mac));
@@ -8332,11 +8260,7 @@ impl Store for FdbStore {
                         per_mac_options: req.per_mac_options,
                         created_at: now,
                     };
-                    let value = serde_json::to_vec(&reservation).map_err(|e| {
-                        FdbBindingError::CustomError(
-                            format!("serialize dhcp reservation: {e}").into(),
-                        )
-                    })?;
+                    let value = serde_json::to_vec(&reservation).map_err(txn_ser_err("dhcp reservation"))?;
                     tr.set(&res_key, &value);
                     Ok(Outcome::Created(Box::new(reservation)))
                 }
@@ -8355,7 +8279,7 @@ impl Store for FdbStore {
                     "mac {mac} already reserved with a different ipv4 ({existing_ipv4}); delete first"
                 )))
             }
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -8368,7 +8292,7 @@ impl Store for FdbStore {
         let key = Self::dhcp_reservation_by_vpc_mac_key(vpc_id, &mac);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize dhcp reservation: {e}")))
+            .map_err(de_err("dhcp reservation"))
     }
 
     async fn delete_dhcp_reservation(&self, vpc_id: Uuid, mac: &str) -> Result<(), StoreError> {
@@ -8396,7 +8320,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(Out::Deleted) => Ok(()),
             Ok(Out::Missing) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -8413,14 +8337,14 @@ impl Store for FdbStore {
         let key = Self::dhcp_lease_by_vpc_mac_key(vpc_id, &mac);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize dhcp lease: {e}")))
+            .map_err(de_err("dhcp lease"))
     }
 
     async fn record_dhcp_lease(&self, mut lease: DhcpLease) -> Result<DhcpLease, StoreError> {
         lease.mac = crate::types::canonical_mac(&lease.mac)?;
         let key = Self::dhcp_lease_by_vpc_mac_key(lease.vpc_id, &lease.mac);
         let value = serde_json::to_vec(&lease)
-            .map_err(|e| StoreError::Backend(format!("serialize dhcp lease: {e}")))?;
+            .map_err(ser_err("dhcp lease"))?;
         // RFD 00007 AP-1c: MAC -> vpc index. Stored as the canonical
         // lease key components so a reader can resolve a bare MAC to
         // its parent VPC without scanning every VPC's lease prefix.
@@ -8441,7 +8365,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        result.map_err(StoreError::from)?;
         Ok(lease)
     }
 
@@ -8483,7 +8407,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(Out::Deleted) => Ok(()),
             Ok(Out::Missing) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -8569,7 +8493,7 @@ impl Store for FdbStore {
             Ok(Outcome::SerializeFailed(e)) => Err(StoreError::Backend(format!(
                 "serialize storage cluster: {e}"
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -8577,7 +8501,7 @@ impl Store for FdbStore {
         let key = Self::storage_cluster_by_id_key(id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize storage cluster: {e}")))
+            .map_err(de_err("storage cluster"))
     }
 
     async fn get_storage_cluster_by_name(&self, name: &str) -> Result<StorageCluster, StoreError> {
@@ -8621,7 +8545,7 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -8672,7 +8596,7 @@ impl Store for FdbStore {
             Ok(Out::Corrupt(e)) => Err(StoreError::Backend(format!(
                 "deserialize storage cluster: {e}"
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -8725,7 +8649,7 @@ impl Store for FdbStore {
             Ok(Out::SerializeFailed(e)) => Err(StoreError::Backend(format!(
                 "serialize storage cluster: {e}"
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -8793,7 +8717,7 @@ impl Store for FdbStore {
             Ok(Out::SerializeFailed(e)) => Err(StoreError::Backend(format!(
                 "serialize storage cluster: {e}"
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 }
@@ -8901,9 +8825,7 @@ async fn consume_auto_approve_slot_in_txn(
         Some(b) => b,
         None => return Ok(false),
     };
-    let mut window: AutoApproveWindow = serde_json::from_slice(&bytes).map_err(|e| {
-        FdbBindingError::CustomError(format!("deserialize auto-approve window: {e}").into())
-    })?;
+    let mut window: AutoApproveWindow = serde_json::from_slice(&bytes).map_err(txn_de_err("auto-approve window"))?;
     if now >= window.expires_at {
         tr.clear(window_key);
         return Ok(false);
@@ -8919,11 +8841,7 @@ async fn consume_auto_approve_slot_in_txn(
             if exhausted {
                 tr.clear(window_key);
             } else {
-                let value = serde_json::to_vec(&window).map_err(|e| {
-                    FdbBindingError::CustomError(
-                        format!("serialize auto-approve window: {e}").into(),
-                    )
-                })?;
+                let value = serde_json::to_vec(&window).map_err(txn_ser_err("auto-approve window"))?;
                 tr.set(window_key, &value);
             }
             Ok(true)
@@ -8943,7 +8861,7 @@ impl FdbStore {
                 async move { Ok(tr.get(&key, false).await?.map(|s| s.to_vec())) }
             })
             .await;
-        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+        result.map_err(StoreError::from)
     }
 
     async fn read_nat_gateway_record(
@@ -8953,7 +8871,7 @@ impl FdbStore {
         let key = Self::nat_gateway_by_id_key(nat_gateway_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize nat gateway: {e}")))
+            .map_err(de_err("nat gateway"))
     }
 
     /// Range-scan a `dhcp_lease/by_vpc/...` prefix and decode every
@@ -8977,12 +8895,12 @@ impl FdbStore {
                 }
             })
             .await;
-        let values = values.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let values = values.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(values.len());
         for bytes in values {
             let lease: DhcpLease = serde_json::from_slice(&bytes)
-                .map_err(|e| StoreError::Backend(format!("deserialize dhcp lease: {e}")))?;
+                .map_err(de_err("dhcp lease"))?;
             out.push(lease);
         }
         Ok(out)
@@ -8995,7 +8913,7 @@ impl FdbStore {
         let key = Self::edge_cluster_by_id_key(edge_cluster_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
-            .map_err(|e| StoreError::Backend(format!("deserialize edge cluster: {e}")))
+            .map_err(de_err("edge cluster"))
     }
 
     /// Shared body for the per-scope `create_image_*` methods.
@@ -9037,7 +8955,7 @@ impl FdbStore {
             created_at: Utc::now(),
         };
         let value = serde_json::to_vec(&image)
-            .map_err(|e| StoreError::Backend(format!("serialize image: {e}")))?;
+            .map_err(ser_err("image"))?;
         let by_id_key = Self::image_by_id_key(image.id);
         let in_scope_key = in_scope_key_for(image.id);
         let id_str = image.id.to_string();
@@ -9089,7 +9007,7 @@ impl FdbStore {
                 "image with id {} already exists",
                 image.id,
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -9122,7 +9040,7 @@ impl FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
             let id = Uuid::parse_str(&s)
@@ -9130,7 +9048,7 @@ impl FdbStore {
             let by_id_key = Self::image_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let image: Image = serde_json::from_slice(&bytes)
-                    .map_err(|e| StoreError::Backend(format!("deserialize image: {e}")))?;
+                    .map_err(de_err("image"))?;
                 out.push(image);
             }
         }
@@ -9170,7 +9088,7 @@ impl FdbStore {
             created_at: Utc::now(),
         };
         let value = serde_json::to_vec(&key)
-            .map_err(|e| StoreError::Backend(format!("serialize ssh key: {e}")))?;
+            .map_err(ser_err("ssh key"))?;
         let by_id_key = Self::ssh_key_by_id_key(key.id);
         let in_scope_key = in_scope_key_for(key.id);
         let id_str = key.id.to_string();
@@ -9231,7 +9149,7 @@ impl FdbStore {
                 "ssh key with id {} already exists",
                 key.id,
             ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -9263,7 +9181,7 @@ impl FdbStore {
                 }
             })
             .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let id_strs = id_strs.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
             let id = Uuid::parse_str(&s)
@@ -9271,7 +9189,7 @@ impl FdbStore {
             let by_id_key = Self::ssh_key_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
                 let key: SshKey = serde_json::from_slice(&bytes)
-                    .map_err(|e| StoreError::Backend(format!("deserialize ssh key: {e}")))?;
+                    .map_err(de_err("ssh key"))?;
                 out.push(key);
             }
         }
