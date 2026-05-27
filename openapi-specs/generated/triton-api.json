@@ -1099,6 +1099,10 @@
             "default": "travispaul/triton-lb-controller:latest",
             "type": "string"
           },
+          "controller_key_pem": {
+            "description": "PEM-encoded private key the controller uses to authenticate to CloudAPI as the cluster owner. The matching public key must be registered on the cluster owner's Triton account.",
+            "type": "string"
+          },
           "external_cns_suffix": {
             "nullable": true,
             "description": "Override external CNS suffix (auto-discovered from public network if absent).",
@@ -1114,7 +1118,10 @@
             "default": "sample-1G",
             "type": "string"
           }
-        }
+        },
+        "required": [
+          "controller_key_pem"
+        ]
       },
       "Jwk": {
         "description": "A single JWK entry.",

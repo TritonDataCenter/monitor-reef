@@ -60,6 +60,9 @@ uuid = { workspace = true }
 yamux = { workspace = true }
 kube = { workspace = true }
 k8s-openapi = { workspace = true }
+md-5 = { workspace = true }
+ssh-encoding = { workspace = true }
+ssh-key = { workspace = true }
 
 [build-dependencies]
 build-data = { workspace = true }

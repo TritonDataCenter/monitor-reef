@@ -259,6 +259,11 @@ pub struct InstallLbRequest {
     /// Controller container image.
     #[serde(default = "default_controller_image")]
     pub controller_image: String,
+
+    /// PEM-encoded private key the controller uses to authenticate to CloudAPI
+    /// as the cluster owner. The matching public key must be registered on the
+    /// cluster owner's Triton account.
+    pub controller_key_pem: String,
 }
 
 fn default_lb_package() -> String {

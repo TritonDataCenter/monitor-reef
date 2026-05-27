@@ -1932,8 +1932,7 @@ async fn run_lb_install(
         "triton-url".to_string(),
         operator_creds.cloudapi_url.clone(),
     );
-    configmap_data.insert("triton-account".to_string(), operator_creds.account_login.clone());
-    configmap_data.insert("triton-act-as".to_string(), provision_account.clone());
+    configmap_data.insert("triton-account".to_string(), provision_account.clone());
     configmap_data.insert(
         "triton-insecure".to_string(),
         operator_creds.insecure.to_string(),
@@ -1950,10 +1949,15 @@ async fn run_lb_install(
     configmap_data.insert("cluster-uuid".to_string(), cluster_id.to_string());
     configmap_data.insert("requeue-after-seconds".to_string(), "30".to_string());
 
-    // Secret data: operator credentials for the controller to use at runtime.
+    // Secret data: cluster owner credentials for the controller to use at runtime.
+    // The controller runs inside the cluster and authenticates directly as the
+    // cluster owner (not the operator), so it can create LB VMs in the owner's
+    // account using the owner's fabric/public network UUIDs.
+    let controller_key_fingerprint = ssh_md5_fingerprint(&req.controller_key_pem)
+        .context("compute MD5 fingerprint of controller key")?;
     let mut secret_data = std::collections::BTreeMap::new();
-    secret_data.insert("key-id".to_string(), operator_creds.key_id.clone());
-    secret_data.insert("private-key".to_string(), operator_creds.key_pem.clone());
+    secret_data.insert("key-id".to_string(), controller_key_fingerprint);
+    secret_data.insert("private-key".to_string(), req.controller_key_pem.clone());
 
     tracing::info!(cluster = %cluster_id, "lb-install: applying k8s resources via relay");
 
@@ -2536,6 +2540,25 @@ async fn build_cloudapi_client(
         cfg.url, cfg.account
     );
     Ok(Some(Arc::new(client)))
+}
+
+/// Compute the MD5 SSH fingerprint of a PEM-encoded private key.
+///
+/// Returns the fingerprint in colon-separated hex format (`aa:bb:cc:...`),
+/// which is what Triton CloudAPI uses in HTTP Signature `keyId` paths.
+fn ssh_md5_fingerprint(key_pem: &str) -> anyhow::Result<String> {
+    use md5::Digest as _;
+    use ssh_encoding::Encode as _;
+
+    let pk = ssh_key::PrivateKey::from_openssh(key_pem.trim())
+        .context("parse SSH private key for fingerprint computation")?;
+    let wire = pk
+        .public_key()
+        .to_bytes()
+        .context("encode SSH public key to wire format")?;
+    let hash = md5::Md5::digest(&wire);
+    let parts: Vec<String> = hash.iter().map(|b| format!("{b:02x}")).collect();
+    Ok(parts.join(":"))
 }
 
 /// Load operator credential material for lb install.

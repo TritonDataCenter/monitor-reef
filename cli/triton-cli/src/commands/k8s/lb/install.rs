@@ -4,7 +4,7 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Args;
 use triton_gateway_client::TypedClient;
 use triton_gateway_client::types::InstallLbRequest;
@@ -32,10 +32,24 @@ pub struct InstallArgs {
     /// Controller container image
     #[arg(long, default_value = "travispaul/triton-lb-controller:latest")]
     pub controller_image: String,
+
+    /// Path to the PEM private key the lb controller uses to authenticate
+    /// to CloudAPI as the cluster owner
+    #[arg(long)]
+    pub controller_key_path: std::path::PathBuf,
 }
 
 pub async fn run(args: InstallArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let cluster = resolve_cluster(&args.cluster, client).await?;
+
+    let controller_key_pem = tokio::fs::read_to_string(&args.controller_key_path)
+        .await
+        .with_context(|| {
+            format!(
+                "read controller key file {}",
+                args.controller_key_path.display()
+            )
+        })?;
 
     let result = client
         .inner()
@@ -46,6 +60,7 @@ pub async fn run(args: InstallArgs, client: &TypedClient, use_json: bool) -> Res
             image: args.image,
             external_cns_suffix: args.external_cns_suffix,
             controller_image: args.controller_image,
+            controller_key_pem,
         })
         .send()
         .await

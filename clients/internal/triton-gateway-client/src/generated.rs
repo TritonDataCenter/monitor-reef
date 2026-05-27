@@ -4546,10 +4546,17 @@ pub mod types {
     #[doc = "{"]
     #[doc = "  \"description\": \"Body of `POST /v1/k8s/clusters/{cluster}/lb`.\","]
     #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"controller_key_pem\""]
+    #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"controller_image\": {"]
     #[doc = "      \"description\": \"Controller container image.\","]
     #[doc = "      \"default\": \"travispaul/triton-lb-controller:latest\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"controller_key_pem\": {"]
+    #[doc = "      \"description\": \"PEM-encoded private key the controller uses to authenticate to CloudAPI as the cluster owner. The matching public key must be registered on the cluster owner's Triton account.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"external_cns_suffix\": {"]
@@ -4582,6 +4589,8 @@ pub mod types {
         #[doc = "Controller container image."]
         #[serde(default = "defaults::install_lb_request_controller_image")]
         pub controller_image: ::std::string::String,
+        #[doc = "PEM-encoded private key the controller uses to authenticate to CloudAPI as the cluster owner. The matching public key must be registered on the cluster owner's Triton account."]
+        pub controller_key_pem: ::std::string::String,
         #[doc = "Override external CNS suffix (auto-discovered from public network if absent)."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub external_cns_suffix: ::std::option::Option<::std::string::String>,
@@ -4591,17 +4600,6 @@ pub mod types {
         #[doc = "Triton package for LoadBalancer VMs."]
         #[serde(default = "defaults::install_lb_request_package")]
         pub package: ::std::string::String,
-    }
-
-    impl ::std::default::Default for InstallLbRequest {
-        fn default() -> Self {
-            Self {
-                controller_image: defaults::install_lb_request_controller_image(),
-                external_cns_suffix: Default::default(),
-                image: Default::default(),
-                package: defaults::install_lb_request_package(),
-            }
-        }
     }
 
     impl InstallLbRequest {
@@ -15228,6 +15226,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct InstallLbRequest {
             controller_image: ::std::result::Result<::std::string::String, ::std::string::String>,
+            controller_key_pem: ::std::result::Result<::std::string::String, ::std::string::String>,
             external_cns_suffix: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
@@ -15243,6 +15242,7 @@ pub mod types {
             fn default() -> Self {
                 Self {
                     controller_image: Ok(super::defaults::install_lb_request_controller_image()),
+                    controller_key_pem: Err("no value supplied for controller_key_pem".to_string()),
                     external_cns_suffix: Ok(Default::default()),
                     image: Ok(Default::default()),
                     package: Ok(super::defaults::install_lb_request_package()),
@@ -15258,6 +15258,16 @@ pub mod types {
             {
                 self.controller_image = value.try_into().map_err(|e| {
                     format!("error converting supplied value for controller_image: {e}")
+                });
+                self
+            }
+            pub fn controller_key_pem<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.controller_key_pem = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for controller_key_pem: {e}")
                 });
                 self
             }
@@ -15300,6 +15310,7 @@ pub mod types {
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
                     controller_image: value.controller_image?,
+                    controller_key_pem: value.controller_key_pem?,
                     external_cns_suffix: value.external_cns_suffix?,
                     image: value.image?,
                     package: value.package?,
@@ -15311,6 +15322,7 @@ pub mod types {
             fn from(value: super::InstallLbRequest) -> Self {
                 Self {
                     controller_image: Ok(value.controller_image),
+                    controller_key_pem: Ok(value.controller_key_pem),
                     external_cns_suffix: Ok(value.external_cns_suffix),
                     image: Ok(value.image),
                     package: Ok(value.package),

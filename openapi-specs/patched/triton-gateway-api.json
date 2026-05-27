@@ -1802,6 +1802,10 @@
             "description": "Controller container image.",
             "type": "string"
           },
+          "controller_key_pem": {
+            "description": "PEM-encoded private key the controller uses to authenticate to CloudAPI as the cluster owner. The matching public key must be registered on the cluster owner's Triton account.",
+            "type": "string"
+          },
           "external_cns_suffix": {
             "description": "Override external CNS suffix (auto-discovered from public network if absent).",
             "nullable": true,
@@ -1818,6 +1822,9 @@
             "type": "string"
           }
         },
+        "required": [
+          "controller_key_pem"
+        ],
         "type": "object"
       },
       "Jwk": {
