@@ -690,33 +690,30 @@ impl Store for FdbStore {
         let by_id_key = keys::apikey_by_id_key(key_id);
         let user_index_key = keys::apikey_user_index_key(user_id, key_id);
 
-        // We need the lookup_id to clear the by_lookup index. Read
-        // the record outside the transaction; the rare race where it
-        // was concurrently deleted resolves to NotFound below.
-        let record_bytes = match self.read_bytes(&by_id_key).await? {
-            Some(bytes) => bytes,
-            None => return Err(StoreError::NotFound),
-        };
-        let record: ApiKey = serde_json::from_slice(&record_bytes)
-            .map_err(de_err("api key"))?;
-        if record.user_id != user_id {
-            return Err(StoreError::NotFound);
-        }
-        let by_lookup_key = keys::apikey_by_lookup_key(&record.lookup_id);
-
         let outcome: Result<DeleteOutcome, FdbBindingError> = self
             .db
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
-                let by_lookup_key = by_lookup_key.clone();
                 let user_index_key = user_index_key.clone();
                 async move {
-                    // The user-index entry is the source of truth for
+                    // user-index entry is the source of truth for
                     // ownership; if it's gone, somebody already
                     // deleted the key.
                     if tr.get(&user_index_key, false).await?.is_none() {
                         return Ok(DeleteOutcome::NotFound);
                     }
+                    // Read the record inside the txn so the lookup_id
+                    // we clear is consistent with the commit snapshot.
+                    let record_bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(DeleteOutcome::NotFound),
+                    };
+                    let record: ApiKey =
+                        serde_json::from_slice(&record_bytes).map_err(txn_de_err("api key"))?;
+                    if record.user_id != user_id {
+                        return Ok(DeleteOutcome::NotFound);
+                    }
+                    let by_lookup_key = keys::apikey_by_lookup_key(&record.lookup_id);
                     tr.clear(&by_id_key);
                     tr.clear(&by_lookup_key);
                     tr.clear(&user_index_key);
@@ -1214,18 +1211,7 @@ impl Store for FdbStore {
     }
 
     async fn delete_project(&self, project_id: Uuid) -> Result<(), StoreError> {
-        // Read the row outside the transaction so we know the
-        // tenant_id + name to clear from the indices. Concurrent
-        // delete shows up as Outcome::Vanished below.
         let by_id_key = keys::project_by_id_key(project_id);
-        let bytes = match self.read_bytes(&by_id_key).await? {
-            Some(b) => b,
-            None => return Err(StoreError::NotFound),
-        };
-        let project: Project = serde_json::from_slice(&bytes)
-            .map_err(de_err("project"))?;
-        let by_name_key = keys::project_by_tenant_name_key(project.tenant_id, &project.name);
-        let in_tenant_key = keys::project_in_tenant_key(project.tenant_id, project.id);
 
         enum DelOut {
             Deleted,
@@ -1235,12 +1221,17 @@ impl Store for FdbStore {
             .db
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
-                let by_name_key = by_name_key.clone();
-                let in_tenant_key = in_tenant_key.clone();
                 async move {
-                    if tr.get(&by_id_key, false).await?.is_none() {
-                        return Ok(DelOut::Vanished);
-                    }
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(DelOut::Vanished),
+                    };
+                    let project: Project =
+                        serde_json::from_slice(&bytes).map_err(txn_de_err("project"))?;
+                    let by_name_key =
+                        keys::project_by_tenant_name_key(project.tenant_id, &project.name);
+                    let in_tenant_key =
+                        keys::project_in_tenant_key(project.tenant_id, project.id);
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&in_tenant_key);
@@ -1377,30 +1368,23 @@ impl Store for FdbStore {
     }
 
     async fn delete_tenant(&self, tenant_id: Uuid) -> Result<(), StoreError> {
-        // Read the row outside the transaction so we know the
-        // silo_id + name to clear from the indices. Concurrent
-        // delete shows up as DelOut::Vanished below.
         let by_id_key = keys::tenant_by_id_key(tenant_id);
-        let bytes = match self.read_bytes(&by_id_key).await? {
-            Some(b) => b,
-            None => return Err(StoreError::NotFound),
-        };
-        let tenant: Tenant = serde_json::from_slice(&bytes)
-            .map_err(de_err("tenant"))?;
-        let by_name_key = keys::tenant_by_silo_name_key(tenant.silo_id, &tenant.name);
-        let in_silo_key = keys::tenant_in_silo_key(tenant.silo_id, tenant.id);
 
         // TODO(slice E-3): reject deletion when child projects exist
         let outcome: Result<DeleteOutcome, FdbBindingError> = self
             .db
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
-                let by_name_key = by_name_key.clone();
-                let in_silo_key = in_silo_key.clone();
                 async move {
-                    if tr.get(&by_id_key, false).await?.is_none() {
-                        return Ok(DeleteOutcome::NotFound);
-                    }
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(DeleteOutcome::NotFound),
+                    };
+                    let tenant: Tenant =
+                        serde_json::from_slice(&bytes).map_err(txn_de_err("tenant"))?;
+                    let by_name_key =
+                        keys::tenant_by_silo_name_key(tenant.silo_id, &tenant.name);
+                    let in_silo_key = keys::tenant_in_silo_key(tenant.silo_id, tenant.id);
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&in_silo_key);
@@ -1601,27 +1585,13 @@ impl Store for FdbStore {
     }
 
     async fn delete_vpc(&self, vpc_id: Uuid) -> Result<(), StoreError> {
-        // Read the row outside the transaction so we know project_id +
-        // name + vni for the index clears.
         let by_id_key = keys::vpc_by_id_key(vpc_id);
-        let bytes = match self.read_bytes(&by_id_key).await? {
-            Some(b) => b,
-            None => return Err(StoreError::NotFound),
-        };
-        let vpc: Vpc = serde_json::from_slice(&bytes)
-            .map_err(de_err("vpc"))?;
-        let by_name_key = keys::vpc_by_project_name_key(vpc.project_id, &vpc.name);
-        let in_project_key = keys::vpc_in_project_key(vpc.project_id, vpc.id);
-        let by_vni_key = keys::vpc_by_vni_key(vpc.vni);
         let subnet_prefix = keys::subnet_in_vpc_prefix(vpc_id);
         let (subnet_begin, subnet_end) = prefix_range(&subnet_prefix);
         let route_table_prefix = keys::route_table_in_vpc_prefix(vpc_id);
         let (route_table_begin, route_table_end) = prefix_range(&route_table_prefix);
         let route_table_prefix_len = route_table_prefix.len();
-        let main_route_table_id = vpc.main_route_table_id;
-        let main_rt_by_id_key = keys::route_table_by_id_key(main_route_table_id);
         let main_rt_by_name_key = keys::route_table_by_vpc_name_key(vpc_id, MAIN_ROUTE_TABLE_NAME);
-        let main_rt_in_vpc_key = keys::route_table_in_vpc_key(vpc_id, main_route_table_id);
         let main_rt_singleton_key = keys::route_table_main_key(vpc_id);
 
         enum DelOut {
@@ -1634,21 +1604,29 @@ impl Store for FdbStore {
             .db
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
-                let by_name_key = by_name_key.clone();
-                let in_project_key = in_project_key.clone();
-                let by_vni_key = by_vni_key.clone();
                 let subnet_begin = subnet_begin.clone();
                 let subnet_end = subnet_end.clone();
                 let route_table_begin = route_table_begin.clone();
                 let route_table_end = route_table_end.clone();
-                let main_rt_by_id_key = main_rt_by_id_key.clone();
                 let main_rt_by_name_key = main_rt_by_name_key.clone();
-                let main_rt_in_vpc_key = main_rt_in_vpc_key.clone();
                 let main_rt_singleton_key = main_rt_singleton_key.clone();
                 async move {
-                    if tr.get(&by_id_key, false).await?.is_none() {
-                        return Ok(DelOut::Vanished);
-                    }
+                    // Read inside the txn so index clears below come from a
+                    // row consistent with the commit snapshot. (Reading
+                    // outside would let a concurrent update slip in between.)
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(DelOut::Vanished),
+                    };
+                    let vpc: Vpc = serde_json::from_slice(&bytes).map_err(txn_de_err("vpc"))?;
+                    let by_name_key =
+                        keys::vpc_by_project_name_key(vpc.project_id, &vpc.name);
+                    let in_project_key = keys::vpc_in_project_key(vpc.project_id, vpc.id);
+                    let by_vni_key = keys::vpc_by_vni_key(vpc.vni);
+                    let main_rt_by_id_key = keys::route_table_by_id_key(vpc.main_route_table_id);
+                    let main_rt_in_vpc_key =
+                        keys::route_table_in_vpc_key(vpc_id, vpc.main_route_table_id);
+
                     // Refuse the delete if any subnet still references
                     // this VPC. Operator must drop subnets first; no
                     // cascade in Phase 0.
@@ -1673,7 +1651,7 @@ impl Store for FdbStore {
                         let suffix = &kv.key()[route_table_prefix_len..];
                         if let Ok(s) = std::str::from_utf8(suffix)
                             && let Ok(id) = Uuid::parse_str(s)
-                            && id != main_route_table_id
+                            && id != vpc.main_route_table_id
                         {
                             return Ok(DelOut::HasRouteTables);
                         }
@@ -1906,14 +1884,6 @@ impl Store for FdbStore {
 
     async fn delete_subnet(&self, subnet_id: Uuid) -> Result<(), StoreError> {
         let by_id_key = keys::subnet_by_id_key(subnet_id);
-        let bytes = match self.read_bytes(&by_id_key).await? {
-            Some(b) => b,
-            None => return Err(StoreError::NotFound),
-        };
-        let subnet: Subnet = serde_json::from_slice(&bytes)
-            .map_err(de_err("subnet"))?;
-        let by_name_key = keys::subnet_by_vpc_name_key(subnet.vpc_id, &subnet.name);
-        let in_vpc_key = keys::subnet_in_vpc_key(subnet.vpc_id, subnet.id);
 
         enum DelOut {
             Deleted,
@@ -1923,12 +1893,15 @@ impl Store for FdbStore {
             .db
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
-                let by_name_key = by_name_key.clone();
-                let in_vpc_key = in_vpc_key.clone();
                 async move {
-                    if tr.get(&by_id_key, false).await?.is_none() {
-                        return Ok(DelOut::Vanished);
-                    }
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(DelOut::Vanished),
+                    };
+                    let subnet: Subnet =
+                        serde_json::from_slice(&bytes).map_err(txn_de_err("subnet"))?;
+                    let by_name_key = keys::subnet_by_vpc_name_key(subnet.vpc_id, &subnet.name);
+                    let in_vpc_key = keys::subnet_in_vpc_key(subnet.vpc_id, subnet.id);
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&in_vpc_key);
@@ -3135,39 +3108,6 @@ impl Store for FdbStore {
 
     async fn delete_ssh_key(&self, key_id: Uuid) -> Result<(), StoreError> {
         let by_id_key = keys::ssh_key_by_id_key(key_id);
-        let bytes = match self.read_bytes(&by_id_key).await? {
-            Some(b) => b,
-            None => return Err(StoreError::NotFound),
-        };
-        let key: SshKey = serde_json::from_slice(&bytes)
-            .map_err(de_err("ssh key"))?;
-        let (by_name_key, by_fp_key, in_scope_key) = match &key.scope {
-            SshKeyScope::Public => (
-                keys::ssh_key_by_public_name_key(&key.name),
-                keys::ssh_key_by_public_fp_key(&key.fingerprint),
-                keys::ssh_key_in_public_key(key.id),
-            ),
-            SshKeyScope::Silo { silo_id } => (
-                keys::ssh_key_by_silo_name_key(*silo_id, &key.name),
-                keys::ssh_key_by_silo_fp_key(*silo_id, &key.fingerprint),
-                keys::ssh_key_in_silo_key(*silo_id, key.id),
-            ),
-            SshKeyScope::Tenant { tenant_id } => (
-                keys::ssh_key_by_tenant_name_key(*tenant_id, &key.name),
-                keys::ssh_key_by_tenant_fp_key(*tenant_id, &key.fingerprint),
-                keys::ssh_key_in_tenant_key(*tenant_id, key.id),
-            ),
-            SshKeyScope::Project { project_id } => (
-                keys::ssh_key_by_project_name_key(*project_id, &key.name),
-                keys::ssh_key_by_project_fp_key(*project_id, &key.fingerprint),
-                keys::ssh_key_in_project_key(*project_id, key.id),
-            ),
-            SshKeyScope::User { user_id } => (
-                keys::ssh_key_by_user_name_key(*user_id, &key.name),
-                keys::ssh_key_by_user_fp_key(*user_id, &key.fingerprint),
-                keys::ssh_key_by_user_idx_key(*user_id, key.id),
-            ),
-        };
 
         enum DelOut {
             Deleted,
@@ -3177,13 +3117,40 @@ impl Store for FdbStore {
             .db
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
-                let by_name_key = by_name_key.clone();
-                let by_fp_key = by_fp_key.clone();
-                let in_scope_key = in_scope_key.clone();
                 async move {
-                    if tr.get(&by_id_key, false).await?.is_none() {
-                        return Ok(DelOut::Vanished);
-                    }
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(DelOut::Vanished),
+                    };
+                    let key: SshKey =
+                        serde_json::from_slice(&bytes).map_err(txn_de_err("ssh key"))?;
+                    let (by_name_key, by_fp_key, in_scope_key) = match &key.scope {
+                        SshKeyScope::Public => (
+                            keys::ssh_key_by_public_name_key(&key.name),
+                            keys::ssh_key_by_public_fp_key(&key.fingerprint),
+                            keys::ssh_key_in_public_key(key.id),
+                        ),
+                        SshKeyScope::Silo { silo_id } => (
+                            keys::ssh_key_by_silo_name_key(*silo_id, &key.name),
+                            keys::ssh_key_by_silo_fp_key(*silo_id, &key.fingerprint),
+                            keys::ssh_key_in_silo_key(*silo_id, key.id),
+                        ),
+                        SshKeyScope::Tenant { tenant_id } => (
+                            keys::ssh_key_by_tenant_name_key(*tenant_id, &key.name),
+                            keys::ssh_key_by_tenant_fp_key(*tenant_id, &key.fingerprint),
+                            keys::ssh_key_in_tenant_key(*tenant_id, key.id),
+                        ),
+                        SshKeyScope::Project { project_id } => (
+                            keys::ssh_key_by_project_name_key(*project_id, &key.name),
+                            keys::ssh_key_by_project_fp_key(*project_id, &key.fingerprint),
+                            keys::ssh_key_in_project_key(*project_id, key.id),
+                        ),
+                        SshKeyScope::User { user_id } => (
+                            keys::ssh_key_by_user_name_key(*user_id, &key.name),
+                            keys::ssh_key_by_user_fp_key(*user_id, &key.fingerprint),
+                            keys::ssh_key_by_user_idx_key(*user_id, key.id),
+                        ),
+                    };
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&by_fp_key);
@@ -3368,34 +3335,6 @@ impl Store for FdbStore {
 
     async fn delete_image(&self, image_id: Uuid) -> Result<(), StoreError> {
         let by_id_key = keys::image_by_id_key(image_id);
-        let bytes = match self.read_bytes(&by_id_key).await? {
-            Some(b) => b,
-            None => return Err(StoreError::NotFound),
-        };
-        let image: Image = serde_json::from_slice(&bytes)
-            .map_err(de_err("image"))?;
-        let (by_name_key, in_scope_key) = match &image.scope {
-            ImageScope::Public => (
-                keys::image_by_public_name_key(&image.name),
-                keys::image_in_public_key(image.id),
-            ),
-            ImageScope::Silo { silo_id } => (
-                keys::image_by_silo_name_key(*silo_id, &image.name),
-                keys::image_in_silo_key(*silo_id, image.id),
-            ),
-            ImageScope::Tenant { tenant_id } => (
-                keys::image_by_tenant_name_key(*tenant_id, &image.name),
-                keys::image_in_tenant_key(*tenant_id, image.id),
-            ),
-            ImageScope::Project { project_id } => (
-                keys::image_by_project_name_key(*project_id, &image.name),
-                keys::image_in_project_key(*project_id, image.id),
-            ),
-            ImageScope::User { user_id } => (
-                keys::image_by_user_name_key(*user_id, &image.name),
-                keys::image_by_user_idx_key(*user_id, image.id),
-            ),
-        };
 
         enum DelOut {
             Deleted,
@@ -3405,12 +3344,35 @@ impl Store for FdbStore {
             .db
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
-                let by_name_key = by_name_key.clone();
-                let in_scope_key = in_scope_key.clone();
                 async move {
-                    if tr.get(&by_id_key, false).await?.is_none() {
-                        return Ok(DelOut::Vanished);
-                    }
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(DelOut::Vanished),
+                    };
+                    let image: Image =
+                        serde_json::from_slice(&bytes).map_err(txn_de_err("image"))?;
+                    let (by_name_key, in_scope_key) = match &image.scope {
+                        ImageScope::Public => (
+                            keys::image_by_public_name_key(&image.name),
+                            keys::image_in_public_key(image.id),
+                        ),
+                        ImageScope::Silo { silo_id } => (
+                            keys::image_by_silo_name_key(*silo_id, &image.name),
+                            keys::image_in_silo_key(*silo_id, image.id),
+                        ),
+                        ImageScope::Tenant { tenant_id } => (
+                            keys::image_by_tenant_name_key(*tenant_id, &image.name),
+                            keys::image_in_tenant_key(*tenant_id, image.id),
+                        ),
+                        ImageScope::Project { project_id } => (
+                            keys::image_by_project_name_key(*project_id, &image.name),
+                            keys::image_in_project_key(*project_id, image.id),
+                        ),
+                        ImageScope::User { user_id } => (
+                            keys::image_by_user_name_key(*user_id, &image.name),
+                            keys::image_by_user_idx_key(*user_id, image.id),
+                        ),
+                    };
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&in_scope_key);
