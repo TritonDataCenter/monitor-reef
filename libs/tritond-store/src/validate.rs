@@ -28,6 +28,10 @@ pub const MAX_NAME_BYTES: usize = 63;
 /// sometimes prefix labels.
 pub const MAX_FINGERPRINT_BYTES: usize = 512;
 
+/// Maximum byte length of a username. Federated usernames embed an
+/// IdP URI so this is more generous than [`MAX_NAME_BYTES`].
+pub const MAX_USERNAME_BYTES: usize = 255;
+
 /// Canonical lowercase MAC address (`aa:bb:cc:dd:ee:ff`): 17 chars exact.
 pub const MAC_LEN: usize = 17;
 
@@ -83,6 +87,16 @@ pub fn name(field: &'static str, s: &str) -> Result<(), InvalidInput> {
 /// contain `/`).
 pub fn fingerprint(field: &'static str, s: &str) -> Result<(), InvalidInput> {
     check_basics(field, s, MAX_FINGERPRINT_BYTES, /* allow_internal_slash */ true)
+}
+
+/// Validate a username. Allows internal `/`, `:`, `@` because federated
+/// usernames carry URI components (`subject@https://idp.example`); only
+/// rejects NUL, ASCII control bytes, leading/trailing whitespace, `\\`,
+/// and lengths above [`MAX_NAME_BYTES`]. The auth/IdP layer owns the
+/// stricter shape; storage is defense in depth against
+/// schema-breaking bytes.
+pub fn username(field: &'static str, s: &str) -> Result<(), InvalidInput> {
+    check_basics(field, s, MAX_USERNAME_BYTES, /* allow_internal_slash */ true)
 }
 
 /// Validate a MAC address in canonical lowercase form `aa:bb:cc:dd:ee:ff`.

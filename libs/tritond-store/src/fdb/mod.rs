@@ -407,7 +407,7 @@ impl Store for FdbStore {
     }
 
     async fn create_user(&self, user: User) -> Result<User, StoreError> {
-        validate::name("username", &user.username)?;
+        validate::username("username", &user.username)?;
         let value = serde_json::to_vec(&user)
             .map_err(ser_err("user"))?;
         let by_id_key = keys::user_by_id_key(user.id);

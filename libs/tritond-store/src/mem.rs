@@ -463,7 +463,7 @@ impl Store for MemStore {
     }
 
     async fn create_user(&self, user: User) -> Result<User, StoreError> {
-        validate::name("username", &user.username)?;
+        validate::username("username", &user.username)?;
         let mut guard = self.inner.write().await;
         if guard.user_id_by_username.contains_key(&user.username) {
             return Err(StoreError::Conflict(format!(
