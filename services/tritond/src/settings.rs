@@ -53,22 +53,26 @@ fn apply_env_overrides(mut s: Settings, env: impl Fn(&str) -> Option<String>) ->
             .filter(|v| !v.is_empty())
     };
 
-    if let Some(v) = flag(env_str_key(ConfigKey::ProvisionerInprocessDisabled)) {
+    let bool_for = |key: ConfigKey| key.env_var().and_then(&flag);
+    let u64_for = |key: ConfigKey| key.env_var().and_then(&u64v);
+    let str_for = |key: ConfigKey| key.env_var().and_then(&strv);
+
+    if let Some(v) = bool_for(ConfigKey::ProvisionerInprocessDisabled) {
         s.provisioner_inprocess_disabled = v;
     }
-    if let Some(v) = u64v(env_str_key(ConfigKey::SweeperIntervalSecs)) {
+    if let Some(v) = u64_for(ConfigKey::SweeperIntervalSecs) {
         s.sweeper_interval_secs = v;
     }
-    if let Some(v) = u64v(env_str_key(ConfigKey::StaleClaimThresholdSecs)) {
+    if let Some(v) = u64_for(ConfigKey::StaleClaimThresholdSecs) {
         s.stale_claim_threshold_secs = v;
     }
-    if let Some(v) = u64v(env_str_key(ConfigKey::DhcpReconcileIntervalSecs)) {
+    if let Some(v) = u64_for(ConfigKey::DhcpReconcileIntervalSecs) {
         s.dhcp_reconcile_interval_secs = v;
     }
-    if let Some(v) = u64v(env_str_key(ConfigKey::DhcpLeaseGcThresholdSecs)) {
+    if let Some(v) = u64_for(ConfigKey::DhcpLeaseGcThresholdSecs) {
         s.dhcp_lease_gc_threshold_secs = v;
     }
-    if let Some(raw) = strv(env_str_key(ConfigKey::MetricsBackend)) {
+    if let Some(raw) = str_for(ConfigKey::MetricsBackend) {
         // Mirrors the pre-config behaviour: only "clickhouse" was ever
         // recognised; anything else means the in-memory ring buffer.
         s.metrics_backend = if raw.eq_ignore_ascii_case("clickhouse") {
@@ -77,24 +81,19 @@ fn apply_env_overrides(mut s: Settings, env: impl Fn(&str) -> Option<String>) ->
             MetricsBackend::Memory
         };
     }
-    if let Some(url) = strv(env_str_key(ConfigKey::MetricsClickhouseUrl)) {
+    if let Some(url) = str_for(ConfigKey::MetricsClickhouseUrl) {
         s.metrics_clickhouse_url = Some(url);
     }
-    if let Some(v) = flag(env_str_key(ConfigKey::ImdsEnabledDefault)) {
+    if let Some(v) = bool_for(ConfigKey::ImdsEnabledDefault) {
         s.imds_enabled_default = v;
     }
-    if let Some(v) = u64v(env_str_key(ConfigKey::ImdsHopLimitDefault)) {
+    if let Some(v) = u64_for(ConfigKey::ImdsHopLimitDefault) {
         s.imds_hop_limit_default = v;
     }
-    if let Some(v) = u64v(env_str_key(ConfigKey::SagaRetentionSecs)) {
+    if let Some(v) = u64_for(ConfigKey::SagaRetentionSecs) {
         s.saga_retention_secs = v;
     }
     s
-}
-
-fn env_str_key(key: ConfigKey) -> &'static str {
-    key.env_var()
-        .expect("every current ConfigKey has a legacy env override")
 }
 
 #[cfg(test)]

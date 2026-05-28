@@ -3021,6 +3021,13 @@ pub const DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS: u64 = 7 * 24 * 60 * 60;
 /// RFD 00004 SG-4.
 pub const DEFAULT_SAGA_RETENTION_SECS: u64 = 30 * 24 * 60 * 60;
 
+/// Default storage quota stamped on a newly-minted workspace when the
+/// tenant-create handler issues `mantad create_workspace`. 100 GiB;
+/// tunable per [`Settings::storage_default_workspace_quota_bytes`].
+/// Operators raise per-tenant via the mantad quota endpoint
+/// (`PUT /admin/v1/workspaces/{name}/quota`) post-create.
+pub const DEFAULT_WORKSPACE_QUOTA_BYTES: u64 = 100 * 1024 * 1024 * 1024;
+
 /// Which metrics backend `tritond` stores timeseries in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -3092,6 +3099,20 @@ pub struct Settings {
     /// stay until human cleanup. RFD 00004 SG-4.
     #[serde(rename = "saga.retention_secs")]
     pub saga_retention_secs: u64,
+    /// Fleet-default `StorageCluster` ID that the tenant-create handler
+    /// binds new tenants to. `None` means "no default; tenants are
+    /// created without a workspace binding" — the forwarder layer
+    /// returns 412 on S3 ops against an unbound tenant. Set with
+    /// `tcadm config set storage.default_s3_cluster_id <uuid>` once a
+    /// cluster has been registered.
+    #[serde(rename = "storage.default_s3_cluster_id")]
+    pub storage_default_s3_cluster_id: Option<Uuid>,
+    /// Default per-workspace quota stamped on a newly-minted mantad
+    /// workspace at tenant-create time. Operator raises per-tenant
+    /// via the mantad quota endpoint post-create. Default
+    /// [`DEFAULT_WORKSPACE_QUOTA_BYTES`].
+    #[serde(rename = "storage.default_workspace_quota_bytes")]
+    pub storage_default_workspace_quota_bytes: u64,
 }
 
 impl Default for Settings {
@@ -3107,6 +3128,8 @@ impl Default for Settings {
             imds_enabled_default: DEFAULT_IMDS_ENABLED,
             imds_hop_limit_default: DEFAULT_IMDS_HOP_LIMIT,
             saga_retention_secs: DEFAULT_SAGA_RETENTION_SECS,
+            storage_default_s3_cluster_id: None,
+            storage_default_workspace_quota_bytes: DEFAULT_WORKSPACE_QUOTA_BYTES,
         }
     }
 }
@@ -3179,11 +3202,15 @@ pub enum ConfigKey {
     ImdsHopLimitDefault,
     /// [`Settings::saga_retention_secs`]
     SagaRetentionSecs,
+    /// [`Settings::storage_default_s3_cluster_id`]
+    StorageDefaultS3ClusterId,
+    /// [`Settings::storage_default_workspace_quota_bytes`]
+    StorageDefaultWorkspaceQuotaBytes,
 }
 
 impl ConfigKey {
     /// Every key, in the order `tcadm config list` displays them.
-    pub const ALL: [ConfigKey; 10] = [
+    pub const ALL: [ConfigKey; 12] = [
         ConfigKey::ProvisionerInprocessDisabled,
         ConfigKey::SweeperIntervalSecs,
         ConfigKey::StaleClaimThresholdSecs,
@@ -3194,6 +3221,8 @@ impl ConfigKey {
         ConfigKey::ImdsEnabledDefault,
         ConfigKey::ImdsHopLimitDefault,
         ConfigKey::SagaRetentionSecs,
+        ConfigKey::StorageDefaultS3ClusterId,
+        ConfigKey::StorageDefaultWorkspaceQuotaBytes,
     ];
 
     /// Dotted wire name. Must exactly equal the `#[serde(rename = ...)]`
@@ -3210,6 +3239,8 @@ impl ConfigKey {
             ConfigKey::ImdsEnabledDefault => "imds.enabled_default",
             ConfigKey::ImdsHopLimitDefault => "imds.hop_limit_default",
             ConfigKey::SagaRetentionSecs => "saga.retention_secs",
+            ConfigKey::StorageDefaultS3ClusterId => "storage.default_s3_cluster_id",
+            ConfigKey::StorageDefaultWorkspaceQuotaBytes => "storage.default_workspace_quota_bytes",
         }
     }
 
@@ -3247,6 +3278,12 @@ impl ConfigKey {
             ConfigKey::SagaRetentionSecs => {
                 "how long terminal sagas stay in FDB before the retention pass deletes them (seconds)"
             }
+            ConfigKey::StorageDefaultS3ClusterId => {
+                "fleet-default StorageCluster ID new tenants bind to; unset means tenants are created without a workspace binding"
+            }
+            ConfigKey::StorageDefaultWorkspaceQuotaBytes => {
+                "default quota stamped on a newly-minted mantad workspace at tenant create (bytes)"
+            }
         }
     }
 
@@ -3260,20 +3297,25 @@ impl ConfigKey {
 
     /// Name of the legacy environment variable that, when set,
     /// overrides this key at boot (env > FDB > default). `None` when no
-    /// env override exists.
+    /// env override exists — newer keys without a pre-FDB heritage
+    /// don't carry one.
     pub fn env_var(self) -> Option<&'static str> {
-        Some(match self {
-            ConfigKey::ProvisionerInprocessDisabled => "TRITOND_DISABLE_INPROCESS_PROVISIONER",
-            ConfigKey::SweeperIntervalSecs => "TRITOND_SWEEPER_INTERVAL_SECS",
-            ConfigKey::StaleClaimThresholdSecs => "TRITOND_STALE_CLAIM_THRESHOLD_SECS",
-            ConfigKey::DhcpReconcileIntervalSecs => "TRITOND_DHCP_RECONCILE_INTERVAL_SECS",
-            ConfigKey::DhcpLeaseGcThresholdSecs => "TRITOND_DHCP_LEASE_GC_THRESHOLD_SECS",
-            ConfigKey::MetricsBackend => "TRITOND_METRICS_STORE",
-            ConfigKey::MetricsClickhouseUrl => "TRITOND_METRICS_CLICKHOUSE_URL",
-            ConfigKey::ImdsEnabledDefault => "TRITOND_IMDS_ENABLED_DEFAULT",
-            ConfigKey::ImdsHopLimitDefault => "TRITOND_IMDS_HOP_LIMIT_DEFAULT",
-            ConfigKey::SagaRetentionSecs => "TRITOND_SAGA_RETENTION_SECS",
-        })
+        match self {
+            ConfigKey::ProvisionerInprocessDisabled => {
+                Some("TRITOND_DISABLE_INPROCESS_PROVISIONER")
+            }
+            ConfigKey::SweeperIntervalSecs => Some("TRITOND_SWEEPER_INTERVAL_SECS"),
+            ConfigKey::StaleClaimThresholdSecs => Some("TRITOND_STALE_CLAIM_THRESHOLD_SECS"),
+            ConfigKey::DhcpReconcileIntervalSecs => Some("TRITOND_DHCP_RECONCILE_INTERVAL_SECS"),
+            ConfigKey::DhcpLeaseGcThresholdSecs => Some("TRITOND_DHCP_LEASE_GC_THRESHOLD_SECS"),
+            ConfigKey::MetricsBackend => Some("TRITOND_METRICS_STORE"),
+            ConfigKey::MetricsClickhouseUrl => Some("TRITOND_METRICS_CLICKHOUSE_URL"),
+            ConfigKey::ImdsEnabledDefault => Some("TRITOND_IMDS_ENABLED_DEFAULT"),
+            ConfigKey::ImdsHopLimitDefault => Some("TRITOND_IMDS_HOP_LIMIT_DEFAULT"),
+            ConfigKey::SagaRetentionSecs => Some("TRITOND_SAGA_RETENTION_SECS"),
+            ConfigKey::StorageDefaultS3ClusterId => None,
+            ConfigKey::StorageDefaultWorkspaceQuotaBytes => None,
+        }
     }
 }
 
@@ -3316,6 +3358,41 @@ mod settings_tests {
         );
         assert_eq!(s.metrics_backend, MetricsBackend::Memory);
         assert_eq!(s.metrics_clickhouse_url, None);
+        assert_eq!(s.storage_default_s3_cluster_id, None);
+        assert_eq!(
+            s.storage_default_workspace_quota_bytes,
+            DEFAULT_WORKSPACE_QUOTA_BYTES
+        );
+    }
+
+    #[test]
+    fn storage_keys_round_trip() {
+        let mut s = Settings::default();
+        let cluster = Uuid::parse_str("28faa36c-2031-4632-a819-f7defa1299a3").unwrap();
+        s.set(
+            ConfigKey::StorageDefaultS3ClusterId,
+            serde_json::json!(cluster),
+        )
+        .unwrap();
+        assert_eq!(s.storage_default_s3_cluster_id, Some(cluster));
+        s.set(
+            ConfigKey::StorageDefaultS3ClusterId,
+            serde_json::Value::Null,
+        )
+        .unwrap();
+        assert_eq!(s.storage_default_s3_cluster_id, None);
+        s.set(
+            ConfigKey::StorageDefaultWorkspaceQuotaBytes,
+            serde_json::json!(42u64),
+        )
+        .unwrap();
+        assert_eq!(s.storage_default_workspace_quota_bytes, 42);
+    }
+
+    #[test]
+    fn storage_keys_have_no_env_override() {
+        assert_eq!(ConfigKey::StorageDefaultS3ClusterId.env_var(), None);
+        assert_eq!(ConfigKey::StorageDefaultWorkspaceQuotaBytes.env_var(), None);
     }
 
     #[test]
