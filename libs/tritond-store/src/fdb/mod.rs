@@ -201,6 +201,11 @@ fn finish_simple_delete(
 ///     }
 /// );
 /// ```
+// macro_export hoists `fdb_txn!` to the crate root so child modules
+// of `fdb::` (notably `fdb::helpers`) can reach it via
+// `use crate::fdb_txn`. macro_rules! macros are otherwise per-module
+// and a child mod cannot see a sibling-module macro without it.
+#[macro_export]
 macro_rules! fdb_txn {
     ($db:expr, [$($capture:ident),* $(,)?], |$tr:ident| $body:block) => {{
         $db.run(|$tr, _| {
@@ -2160,7 +2165,7 @@ impl Store for FdbStore {
 
         if let RouteTarget::NatGateway { nat_gateway_id } = &req.target {
             let nat = self.read_nat_gateway_record(*nat_gateway_id).await?;
-            keys::validate_nat_gateway_route_target(&nat, tenant_id, project_id, vpc_id)?;
+            Self::validate_nat_gateway_route_target(&nat, tenant_id, project_id, vpc_id)?;
         }
 
         enum Outcome {
@@ -7029,7 +7034,7 @@ impl Store for FdbStore {
         _tenant_id: Uuid,
         _project_id: Uuid,
         _vpc_id: Uuid,
-        _req: NewFirewallRule,
+        req: NewFirewallRule,
     ) -> Result<FirewallRule, StoreError> {
         validate::name("firewall_rule", &req.name)?;
         Err(firewall_rules_not_in_fdb_yet())

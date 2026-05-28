@@ -10,6 +10,7 @@
 //! helpers that consolidate image/ssh-key creates.
 
 use super::*;
+use crate::fdb_txn;
 
 impl FdbStore {
     /// Read the value for a single key, returning `None` if absent.
