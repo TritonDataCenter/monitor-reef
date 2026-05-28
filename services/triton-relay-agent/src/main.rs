@@ -9,9 +9,13 @@
 //! Establishes an outbound WebSocket to TritonAPI, presents the connection as a
 //! yamux server, and for each inbound stream: reads the `host:port\n` target
 //! header, dials that target on the fabric network, and bridges bytes.
+//!
+//! If the server closes the connection or is unreachable the agent reconnects
+//! with exponential backoff (1s → 2s → 4s … capped at 30s).
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
+use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio_tungstenite::connect_async;
 use tokio_util::compat::FuturesAsyncReadCompatExt as _;
@@ -34,6 +38,9 @@ fn version_string() -> &'static str {
         ")"
     )
 }
+
+const BACKOFF_INITIAL: Duration = Duration::from_secs(1);
+const BACKOFF_MAX: Duration = Duration::from_secs(30);
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -65,38 +72,52 @@ async fn main() -> Result<()> {
     let config: AgentConfig =
         serde_json::from_str(&config_text).context("parse agent config JSON")?;
 
-    info!("connecting to {}", config.relay_endpoint);
-    let (ws, _) = connect_async(&config.relay_endpoint)
-        .await
-        .context("WebSocket connect to relay endpoint")?;
-
-    let ws_compat = WsCompat::new(ws);
-    let mut conn = Connection::new(ws_compat, Config::default(), Mode::Server);
-
-    info!("connected; waiting for streams");
+    let mut backoff = BACKOFF_INITIAL;
 
     loop {
-        let stream = std::future::poll_fn(|cx| conn.poll_next_inbound(cx)).await;
-        match stream {
-            Some(Ok(stream)) => {
-                tokio::spawn(async move {
-                    if let Err(e) = handle_stream(stream).await {
-                        warn!("stream handler error: {e}");
+        info!("connecting to {}", config.relay_endpoint);
+        match connect_async(&config.relay_endpoint).await {
+            Ok((ws, _)) => {
+                backoff = BACKOFF_INITIAL;
+                let ws_compat = WsCompat::new(ws);
+                let mut conn =
+                    Connection::new(ws_compat, Config::default(), Mode::Server);
+                info!("connected; waiting for streams");
+
+                loop {
+                    let stream =
+                        std::future::poll_fn(|cx| conn.poll_next_inbound(cx)).await;
+                    match stream {
+                        Some(Ok(stream)) => {
+                            tokio::spawn(async move {
+                                if let Err(e) = handle_stream(stream).await {
+                                    warn!("stream handler error: {e}");
+                                }
+                            });
+                        }
+                        Some(Err(e)) => {
+                            error!("yamux error: {e}");
+                            break;
+                        }
+                        None => {
+                            info!("relay connection closed by server");
+                            break;
+                        }
                     }
-                });
+                }
             }
-            Some(Err(e)) => {
-                error!("yamux error: {e}");
-                break;
-            }
-            None => {
-                info!("relay connection closed by server");
-                break;
+            Err(e) => {
+                error!("connect failed: {e}");
             }
         }
-    }
 
-    Ok(())
+        info!(
+            delay_secs = backoff.as_secs(),
+            "reconnecting after delay"
+        );
+        tokio::time::sleep(backoff).await;
+        backoff = (backoff * 2).min(BACKOFF_MAX);
+    }
 }
 
 async fn handle_stream(mut stream: yamux::Stream) -> Result<()> {
