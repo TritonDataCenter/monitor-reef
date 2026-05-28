@@ -14,28 +14,37 @@
 
 use anyhow::{Context, Result};
 
+/// Build a rustls::ClientConfig that uses the bundled Mozilla
+/// webpki roots. Shared by the blocking and async client builders.
+fn tls_config() -> rustls::ClientConfig {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    let mut roots = rustls::RootCertStore::empty();
+    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    rustls::ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth()
+}
+
+/// Async reqwest::Client with the bundled Mozilla webpki roots.
+/// Use this in any async tcadm path that hits an HTTPS endpoint;
+/// the default reqwest 0.13 rustls feature pulls in
+/// rustls-platform-verifier, which fails on illumos with
+/// "No CA certificates were loaded from the system".
+pub fn async_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .use_preconfigured_tls(tls_config())
+        .build()
+        .context("building async reqwest client with bundled webpki roots")
+}
+
 /// Construct a blocking reqwest Client whose rustls config uses the
 /// bundled Mozilla webpki roots. Same trust set on every platform;
 /// no dependency on `/etc/ssl/certs/...` or the macOS keychain.
 pub fn blocking_client() -> Result<reqwest::blocking::Client> {
-    // Default crypto provider — rustls 0.23 requires one to be
-    // explicitly installed before building any ClientConfig.
-    // `install_default` is idempotent across the process; we ignore
-    // its result so a second call (e.g. from a unit test) does not
-    // panic.
-    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
-
-    let mut roots = rustls::RootCertStore::empty();
-    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-
-    let config = rustls::ClientConfig::builder()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-
     // reqwest downcasts the value to rustls::ClientConfig directly,
     // not Arc<ClientConfig>; passing the bare value is what matches.
     reqwest::blocking::Client::builder()
-        .use_preconfigured_tls(config)
+        .use_preconfigured_tls(tls_config())
         .build()
         .context("building blocking reqwest client with bundled webpki roots")
 }

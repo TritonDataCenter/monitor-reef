@@ -68,10 +68,10 @@ pub struct Opts {
 }
 
 pub async fn run(opts: Opts) -> Result<()> {
-    let http = reqwest::Client::builder()
-        .user_agent("tcadm/fetch-nocloud")
-        .build()
-        .context("build reqwest client")?;
+    // Async reqwest client with bundled Mozilla webpki roots —
+    // see crate::http::async_client for why the default rustls
+    // config won't load CAs on illumos.
+    let http = crate::http::async_client().context("build async reqwest client")?;
 
     let profile = nocloud_import::vendor::lookup(opts.vendor);
     let resolved = profile
@@ -199,7 +199,8 @@ async fn register_with_tritond(
 
     let url = format!("{}/v1/silos/{silo}/imgapi-images", endpoint.trim_end_matches('/'));
     println!("POST {url}");
-    let resp = reqwest::Client::new()
+    let client = crate::http::async_client().context("build async reqwest client for tritond POST")?;
+    let resp = client
         .post(&url)
         .bearer_auth(&bearer)
         .json(&body)

@@ -20,6 +20,12 @@ path = "src/lib.rs"
 [dependencies]
 anyhow = { workspace = true }
 reqwest = { workspace = true, features = ["stream"] }
+# rustls + webpki-roots are required so reqwest's TLS config has a
+# trust store on illumos / any host where the platform verifier
+# can't find one. Without this BlobStore::new fails with
+# "No CA certificates were loaded from the system" when called
+# from monroe / similar SmartOS GZs.
+rustls = { workspace = true }
 rusty-s3 = { workspace = true }
 sha1 = { workspace = true }
 thiserror = { workspace = true }
@@ -28,6 +34,7 @@ tokio-util = { workspace = true, features = ["codec", "io"] }
 tracing = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
+webpki-roots = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

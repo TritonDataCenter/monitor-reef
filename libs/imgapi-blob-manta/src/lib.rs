@@ -128,7 +128,20 @@ impl BlobStore {
         let bucket = Bucket::new(endpoint, UrlStyle::Path, bucket_name, region.into())
             .map_err(|e| BlobError::BadBucket(format!("{e}")))?;
         let credentials = Credentials::new(access_key, secret_key);
+
+        // reqwest 0.13's `rustls` feature uses rustls-platform-verifier,
+        // which scans the system trust store and fails on illumos with
+        // "No CA certificates were loaded from the system". Bundle the
+        // Mozilla webpki roots so TLS works the same on every platform.
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+        let mut roots = rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let tls = rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+
         let client = reqwest::Client::builder()
+            .use_preconfigured_tls(tls)
             .build()
             .map_err(BlobError::Http)?;
         Ok(Self {
