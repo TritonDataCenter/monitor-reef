@@ -221,7 +221,141 @@ pub(crate) async fn create_silo_tenant(
     .await?;
     let request_id = parse_request_id(&rqctx);
     let req = body.into_inner();
-    match ctx.store.create_tenant(silo_id, req).await {
+
+    // Pre-generate the tenant id so we can derive the mantad
+    // workspace name (`t-{tenant_id_simple}`) and carry it as the
+    // idempotency key on the workspace-create RPC. A retried
+    // request hits mantad with the same key and gets the existing
+    // workspace back, then the Tenant row commits with the
+    // binding populated. No two-store transaction; the failure
+    // contract is "no Tenant row unless the workspace exists."
+    let tenant_id = Uuid::new_v4();
+
+    // Read the fleet's default S3 cluster. `None` means no
+    // cluster has been registered as the default yet — tenant is
+    // created without a workspace binding and the forwarder
+    // layer returns 412 on any S3 op against it.
+    let settings = ctx
+        .store
+        .get_settings()
+        .await
+        .map_err(store_error_to_http)?;
+    let default_cluster = settings.storage_default_s3_cluster_id;
+
+    let (storage_workspace_id, storage_cluster_id) = match default_cluster {
+        None => (None, None),
+        Some(cluster_id) => {
+            // `client_for` resolves the cluster row, refuses non-S3
+            // surfaces with 409, and builds a ready-to-call mantad
+            // client.
+            let (cluster, client) = match crate::storage::client_for(&ctx.store, cluster_id).await {
+                Ok(pair) => pair,
+                Err(http_err) => {
+                    ctx.audit
+                        .record_mutation(
+                            &principal,
+                            Action::TenantCreate,
+                            request_id,
+                            None,
+                            AuditOutcome::ServerError {
+                                message: format!(
+                                    "fleet default storage cluster {cluster_id} unresolvable: \
+                                     {http_err}"
+                                ),
+                            },
+                            serde_json::json!({
+                                "silo_id": silo_id,
+                                "name": req.name,
+                                "default_s3_cluster_id": cluster_id,
+                            }),
+                        )
+                        .await;
+                    return Err(http_err);
+                }
+            };
+
+            // Pre-flight: refuse early if the cluster's last probe
+            // failed. The handler's contract is "fail loudly with
+            // no Tenant row" so the operator sees the cluster
+            // problem before any state is written.
+            if cluster.status == tritond_store::StorageClusterStatus::Unreachable {
+                let msg = format!(
+                    "fleet default storage cluster {} ({}) last health probe was Unreachable; \
+                     refresh with `tcadm storage health {}` and retry",
+                    cluster.name, cluster.id, cluster.id
+                );
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::TenantCreate,
+                        request_id,
+                        None,
+                        AuditOutcome::ServerError {
+                            message: msg.clone(),
+                        },
+                        serde_json::json!({
+                            "silo_id": silo_id,
+                            "name": req.name,
+                            "default_s3_cluster_id": cluster.id,
+                            "cluster_status": "unreachable",
+                        }),
+                    )
+                    .await;
+                return Err(HttpError::for_unavail(
+                    Some("StorageClusterUnreachable".to_string()),
+                    msg,
+                ));
+            }
+
+            // Mint the workspace. Mantad's create endpoint is
+            // idempotent keyed on `tenant_uuid`, so retries of
+            // this RPC return the existing workspace rather than
+            // failing with 409 — that's the cross-daemon
+            // retry-safety contract.
+            let workspace_name = format!("t-{}", tenant_id.simple());
+            let mantad_req = mantad_client::types::CreateWorkspaceRequest {
+                name: workspace_name,
+                description: Some(req.name.clone()),
+                quota_bytes: Some(settings.storage_default_workspace_quota_bytes),
+                quota_objects: None,
+                tenant_uuid: Some(tenant_id),
+            };
+            match client.create_workspace(&mantad_req).await {
+                Ok(_workspace) => (Some(tenant_id), Some(cluster.id)),
+                Err(e) => {
+                    let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+                    ctx.audit
+                        .record_mutation(
+                            &principal,
+                            Action::TenantCreate,
+                            request_id,
+                            None,
+                            audit_outcome,
+                            serde_json::json!({
+                                "silo_id": silo_id,
+                                "name": req.name,
+                                "default_s3_cluster_id": cluster.id,
+                                "stage": "mantad.create_workspace",
+                            }),
+                        )
+                        .await;
+                    return Err(http_err);
+                }
+            }
+        }
+    };
+
+    match ctx
+        .store
+        .create_tenant_with_binding(
+            silo_id,
+            tenant_id,
+            req,
+            storage_workspace_id,
+            storage_cluster_id,
+        )
+        .await
+    {
         Ok(tenant) => {
             ctx.audit
                 .record_mutation(
@@ -235,12 +369,19 @@ pub(crate) async fn create_silo_tenant(
                     serde_json::json!({
                         "silo_id": silo_id,
                         "name": tenant.name,
+                        "storage_cluster_id": tenant.storage_cluster_id,
+                        "storage_workspace_id": tenant.storage_workspace_id,
                     }),
                 )
                 .await;
             Ok(HttpResponseCreated(tenant))
         }
         Err(e) => {
+            // The workspace already exists on mantad (when we got
+            // this far via the bound path). On retry, the mantad
+            // idempotency key resolves it; the operator's next
+            // attempt will hit the same workspace and commit
+            // the Tenant row.
             ctx.audit
                 .record_mutation(
                     &principal,
@@ -248,7 +389,12 @@ pub(crate) async fn create_silo_tenant(
                     request_id,
                     None,
                     store_error_to_audit_outcome(&e),
-                    serde_json::json!({ "silo_id": silo_id }),
+                    serde_json::json!({
+                        "silo_id": silo_id,
+                        "storage_cluster_id": storage_cluster_id,
+                        "storage_workspace_id": storage_workspace_id,
+                        "stage": "store.create_tenant_with_binding",
+                    }),
                 )
                 .await;
             Err(store_error_to_http(e))

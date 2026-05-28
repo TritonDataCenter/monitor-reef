@@ -1299,18 +1299,27 @@ impl Store for FdbStore {
     }
 
     async fn create_tenant(&self, silo_id: Uuid, req: NewTenant) -> Result<Tenant, StoreError> {
+        self.create_tenant_with_binding(silo_id, Uuid::new_v4(), req, None, None)
+            .await
+    }
+
+    async fn create_tenant_with_binding(
+        &self,
+        silo_id: Uuid,
+        tenant_id: Uuid,
+        req: NewTenant,
+        storage_workspace_id: Option<Uuid>,
+        storage_cluster_id: Option<Uuid>,
+    ) -> Result<Tenant, StoreError> {
         validate::name("tenant", &req.name)?;
         let tenant = Tenant {
-            id: Uuid::new_v4(),
+            id: tenant_id,
             silo_id,
             name: req.name,
             description: req.description.unwrap_or_default(),
             created_at: Utc::now(),
-            // Phase C.2 wires create_silo_tenant to mint a mantad
-            // workspace before this row commits. FDB-store create
-            // alone leaves both columns NULL.
-            storage_workspace_id: None,
-            storage_cluster_id: None,
+            storage_workspace_id,
+            storage_cluster_id,
         };
         let value = serde_json::to_vec(&tenant)
             .map_err(ser_err("tenant"))?;

@@ -833,6 +833,18 @@ impl Store for MemStore {
     }
 
     async fn create_tenant(&self, silo_id: Uuid, req: NewTenant) -> Result<Tenant, StoreError> {
+        self.create_tenant_with_binding(silo_id, Uuid::new_v4(), req, None, None)
+            .await
+    }
+
+    async fn create_tenant_with_binding(
+        &self,
+        silo_id: Uuid,
+        tenant_id: Uuid,
+        req: NewTenant,
+        storage_workspace_id: Option<Uuid>,
+        storage_cluster_id: Option<Uuid>,
+    ) -> Result<Tenant, StoreError> {
         validate::name("tenant", &req.name)?;
         let mut guard = self.inner.write().await;
         if !guard.silos_by_id.contains_key(&silo_id) {
@@ -846,17 +858,13 @@ impl Store for MemStore {
             )));
         }
         let tenant = Tenant {
-            id: Uuid::new_v4(),
+            id: tenant_id,
             silo_id,
             name: req.name.clone(),
             description: req.description.unwrap_or_default(),
             created_at: Utc::now(),
-            // Phase C.2 will set these in `create_silo_tenant` once
-            // the handler resolves the fleet's default S3 cluster
-            // and mints a workspace. Mem-store create alone leaves
-            // them NULL.
-            storage_workspace_id: None,
-            storage_cluster_id: None,
+            storage_workspace_id,
+            storage_cluster_id,
         };
         guard.tenant_id_by_silo_name.insert(key, tenant.id);
         guard.tenants_by_id.insert(tenant.id, tenant.clone());

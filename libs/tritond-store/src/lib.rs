@@ -376,6 +376,30 @@ pub trait Store: Send + Sync + 'static {
     /// silo doesn't exist.
     async fn create_tenant(&self, silo_id: Uuid, req: NewTenant) -> Result<Tenant, StoreError>;
 
+    /// Create a tenant with an already-resolved storage binding.
+    ///
+    /// Used by the `create_silo_tenant` handler after a successful
+    /// `mantad create_workspace`: the handler pre-generates
+    /// `tenant_id`, derives the workspace name `t-{tenant_id}`,
+    /// runs the workspace-create RPC (idempotent on `tenant_id`),
+    /// then commits the Tenant row with the binding populated by
+    /// calling this method. Pre-generating the id is what makes
+    /// the cross-daemon retry-safety work: a retried request sees
+    /// the same name on mantad and gets the same row back.
+    ///
+    /// `(storage_workspace_id, storage_cluster_id)` either both
+    /// `None` (no binding — fleet has no `storage.default_s3_cluster_id`
+    /// set yet) or both `Some` (full binding). Mixed states are
+    /// not produced by the handler and not validated here.
+    async fn create_tenant_with_binding(
+        &self,
+        silo_id: Uuid,
+        tenant_id: Uuid,
+        req: NewTenant,
+        storage_workspace_id: Option<Uuid>,
+        storage_cluster_id: Option<Uuid>,
+    ) -> Result<Tenant, StoreError>;
+
     /// Look up a tenant by id. Returns [`StoreError::NotFound`]
     /// when no such tenant exists.
     async fn get_tenant(&self, tenant_id: Uuid) -> Result<Tenant, StoreError>;
