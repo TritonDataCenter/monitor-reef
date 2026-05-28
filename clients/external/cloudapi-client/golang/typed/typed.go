@@ -31,6 +31,7 @@
 package typed
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -81,6 +82,60 @@ func checkOK(status int, body []byte) error {
 		return nil
 	}
 	return fmt.Errorf("cloudapi status %d: %s", status, string(body))
+}
+
+// -----------------------------------------------------------------------------
+// Machine create (POST /{account}/machines)
+// -----------------------------------------------------------------------------
+
+// CreateMachine creates a machine with metadata and tags correctly flattened
+// for the Triton CloudAPI wire format. The real CloudAPI expects metadata and
+// tags as top-level "metadata.KEY" / "tag.KEY" fields in the JSON body rather
+// than nested objects. This matches the triton-go client's toAPI() behaviour
+// and ensures metadata is baked into the VM at provision time so it is present
+// when the zone runs mdata-get at first boot.
+func (c *Client) CreateMachine(ctx context.Context, account string, req cloudapi.CreateMachineRequest) (*cloudapi.Machine, error) {
+	data, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal CreateMachineRequest: %w", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, fmt.Errorf("unmarshal CreateMachineRequest: %w", err)
+	}
+
+	// Flatten: {"metadata": {"key": "val"}} → {"metadata.key": "val"}
+	if meta, ok := m["metadata"].(map[string]any); ok {
+		delete(m, "metadata")
+		for k, v := range meta {
+			m["metadata."+k] = v
+		}
+	}
+
+	// Flatten: {"tags": {"key": "val"}} → {"tag.key": "val"}
+	if tags, ok := m["tags"].(map[string]any); ok {
+		delete(m, "tags")
+		for k, v := range tags {
+			m["tag."+k] = v
+		}
+	}
+
+	flat, err := json.Marshal(m)
+	if err != nil {
+		return nil, fmt.Errorf("marshal flattened CreateMachineRequest: %w", err)
+	}
+
+	resp, err := c.inner.CreateMachineWithBodyWithResponse(ctx, account, "application/json", bytes.NewReader(flat))
+	if err != nil {
+		return nil, fmt.Errorf("create machine: %w", err)
+	}
+	if err := checkOK(resp.StatusCode(), resp.Body); err != nil {
+		return nil, err
+	}
+	if resp.JSON201 == nil {
+		return nil, fmt.Errorf("create machine returned no body")
+	}
+	return resp.JSON201, nil
 }
 
 // -----------------------------------------------------------------------------
