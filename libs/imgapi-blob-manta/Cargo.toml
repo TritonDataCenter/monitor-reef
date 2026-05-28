@@ -8,7 +8,7 @@
 name = "imgapi-blob-manta"
 version = "0.1.0"
 edition.workspace = true
-description = "Manta-backed blob storage for IMGAPI image content"
+description = "S3-backed blob storage for IMGAPI image content (mantad-compatible)"
 
 [lints]
 workspace = true
@@ -19,10 +19,14 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+reqwest = { workspace = true, features = ["stream"] }
+rusty-s3 = { workspace = true }
 sha1 = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["fs", "io-util", "process"] }
+tokio = { workspace = true, features = ["fs", "io-util"] }
+tokio-util = { workspace = true, features = ["codec", "io"] }
 tracing = { workspace = true }
+url = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]

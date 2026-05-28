@@ -4,211 +4,235 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! Manta-backed blob storage for IMGAPI image content.
+//! S3-backed blob storage for IMGAPI image content.
 //!
-//! tritond's IMGAPI surface stores the small structured
-//! manifest in FDB; this crate handles the large binary
-//! payload (`files[].compression`-wrapped `zfs send` stream),
-//! which lives in Manta.
+//! tritond's IMGAPI surface stores the small structured manifest in
+//! FDB; this crate handles the large binary payload (the gzipped
+//! `zfs send` stream), which lives in an S3 bucket. The bucket is
+//! conventionally `triton-images` on an in-cluster mantad zone, but
+//! any S3-compatible endpoint (AWS, MinIO, ceph-rgw, etc.) works.
 //!
 //! ## Layout
 //!
-//! All blobs land under a single configured path prefix:
+//! Object key for an image is `<uuid>/file`. The full URL is
+//! `<endpoint>/<bucket>/<uuid>/file` (path-style).
 //!
-//! ```text
-//! <manta_path_prefix>/<image-uuid>/file
-//! ```
+//! ## Auth split
 //!
-//! The same uuid drives the public HTTPS URL:
-//!
-//! ```text
-//! <manta_url_prefix>/<image-uuid>/file
-//! ```
-//!
-//! Compression suffix is intentionally absent from the path.
-//! The manifest's `files[0].compression` tells the agent how
-//! to decode the bytes; the path is stable across compression
-//! migrations of the same image identity.
-//!
-//! ## Auth model
-//!
-//! Uploads shell out to `mput` (node-manta), which already
-//! handles SSH-agent signing, HMAC, large-file streaming, and
-//! the standard Manta env vars (`MANTA_URL`, `MANTA_USER`,
-//! `MANTA_KEY_ID`). Mirrors the pattern used by
-//! `cli/tritoncloud-publish/src/manta.rs`.
-//!
-//! Downloads are plain HTTPS GET against the public URL. The
-//! crate does not need Manta credentials at read time; the
-//! per-CN agent only needs a working HTTPS stack with our
-//! trust roots.
-//!
-//! Tritond and tritonadm both use this crate. Tritond resolves
-//! a blob URL when serving `GET /images/:uuid/file`; tritonadm
-//! uploads bytes when running `image upload`.
+//! - **Uploads** (`BlobStore::upload`, `delete`) use SigV4 signing
+//!   via the [`rusty_s3`] crate. The caller supplies an access key
+//!   and a secret key at construction time; mantad's root credentials
+//!   (auto-minted at first boot, persisted in
+//!   `/data/etc/mantad/secrets.env`) are the typical source.
+//! - **Reads** are plain anonymous HTTPS GET against the public URL
+//!   returned by [`BlobStore::url_for`]. Per-CN agents do not need
+//!   credentials. This works because the bucket policy on
+//!   `triton-images` allows `Principal: "*"` for `s3:GetObject`; an
+//!   operator runs `aws s3api put-bucket-policy` once at deploy
+//!   time. See `images/triton-mantad/README.md` for the policy JSON.
 //!
 //! ## Integrity
 //!
 //! SHA-1 is the IMGAPI wire requirement for `files[].sha1`.
-//! [`BlobStore::upload`] streams the source file through a
-//! SHA-1 hasher before invoking `mput`, returning the digest
-//! and size so the caller can populate the manifest before
-//! POSTing it to tritond.
+//! [`BlobStore::upload`] streams the source file through a SHA-1
+//! hasher before invoking the signed PUT, returning the digest and
+//! size so the caller can populate the manifest before POSTing it
+//! to tritond.
 
 use std::path::Path;
-use std::process::Stdio;
+use std::time::Duration;
 
+use rusty_s3::actions::{DeleteObject, PutObject, S3Action};
+use rusty_s3::{Bucket, Credentials, UrlStyle};
 use sha1::{Digest, Sha1};
 use thiserror::Error;
 use tokio::io::AsyncReadExt;
-use tokio::process::Command;
 use tracing::info;
+use url::Url;
 use uuid::Uuid;
 
-/// Errors from blob upload, head, or delete operations.
+/// How long a SigV4 presigned URL stays valid. We never store these
+/// — they are minted, used immediately, and discarded inside a
+/// single upload call — so the duration is just a comfortable
+/// upper bound on the upload latency.
+const PRESIGN_TTL: Duration = Duration::from_secs(900);
+
+/// Errors from blob upload, delete, or hash operations.
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum BlobError {
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
-    #[error("mput {remote_path} exited with status {status}")]
-    MputFailed { remote_path: String, status: i32 },
-    #[error("mrm {remote_path} exited with status {status}")]
-    MrmFailed { remote_path: String, status: i32 },
-    #[error("path prefix must be absolute Manta path starting with '/', got {got:?}")]
-    BadPathPrefix { got: String },
-    #[error("url prefix must be absolute https:// URL, got {got:?}")]
-    BadUrlPrefix { got: String },
+    #[error("invalid endpoint url: {0}")]
+    Url(#[from] url::ParseError),
+    #[error("invalid bucket name: {0}")]
+    BadBucket(String),
+    #[error("invalid endpoint: {0}")]
+    BadEndpoint(String),
+    #[error("http: {0}")]
+    Http(#[from] reqwest::Error),
+    #[error("S3 PUT {url} returned {status}: {body}")]
+    PutFailed {
+        url: String,
+        status: u16,
+        body: String,
+    },
+    #[error("S3 DELETE {url} returned {status}: {body}")]
+    DeleteFailed {
+        url: String,
+        status: u16,
+        body: String,
+    },
 }
 
-/// Result of a successful blob upload. Caller stamps these
-/// onto the IMGAPI manifest's `files[0]` before POSTing.
+/// Result of a successful blob upload. Caller stamps these onto the
+/// IMGAPI manifest's `files[0]` before POSTing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UploadOutcome {
     /// Lowercase 40-char hex SHA-1 of the uploaded bytes.
     pub sha1: String,
     /// Size of the uploaded bytes.
     pub size: u64,
-    /// Full Manta object path the bytes landed at.
-    pub manta_path: String,
-    /// Public HTTPS URL the bytes are reachable from.
+    /// Public HTTPS URL the bytes are reachable from (no auth needed).
     pub public_url: String,
 }
 
-/// Configuration for a Manta-backed blob store.
+/// Configuration for an S3-backed blob store.
 ///
-/// One [`BlobStore`] instance is shared across tritond's
-/// request handlers (held in app state) or instantiated
-/// per-invocation by tritonadm.
+/// One [`BlobStore`] instance is held by tritond's HTTP context (or
+/// instantiated per-invocation by tritonadm's upload verb).
 #[derive(Debug, Clone)]
 pub struct BlobStore {
-    /// Manta object-path prefix, e.g.
-    /// `/nick.wilkens@mnxsolutions.com/public/imgapi`. Used
-    /// in `mput`/`mrm` shell-outs.
-    manta_path_prefix: String,
-    /// Public HTTPS URL prefix that resolves to
-    /// `manta_path_prefix`, e.g.
-    /// `https://us-central.manta.mnx.io/nick.wilkens@mnxsolutions.com/public/imgapi`.
-    manta_url_prefix: String,
+    bucket: Bucket,
+    credentials: Credentials,
+    client: reqwest::Client,
 }
 
 impl BlobStore {
-    /// Construct a new blob store. Both prefixes are stored
-    /// verbatim modulo trailing-slash normalization; trailing
-    /// `/` is stripped so [`Self::manta_path_for`] and
-    /// [`Self::url_for`] produce stable concatenations.
-    pub fn new(manta_path_prefix: &str, manta_url_prefix: &str) -> Result<Self, BlobError> {
-        if !manta_path_prefix.starts_with('/') {
-            return Err(BlobError::BadPathPrefix {
-                got: manta_path_prefix.to_string(),
-            });
-        }
-        if !(manta_url_prefix.starts_with("https://") || manta_url_prefix.starts_with("http://")) {
-            return Err(BlobError::BadUrlPrefix {
-                got: manta_url_prefix.to_string(),
-            });
-        }
+    /// Construct a new blob store.
+    ///
+    /// `endpoint` is the base URL of the S3 service
+    /// (e.g. `http://172.16.96.6:7443`). `region` is the SigV4
+    /// region label (e.g. `us-east-1`); mantad accepts any region as
+    /// long as the SigV4 calculation matches. `bucket` must already
+    /// exist with a public-read policy applied; this crate does not
+    /// manage bucket lifecycle.
+    pub fn new(
+        endpoint: Url,
+        region: impl Into<String>,
+        bucket: impl Into<String>,
+        access_key: impl Into<String>,
+        secret_key: impl Into<String>,
+    ) -> Result<Self, BlobError> {
+        let bucket_name = bucket.into();
+        let bucket = Bucket::new(endpoint, UrlStyle::Path, bucket_name, region.into())
+            .map_err(|e| BlobError::BadBucket(format!("{e}")))?;
+        let credentials = Credentials::new(access_key, secret_key);
+        let client = reqwest::Client::builder()
+            .build()
+            .map_err(BlobError::Http)?;
         Ok(Self {
-            manta_path_prefix: trim_slash(manta_path_prefix),
-            manta_url_prefix: trim_slash(manta_url_prefix),
+            bucket,
+            credentials,
+            client,
         })
     }
 
-    /// Manta object path for `uuid`'s blob.
-    pub fn manta_path_for(&self, uuid: Uuid) -> String {
-        format!("{}/{uuid}/file", self.manta_path_prefix)
-    }
-
-    /// Public HTTPS URL for `uuid`'s blob.
+    /// Build the public anonymous HTTPS GET URL for `uuid`'s blob.
+    /// Caller stores this on the IMGAPI manifest record as the
+    /// agent-side fetch URL.
     pub fn url_for(&self, uuid: Uuid) -> String {
-        format!("{}/{uuid}/file", self.manta_url_prefix)
+        // rusty-s3's Bucket::base_url() with UrlStyle::Path already
+        // includes the bucket name in the path
+        // (`<endpoint>/<bucket>/`), so we just append the key.
+        let base = self.bucket.base_url().as_str().trim_end_matches('/');
+        format!("{base}/{uuid}/file")
     }
 
-    /// Hash + mput the file at `local_path` to the canonical
-    /// Manta path for `uuid`. The local file is read twice: once
-    /// streamed through a SHA-1 hasher (to compute the digest
-    /// before the upload starts, so a failed mput leaves a
-    /// known-good local image), once by `mput` itself.
+    /// S3 object key under the bucket for `uuid`'s blob.
+    pub fn key_for(&self, uuid: Uuid) -> String {
+        format!("{uuid}/file")
+    }
+
+    /// SHA-1 the local file, then SigV4-PUT it to `<bucket>/<uuid>/file`.
+    /// Returns the digest, size, and public URL the caller should
+    /// stamp on the IMGAPI manifest.
+    ///
+    /// The local file is read twice: once streamed through a SHA-1
+    /// hasher (to compute the digest before the upload begins, so a
+    /// failed upload leaves a known-good local copy), once by
+    /// reqwest as the PUT body.
     pub async fn upload(&self, uuid: Uuid, local_path: &Path) -> Result<UploadOutcome, BlobError> {
         let (sha1, size) = hash_file_sha1(local_path).await?;
-        let manta_path = self.manta_path_for(uuid);
+        let key = self.key_for(uuid);
         let public_url = self.url_for(uuid);
+
+        let put = PutObject::new(&self.bucket, Some(&self.credentials), &key);
+        let signed_url = put.sign(PRESIGN_TTL);
+
         info!(
             uuid = %uuid,
             local = %local_path.display(),
-            remote = %manta_path,
             size,
-            "mput blob"
+            sha1 = %sha1,
+            "S3 PUT"
         );
-        let status = Command::new("mput")
-            .arg("-f")
-            .arg(local_path)
-            .arg(&manta_path)
-            .stdin(Stdio::null())
-            .status()
+
+        let file = tokio::fs::File::open(local_path).await?;
+        let stream = tokio_util::io::ReaderStream::new(file);
+        let body = reqwest::Body::wrap_stream(stream);
+
+        let resp = self
+            .client
+            .put(signed_url.clone())
+            .header(reqwest::header::CONTENT_LENGTH, size)
+            .body(body)
+            .send()
             .await?;
-        if !status.success() {
-            return Err(BlobError::MputFailed {
-                remote_path: manta_path,
-                status: status.code().unwrap_or(-1),
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(BlobError::PutFailed {
+                url: signed_url.to_string(),
+                status: status.as_u16(),
+                body,
             });
         }
+
         Ok(UploadOutcome {
             sha1,
             size,
-            manta_path,
             public_url,
         })
     }
 
-    /// Remove the blob for `uuid`. Idempotent: `mrm` of a
-    /// non-existent object returns success on Manta.
+    /// SigV4-DELETE the blob for `uuid`. Idempotent: a delete of a
+    /// non-existent object returns 204 from S3.
     pub async fn delete(&self, uuid: Uuid) -> Result<(), BlobError> {
-        let manta_path = self.manta_path_for(uuid);
-        info!(uuid = %uuid, remote = %manta_path, "mrm blob");
-        let status = Command::new("mrm")
-            .arg(&manta_path)
-            .stdin(Stdio::null())
-            .status()
-            .await?;
-        if !status.success() {
-            return Err(BlobError::MrmFailed {
-                remote_path: manta_path,
-                status: status.code().unwrap_or(-1),
+        let key = self.key_for(uuid);
+        let del = DeleteObject::new(&self.bucket, Some(&self.credentials), &key);
+        let signed_url = del.sign(PRESIGN_TTL);
+
+        info!(uuid = %uuid, key = %key, "S3 DELETE");
+
+        let resp = self.client.delete(signed_url.clone()).send().await?;
+        let status = resp.status();
+        if !status.is_success() && status.as_u16() != 404 {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(BlobError::DeleteFailed {
+                url: signed_url.to_string(),
+                status: status.as_u16(),
+                body,
             });
         }
         Ok(())
     }
 }
 
-fn trim_slash(s: &str) -> String {
-    s.trim_end_matches('/').to_string()
-}
-
-/// Stream `path` through a SHA-1 hasher. Returns the lowercase
-/// hex digest and total size. Used by [`BlobStore::upload`] and
-/// reusable for caller-side verification of an already-uploaded
-/// local file.
+/// Stream `path` through a SHA-1 hasher. Returns the lowercase hex
+/// digest and total size. Used by [`BlobStore::upload`] and reusable
+/// for caller-side verification of an already-uploaded local file.
 pub async fn hash_file_sha1(path: &Path) -> Result<(String, u64), BlobError> {
     let mut file = tokio::fs::File::open(path).await?;
     let mut hasher = Sha1::new();
@@ -239,40 +263,45 @@ fn hex_lower(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
 
-    #[test]
-    fn rejects_relative_path_prefix() {
-        let err = BlobStore::new("public/imgapi", "https://example.com").expect_err("must reject");
-        assert!(matches!(err, BlobError::BadPathPrefix { .. }));
-    }
-
-    #[test]
-    fn rejects_non_http_url_prefix() {
-        let err = BlobStore::new("/u/public/imgapi", "manta:///foo").expect_err("must reject");
-        assert!(matches!(err, BlobError::BadUrlPrefix { .. }));
-    }
-
-    #[test]
-    fn url_and_path_construction_is_stable() {
-        let store = BlobStore::new(
-            "/nick.wilkens@mnxsolutions.com/public/imgapi/",
-            "https://us-central.manta.mnx.io/nick.wilkens@mnxsolutions.com/public/imgapi/",
+    fn store() -> BlobStore {
+        BlobStore::new(
+            Url::parse("http://172.16.96.6:7443").unwrap(),
+            "us-east-1",
+            "triton-images",
+            "AKIATEST",
+            "secretdontuse",
         )
-        .unwrap();
+        .unwrap()
+    }
+
+    #[test]
+    fn url_for_path_style() {
+        let s = store();
         let uuid = Uuid::parse_str("c02a2044-c1bd-11e4-bd8c-dfc1db8b0182").unwrap();
         assert_eq!(
-            store.manta_path_for(uuid),
-            "/nick.wilkens@mnxsolutions.com/public/imgapi/c02a2044-c1bd-11e4-bd8c-dfc1db8b0182/file"
-        );
-        assert_eq!(
-            store.url_for(uuid),
-            "https://us-central.manta.mnx.io/nick.wilkens@mnxsolutions.com/public/imgapi/c02a2044-c1bd-11e4-bd8c-dfc1db8b0182/file"
+            s.url_for(uuid),
+            "http://172.16.96.6:7443/triton-images/c02a2044-c1bd-11e4-bd8c-dfc1db8b0182/file"
         );
     }
+
+    #[test]
+    fn key_for_uuid() {
+        let s = store();
+        let uuid = Uuid::parse_str("c02a2044-c1bd-11e4-bd8c-dfc1db8b0182").unwrap();
+        assert_eq!(
+            s.key_for(uuid),
+            "c02a2044-c1bd-11e4-bd8c-dfc1db8b0182/file"
+        );
+    }
+
+    // Note: rusty-s3 0.7 is permissive about bucket names (it
+    // accepts uppercase, empty, and other forms that strict S3
+    // would reject). Bucket-name validation is the caller's
+    // responsibility; we surface whatever the upstream constructor
+    // returns via the BadBucket arm if it ever does start failing.
 
     #[tokio::test]
     async fn hash_file_sha1_matches_known_input() {
-        // SHA-1 of "hello world\n" is
-        // 22596363b3de40b06f981fb85d82312e8c0ed511 — well-known.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("hello.txt");
         tokio::fs::write(&path, b"hello world\n").await.unwrap();
@@ -287,8 +316,52 @@ mod tests {
         let path = dir.path().join("empty");
         tokio::fs::write(&path, b"").await.unwrap();
         let (sha, size) = hash_file_sha1(&path).await.unwrap();
-        // SHA-1 of empty input.
         assert_eq!(sha, "da39a3ee5e6b4b0d3255bfef95601890afd80709");
         assert_eq!(size, 0);
+    }
+
+    /// Round-trip smoke test against a real S3 endpoint.
+    /// Gated behind IMGAPI_BLOB_E2E so it only runs when an operator
+    /// has a reachable mantad and explicitly sets the env. The four
+    /// env vars mirror the fields on BlobStore::new.
+    #[tokio::test]
+    async fn e2e_put_and_anonymous_get() {
+        if std::env::var("IMGAPI_BLOB_E2E").is_err() {
+            eprintln!("skipping e2e test (set IMGAPI_BLOB_E2E=1 to run)");
+            return;
+        }
+        let endpoint = std::env::var("IMGAPI_BLOB_E2E_ENDPOINT")
+            .expect("IMGAPI_BLOB_E2E_ENDPOINT (e.g. http://localhost:7443)");
+        let region =
+            std::env::var("IMGAPI_BLOB_E2E_REGION").unwrap_or_else(|_| "us-east-1".to_string());
+        let bucket = std::env::var("IMGAPI_BLOB_E2E_BUCKET")
+            .unwrap_or_else(|_| "triton-images".to_string());
+        let ak = std::env::var("IMGAPI_BLOB_E2E_AK").expect("IMGAPI_BLOB_E2E_AK");
+        let sk = std::env::var("IMGAPI_BLOB_E2E_SK").expect("IMGAPI_BLOB_E2E_SK");
+
+        let store = BlobStore::new(Url::parse(&endpoint).unwrap(), region, bucket, ak, sk).unwrap();
+        let uuid = Uuid::new_v4();
+
+        let dir = tempfile::tempdir().unwrap();
+        let body = b"e2e-blob-payload\n";
+        let path = dir.path().join("payload.bin");
+        tokio::fs::write(&path, body).await.unwrap();
+
+        let outcome = store.upload(uuid, &path).await.expect("upload");
+        assert_eq!(outcome.size, body.len() as u64);
+        eprintln!("uploaded {uuid} -> {}", outcome.public_url);
+
+        // Anonymous GET: no auth headers; succeeds only if the
+        // bucket policy permits anonymous read.
+        let resp = reqwest::get(&outcome.public_url).await.expect("anon GET");
+        assert!(
+            resp.status().is_success(),
+            "anonymous GET returned {}",
+            resp.status()
+        );
+        let fetched = resp.bytes().await.unwrap();
+        assert_eq!(&fetched[..], body);
+
+        store.delete(uuid).await.expect("delete");
     }
 }
