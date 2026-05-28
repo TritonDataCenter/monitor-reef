@@ -694,31 +694,27 @@ impl TritonApi for TritonApiImpl {
         }
 
         // Delete load balancer VMs provisioned by the moirai-k8s-controller.
-        // These are not tracked in record.nodes; discover them via the
-        // role=k8s-loadbalancer tag and filter to this cluster by name.
-        // Always attempt this when cloudapi is configured — lb_installed may
-        // be false even when VMs exist (e.g. if the install rollout timed out).
+        // These are not tracked in record.nodes. Discover by name prefix
+        // "lb-<cluster>-" rather than tag, because some CloudAPI implementations
+        // silently drop regular tags from the CreateMachine body, leaving VMs
+        // without role=k8s-loadbalancer or k8s-cluster tags.
         if let Some(cloudapi) = ctx.cloudapi.clone() {
             let provision_account = record.account_id.to_string();
-            let tag = "role=k8s-loadbalancer".to_string();
-            let lb_vms = cloudapi
+            let lb_name_prefix = format!("lb-{}-", record.name);
+            let all_vms = cloudapi
                 .inner()
                 .list_machines()
                 .account(&provision_account)
-                .tag(&tag)
                 .send()
                 .await
                 .map_err(|e| {
                     HttpError::for_internal_error(format!("list LB VMs: {e:#}"))
                 })?
                 .into_inner();
-            for machine in lb_vms.into_iter().filter(|m| {
-                m.tags
-                    .get("k8s-cluster")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s == record.name.as_str())
-                    .unwrap_or(false)
-            }) {
+            for machine in all_vms
+                .into_iter()
+                .filter(|m| m.name.starts_with(&lb_name_prefix))
+            {
                 match cloudapi
                     .inner()
                     .delete_machine()
