@@ -41,6 +41,13 @@ tcadm agent configure tritonagent --endpoint http://172.16.96.4:8080
 ## Build flow
 
 ```bash
+# 1. Build tritonagent ALONE — see warning below.
+cargo build --release -p tritonagent
+
+# 2. Push the binary to ~~/public/tritoncloud/sources/
+mput -f target/release/tritonagent ~~/public/tritoncloud/sources/tritonagent-illumos.bin
+
+# 3. Package + publish the tarball.
 STAMP=$(date -u +%Y%m%dT%H%M%SZ) bash agents/tritonagent/build.sh
 tritoncloud-publish --channel edge agent \
     --name tritonagent \
@@ -50,7 +57,26 @@ tritoncloud-publish --channel edge agent \
 
 The build script fetches the binary from
 `~~/public/tritoncloud/sources/tritonagent-illumos.bin` on demand if
-proto/opt/triton/tritonagent/bin/tritonagent is missing.
+`proto/opt/triton/tritonagent/bin/tritonagent` is missing.
+
+### IMPORTANT: build tritonagent in its OWN cargo invocation
+
+Do NOT combine `cargo build -p tritond --features foundationdb`
+with `-p tritonagent` in the same invocation. Cargo's feature
+unification leaks the `foundationdb` feature from tritond down
+into the shared `tritond-store` rlib; tritonagent then links
+against `libfdb_c.so` unnecessarily and refuses to start in any
+GZ that doesn't have it on `LD_LIBRARY_PATH`.
+
+Run the two builds as separate cargo commands:
+
+```bash
+cargo build --release -p tritond --features foundationdb
+cargo build --release -p tritonagent
+```
+
+A clean tritonagent binary (`ldd $bin | grep fdb` returns nothing)
+is the only thing the publisher should upload.
 
 ## On first registration
 
