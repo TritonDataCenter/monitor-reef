@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<!DOCTYPE service_bundle SYSTEM "/usr/share/lib/xml/dtd/service_bundle.dtd.1">
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+  Copyright 2026 Edgecast Cloud LLC.
+
+  SMF manifest for site/triton-mantad. The mantad S3 daemon backs
+  Triton's image blob store and (in single-node form) anything else
+  that needs an in-cluster S3 endpoint without going out to a public
+  Manta.
+
+  Imported by customer_metadata.user-script at first boot; lives at
+  /opt/triton/mantad/smf/triton-mantad.xml so the joyent-minimal
+  manifest-import service does not have to.
+-->
+<service_bundle type="manifest" name="triton-mantad">
+  <service name="site/triton-mantad" type="service" version="1">
+    <create_default_instance enabled="false"/>
+    <single_instance/>
+
+    <dependency name="network" grouping="require_all" restart_on="error" type="service">
+      <service_fmri value="svc:/milestone/network:default"/>
+    </dependency>
+    <dependency name="filesystem-local" grouping="require_all" restart_on="error" type="service">
+      <service_fmri value="svc:/system/filesystem/local:default"/>
+    </dependency>
+
+    <exec_method type="method" name="start"
+                 exec="/var/svc/method/triton-mantad"
+                 timeout_seconds="60">
+      <method_context>
+        <method_credential user="root" group="root"/>
+      </method_context>
+    </exec_method>
+    <exec_method type="method" name="stop" exec=":kill"
+                 timeout_seconds="60"/>
+
+    <property_group name="startd" type="framework">
+      <propval name="duration" type="astring" value="contract"/>
+    </property_group>
+
+    <template>
+      <common_name>
+        <loctext xml:lang="C">Triton Manta S3 daemon</loctext>
+      </common_name>
+    </template>
+  </service>
+</service_bundle>

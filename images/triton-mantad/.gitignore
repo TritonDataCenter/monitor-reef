@@ -1,0 +1,3 @@
+# mantad release binaries are too large for github.
+# build.sh fetches both from Manta-hosted sources.
+proto/opt/triton/mantad/bin/
