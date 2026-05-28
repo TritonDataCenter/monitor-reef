@@ -14,7 +14,7 @@ use crate::fdb_txn;
 
 impl FdbStore {
     /// Read the value for a single key, returning `None` if absent.
-    async fn read_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, StoreError> {
+    pub(super) async fn read_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, StoreError> {
         let key = key.to_vec();
         let result: Result<Option<Vec<u8>>, FdbBindingError> = self
             .db
@@ -26,7 +26,7 @@ impl FdbStore {
         result.map_err(StoreError::from)
     }
 
-    async fn read_nat_gateway_record(
+    pub(super) async fn read_nat_gateway_record(
         &self,
         nat_gateway_id: Uuid,
     ) -> Result<NatGatewayRecord, StoreError> {
@@ -39,7 +39,7 @@ impl FdbStore {
     /// Range-scan a `dhcp_lease/by_vpc/...` prefix and decode every
     /// value as a [`DhcpLease`]. Used by both the per-VPC list and
     /// the `list_all_dhcp_leases` reconciler-feeding scan.
-    async fn scan_dhcp_leases(&self, prefix: Vec<u8>) -> Result<Vec<DhcpLease>, StoreError> {
+    pub(super) async fn scan_dhcp_leases(&self, prefix: Vec<u8>) -> Result<Vec<DhcpLease>, StoreError> {
         let (begin, end) = prefix_range(&prefix);
         let values: Result<Vec<Vec<u8>>, FdbBindingError> = self
             .db
@@ -68,7 +68,7 @@ impl FdbStore {
         Ok(out)
     }
 
-    async fn read_edge_cluster_record(
+    pub(super) async fn read_edge_cluster_record(
         &self,
         edge_cluster_id: Uuid,
     ) -> Result<EdgeClusterRecord, StoreError> {
@@ -88,7 +88,7 @@ impl FdbStore {
     /// given image id; it's a closure so each per-scope caller
     /// can capture its own scope identity (silo / tenant / project
     /// / user uuid).
-    async fn create_image_inner<F>(
+    pub(super) async fn create_image_inner<F>(
         &self,
         scope: ImageScope,
         req: NewImage,
@@ -176,7 +176,7 @@ impl FdbStore {
     /// Shared body for the per-scope `list_images_*` methods.
     /// Walks a `image/in_*` membership-index prefix, parses the
     /// suffix uuids, then fetches each image record by id.
-    async fn list_images_via_index(&self, prefix: Vec<u8>) -> Result<Vec<Image>, StoreError> {
+    pub(super) async fn list_images_via_index(&self, prefix: Vec<u8>) -> Result<Vec<Image>, StoreError> {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
         let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
@@ -219,7 +219,7 @@ impl FdbStore {
     /// content-addressed via [`crate::derive_ssh_key_id`] so
     /// idempotent re-create yields the same record.
     #[allow(clippy::too_many_arguments)] // 8 args is the natural shape for this helper.
-    async fn create_ssh_key_inner<F>(
+    pub(super) async fn create_ssh_key_inner<F>(
         &self,
         scope: SshKeyScope,
         req: NewSshKey,
@@ -311,7 +311,7 @@ impl FdbStore {
 
     /// Shared body for the per-scope `list_ssh_keys_*` methods.
     /// Mirrors [`Self::list_images_via_index`].
-    async fn list_ssh_keys_via_index(&self, prefix: Vec<u8>) -> Result<Vec<SshKey>, StoreError> {
+    pub(super) async fn list_ssh_keys_via_index(&self, prefix: Vec<u8>) -> Result<Vec<SshKey>, StoreError> {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
         let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
