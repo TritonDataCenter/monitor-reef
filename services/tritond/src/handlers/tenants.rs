@@ -455,6 +455,71 @@ pub(crate) async fn delete_silo_tenant(
     if tenant.silo_id != silo_id {
         return Err(not_found());
     }
+
+    // Archive the mantad workspace first. The Tenant row drops
+    // only after the workspace is gone (or was never there) so
+    // a 409 from mantad ("non-empty workspace") preserves the
+    // tenant for retry. Mirrors the create-side ordering: state
+    // on mantad leads, tritond's row follows.
+    if let (Some(workspace_uuid), Some(cluster_id)) =
+        (tenant.storage_workspace_id, tenant.storage_cluster_id)
+    {
+        let (_, client) = match crate::storage::client_for(&ctx.store, cluster_id).await {
+            Ok(pair) => pair,
+            Err(http_err) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::TenantDelete,
+                        request_id,
+                        None,
+                        AuditOutcome::ServerError {
+                            message: format!(
+                                "bound storage cluster {cluster_id} unresolvable: {http_err}"
+                            ),
+                        },
+                        serde_json::json!({
+                            "silo_id": silo_id,
+                            "tenant_id": tenant_id,
+                            "storage_cluster_id": cluster_id,
+                            "stage": "storage.client_for",
+                        }),
+                    )
+                    .await;
+                return Err(http_err);
+            }
+        };
+        let workspace_name = format!("t-{}", workspace_uuid.simple());
+        match client.delete_workspace(&workspace_name).await {
+            Ok(()) => {}
+            // Workspace already archived on mantad (manual cleanup
+            // or earlier partial-retry success): proceed to drop
+            // the Tenant row. Anything else (including 409 for a
+            // non-empty workspace) surfaces unchanged.
+            Err(mantad_client::MantadClientError::Status { status: 404, .. }) => {}
+            Err(e) => {
+                let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::TenantDelete,
+                        request_id,
+                        None,
+                        audit_outcome,
+                        serde_json::json!({
+                            "silo_id": silo_id,
+                            "tenant_id": tenant_id,
+                            "storage_cluster_id": cluster_id,
+                            "storage_workspace_id": workspace_uuid,
+                            "stage": "mantad.delete_workspace",
+                        }),
+                    )
+                    .await;
+                return Err(http_err);
+            }
+        }
+    }
+
     // TODO: today's `Store::delete_tenant` is permissive — it
     // does not block the delete when child projects (or other
     // descendant resources) still exist. The block-on-children
@@ -473,7 +538,11 @@ pub(crate) async fn delete_silo_tenant(
             AuditOutcome::Success {
                 resource: Some(format!("Tenant::\"{tenant_id}\"")),
             },
-            serde_json::json!({ "silo_id": silo_id }),
+            serde_json::json!({
+                "silo_id": silo_id,
+                "storage_cluster_id": tenant.storage_cluster_id,
+                "storage_workspace_id": tenant.storage_workspace_id,
+            }),
         )
         .await;
     Ok(HttpResponseDeleted())
