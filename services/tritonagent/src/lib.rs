@@ -272,25 +272,43 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
     // floor-apply below and the status collector inside the publisher.
     let reservoir = Arc::new(ReservoirTool::new());
 
-    // Establish the reservoir floor before serving jobs. Best-effort:
-    // a missing `rsrvrctl` (non-SmartOS dev host) or an under-provisioned
-    // box logs and continues rather than blocking startup. Gated on the
-    // heartbeater flag so integration tests don't touch the host.
+    // Establish the reservoir floor before serving jobs. The effective
+    // policy (per-CN override else cluster default) is pulled from
+    // tritond; the agent-local `--reservoir-percent` is the fallback if
+    // the control plane is unreachable, and `--no-reservoir` is a hard
+    // local kill switch. Best-effort: a missing `rsrvrctl` (non-SmartOS
+    // dev host) or an under-provisioned box logs and continues rather
+    // than blocking startup. Gated on the heartbeater flag so integration
+    // tests don't touch the host.
     if cfg.spawn_heartbeater && cfg.reservoir_enabled {
-        let mgr = reservoir::ReservoirManager::new(
-            Arc::clone(&reservoir),
-            Arc::new(KstatTool::new()),
-        );
-        match mgr.apply_floor(cfg.reservoir_percent).await {
-            Ok(st) => info!(
-                current_mib = st.current_mib(),
-                limit_mib = st.limit_mib,
-                "reservoir floor applied",
-            ),
-            Err(e) => warn!(
-                error = %format!("{e:#}"),
-                "reservoir floor apply failed; continuing without a managed reservoir",
-            ),
+        let (enabled, percent) = match client.agent_get_config().send().await {
+            Ok(resp) => {
+                let r = resp.into_inner();
+                (r.reservoir_enabled, r.reservoir_percent)
+            }
+            Err(e) => {
+                warn!(error = %e, "agent config pull failed; using local reservoir defaults");
+                (true, cfg.reservoir_percent)
+            }
+        };
+        if enabled {
+            let mgr = reservoir::ReservoirManager::new(
+                Arc::clone(&reservoir),
+                Arc::new(KstatTool::new()),
+            );
+            match mgr.apply_floor(percent).await {
+                Ok(st) => info!(
+                    current_mib = st.current_mib(),
+                    limit_mib = st.limit_mib,
+                    "reservoir floor applied",
+                ),
+                Err(e) => warn!(
+                    error = %format!("{e:#}"),
+                    "reservoir floor apply failed; continuing without a managed reservoir",
+                ),
+            }
+        } else {
+            info!("reservoir disabled by control-plane policy for this CN");
         }
     }
 

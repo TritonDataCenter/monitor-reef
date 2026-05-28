@@ -1705,6 +1705,11 @@ enum CnCommand {
         #[command(subcommand)]
         command: CnLabelCommand,
     },
+    /// Per-CN bhyve memory reservoir override.
+    Reservoir {
+        #[command(subcommand)]
+        command: CnReservoirCommand,
+    },
     /// Auto-approve window controls.
     AutoApprove {
         #[command(subcommand)]
@@ -1745,6 +1750,31 @@ enum CnLabelCommand {
         /// for firehyve/fhrun north/south edge instances.
         #[arg(long, value_enum)]
         role: CnRoleArg,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum CnReservoirCommand {
+    /// Set the per-CN reservoir override. The override is replaced
+    /// wholesale: an omitted flag clears that field so it inherits the
+    /// cluster default (`reservoir.percent_default` /
+    /// `reservoir.enabled_default`).
+    Set {
+        server_uuid: Uuid,
+        /// Enable (`true`) or disable (`false`) the reservoir on this CN.
+        #[arg(long)]
+        enabled: Option<bool>,
+        /// Reservoir floor as a fraction of physical RAM (`0.0..=1.0`).
+        #[arg(long)]
+        percent: Option<f32>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Clear the per-CN override; the CN reverts to the cluster defaults.
+    Clear {
+        server_uuid: Uuid,
         #[arg(long)]
         json: bool,
     },
@@ -2383,6 +2413,27 @@ async fn main() -> Result<()> {
                         json,
                     )
                     .await
+                }
+            },
+            CnCommand::Reservoir { command } => match command {
+                CnReservoirCommand::Set {
+                    server_uuid,
+                    enabled,
+                    percent,
+                    json,
+                } => {
+                    commands::cn_reservoir_set(
+                        cli.endpoint,
+                        cli.api_key,
+                        server_uuid,
+                        enabled,
+                        percent,
+                        json,
+                    )
+                    .await
+                }
+                CnReservoirCommand::Clear { server_uuid, json } => {
+                    commands::cn_reservoir_clear(cli.endpoint, cli.api_key, server_uuid, json).await
                 }
             },
             CnCommand::AutoApprove { command } => match command {

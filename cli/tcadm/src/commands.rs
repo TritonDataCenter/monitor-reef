@@ -1868,6 +1868,88 @@ pub async fn cn_label_set(
     Ok(())
 }
 
+/// Set the per-CN bhyve memory reservoir override.
+pub async fn cn_reservoir_set(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    server_uuid: Uuid,
+    reservoir_enabled: Option<bool>,
+    reservoir_percent: Option<f32>,
+    json_output: bool,
+) -> Result<()> {
+    cn_reservoir_apply(
+        endpoint_override,
+        api_key_override,
+        server_uuid,
+        reservoir_enabled,
+        reservoir_percent,
+        json_output,
+    )
+    .await
+}
+
+/// Clear the per-CN reservoir override; the CN reverts to cluster defaults.
+pub async fn cn_reservoir_clear(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    server_uuid: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    cn_reservoir_apply(
+        endpoint_override,
+        api_key_override,
+        server_uuid,
+        None,
+        None,
+        json_output,
+    )
+    .await
+}
+
+async fn cn_reservoir_apply(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    server_uuid: Uuid,
+    reservoir_enabled: Option<bool>,
+    reservoir_percent: Option<f32>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let view = client
+        .set_cn_reservoir()
+        .server_uuid(server_uuid)
+        .body(tritond_client::types::SetCnReservoirRequest {
+            reservoir_enabled,
+            reservoir_percent,
+        })
+        .send()
+        .await
+        .context("set cn reservoir")?
+        .into_inner();
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&view)?);
+        return Ok(());
+    }
+    let enabled = view
+        .reservoir_enabled
+        .map(|b| b.to_string())
+        .unwrap_or_else(|| "(inherit)".to_string());
+    let percent = view
+        .reservoir_percent
+        .map(|p| format!("{p:.2}"))
+        .unwrap_or_else(|| "(inherit)".to_string());
+    println!("CN {} reservoir override:", view.server_uuid);
+    println!("  enabled: {enabled}");
+    println!("  percent: {percent}");
+    println!(
+        "  effective: enabled={} percent={:.2}",
+        view.effective_enabled, view.effective_percent
+    );
+    Ok(())
+}
+
 /// Disable a CN; revokes the bound API key.
 pub async fn cn_disable(
     endpoint_override: Option<String>,
