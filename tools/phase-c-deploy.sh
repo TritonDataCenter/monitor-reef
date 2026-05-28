@@ -49,18 +49,29 @@ ADMIN_TOKEN_ARG="${2:-}"
 note() { printf '==> %s\n' "$*"; }
 fatal() { printf 'phase-c-deploy: %s\n' "$*" >&2; exit 1; }
 
-BIN_DIR=/opt/triton/bin
-ETC_DIR=/opt/triton/etc
-TOKEN_FILE=$ETC_DIR/mantad-admin-token
+# Paths reflect the actual layout on 192.168.1.182 as of the
+# 2026-05-28 verify-attempt — see the org-roam note
+# `monitor-reef: Phase C deploy attempt 2026-05-28 — gotchas
+# captured` for the inventory probe transcript.
+TRITOND_BIN_DIR=/opt/tritond/bin
+TCADM_BIN_DIR=/opt/triton/bin
+MANTAD_BIN_DIR=/opt/mantad/bin
+MANTAD_ETC_DIR=/opt/mantad/etc
+TOKEN_FILE=$MANTAD_ETC_DIR/admin-token
 MANTAD_LOG=/var/log/mantad.log
 TRITOND_LOG=/var/log/tritond.log
-FDB_CLUSTER_FILE="${FDB_CLUSTER_FILE:-/etc/foundationdb/fdb.cluster}"
+TRITOND_CONFIG="${TRITOND_CONFIG:-/etc/tritond/config.toml}"
+FDB_CLUSTER_FILE="${FDB_CLUSTER_FILE:-/etc/fdb/fdb.cluster}"
+# Tritond and mantad both dlopen libfdb_c.so + libfmt.so.11 from
+# /opt/fdb/lib. SMF was setting LD_LIBRARY_PATH for the existing
+# tritond service; the nohup launch here has to mirror that.
+FDB_LIB_DIR=/opt/fdb/lib
 
-mkdir -p "$BIN_DIR" "$ETC_DIR"
+mkdir -p "$TRITOND_BIN_DIR" "$TCADM_BIN_DIR" "$MANTAD_BIN_DIR" "$MANTAD_ETC_DIR"
 mkdir -p /var/mantad/meta /var/mantad/data
 
 # ---------------------------------------------------------------------
-# 1. Quiesce tritond (it's currently using port 8443 / API)
+# 1. Quiesce tritond (bound to :8080 per /etc/tritond/config.toml)
 # ---------------------------------------------------------------------
 if pgrep -x tritond > /dev/null 2>&1; then
     note "stopping existing tritond"
@@ -86,17 +97,27 @@ fi
 # ---------------------------------------------------------------------
 # 2. Back up the current binary
 # ---------------------------------------------------------------------
-if [ -f "$BIN_DIR/tritond" ]; then
-    cp "$BIN_DIR/tritond" "$BIN_DIR/tritond.prev"
-    note "previous tritond backed up to $BIN_DIR/tritond.prev"
+if [ -f "$TRITOND_BIN_DIR/tritond" ]; then
+    cp "$TRITOND_BIN_DIR/tritond" "$TRITOND_BIN_DIR/tritond.prev"
+    note "previous tritond backed up to $TRITOND_BIN_DIR/tritond.prev"
 fi
 
 # ---------------------------------------------------------------------
-# 3. Unpack the bundle
+# 3. Unpack the bundle (per-component target dirs)
 # ---------------------------------------------------------------------
-note "unpacking $BUNDLE into /opt/triton"
-tar -xzf "$BUNDLE" -C /opt/triton
-chmod 755 "$BIN_DIR"/tritond "$BIN_DIR"/tcadm "$BIN_DIR"/mantad "$BIN_DIR"/mantad-adm
+note "unpacking $BUNDLE"
+STAGE=$(mktemp -d -t phase-c-deploy.XXXXXX)
+tar -xzf "$BUNDLE" -C "$STAGE"
+cp "$STAGE/bin/tritond"    "$TRITOND_BIN_DIR/tritond"
+cp "$STAGE/bin/tcadm"      "$TCADM_BIN_DIR/tcadm"
+cp "$STAGE/bin/mantad"     "$MANTAD_BIN_DIR/mantad"
+cp "$STAGE/bin/mantad-adm" "$MANTAD_BIN_DIR/mantad-adm"
+rm -rf "$STAGE"
+chmod 755 \
+    "$TRITOND_BIN_DIR/tritond" \
+    "$TCADM_BIN_DIR/tcadm" \
+    "$MANTAD_BIN_DIR/mantad" \
+    "$MANTAD_BIN_DIR/mantad-adm"
 
 # ---------------------------------------------------------------------
 # 4. Mantad admin token + config
@@ -130,9 +151,14 @@ MANTAD_ADMIN_TOKEN="$ADMIN_TOKEN" \
 MANTAD_META_PLANE=fdb \
 MANTAD_FDB_CLUSTER_FILE="$FDB_CLUSTER_FILE" \
 MANTAD_AUTO_MEMBERSHIP=true \
-nohup "$BIN_DIR/mantad" >> "$MANTAD_LOG" 2>&1 &
+MANTAD_LISTEN=0.0.0.0:7443 \
+MANTAD_INTERNAL_LISTEN=0.0.0.0:7101 \
+MANTAD_RAFT_LISTEN=0.0.0.0:7102 \
+MANTAD_ENDPOINT="http://$(hostname):7443" \
+LD_LIBRARY_PATH="$FDB_LIB_DIR:${LD_LIBRARY_PATH:-}" \
+nohup "$MANTAD_BIN_DIR/mantad" >> "$MANTAD_LOG" 2>&1 &
 MANTAD_PID=$!
-sleep 1
+sleep 2
 if ! kill -0 "$MANTAD_PID" 2>/dev/null; then
     note "mantad failed to start; last log lines:"
     tail -20 "$MANTAD_LOG" >&2
@@ -143,13 +169,17 @@ note "mantad pid=$MANTAD_PID"
 # ---------------------------------------------------------------------
 # 6. Launch tritond
 # ---------------------------------------------------------------------
-# Tritond's bootstrap config + env from the existing deploy must
-# already exist on this box. We don't touch its config — just swap
-# the binary and restart.
-note "launching tritond"
-nohup "$BIN_DIR/tritond" >> "$TRITOND_LOG" 2>&1 &
+# Tritond's bootstrap config lives at /etc/tritond/config.toml on
+# this box (carries `bind_address=0.0.0.0:8080` and the
+# `fdb_cluster_file` line). LD_LIBRARY_PATH=/opt/fdb/lib has to
+# be in the env — SMF set it for the prior installation; nohup
+# doesn't inherit SMF env so we set it explicitly.
+note "launching tritond (config=$TRITOND_CONFIG)"
+LD_LIBRARY_PATH="$FDB_LIB_DIR:${LD_LIBRARY_PATH:-}" \
+nohup "$TRITOND_BIN_DIR/tritond" serve --config "$TRITOND_CONFIG" \
+    >> "$TRITOND_LOG" 2>&1 &
 TRITOND_PID=$!
-sleep 1
+sleep 2
 if ! kill -0 "$TRITOND_PID" 2>/dev/null; then
     note "tritond failed to start; last log lines:"
     tail -20 "$TRITOND_LOG" >&2
@@ -175,18 +205,18 @@ probe_port() {
 }
 
 probe_port 127.0.0.1 7101 "mantad admin"
-probe_port 127.0.0.1 8443 "tritond API"
+probe_port 127.0.0.1 8080 "tritond API"
 note "both daemons listening"
 
 cat <<EOF
 
 next:
-  tcadm storage cluster add --name mantad-01 \\
-                            --cluster-endpoint http://192.168.1.182:7101 \\
-                            --admin-token \$(cat $TOKEN_FILE) \\
-                            --surface s3 --json
+  $TCADM_BIN_DIR/tcadm storage cluster add --name mantad-01 \\
+      --cluster-endpoint http://$(hostname):7101 \\
+      --admin-token \$(cat $TOKEN_FILE) \\
+      --surface s3 --json
 
-  tcadm config set storage.default_s3_cluster_id <cluster-id-from-add>
+  $TCADM_BIN_DIR/tcadm config set storage.default_s3_cluster_id <cluster-id-from-add>
 
   sh phase-c-verify.sh <silo-id>
 EOF

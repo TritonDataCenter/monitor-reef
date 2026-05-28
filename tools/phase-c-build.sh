@@ -80,10 +80,18 @@ case "$HOST_TARGET" in
 esac
 
 # Build tritond + tcadm from monitor-reef.
-note "building monitor-reef (tritond, tcadm) — release profile"
+#
+# `tritond --features foundationdb` is REQUIRED. Without it, the
+# binary aborts on startup the moment `/etc/tritond/config.toml`
+# carries `fdb_cluster_file` (which the deploy on 192.168.1.182
+# does). The default-features tests don't exercise the FDB path,
+# so this is the only place the feature gets exercised in our
+# build pipeline today.
+note "building monitor-reef (tritond, tcadm) — release profile, --features foundationdb"
 (
     cd "$MONITOR_REEF"
-    cargo build --release -p tritond -p tcadm
+    cargo build --release -p tritond --features foundationdb
+    cargo build --release -p tcadm
 )
 
 # Build mantad + mantad-adm from manta-storage. mantad needs the `fdb`

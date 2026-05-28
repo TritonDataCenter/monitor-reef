@@ -166,6 +166,42 @@ mantad does not corrupt tritond's state. Mantad's local meta
 
 ## Known gotchas
 
+For the full deploy-attempt write-up with shell-paste-able
+fixes, see the org-roam note **`monitor-reef: Phase C deploy
+attempt 2026-05-28 — gotchas captured`** (ID
+`76D36E25-B42B-4530-8619-1244504098F1`).
+
+- **`tritond --features foundationdb` is REQUIRED.** Without
+  it, the binary aborts on startup the moment
+  `/etc/tritond/config.toml` has `fdb_cluster_file` set. The
+  build script forces the feature; do not strip it. Note as of
+  branch `nick-tritond-phase0` HEAD `a18369d` this feature
+  path has 225 pre-existing compile errors that need fixing
+  (`beads-1tlr`) before any new tritond can ship.
+- **Build host needs `libfdb_c.so` + `libfmt.so.11`.** Mantad's
+  `--features fdb` link picks them up via `LIBRARY_PATH`. On a
+  build host without FDB installed, copy both from the deploy
+  target's `/opt/fdb/lib/` into `~/lib/` on the build host
+  before invoking `phase-c-build.sh`. The two-leg copy (test
+  box → laptop → build host) is the harness-friendly path; a
+  direct test-box → build-host scp is gated as a production
+  read.
+- **Rust toolchain on the build host.** The codebase declares
+  `channel = "1.92"`. If the system `rustc` is older than 1.85
+  it'll reject `edition2024`. If `rustup` isn't on PATH but
+  `~/.rustup/toolchains/1.92-*/bin/` exists, prepend it to
+  PATH manually.
+- **Path layout on `192.168.1.182`.**
+  - `tritond` lives at `/opt/tritond/bin/tritond` (NOT
+    `/opt/triton/bin/`).
+  - `tcadm` lives at `/opt/triton/bin/tcadm`.
+  - `mantad` is a new install at `/opt/mantad/bin/`.
+  - `tritond` binds `:8080`, not `:8443`.
+  - FDB cluster file is `/etc/fdb/fdb.cluster`, not
+    `/etc/foundationdb/fdb.cluster`.
+  - `tritond` launches need `LD_LIBRARY_PATH=/opt/fdb/lib` in
+    the env so the runtime linker finds `libfdb_c.so`.
+    SMF was setting this; nohup launches must too.
 - **SmartOS curl CA bundle.** `tritond`'s self-update path uses
   Rust TLS via the OS trust store — set `SSL_CERT_FILE=/opt/tools/etc/openssl/certs/ca-certificates.crt`
   if you exercise update paths.
