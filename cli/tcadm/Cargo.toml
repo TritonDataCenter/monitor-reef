@@ -48,8 +48,13 @@ tempfile = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+imgapi-blob-manta = { workspace = true }
+imgapi-manifest = { workspace = true }
+nocloud-import = { workspace = true }
+sha1 = { workspace = true }
 triton-channel = { workspace = true }
 tritond-client = { workspace = true }
+url = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]

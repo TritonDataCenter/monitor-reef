@@ -8,6 +8,7 @@
 
 mod commands;
 mod config;
+mod fetch_nocloud;
 mod http;
 mod install;
 mod self_update;
@@ -1322,6 +1323,44 @@ enum ImageV1Command {
         #[arg(long)]
         json: bool,
     },
+    /// Fetch a cloud-init NoCloud image from an upstream vendor,
+    /// build a zone-dataset image bundle, and optionally register
+    /// it with tritond's IMGAPI surface via an in-cluster mantad.
+    ///
+    /// Targets: `file` (default) leaves the artifacts in
+    /// `--output-dir`. `tritond` additionally uploads the gz to
+    /// mantad and POSTs the manifest to tritond at
+    /// `/v1/silos/{silo_id}/imgapi-images`. The `tritond` target
+    /// requires `--silo`, the global `--endpoint`/`--api-key`, and
+    /// the `MANTAD_*` env vars (see fetch_nocloud.rs).
+    FetchNocloud {
+        #[arg(long, value_enum)]
+        vendor: nocloud_import::vendor::Vendor,
+        #[arg(long)]
+        release: String,
+        #[arg(long, value_enum, default_value = "file")]
+        target: fetch_nocloud::Target,
+        /// Required for `--target tritond`; silo to register the
+        /// resulting Image record in.
+        #[arg(long)]
+        silo: Option<Uuid>,
+        #[arg(long)]
+        output_dir: Option<std::path::PathBuf>,
+        #[arg(long)]
+        workdir: Option<std::path::PathBuf>,
+        /// ZFS dataset to host build-time child datasets under.
+        /// Default `zones` (the SmartOS convention).
+        #[arg(long)]
+        zfs_dataset: Option<String>,
+        /// Skip checksum verification of the downloaded vendor
+        /// image. Development only; never use in production.
+        #[arg(long)]
+        insecure_no_verify: bool,
+        /// Resolve vendor metadata + print the build plan; do not
+        /// actually build. Auto-promoted on non-SmartOS hosts.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2095,6 +2134,32 @@ async fn main() -> Result<()> {
             }
             ImageV1Command::Show { image_id, json } => {
                 commands::image_show_v1(cli.endpoint, cli.api_key, image_id, json).await
+            }
+            ImageV1Command::FetchNocloud {
+                vendor,
+                release,
+                target,
+                silo,
+                output_dir,
+                workdir,
+                zfs_dataset,
+                insecure_no_verify,
+                dry_run,
+            } => {
+                fetch_nocloud::run(fetch_nocloud::Opts {
+                    vendor,
+                    release,
+                    target,
+                    silo,
+                    output_dir,
+                    workdir,
+                    zfs_dataset,
+                    dry_run,
+                    insecure_no_verify,
+                    tritond_endpoint: cli.endpoint.clone(),
+                    tritond_bearer: cli.api_key.clone(),
+                })
+                .await
             }
         },
         Commands::SshKeyV1 { command } => match command {
