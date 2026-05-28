@@ -210,6 +210,12 @@ macro_rules! fdb_txn {
     }};
 }
 
+// `macro_rules!` macros are file-scoped by default; helpers.rs and
+// the test sibling files need access too, so re-export at module
+// scope. `pub(crate)` keeps the macro internal to tritond-store
+// (no risk of accidental re-export to downstream crates).
+pub(crate) use fdb_txn;
+
 /// FoundationDB-backed [`Store`].
 pub struct FdbStore {
     db: Arc<Database>,
@@ -309,10 +315,10 @@ fn validate_edge_cluster_bound_resource_shape(
 fn edge_cluster_resource_record_key(resource: EdgeClusterResource) -> Vec<u8> {
     match resource {
         EdgeClusterResource::NatGateway { nat_gateway_id } => {
-            FdbStore::nat_gateway_by_id_key(nat_gateway_id)
+            keys::nat_gateway_by_id_key(nat_gateway_id)
         }
         EdgeClusterResource::FloatingIp { floating_ip_id } => {
-            FdbStore::floating_ip_by_id_key(floating_ip_id)
+            keys::floating_ip_by_id_key(floating_ip_id)
         }
     }
 }
@@ -728,8 +734,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            .await;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -1059,7 +1064,7 @@ impl Store for FdbStore {
                         let prev: IdpConfig = serde_json::from_slice(&prev_bytes).map_err(txn_de_err("prev idp config"))?;
                         // Drop the stale issuer→tenant entry when
                         // the tenant is moving to a different issuer.
-                        let prev_issuer_key = FdbStore::idp_by_issuer_key(&prev.issuer_url);
+                        let prev_issuer_key = keys::idp_by_issuer_key(&prev.issuer_url);
                         if prev_issuer_key != by_issuer_key {
                             tr.clear(&prev_issuer_key);
                         }
@@ -1103,7 +1108,7 @@ impl Store for FdbStore {
                     // by_issuer entry behind is preferable to
                     // refusing to delete a corrupt record.
                     if let Ok(prev) = serde_json::from_slice::<IdpConfig>(&prev_bytes) {
-                        let by_issuer_key = FdbStore::idp_by_issuer_key(&prev.issuer_url);
+                        let by_issuer_key = keys::idp_by_issuer_key(&prev.issuer_url);
                         tr.clear(&by_issuer_key);
                     }
                     tr.clear(&by_tenant_key);
@@ -1243,8 +1248,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            .await;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -1386,8 +1390,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            .await;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -1597,8 +1600,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            .await;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -1889,8 +1891,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            .await;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -2036,8 +2037,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            .await;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -2179,7 +2179,7 @@ impl Store for FdbStore {
 
         if let RouteTarget::NatGateway { nat_gateway_id } = &req.target {
             let nat = self.read_nat_gateway_record(*nat_gateway_id).await?;
-            keys::validate_nat_gateway_route_target(&nat, tenant_id, project_id, vpc_id)?;
+            Self::validate_nat_gateway_route_target(&nat, tenant_id, project_id, vpc_id)?;
         }
 
         enum Outcome {
@@ -2299,8 +2299,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            .await;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -2533,8 +2532,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            .await;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -2749,8 +2747,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            .await;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -2789,8 +2786,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            .await;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -3998,8 +3994,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            .await;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -4140,8 +4135,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            .await;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -4184,8 +4178,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            .await;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -4258,8 +4251,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            .await;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -4566,8 +4558,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            .await;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -4604,8 +4595,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            .await;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -4808,8 +4798,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            .await;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -4851,11 +4840,9 @@ impl Store for FdbStore {
                         return Ok(Out::Attached);
                     }
                     let by_name_key =
-                        keys::floating_ip_by_project_name_key(fip.project_id, &fip.name)
-                            .into_bytes();
+                        keys::floating_ip_by_project_name_key(fip.project_id, &fip.name);
                     let in_project_key =
-                        keys::floating_ip_in_project_key(fip.project_id, fip.id)
-                            .into_bytes();
+                        keys::floating_ip_in_project_key(fip.project_id, fip.id);
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&in_project_key);
@@ -7048,7 +7035,7 @@ impl Store for FdbStore {
         _tenant_id: Uuid,
         _project_id: Uuid,
         _vpc_id: Uuid,
-        _req: NewFirewallRule,
+        req: NewFirewallRule,
     ) -> Result<FirewallRule, StoreError> {
         validate::name("firewall_rule", &req.name)?;
         Err(firewall_rules_not_in_fdb_yet())
@@ -7541,8 +7528,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            .await;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -7771,7 +7757,7 @@ async fn mint_unique_claim_code(
             let mut rng = rand::rng();
             generate_claim_code(&mut rng)
         };
-        let key = keys::cn_by_claim_key(code);
+        let key = keys::cn_by_claim_key(&code);
         if tr.get(&key, false).await?.is_none() {
             return Ok(Some(code));
         }
@@ -7788,7 +7774,7 @@ async fn mint_unique_poll_token(
             let mut rng = rand::rng();
             generate_poll_token(&mut rng)
         };
-        let key = keys::cn_by_poll_key(token);
+        let key = keys::cn_by_poll_key(&token);
         if tr.get(&key, false).await?.is_none() {
             return Ok(Some(token));
         }

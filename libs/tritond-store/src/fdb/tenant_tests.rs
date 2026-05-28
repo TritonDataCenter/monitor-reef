@@ -23,12 +23,12 @@ fn fdb_test_store() -> FdbStore {
 /// Drop a tenant row + indices we know about. Best-effort — the
 /// row may have been deleted by the test itself.
 async fn purge_tenant(store: &FdbStore, tenant_id: Uuid) {
-    let by_id = FdbStore::tenant_by_id_key(tenant_id);
+    let by_id = keys::tenant_by_id_key(tenant_id);
     if let Ok(Some(bytes)) = store.read_bytes(&by_id).await
         && let Ok(t) = serde_json::from_slice::<Tenant>(&bytes)
     {
-        let by_name = FdbStore::tenant_by_silo_name_key(t.silo_id, &t.name);
-        let in_silo = FdbStore::tenant_in_silo_key(t.silo_id, t.id);
+        let by_name = keys::tenant_by_silo_name_key(t.silo_id, &t.name);
+        let in_silo = keys::tenant_in_silo_key(t.silo_id, t.id);
         let _ = store
             .db
             .run(|tr, _| {
@@ -49,7 +49,7 @@ async fn purge_tenant(store: &FdbStore, tenant_id: Uuid) {
 /// Drop a silo row + by_name index, plus the default tenant
 /// that was created atomically with the silo. Best-effort cleanup.
 async fn purge_silo(store: &FdbStore, silo_id: Uuid) {
-    let by_id = FdbStore::silo_by_id_key(silo_id);
+    let by_id = keys::silo_by_id_key(silo_id);
     if let Ok(Some(bytes)) = store.read_bytes(&by_id).await
         && let Ok(s) = serde_json::from_slice::<Silo>(&bytes)
     {
@@ -57,7 +57,7 @@ async fn purge_silo(store: &FdbStore, silo_id: Uuid) {
         // tenant_in_silo index also gets cleared.
         purge_tenant(store, s.default_tenant_id).await;
 
-        let by_name = FdbStore::silo_by_name_key(&s.name);
+        let by_name = keys::silo_by_name_key(&s.name);
         let _ = store
             .db
             .run(|tr, _| {

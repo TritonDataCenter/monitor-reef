@@ -34,7 +34,7 @@ fn sysinfo_fixture() -> serde_json::Value {
 async fn purge_cn(store: &FdbStore, server_uuid: Uuid) {
     // Read the record first to learn which claim/poll indices
     // need clearing; ignore any decode failure.
-    let by_uuid = FdbStore::cn_by_uuid_key(server_uuid);
+    let by_uuid = keys::cn_by_uuid_key(server_uuid);
     if let Ok(Some(bytes)) = store.read_bytes(&by_uuid).await
         && let Ok(cn) = serde_json::from_slice::<Cn>(&bytes)
     {
@@ -42,15 +42,12 @@ async fn purge_cn(store: &FdbStore, server_uuid: Uuid) {
             .db
             .run(|tr, _| {
                 let by_uuid = by_uuid.clone();
-                let claim_key = cn.claim_code.as_deref().map(FdbStore::cn_by_claim_key);
-                let poll_key = FdbStore::cn_by_poll_key(&cn.poll_token);
-                let state_key = FdbStore::cn_by_state_key(cn.state, server_uuid);
-                let pending_state_key =
-                    FdbStore::cn_by_state_key(CnState::Pending, server_uuid);
-                let approved_state_key =
-                    FdbStore::cn_by_state_key(CnState::Approved, server_uuid);
-                let disabled_state_key =
-                    FdbStore::cn_by_state_key(CnState::Disabled, server_uuid);
+                let claim_key = cn.claim_code.as_deref().map(keys::cn_by_claim_key);
+                let poll_key = keys::cn_by_poll_key(&cn.poll_token);
+                let state_key = keys::cn_by_state_key(cn.state, server_uuid);
+                let pending_state_key = keys::cn_by_state_key(CnState::Pending, server_uuid);
+                let approved_state_key = keys::cn_by_state_key(CnState::Approved, server_uuid);
+                let disabled_state_key = keys::cn_by_state_key(CnState::Disabled, server_uuid);
                 async move {
                     tr.clear(&by_uuid);
                     if let Some(k) = claim_key.as_deref() {
@@ -74,9 +71,9 @@ async fn purge_cn(store: &FdbStore, server_uuid: Uuid) {
         let _ = store
             .db
             .run(|tr, _| {
-                let pending = FdbStore::cn_by_state_key(CnState::Pending, server_uuid);
-                let approved = FdbStore::cn_by_state_key(CnState::Approved, server_uuid);
-                let disabled = FdbStore::cn_by_state_key(CnState::Disabled, server_uuid);
+                let pending = keys::cn_by_state_key(CnState::Pending, server_uuid);
+                let approved = keys::cn_by_state_key(CnState::Approved, server_uuid);
+                let disabled = keys::cn_by_state_key(CnState::Disabled, server_uuid);
                 async move {
                     tr.clear(&pending);
                     tr.clear(&approved);
