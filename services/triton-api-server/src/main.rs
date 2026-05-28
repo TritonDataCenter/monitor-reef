@@ -696,13 +696,9 @@ impl TritonApi for TritonApiImpl {
         // Delete load balancer VMs provisioned by the moirai-k8s-controller.
         // These are not tracked in record.nodes; discover them via the
         // role=k8s-loadbalancer tag and filter to this cluster by name.
-        if record.lb_installed {
-            let cloudapi = ctx.cloudapi.clone().ok_or_else(|| {
-                HttpError::for_unavail(
-                    Some("NoCloudAPI".to_string()),
-                    "cloudapi not configured; cannot delete LB VMs".to_string(),
-                )
-            })?;
+        // Always attempt this when cloudapi is configured — lb_installed may
+        // be false even when VMs exist (e.g. if the install rollout timed out).
+        if let Some(cloudapi) = ctx.cloudapi.clone() {
             let provision_account = record.account_id.to_string();
             let tag = "role=k8s-loadbalancer".to_string();
             let lb_vms = cloudapi
