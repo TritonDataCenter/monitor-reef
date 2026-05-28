@@ -1351,8 +1351,19 @@ async fn provision_vm(
     image_uuid: Uuid,
     package: &str,
     fabric_network_id: Uuid,
+    cns_service: Option<&str>,
 ) -> anyhow::Result<(Uuid, String)> {
     use cloudapi_client::types::{CreateMachineRequest, MachineState, NetworkObject};
+    use cloudapi_client::Tags;
+
+    let tags = cns_service.map(|svc| {
+        let mut m = std::collections::HashMap::new();
+        m.insert(
+            "triton.cns.services".to_string(),
+            serde_json::Value::String(svc.to_string()),
+        );
+        Tags(m)
+    });
 
     let body = CreateMachineRequest {
         name: Some(name.to_string()),
@@ -1366,7 +1377,7 @@ async fn provision_vm(
         affinity: None,
         locality: None,
         metadata: None,
-        tags: None,
+        tags,
         firewall_enabled: None,
         deletion_protection: None,
         brand: None,
@@ -1470,6 +1481,7 @@ async fn run_bootstrap(
             image_uuid,
             &req.package,
             fabric_network_id,
+            None,
         )
         .await
         .with_context(|| format!("provision control-plane node {name}"))?;
@@ -1490,6 +1502,7 @@ async fn run_bootstrap(
             image_uuid,
             &req.package,
             fabric_network_id,
+            Some("worker"),
         )
         .await
         .with_context(|| format!("provision worker node {name}"))?;
@@ -1891,6 +1904,7 @@ async fn run_add_workers(
             image_id,
             &req.package,
             fabric_network_id,
+            Some("worker"),
         )
         .await
         .with_context(|| format!("provision worker node {name}"))?;
