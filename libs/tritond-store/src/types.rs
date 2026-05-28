@@ -2988,6 +2988,16 @@ pub const DEFAULT_IMDS_ENABLED: bool = true;
 /// [`DEFAULT_IMDS_ENABLED`], surfaced through
 /// [`Settings::imds_hop_limit_default`].
 pub const DEFAULT_IMDS_HOP_LIMIT: u64 = 1;
+/// Cluster-default for whether tritonagent manages the bhyve memory
+/// reservoir (RFD 0185), surfaced through
+/// [`Settings::reservoir_enabled_default`]. A per-CN
+/// [`CnPlacement::reservoir_enabled`] overrides it.
+pub const DEFAULT_RESERVOIR_ENABLED: bool = true;
+/// Cluster-default fraction of physical RAM the reservoir floor targets,
+/// surfaced through [`Settings::reservoir_percent_default`]. A per-CN
+/// [`CnPlacement::reservoir_percent`] overrides it. tritonagent clamps
+/// the effective value to `[0.0, 1.0]` and the kernel reservoir limit.
+pub const DEFAULT_RESERVOIR_PERCENT: f32 = 0.80;
 
 /// Default cadence of the stale-claim sweeper, in seconds.
 pub const DEFAULT_SWEEPER_INTERVAL_SECS: u64 = 60;
@@ -3069,6 +3079,20 @@ pub struct Settings {
     /// (1) for SSRF-relay safety.
     #[serde(rename = "imds.hop_limit_default")]
     pub imds_hop_limit_default: u64,
+    /// Cluster-default for whether tritonagent manages the bhyve memory
+    /// reservoir when a CN has no [`CnPlacement::reservoir_enabled`]
+    /// override. Flip cluster-wide with `tcadm config set
+    /// reservoir.enabled_default false`. Bootstrap default:
+    /// [`DEFAULT_RESERVOIR_ENABLED`].
+    #[serde(rename = "reservoir.enabled_default")]
+    pub reservoir_enabled_default: bool,
+    /// Cluster-default reservoir floor as a fraction of physical RAM when
+    /// a CN has no [`CnPlacement::reservoir_percent`] override. Set with
+    /// `tcadm config set reservoir.percent_default 0.75`. tritonagent
+    /// clamps to `[0.0, 1.0]` and the kernel limit. Bootstrap default:
+    /// [`DEFAULT_RESERVOIR_PERCENT`].
+    #[serde(rename = "reservoir.percent_default")]
+    pub reservoir_percent_default: f32,
     /// How long terminal sagas are kept in FDB before the sweeper's
     /// retention pass deletes the record + event log. Default 30
     /// days (`30 * 86400 = 2_592_000`). Stuck sagas are exempt and
@@ -3089,6 +3113,8 @@ impl Default for Settings {
             metrics_clickhouse_url: None,
             imds_enabled_default: DEFAULT_IMDS_ENABLED,
             imds_hop_limit_default: DEFAULT_IMDS_HOP_LIMIT,
+            reservoir_enabled_default: DEFAULT_RESERVOIR_ENABLED,
+            reservoir_percent_default: DEFAULT_RESERVOIR_PERCENT,
             saga_retention_secs: DEFAULT_SAGA_RETENTION_SECS,
         }
     }
@@ -3160,13 +3186,17 @@ pub enum ConfigKey {
     ImdsEnabledDefault,
     /// [`Settings::imds_hop_limit_default`]
     ImdsHopLimitDefault,
+    /// [`Settings::reservoir_enabled_default`]
+    ReservoirEnabledDefault,
+    /// [`Settings::reservoir_percent_default`]
+    ReservoirPercentDefault,
     /// [`Settings::saga_retention_secs`]
     SagaRetentionSecs,
 }
 
 impl ConfigKey {
     /// Every key, in the order `tcadm config list` displays them.
-    pub const ALL: [ConfigKey; 10] = [
+    pub const ALL: [ConfigKey; 12] = [
         ConfigKey::ProvisionerInprocessDisabled,
         ConfigKey::SweeperIntervalSecs,
         ConfigKey::StaleClaimThresholdSecs,
@@ -3176,6 +3206,8 @@ impl ConfigKey {
         ConfigKey::MetricsClickhouseUrl,
         ConfigKey::ImdsEnabledDefault,
         ConfigKey::ImdsHopLimitDefault,
+        ConfigKey::ReservoirEnabledDefault,
+        ConfigKey::ReservoirPercentDefault,
         ConfigKey::SagaRetentionSecs,
     ];
 
@@ -3192,6 +3224,8 @@ impl ConfigKey {
             ConfigKey::MetricsClickhouseUrl => "metrics.clickhouse_url",
             ConfigKey::ImdsEnabledDefault => "imds.enabled_default",
             ConfigKey::ImdsHopLimitDefault => "imds.hop_limit_default",
+            ConfigKey::ReservoirEnabledDefault => "reservoir.enabled_default",
+            ConfigKey::ReservoirPercentDefault => "reservoir.percent_default",
             ConfigKey::SagaRetentionSecs => "saga.retention_secs",
         }
     }
@@ -3227,6 +3261,12 @@ impl ConfigKey {
             ConfigKey::ImdsHopLimitDefault => {
                 "cluster default for config/imds/hop-limit when no scope pins one (1..64)"
             }
+            ConfigKey::ReservoirEnabledDefault => {
+                "cluster default for bhyve memory reservoir management when a CN has no override"
+            }
+            ConfigKey::ReservoirPercentDefault => {
+                "cluster default reservoir floor as a fraction of RAM (0.0..1.0) when a CN has no override"
+            }
             ConfigKey::SagaRetentionSecs => {
                 "how long terminal sagas stay in FDB before the retention pass deletes them (seconds)"
             }
@@ -3255,6 +3295,8 @@ impl ConfigKey {
             ConfigKey::MetricsClickhouseUrl => "TRITOND_METRICS_CLICKHOUSE_URL",
             ConfigKey::ImdsEnabledDefault => "TRITOND_IMDS_ENABLED_DEFAULT",
             ConfigKey::ImdsHopLimitDefault => "TRITOND_IMDS_HOP_LIMIT_DEFAULT",
+            ConfigKey::ReservoirEnabledDefault => "TRITOND_RESERVOIR_ENABLED_DEFAULT",
+            ConfigKey::ReservoirPercentDefault => "TRITOND_RESERVOIR_PERCENT_DEFAULT",
             ConfigKey::SagaRetentionSecs => "TRITOND_SAGA_RETENTION_SECS",
         })
     }
@@ -3786,6 +3828,17 @@ pub struct CnPlacement {
     /// by the engine.
     #[serde(default)]
     pub note: Option<String>,
+    /// Per-CN override for whether tritonagent manages the bhyve memory
+    /// reservoir. `None` inherits [`Settings::reservoir_enabled_default`].
+    /// `#[serde(default)]` so rows written before this field existed
+    /// deserialize as `None`.
+    #[serde(default)]
+    pub reservoir_enabled: Option<bool>,
+    /// Per-CN override for the reservoir floor (fraction of physical RAM).
+    /// `None` inherits [`Settings::reservoir_percent_default`]. tritonagent
+    /// clamps the effective value to `[0.0, 1.0]` and the kernel limit.
+    #[serde(default)]
+    pub reservoir_percent: Option<f32>,
     /// When the row was last updated. The Store sets this to the
     /// caller-supplied `now` on every write.
     pub updated_at: DateTime<Utc>,
@@ -3814,9 +3867,53 @@ impl CnPlacement {
             cordoned: false,
             cordoned_reason: None,
             note: None,
+            reservoir_enabled: None,
+            reservoir_percent: None,
             updated_at: now,
             updated_by: String::new(),
         }
+    }
+
+    /// Resolve the effective reservoir policy for this CN: the per-CN
+    /// override when set, otherwise the cluster defaults. Mirrors the
+    /// IMDS `enabled_default` / `hop_limit_default` precedence so the
+    /// agent receives a single flat answer.
+    pub fn effective_reservoir(&self, default_enabled: bool, default_percent: f32) -> (bool, f32) {
+        (
+            self.reservoir_enabled.unwrap_or(default_enabled),
+            self.reservoir_percent.unwrap_or(default_percent),
+        )
+    }
+}
+
+#[cfg(test)]
+mod reservoir_config_tests {
+    use super::*;
+
+    #[test]
+    fn effective_reservoir_override_wins_else_default() {
+        let mut p = CnPlacement::fresh(Uuid::nil(), Utc::now());
+        // No override → inherit both defaults.
+        assert_eq!(p.effective_reservoir(true, 0.8), (true, 0.8));
+        // Partial override: percent set, enabled inherits.
+        p.reservoir_percent = Some(0.5);
+        assert_eq!(p.effective_reservoir(true, 0.8), (true, 0.5));
+        // Full override.
+        p.reservoir_enabled = Some(false);
+        assert_eq!(p.effective_reservoir(true, 0.8), (false, 0.5));
+    }
+
+    #[test]
+    fn settings_default_carries_reservoir_knobs() {
+        // The generic `every_key_serializes_a_field` / `config_key_wire_round_trips`
+        // tests already cover the ConfigKey plumbing; this pins the default
+        // values and that `set` reaches the reservoir fields.
+        let mut s = Settings::default();
+        assert_eq!(s.reservoir_enabled_default, DEFAULT_RESERVOIR_ENABLED);
+        assert_eq!(s.reservoir_percent_default, DEFAULT_RESERVOIR_PERCENT);
+        s.set(ConfigKey::ReservoirPercentDefault, serde_json::json!(0.6))
+            .expect("set percent");
+        assert_eq!(s.reservoir_percent_default, 0.6);
     }
 }
 

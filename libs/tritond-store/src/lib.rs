@@ -1804,6 +1804,21 @@ pub trait Store: Send + Sync + 'static {
     /// fleet view; CNs that have no row are absent from the list.
     async fn list_cn_placements(&self) -> Result<Vec<CnPlacement>, StoreError>;
 
+    /// Set the per-CN bhyve memory reservoir override on the
+    /// [`CnPlacement`] row, read-modify-write inside one transaction so a
+    /// concurrent edit to another field can't be clobbered. Synthesises a
+    /// fresh row when none exists. `None` for either field clears that
+    /// override (the CN falls back to the cluster default). Returns the
+    /// updated row.
+    async fn set_cn_reservoir(
+        &self,
+        server_uuid: Uuid,
+        reservoir_enabled: Option<bool>,
+        reservoir_percent: Option<f32>,
+        now: DateTime<Utc>,
+        updated_by: String,
+    ) -> Result<CnPlacement, StoreError>;
+
     // ---- cn-reservation (saga-owned in-flight capacity ticket) ----
 
     /// Insert a [`CnReservation`] row.

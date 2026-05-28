@@ -335,6 +335,20 @@ pub struct AgentStatusRequest {
     pub payload: serde_json::Value,
 }
 
+/// Response body for `GET /v1/agent/config`.
+///
+/// The effective per-CN configuration tritonagent pulls at startup and
+/// periodically thereafter. tritond resolves any per-CN override against
+/// the cluster defaults, so the agent receives flat, ready-to-apply
+/// values. Extensible: future per-CN agent config joins this struct.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct AgentConfigResponse {
+    /// Whether this CN manages a bhyve memory reservoir.
+    pub reservoir_enabled: bool,
+    /// Reservoir floor as a fraction of physical RAM (`0.0..=1.0`).
+    pub reservoir_percent: f32,
+}
+
 /// Request body for `POST /v1/agent/network-realization`.
 ///
 /// Agents report one `(resource, realizer)` row at a time. Tritond
@@ -1467,6 +1481,34 @@ pub struct SetCnRoleRequest {
     pub role: CnRole,
 }
 
+/// Request body for `POST /v1/cns/{server_uuid}/reservoir`.
+///
+/// Replaces the per-CN bhyve memory reservoir override. `None` for a
+/// field clears that override so the CN inherits the cluster default
+/// (`reservoir.enabled_default` / `reservoir.percent_default`). Both
+/// `None` reverts the CN entirely to defaults.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SetCnReservoirRequest {
+    #[serde(default)]
+    pub reservoir_enabled: Option<bool>,
+    #[serde(default)]
+    pub reservoir_percent: Option<f32>,
+}
+
+/// Response body for `POST /v1/cns/{server_uuid}/reservoir`. Echoes the
+/// per-CN override (`None` = inherits the cluster default) plus the
+/// resolved effective values the CN will actually apply.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct CnReservoirView {
+    pub server_uuid: Uuid,
+    /// Per-CN override: `None` inherits the cluster default.
+    pub reservoir_enabled: Option<bool>,
+    pub reservoir_percent: Option<f32>,
+    /// Effective values after applying the cluster defaults.
+    pub effective_enabled: bool,
+    pub effective_percent: f32,
+}
+
 /// Request body for `POST /v1/cns/auto-approve`.
 ///
 /// Opens (or replaces) the global auto-approve window. Bounded by
@@ -2348,6 +2390,19 @@ pub trait TritondApi {
         body: TypedBody<AgentStatusRequest>,
     ) -> Result<HttpResponseOk<()>, HttpError>;
 
+    /// Effective per-CN agent config for the calling (bound) CN. The
+    /// CN identity comes from the API key's `bound_to_cn` binding, not a
+    /// path param. tritond resolves any per-CN reservoir override against
+    /// the cluster defaults. Same auth shape as `agent_status`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/agent/config",
+        tags = ["agent"],
+    }]
+    async fn agent_get_config(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<AgentConfigResponse>, HttpError>;
+
     /// Report realized network state for a single resource. Auth:
     /// requires a CN-bound API key with
     /// [`tritond_store::ApiKeyScope::Agent`]. Backward generation
@@ -2467,6 +2522,20 @@ pub trait TritondApi {
         path: Path<CnPath>,
         body: TypedBody<SetCnRoleRequest>,
     ) -> Result<HttpResponseOk<CnView>, HttpError>;
+
+    /// Set (or clear) the per-CN bhyve memory reservoir override.
+    /// Operator-only. The body fully replaces the override; a `None`
+    /// field clears it so the CN inherits the cluster default.
+    #[endpoint {
+        method = POST,
+        path = "/v1/cns/{server_uuid}/reservoir",
+        tags = ["cns"],
+    }]
+    async fn set_cn_reservoir(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<CnPath>,
+        body: TypedBody<SetCnReservoirRequest>,
+    ) -> Result<HttpResponseOk<CnReservoirView>, HttpError>;
 
     /// Dry-run the drain plan for one CN. For each instance currently
     /// hosted on this CN the placement engine picks a candidate target

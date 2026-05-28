@@ -26,15 +26,18 @@ use dropshot::{
     TypedBody,
 };
 use tritond_api::{
-    AgentJobPath, AgentPortBlueprint, AgentPortBlueprintPath, AgentStatusRequest, ApiKeyCreated,
+    AgentConfigResponse, AgentJobPath, AgentPortBlueprint, AgentPortBlueprintPath,
+    AgentStatusRequest, ApiKeyCreated,
     ApiKeyPath, ApproveCnRequest, AttachFloatingIpRequest, AuditEventList, AuditEventPath,
     AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, ClaimJobRequest, ClaimJobResponse,
-    CnListQuery, CnPath, CompleteJobRequest, ConfigEntry, ConfigKeyPath, HealthResponse, ImagePath,
+    CnListQuery, CnPath, CnReservoirView, CompleteJobRequest, ConfigEntry, ConfigKeyPath,
+    HealthResponse, ImagePath,
     InstanceDeleteQuery, InstanceLogsPath, LegacyCnSummary, LegacyVmListQuery, LegacyVmPath,
     LogTailQuery, LoginRequest, MetricsRangeQuery, NetworkRealizationRequest, NewApiKey,
     NewIdpConfig, NewImageFromBundle, NewImageFromImgapi, OpenAutoApproveRequest,
     ProvisioningBlueprint, RefreshRequest, RegisterCnRequest, RegisterCnResponse,
-    RegisterStatusQuery, RegisterStatusResponse, SetCnRoleRequest, SetConfigRequest, SiloPath,
+    RegisterStatusQuery, RegisterStatusResponse, SetCnReservoirRequest, SetCnRoleRequest,
+    SetConfigRequest, SiloPath,
     SiloTenantPath, SshKeyPath, StorageClusterAccessKeyPath, StorageClusterBucketPath,
     StorageClusterNodePath, StorageClusterPath, StorageClusterUserPath,
     StorageClusterUserPolicyPath, TenantIdpPath, TenantPath, TenantProjectFloatingIpPath,
@@ -1233,6 +1236,12 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::agents::agent_status(rqctx, body).await
     }
 
+    async fn agent_get_config(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<AgentConfigResponse>, HttpError> {
+        crate::handlers::agents::agent_get_config(rqctx).await
+    }
+
     async fn agent_report_network_realization(
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<NetworkRealizationRequest>,
@@ -1283,6 +1292,14 @@ impl TritondApi for TritondServiceImpl {
         body: TypedBody<SetCnRoleRequest>,
     ) -> Result<HttpResponseOk<CnView>, HttpError> {
         crate::handlers::cns::set_cn_role(rqctx, path, body).await
+    }
+
+    async fn set_cn_reservoir(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<CnPath>,
+        body: TypedBody<SetCnReservoirRequest>,
+    ) -> Result<HttpResponseOk<CnReservoirView>, HttpError> {
+        crate::handlers::cns::set_cn_reservoir(rqctx, path, body).await
     }
 
     async fn drain_preview(

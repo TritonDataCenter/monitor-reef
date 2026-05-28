@@ -6266,6 +6266,39 @@ impl Store for FdbStore {
         }
     }
 
+    async fn set_cn_reservoir(
+        &self,
+        server_uuid: Uuid,
+        reservoir_enabled: Option<bool>,
+        reservoir_percent: Option<f32>,
+        now: chrono::DateTime<Utc>,
+        updated_by: String,
+    ) -> Result<CnPlacement, StoreError> {
+        let key = keys::cn_placement_key(server_uuid);
+        let updated: Result<CnPlacement, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                let updated_by = updated_by.clone();
+                async move {
+                    let mut row = match tr.get(&key, false).await? {
+                        Some(bytes) => serde_json::from_slice::<CnPlacement>(&bytes)
+                            .map_err(txn_de_err("cn_placement"))?,
+                        None => CnPlacement::fresh(server_uuid, now),
+                    };
+                    row.reservoir_enabled = reservoir_enabled;
+                    row.reservoir_percent = reservoir_percent;
+                    row.updated_at = now;
+                    row.updated_by = updated_by;
+                    let value = serde_json::to_vec(&row).map_err(txn_ser_err("cn_placement"))?;
+                    tr.set(&key, &value);
+                    Ok(row)
+                }
+            })
+            .await;
+        updated.map_err(StoreError::from)
+    }
+
     async fn list_cn_placements(&self) -> Result<Vec<CnPlacement>, StoreError> {
         let prefix = keys::cn_placement_prefix().to_vec();
         let (begin, end) = prefix_range(&prefix);

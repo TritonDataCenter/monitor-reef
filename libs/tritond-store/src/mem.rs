@@ -3739,6 +3739,28 @@ impl Store for MemStore {
         Ok(guard.cn_placements.values().cloned().collect())
     }
 
+    async fn set_cn_reservoir(
+        &self,
+        server_uuid: Uuid,
+        reservoir_enabled: Option<bool>,
+        reservoir_percent: Option<f32>,
+        now: chrono::DateTime<Utc>,
+        updated_by: String,
+    ) -> Result<CnPlacement, StoreError> {
+        let mut guard = self.inner.write().await;
+        let mut row = guard
+            .cn_placements
+            .get(&server_uuid)
+            .cloned()
+            .unwrap_or_else(|| CnPlacement::fresh(server_uuid, now));
+        row.reservoir_enabled = reservoir_enabled;
+        row.reservoir_percent = reservoir_percent;
+        row.updated_at = now;
+        row.updated_by = updated_by;
+        guard.cn_placements.insert(server_uuid, row.clone());
+        Ok(row)
+    }
+
     async fn reserve_cn_capacity(&self, row: CnReservation) -> Result<(), StoreError> {
         let mut guard = self.inner.write().await;
         let key = (row.server_uuid, row.saga_id);
@@ -10351,6 +10373,39 @@ mod tests {
         assert!(row.traits.is_empty());
         // List is empty - fresh-default rows are not persisted.
         assert!(store.list_cn_placements().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn set_cn_reservoir_sets_then_clears_override() {
+        let store = MemStore::new();
+        let cn = Uuid::new_v4();
+        let now = Utc::now();
+
+        // Set both fields.
+        let row = store
+            .set_cn_reservoir(cn, Some(false), Some(0.5), now, "user:op".to_string())
+            .await
+            .unwrap();
+        assert_eq!(row.reservoir_enabled, Some(false));
+        assert_eq!(row.reservoir_percent, Some(0.5));
+        assert_eq!(row.updated_by, "user:op");
+
+        // Persisted: a subsequent get reflects the override.
+        let got = store.get_cn_placement(cn).await.unwrap();
+        assert_eq!(got.reservoir_enabled, Some(false));
+        assert_eq!(got.reservoir_percent, Some(0.5));
+
+        // Effective resolution: override wins over the defaults.
+        assert_eq!(got.effective_reservoir(true, 0.8), (false, 0.5));
+
+        // Clear (both None) reverts to inheriting the cluster default.
+        let cleared = store
+            .set_cn_reservoir(cn, None, None, now, "user:op".to_string())
+            .await
+            .unwrap();
+        assert_eq!(cleared.reservoir_enabled, None);
+        assert_eq!(cleared.reservoir_percent, None);
+        assert_eq!(cleared.effective_reservoir(true, 0.8), (true, 0.8));
     }
 
     #[tokio::test]

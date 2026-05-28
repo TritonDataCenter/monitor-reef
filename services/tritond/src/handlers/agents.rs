@@ -27,7 +27,8 @@ use dropshot::{
     TypedBody,
 };
 use tritond_api::{
-    AgentJobPath, AgentPortBlueprint, AgentPortBlueprintPath, AgentStatusRequest, ApiKeyCreated,
+    AgentConfigResponse, AgentJobPath, AgentPortBlueprint, AgentPortBlueprintPath,
+    AgentStatusRequest, ApiKeyCreated,
     ApiKeyPath, ApproveCnRequest, AttachFloatingIpRequest, AuditEventList, AuditEventPath,
     AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, ClaimJobRequest, ClaimJobResponse,
     CnListQuery, CnPath, CompleteJobRequest, ConfigEntry, ConfigKeyPath, DhcpLeaseActivityReport,
@@ -404,6 +405,39 @@ pub(crate) async fn agent_status(
     // just reported. Logs internally; never fails the status post.
     backfill_instance_brands(ctx, &payload).await;
     Ok(HttpResponseOk(()))
+}
+
+/// `GET /v1/agent/config` — effective per-CN agent config for the bound
+/// CN. Resolves the per-CN reservoir override against the cluster
+/// defaults and returns flat values the agent applies directly.
+pub(crate) async fn agent_get_config(
+    rqctx: RequestContext<ApiContext>,
+) -> Result<HttpResponseOk<AgentConfigResponse>, HttpError> {
+    let ctx = rqctx.context();
+    let principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::AgentConfig,
+    )
+    .await?;
+    let server_uuid = require_bound_cn(&principal)?;
+
+    let settings = ctx.store.get_settings().await.map_err(store_error_to_http)?;
+    let placement = ctx
+        .store
+        .get_cn_placement(server_uuid)
+        .await
+        .map_err(store_error_to_http)?;
+    let (reservoir_enabled, reservoir_percent) = placement.effective_reservoir(
+        settings.reservoir_enabled_default,
+        settings.reservoir_percent_default,
+    );
+    Ok(HttpResponseOk(AgentConfigResponse {
+        reservoir_enabled,
+        reservoir_percent,
+    }))
 }
 
 pub(crate) async fn agent_report_network_realization(

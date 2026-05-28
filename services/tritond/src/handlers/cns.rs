@@ -30,12 +30,14 @@ use tritond_api::{
     AgentJobPath, AgentPortBlueprint, AgentPortBlueprintPath, AgentStatusRequest, ApiKeyCreated,
     ApiKeyPath, ApproveCnRequest, AttachFloatingIpRequest, AuditEventList, AuditEventPath,
     AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, ClaimJobRequest, ClaimJobResponse,
-    CnListQuery, CnPath, CompleteJobRequest, ConfigEntry, ConfigKeyPath, HealthResponse, ImagePath,
+    CnListQuery, CnPath, CnReservoirView, CompleteJobRequest, ConfigEntry, ConfigKeyPath,
+    HealthResponse, ImagePath,
     InstanceDeleteQuery, InstanceLogsPath, LegacyCnSummary, LegacyVmListQuery, LegacyVmPath,
     LogTailQuery, LoginRequest, MetricsRangeQuery, NetworkRealizationRequest, NewApiKey,
     NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint,
     RefreshRequest, RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery,
-    RegisterStatusResponse, SetCnRoleRequest, SetConfigRequest, SiloPath, SiloTenantPath,
+    RegisterStatusResponse, SetCnReservoirRequest, SetCnRoleRequest, SetConfigRequest, SiloPath,
+    SiloTenantPath,
     SshKeyPath, StorageClusterAccessKeyPath, StorageClusterBucketPath, StorageClusterNodePath,
     StorageClusterPath, StorageClusterUserPath, StorageClusterUserPolicyPath, TenantIdpPath,
     TenantPath, TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath,
@@ -458,6 +460,71 @@ pub(crate) async fn set_cn_role(
         )
         .await;
     Ok(HttpResponseOk(CnView::from(cn)))
+}
+
+/// `POST /v1/cns/{server_uuid}/reservoir` — set or clear the per-CN
+/// bhyve memory reservoir override. The body fully replaces the
+/// override; a `None` field inherits the cluster default. Operator-only.
+pub(crate) async fn set_cn_reservoir(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<CnPath>,
+    body: TypedBody<SetCnReservoirRequest>,
+) -> Result<HttpResponseOk<CnReservoirView>, HttpError> {
+    let ctx = rqctx.context();
+    let principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::CnSetReservoir,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+    let server_uuid = path.into_inner().server_uuid;
+    let req = body.into_inner();
+    let now = chrono::Utc::now();
+
+    let placement = ctx
+        .store
+        .set_cn_reservoir(
+            server_uuid,
+            req.reservoir_enabled,
+            req.reservoir_percent,
+            now,
+            principal_label(&principal),
+        )
+        .await
+        .map_err(store_error_to_http)?;
+
+    let settings = ctx.store.get_settings().await.map_err(store_error_to_http)?;
+    let (effective_enabled, effective_percent) = placement.effective_reservoir(
+        settings.reservoir_enabled_default,
+        settings.reservoir_percent_default,
+    );
+
+    ctx.audit
+        .record_mutation(
+            &principal,
+            Action::CnSetReservoir,
+            request_id,
+            Some(format!("Cn::\"{server_uuid}\"")),
+            AuditOutcome::Success {
+                resource: Some(format!("Cn::\"{server_uuid}\"")),
+            },
+            serde_json::json!({
+                "server_uuid": server_uuid,
+                "reservoir_enabled": placement.reservoir_enabled,
+                "reservoir_percent": placement.reservoir_percent,
+            }),
+        )
+        .await;
+    Ok(HttpResponseOk(CnReservoirView {
+        server_uuid,
+        reservoir_enabled: placement.reservoir_enabled,
+        reservoir_percent: placement.reservoir_percent,
+        effective_enabled,
+        effective_percent,
+    }))
 }
 
 pub(crate) async fn get_auto_approve_window(

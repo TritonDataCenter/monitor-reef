@@ -470,6 +470,9 @@ pub enum Action {
     /// Full agent status sample (vms / zpools / meminfo / etc.).
     /// Replaces `Cn.last_status` + bumps `last_seen`.
     AgentStatus,
+    /// Pull the effective per-CN agent config (reservoir policy) for
+    /// the calling bound CN. Read-only; Agent scope only.
+    AgentConfig,
     /// Per-resource network realization row reported by a bound
     /// agent after it accepts, applies, or fails a dataplane
     /// generation.
@@ -497,6 +500,8 @@ pub enum Action {
     CnDisable,
     /// Set a CN's operator-controlled placement role.
     CnSetRole,
+    /// Set (or clear) a CN's per-CN bhyve memory reservoir override.
+    CnSetReservoir,
     /// Read the current auto-approve window state.
     AutoApproveGet,
     /// Open (or replace) the auto-approve window.
@@ -704,6 +709,7 @@ impl Action {
             Action::AgentBlueprint => "agent_blueprint",
             Action::AgentHeartbeat => "agent_heartbeat",
             Action::AgentStatus => "agent_status",
+            Action::AgentConfig => "agent_config",
             Action::NetworkRealizationReport => "network_realization_report",
             Action::DhcpLeaseActivityReport => "dhcp_lease_activity_report",
             Action::AgentRegister => "agent_register",
@@ -713,6 +719,7 @@ impl Action {
             Action::CnApprove => "cn_approve",
             Action::CnDisable => "cn_disable",
             Action::CnSetRole => "cn_set_role",
+            Action::CnSetReservoir => "cn_set_reservoir",
             Action::AutoApproveGet => "auto_approve_get",
             Action::AutoApproveSet => "auto_approve_set",
             Action::AutoApproveClear => "auto_approve_clear",
@@ -1239,6 +1246,7 @@ fn scope_allows_action(scope: ApiKeyScope, action: Action) -> bool {
                 | Action::AgentBlueprint
                 | Action::AgentHeartbeat
                 | Action::AgentStatus
+                | Action::AgentConfig
                 | Action::NetworkRealizationReport
                 | Action::DhcpLeaseActivityReport
         ),
@@ -1358,6 +1366,7 @@ fn is_read_action(action: Action) -> bool {
         | Action::AgentBlueprint
         | Action::AgentHeartbeat
         | Action::AgentStatus
+        | Action::AgentConfig
         | Action::NetworkRealizationReport
         | Action::DhcpLeaseActivityReport
         // Agent registration is anonymous (no key), but if a key
@@ -1371,6 +1380,7 @@ fn is_read_action(action: Action) -> bool {
         | Action::CnApprove
         | Action::CnDisable
         | Action::CnSetRole
+        | Action::CnSetReservoir
         | Action::AutoApproveSet
         | Action::AutoApproveClear
         // Cluster config mutations.
