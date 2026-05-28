@@ -80,6 +80,58 @@ impl ReservoirManager {
     }
 }
 
+impl ReservoirManager {
+    /// Ensure at least `requested_mib` is free in the reservoir, growing
+    /// toward the kernel limit if needed (grow-on-demand). Returns the
+    /// free MiB actually available afterward — which may be less than
+    /// requested if the host is at its reservoir limit, in which case the
+    /// caller must reject the provision.
+    pub async fn ensure_free(&self, requested_mib: u64) -> Result<u64> {
+        let st = self.tool.query().await?;
+        if st.free_mib >= requested_mib {
+            return Ok(st.free_mib);
+        }
+        let deficit = requested_mib - st.free_mib;
+        let target = st.current_mib().saturating_add(deficit).min(st.limit_mib);
+        let achieved = self.tool.set_target(target).await?;
+        Ok(achieved.free_mib)
+    }
+}
+
+/// The effective reservoir policy + manager, resolved once at startup and
+/// consulted on each bhyve provision. `None` is threaded through the
+/// provision path when the agent isn't managing a reservoir.
+pub struct ReservoirRuntime {
+    pub enabled: bool,
+    pub percent: f32,
+    manager: ReservoirManager,
+}
+
+impl ReservoirRuntime {
+    pub fn new(enabled: bool, percent: f32, manager: ReservoirManager) -> Self {
+        Self {
+            enabled,
+            percent,
+            manager,
+        }
+    }
+
+    /// Grow the reservoir so a `requested_mib` bhyve guest fits before it
+    /// is created. The kernel does NOT fall back to transient memory, so a
+    /// guest that can't be backed must not be created: this returns `Err`
+    /// (the provision is failed) when the host is at reservoir capacity.
+    pub async fn ensure_capacity(&self, requested_mib: u64) -> Result<()> {
+        let free = self.manager.ensure_free(requested_mib).await?;
+        if free < requested_mib {
+            anyhow::bail!(
+                "reservoir at capacity: need {requested_mib} MiB for this guest but only \
+                 {free} MiB free after growing to the kernel limit"
+            );
+        }
+        Ok(())
+    }
+}
+
 /// Compute the floor target in MiB: `percent` of physical RAM, never above
 /// the kernel-enforced reservoir `limit_mib`.
 fn floor_target_mib(total_mib: u64, percent: f64, limit_mib: u64) -> u64 {

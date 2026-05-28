@@ -280,7 +280,7 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
     // dev host) or an under-provisioned box logs and continues rather
     // than blocking startup. Gated on the heartbeater flag so integration
     // tests don't touch the host.
-    if cfg.spawn_heartbeater && cfg.reservoir_enabled {
+    let reservoir_runtime = if cfg.spawn_heartbeater && cfg.reservoir_enabled {
         let (enabled, percent) = match client.agent_get_config().send().await {
             Ok(resp) => {
                 let r = resp.into_inner();
@@ -291,11 +291,9 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
                 (true, cfg.reservoir_percent)
             }
         };
+        let mgr =
+            reservoir::ReservoirManager::new(Arc::clone(&reservoir), Arc::new(KstatTool::new()));
         if enabled {
-            let mgr = reservoir::ReservoirManager::new(
-                Arc::clone(&reservoir),
-                Arc::new(KstatTool::new()),
-            );
             match mgr.apply_floor(percent).await {
                 Ok(st) => info!(
                     current_mib = st.current_mib(),
@@ -310,7 +308,10 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
         } else {
             info!("reservoir disabled by control-plane policy for this CN");
         }
-    }
+        Some(reservoir::ReservoirRuntime::new(enabled, percent, mgr))
+    } else {
+        None
+    };
 
     // Optional background publisher. Spawned only when the operator
     // hasn't asked us to stay quiet (the integration-test path).
@@ -379,7 +380,8 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
         None
     };
 
-    let result = run_poll_loop(client.as_ref(), &cfg, &bindings).await;
+    let result =
+        run_poll_loop(client.as_ref(), &cfg, &bindings, reservoir_runtime.as_ref()).await;
 
     if let Some(h) = dhcp_events_handle.take() {
         h.shutdown().await;
@@ -511,9 +513,10 @@ async fn run_poll_loop(
     client: &Client,
     cfg: &AgentConfig,
     bindings: &ImdsBindingTable,
+    reservoir: Option<&reservoir::ReservoirRuntime>,
 ) -> Result<()> {
     loop {
-        match poll_once(client, cfg, bindings).await {
+        match poll_once(client, cfg, bindings, reservoir).await {
             Ok(true) => {
                 // Worked a job; immediately try the next one — the
                 // queue may have more.
@@ -593,6 +596,7 @@ async fn poll_once(
     client: &Client,
     cfg: &AgentConfig,
     bindings: &ImdsBindingTable,
+    reservoir: Option<&reservoir::ReservoirRuntime>,
 ) -> Result<bool> {
     let claimed = client
         .agent_claim_job()
@@ -608,7 +612,7 @@ async fn poll_once(
         return Ok(false);
     };
 
-    let outcome = match drive_job(client, cfg, bindings, &job).await {
+    let outcome = match drive_job(client, cfg, bindings, reservoir, &job).await {
         Ok(()) => JobOutcome::Completed,
         Err(reason) => {
             // Agent-side failures are reported back to tritond so
@@ -650,6 +654,7 @@ async fn drive_job(
     client: &Client,
     cfg: &AgentConfig,
     bindings: &ImdsBindingTable,
+    reservoir: Option<&reservoir::ReservoirRuntime>,
     job: &ProvisioningJob,
 ) -> Result<()> {
     info!(
@@ -736,7 +741,30 @@ async fn drive_job(
                 .iter()
                 .map(|port| (port.nic_id, port.link_name.clone()))
                 .collect::<BTreeMap<_, _>>();
-            if let Err(err) = vmadm::create_zone_with_nic_tags(&blueprint, &nic_tags).await {
+            // For a reservoir-managed CN, grow the bhyve memory reservoir
+            // to fit this guest before creating it (the kernel won't fall
+            // back to transient memory). If the host is at reservoir
+            // capacity, fail the provision so placement steers elsewhere.
+            let use_reservoir = match reservoir {
+                Some(rt) if rt.enabled && vmadm::blueprint_is_bhyve(&blueprint) => {
+                    let requested_mib = blueprint
+                        .instance
+                        .as_ref()
+                        .map(|i| i.memory_bytes / (1024 * 1024))
+                        .unwrap_or(0);
+                    if let Err(err) = rt.ensure_capacity(requested_mib).await {
+                        cleanup_started_ports(proteus.as_ref(), &started_ports);
+                        return Err(err).with_context(|| {
+                            format!("reserve {requested_mib} MiB of bhyve reservoir for instance {instance_id}")
+                        });
+                    }
+                    true
+                }
+                _ => false,
+            };
+            if let Err(err) =
+                vmadm::create_zone_with_nic_tags(&blueprint, &nic_tags, use_reservoir).await
+            {
                 cleanup_started_ports(proteus.as_ref(), &started_ports);
                 return Err(err).context("create VM after Proteus port realization");
             }

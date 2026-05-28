@@ -147,8 +147,9 @@ pub async fn create_zone(blueprint: &ProvisioningBlueprint) -> Result<Uuid> {
 pub(crate) async fn create_zone_with_nic_tags(
     blueprint: &ProvisioningBlueprint,
     nic_tags: &NicTagMap,
+    use_reservoir: bool,
 ) -> Result<Uuid> {
-    let payload = build_create_payload_with_nic_tags(blueprint, nic_tags)?;
+    let payload = build_create_payload_with_nic_tags(blueprint, nic_tags, use_reservoir)?;
     run_create_payload(blueprint, payload).await
 }
 
@@ -278,18 +279,27 @@ async fn run_simple(args: &[&str]) -> Result<()> {
 /// metadata carrying any authorised SSH keys.
 pub(crate) fn build_create_payload(blueprint: &ProvisioningBlueprint) -> Result<serde_json::Value> {
     let nic_tags = NicTagMap::new();
-    build_create_payload_with_nic_tags(blueprint, &nic_tags)
+    build_create_payload_with_nic_tags(blueprint, &nic_tags, false)
 }
 
 pub(crate) fn build_create_payload_with_nic_tags(
     blueprint: &ProvisioningBlueprint,
     nic_tags: &NicTagMap,
+    use_reservoir: bool,
 ) -> Result<serde_json::Value> {
     if image_brand(blueprint) == Some("bhyve") {
-        create_bhyve_payload_with_nic_tags(blueprint, nic_tags)
+        create_bhyve_payload_with_nic_tags(blueprint, nic_tags, use_reservoir)
     } else {
+        // Reservoir applies to bhyve guests only; native zones ignore it.
         create_zone_payload(blueprint)
     }
+}
+
+/// Whether this blueprint provisions a bhyve guest (the only brand that
+/// draws from the memory reservoir). Used by the provision path to gate
+/// reservoir growth + the `use_reservoir` payload flag.
+pub(crate) fn blueprint_is_bhyve(blueprint: &ProvisioningBlueprint) -> bool {
+    image_brand(blueprint) == Some("bhyve")
 }
 
 /// Build the legacy `joyent-minimal` zone payload.
@@ -403,12 +413,13 @@ pub(crate) fn create_zone_payload(blueprint: &ProvisioningBlueprint) -> Result<s
 #[cfg(test)]
 pub(crate) fn create_bhyve_payload(blueprint: &ProvisioningBlueprint) -> Result<serde_json::Value> {
     let nic_tags = NicTagMap::new();
-    create_bhyve_payload_with_nic_tags(blueprint, &nic_tags)
+    create_bhyve_payload_with_nic_tags(blueprint, &nic_tags, false)
 }
 
 pub(crate) fn create_bhyve_payload_with_nic_tags(
     blueprint: &ProvisioningBlueprint,
     nic_tags: &NicTagMap,
+    use_reservoir: bool,
 ) -> Result<serde_json::Value> {
     let instance = blueprint
         .instance
@@ -463,7 +474,7 @@ pub(crate) fn create_bhyve_payload_with_nic_tags(
     apply_managed_identity(&mut internal_metadata, blueprint);
     apply_provision_metadata(&mut customer_metadata, &mut internal_metadata, blueprint);
 
-    Ok(serde_json::json!({
+    let mut payload = serde_json::json!({
         "uuid": instance.id,
         "brand": "bhyve",
         "alias": alias,
@@ -493,7 +504,24 @@ pub(crate) fn create_bhyve_payload_with_nic_tags(
             "tritond.tenant_id": instance.tenant_id.to_string(),
             "tritond.project_id": instance.project_id.to_string(),
         },
-    }))
+    });
+
+    // Draw guest memory from the bhyve memory reservoir (RFD 0185). The
+    // bhyve brand maps the zonecfg `bhyve_extra_opts` attr straight onto
+    // the bhyve command line, so `-o memory.use_reservoir=true` reaches
+    // bhyve with no platform change. Set only when the CN's effective
+    // policy enables the reservoir AND the agent has confirmed/grown
+    // enough free reservoir for this guest (the kernel does not fall back
+    // to transient memory). Applied at create only.
+    if use_reservoir
+        && let Some(obj) = payload.as_object_mut()
+    {
+        obj.insert(
+            "bhyve_extra_opts".to_string(),
+            serde_json::Value::String("-o memory.use_reservoir=true".to_string()),
+        );
+    }
+    Ok(payload)
 }
 
 fn image_brand(blueprint: &ProvisioningBlueprint) -> Option<&str> {
@@ -1017,9 +1045,21 @@ mod tests {
         let mut nic_tags = NicTagMap::new();
         nic_tags.insert(bp.nics[0].id, "proteus49377".to_string());
 
-        let payload = create_bhyve_payload_with_nic_tags(&bp, &nic_tags).unwrap();
+        let payload = create_bhyve_payload_with_nic_tags(&bp, &nic_tags, false).unwrap();
 
         assert_eq!(payload["nics"][0]["nic_tag"], "proteus49377");
+    }
+
+    #[test]
+    fn create_bhyve_payload_sets_reservoir_opt_only_when_requested() {
+        let bp = sample_bhyve_blueprint();
+        let nic_tags = NicTagMap::new();
+
+        let off = create_bhyve_payload_with_nic_tags(&bp, &nic_tags, false).unwrap();
+        assert!(off.get("bhyve_extra_opts").is_none());
+
+        let on = create_bhyve_payload_with_nic_tags(&bp, &nic_tags, true).unwrap();
+        assert_eq!(on["bhyve_extra_opts"], "-o memory.use_reservoir=true");
     }
 
     #[test]
@@ -1038,7 +1078,7 @@ mod tests {
         let mut nic_tags = NicTagMap::new();
         nic_tags.insert(fixture_uuid(0x99), "proteus39321".to_string());
 
-        let err = create_bhyve_payload_with_nic_tags(&bp, &nic_tags).unwrap_err();
+        let err = create_bhyve_payload_with_nic_tags(&bp, &nic_tags, false).unwrap_err();
 
         assert!(err.to_string().contains("no Proteus link nic_tag"));
     }
