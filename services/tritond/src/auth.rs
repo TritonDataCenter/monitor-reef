@@ -590,6 +590,13 @@ pub enum Action {
     /// Abort a multipart upload (`DELETE ?uploadId=...`). mantad will
     /// garbage-collect the parts.
     StorageObjectMultipartAbort,
+    /// Read a forwarder endpoint as a fleet-operator and see every
+    /// tenant's resources rather than just the caller's own
+    /// workspace. The forwarder handlers default to scoping per
+    /// the caller's `tenant.storage_workspace_id`; this action
+    /// (root-only via Cedar) opts out of that scoping for cross-
+    /// tenant operator visibility (audit, inventory, support).
+    WorkspaceListAcrossTenants,
     // ---- Layered instance metadata (IMDS) ----
     /// `set_meta` -- upsert one metadata entry at any of the four scopes.
     MetaSet,
@@ -762,6 +769,7 @@ impl Action {
             Action::StorageObjectMultipartParts => "storage_object_multipart_parts",
             Action::StorageObjectMultipartComplete => "storage_object_multipart_complete",
             Action::StorageObjectMultipartAbort => "storage_object_multipart_abort",
+            Action::WorkspaceListAcrossTenants => "workspace_list_across_tenants",
             Action::MetaSet => "meta_set",
             Action::MetaGet => "meta_get",
             Action::MetaList => "meta_list",
@@ -1436,7 +1444,11 @@ fn is_read_action(action: Action) -> bool {
         | Action::StorageUserPolicyGet
         // Presigned GET grants read access only, so it's a read
         // even though it's auditable as a separate Action.
-        | Action::StorageObjectPresignGet => true,
+        | Action::StorageObjectPresignGet
+        // Cross-tenant workspace visibility is a read — root-only
+        // by Cedar, but classified here so a ReadOnly tritond key
+        // bound to an operator principal can still exercise it.
+        | Action::WorkspaceListAcrossTenants => true,
         // Layered instance metadata (IMDS).
         Action::MetaGet | Action::MetaList => true,
         Action::MetaSet | Action::MetaDelete => false,
