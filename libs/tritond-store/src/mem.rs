@@ -436,6 +436,11 @@ impl Store for MemStore {
             name: "default".to_string(),
             description: format!("Default tenant for silo {}", req.name),
             created_at: now,
+            // Default tenant created via silo bootstrap; the
+            // create_silo_tenant path (Phase C.2) is what binds a
+            // workspace. Silo bootstrap leaves both columns NULL.
+            storage_workspace_id: None,
+            storage_cluster_id: None,
         };
         let silo = Silo {
             id: silo_id,
@@ -846,6 +851,12 @@ impl Store for MemStore {
             name: req.name.clone(),
             description: req.description.unwrap_or_default(),
             created_at: Utc::now(),
+            // Phase C.2 will set these in `create_silo_tenant` once
+            // the handler resolves the fleet's default S3 cluster
+            // and mints a workspace. Mem-store create alone leaves
+            // them NULL.
+            storage_workspace_id: None,
+            storage_cluster_id: None,
         };
         guard.tenant_id_by_silo_name.insert(key, tenant.id);
         guard.tenants_by_id.insert(tenant.id, tenant.clone());

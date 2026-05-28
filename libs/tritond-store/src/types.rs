@@ -256,6 +256,23 @@ pub struct Tenant {
     pub name: String,
     pub description: String,
     pub created_at: DateTime<Utc>,
+    /// Workspace this tenant is bound to on its backing
+    /// manta-storage cluster. `None` when the tenant was created
+    /// before the workspace-binding work shipped, or when the
+    /// fleet has no `storage.default_s3_cluster_id` configured at
+    /// tenant-create time (operator binds later via the retrofit
+    /// flow). Trailing field with `#[serde(default)]` so pre-
+    /// existing FDB rows deserialise cleanly to `None`.
+    #[serde(default)]
+    pub storage_workspace_id: Option<Uuid>,
+    /// The `StorageCluster.id` carrying `storage_workspace_id`.
+    /// `None` matches `storage_workspace_id == None`. Together
+    /// these two columns identify exactly which (cluster, workspace)
+    /// pair tritond minted for this tenant; the workspace_id is
+    /// itself opaque to tritond — mantad's storage layer is the
+    /// authoritative source of truth.
+    #[serde(default)]
+    pub storage_cluster_id: Option<Uuid>,
 }
 
 /// Request body for creating a tenant. The owning silo comes

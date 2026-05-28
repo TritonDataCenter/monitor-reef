@@ -351,6 +351,11 @@ impl Store for FdbStore {
             name: "default".to_string(),
             description: format!("Default tenant for silo {}", req.name),
             created_at: now,
+            // Silo bootstrap leaves the storage binding columns
+            // NULL; create_silo_tenant (Phase C.2) handles
+            // workspace minting.
+            storage_workspace_id: None,
+            storage_cluster_id: None,
         };
         let silo = Silo {
             id: silo_id,
@@ -1301,6 +1306,11 @@ impl Store for FdbStore {
             name: req.name,
             description: req.description.unwrap_or_default(),
             created_at: Utc::now(),
+            // Phase C.2 wires create_silo_tenant to mint a mantad
+            // workspace before this row commits. FDB-store create
+            // alone leaves both columns NULL.
+            storage_workspace_id: None,
+            storage_cluster_id: None,
         };
         let value = serde_json::to_vec(&tenant)
             .map_err(ser_err("tenant"))?;
