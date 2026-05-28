@@ -195,7 +195,7 @@ impl FdbStore {
             }
             Ok(ids)
         })
-            .await;
+            ;
         let id_strs = id_strs.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
@@ -330,7 +330,7 @@ impl FdbStore {
             }
             Ok(ids)
         })
-            .await;
+            ;
         let id_strs = id_strs.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(id_strs.len());
         for s in id_strs {
