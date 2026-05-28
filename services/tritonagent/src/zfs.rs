@@ -29,6 +29,32 @@ pub async fn snapshot_exists(name: &str) -> Result<bool> {
     Ok(output.status.success())
 }
 
+/// Return the `volsize` property of a zvol dataset, in bytes.
+/// Returns `Ok(None)` when the dataset is not a zvol (volsize is
+/// not set on filesystem datasets). Used by image-manifest synth
+/// for bhyve/kvm images so vmadm knows the boot-disk size.
+pub async fn volsize_bytes(dataset: &str) -> Result<Option<u64>> {
+    let output = Command::new("zfs")
+        .args(["get", "-H", "-p", "-o", "value", "volsize", dataset])
+        .output()
+        .await
+        .context("spawn zfs get volsize")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!("zfs get volsize {dataset}: {stderr}"));
+    }
+    let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    // Filesystem datasets show "-" for volsize; zvols show the
+    // size in bytes (because of -p).
+    if raw == "-" || raw.is_empty() {
+        return Ok(None);
+    }
+    let n: u64 = raw
+        .parse()
+        .with_context(|| format!("zfs get volsize {dataset} returned non-numeric: {raw:?}"))?;
+    Ok(Some(n))
+}
+
 /// Snapshot `dataset` as `dataset@snap_name`. Errors when
 /// the source dataset does not exist or the snapshot name is
 /// already taken.

@@ -190,7 +190,16 @@ async fn write_imgadm_manifest_at(image: &Image, path: &Path) -> Result<()> {
     // present-day formatting is preferred; for v0 just stamp
     // "now" — it's only used by `imgadm list` ordering.
     let published_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    let manifest = synthetic_imgadm_manifest(image, &published_at);
+    // For zvol-backed images (bhyve / kvm), look up the volsize the
+    // freshly-received dataset reports — vmadm needs `image_size`
+    // (MiB) in the manifest to size the cloned boot disk. For
+    // filesystem-backed images (joyent / joyent-minimal / lx) the
+    // call returns Ok(None) and we omit the field.
+    let dataset = format!("zones/{}", image.id);
+    let volsize = zfs::volsize_bytes(&dataset)
+        .await
+        .with_context(|| format!("zfs get volsize {dataset}"))?;
+    let manifest = synthetic_imgadm_manifest(image, &published_at, volsize);
     let body =
         serde_json::to_vec_pretty(&manifest).context("serialise synthetic imgadm manifest")?;
     fs::write(path, &body)
@@ -199,33 +208,74 @@ async fn write_imgadm_manifest_at(image: &Image, path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn synthetic_imgadm_manifest(image: &Image, published_at: &str) -> serde_json::Value {
+/// Map our `Image.compatibility.brand` to the imgadm manifest `type`.
+/// vmadm consults this to decide whether to clone a filesystem
+/// dataset or a zvol; mis-classifying a zvol image as `zone-dataset`
+/// makes vmadm try to set `devices=off` on a zvol -> "devices does
+/// not apply to datasets of this type" at provision time.
+fn imgadm_type_for_brand(brand: Option<&str>) -> &'static str {
+    match brand {
+        Some("bhyve") | Some("kvm") => "zvol",
+        Some("lx") => "lx-dataset",
+        _ => "zone-dataset",
+    }
+}
+
+fn synthetic_imgadm_manifest(
+    image: &Image,
+    published_at: &str,
+    volsize_bytes: Option<u64>,
+) -> serde_json::Value {
+    let brand = image.compatibility.as_ref().map(|c| c.brand.as_str());
+    let ty = imgadm_type_for_brand(brand);
+    let is_zvol = ty == "zvol";
+
+    let mut manifest = serde_json::json!({
+        "v": 2,
+        "uuid": image.id,
+        "owner": "00000000-0000-0000-0000-000000000000",
+        "name": image.name,
+        "version": image.version,
+        "state": "active",
+        "disabled": false,
+        "public": false,
+        "published_at": published_at,
+        "type": ty,
+        "os": image.os,
+        "files": [{
+            // imgadm validates this only at install time (which we
+            // bypassed by doing zfs receive directly). Placeholder
+            // is fine.
+            "sha1": "0000000000000000000000000000000000000000",
+            "size": image.size_bytes,
+            "compression": "gzip"
+        }],
+        "description": image.description,
+        "requirements": {}
+    });
+
+    if is_zvol {
+        // image_size is MiB of the boot zvol. Pull from the live
+        // dataset's volsize; if not available, fall back to the
+        // compressed gz size (worse than nothing for sizing but
+        // keeps imgadm satisfied).
+        let mib = volsize_bytes
+            .map(|b| b.div_ceil(1024 * 1024))
+            .unwrap_or_else(|| image.size_bytes.div_ceil(1024 * 1024));
+        let m = manifest.as_object_mut().expect("manifest is an object");
+        m.insert("image_size".to_string(), serde_json::json!(mib));
+        // Bhyve hardware defaults — `model` on each disk in the
+        // vmadm payload overrides these, but vmadm wants them in
+        // the manifest too.
+        m.insert("nic_driver".to_string(), serde_json::json!("virtio"));
+        m.insert("disk_driver".to_string(), serde_json::json!("virtio"));
+        m.insert("cpu_type".to_string(), serde_json::json!("host"));
+    }
+
     serde_json::json!({
-        "manifest": {
-            "v": 2,
-            "uuid": image.id,
-            "owner": "00000000-0000-0000-0000-000000000000",
-            "name": image.name,
-            "version": image.version,
-            "state": "active",
-            "disabled": false,
-            "public": false,
-            "published_at": published_at,
-            "type": "zone-dataset",
-            "os": image.os,
-            "files": [{
-                // imgadm validates this only at install time
-                // (which we bypassed by doing zfs receive
-                // directly). Placeholder is fine.
-                "sha1": "0000000000000000000000000000000000000000",
-                "size": image.size_bytes,
-                "compression": "gzip"
-            }],
-            "description": image.description,
-            "requirements": {}
-        },
+        "manifest": manifest,
         "zpool": "zones",
-        "source": "tritond"
+        "source": "tritond",
     })
 }
 
