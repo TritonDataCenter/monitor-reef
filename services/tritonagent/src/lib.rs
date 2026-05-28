@@ -28,6 +28,7 @@ pub mod migrate;
 pub mod platform;
 pub mod proteus;
 pub mod registration;
+pub mod reservoir;
 pub mod status;
 pub mod vmadm;
 pub mod zfs;
@@ -55,7 +56,7 @@ use tritond_cn_platform::cn_status::{
     DiskUsageSampler, Heartbeater, StatusCollector, UuidNamedImageFilter, ZoneeventWatcher,
 };
 use tritond_cn_platform::smartos::zoneadm::ZoneadmTool;
-use tritond_cn_platform::smartos::{KstatTool, VmadmTool, ZfsTool};
+use tritond_cn_platform::smartos::{KstatTool, ReservoirTool, VmadmTool, ZfsTool};
 use uuid::Uuid;
 
 use crate::console_creds::ConsoleTls;
@@ -112,6 +113,21 @@ pub struct AgentConfig {
     /// chatter at the test server. Also gates the console listener
     /// (so integration tests don't open a port).
     pub spawn_heartbeater: bool,
+    /// When `true` (the default), the agent manages the bhyve memory
+    /// reservoir (RFD 0185): at startup it sizes the reservoir to
+    /// [`reservoir_percent`] of physical RAM and reports its state on
+    /// each heartbeat. `false` leaves the reservoir untouched (guests use
+    /// transient memory, as before). RV-2 will source this per-CN from
+    /// tritond; for now it is an agent-local default.
+    ///
+    /// [`reservoir_percent`]: AgentConfig::reservoir_percent
+    pub reservoir_enabled: bool,
+    /// Fraction of physical RAM to target for the reservoir floor
+    /// (`0.0..=1.0`). Clamped to the kernel's reservoir limit at apply
+    /// time. Ignored when [`reservoir_enabled`] is `false`.
+    ///
+    /// [`reservoir_enabled`]: AgentConfig::reservoir_enabled
+    pub reservoir_percent: f32,
     /// Admin-network IPv4 the console listener binds on. `None` when
     /// sysinfo didn't report one — the console listener is skipped.
     pub admin_ip: Option<Ipv4Addr>,
@@ -251,6 +267,33 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
         "tritonagent starting",
     );
 
+    // Shared reservoir handle: one [`ReservoirTool`] serializes all
+    // `/dev/vmmctl` access (it's opened `O_EXCL`) across the startup
+    // floor-apply below and the status collector inside the publisher.
+    let reservoir = Arc::new(ReservoirTool::new());
+
+    // Establish the reservoir floor before serving jobs. Best-effort:
+    // a missing `rsrvrctl` (non-SmartOS dev host) or an under-provisioned
+    // box logs and continues rather than blocking startup. Gated on the
+    // heartbeater flag so integration tests don't touch the host.
+    if cfg.spawn_heartbeater && cfg.reservoir_enabled {
+        let mgr = reservoir::ReservoirManager::new(
+            Arc::clone(&reservoir),
+            Arc::new(KstatTool::new()),
+        );
+        match mgr.apply_floor(cfg.reservoir_percent).await {
+            Ok(st) => info!(
+                current_mib = st.current_mib(),
+                limit_mib = st.limit_mib,
+                "reservoir floor applied",
+            ),
+            Err(e) => warn!(
+                error = %format!("{e:#}"),
+                "reservoir floor apply failed; continuing without a managed reservoir",
+            ),
+        }
+    }
+
     // Optional background publisher. Spawned only when the operator
     // hasn't asked us to stay quiet (the integration-test path).
     // Both handles must outlive the poll loop so that on shutdown
@@ -258,7 +301,7 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
     // dirty flag the watcher pokes, and tearing them down out of
     // order risks a missed status sample.
     let mut publisher = if cfg.spawn_heartbeater {
-        Some(spawn_publisher(Arc::clone(&client)))
+        Some(spawn_publisher(Arc::clone(&client), Arc::clone(&reservoir)))
     } else {
         None
     };
@@ -501,13 +544,13 @@ impl PublisherHandles {
 /// because the agent's only supported deployment target is
 /// SmartOS; a missing binary is operator misconfiguration, not a
 /// supported runtime mode.
-fn spawn_publisher(client: Arc<Client>) -> PublisherHandles {
+fn spawn_publisher(client: Arc<Client>, reservoir: Arc<ReservoirTool>) -> PublisherHandles {
     let sink = TritondStatusSink::new(client);
     let vmadm = Arc::new(VmadmTool::new());
     let zfs = Arc::new(ZfsTool::new());
     let kstat = Arc::new(KstatTool::new());
     let disk_usage = DiskUsageSampler::new(Arc::clone(&zfs), Arc::new(UuidNamedImageFilter));
-    let collector = StatusCollector::new(vmadm, zfs, kstat, disk_usage);
+    let collector = StatusCollector::new(vmadm, zfs, kstat, reservoir, disk_usage);
 
     let heartbeater = Heartbeater::new(Arc::new(sink), collector);
     // Capture the dirty flag BEFORE spawning — once `spawn()`

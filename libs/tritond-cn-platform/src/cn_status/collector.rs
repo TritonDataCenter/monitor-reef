@@ -27,6 +27,7 @@ use uuid::Uuid;
 
 use crate::cn_status::disk_usage::{DiskUsageSampler, VmSnapshot};
 use crate::smartos::kstat::KstatTool;
+use crate::smartos::reservoir::ReservoirTool;
 use crate::smartos::sysinfo::Sysinfo;
 use crate::smartos::{VmadmTool, ZfsTool};
 
@@ -109,6 +110,7 @@ pub struct StatusCollector {
     vmadm: Arc<VmadmTool>,
     zfs: Arc<ZfsTool>,
     kstat: Arc<KstatTool>,
+    reservoir: Arc<ReservoirTool>,
     disk_usage: DiskUsageSampler,
     sysinfo_loader: Arc<dyn SysinfoLoader>,
 }
@@ -145,12 +147,14 @@ impl StatusCollector {
         vmadm: Arc<VmadmTool>,
         zfs: Arc<ZfsTool>,
         kstat: Arc<KstatTool>,
+        reservoir: Arc<ReservoirTool>,
         disk_usage: DiskUsageSampler,
     ) -> Self {
         Self {
             vmadm,
             zfs,
             kstat,
+            reservoir,
             disk_usage,
             sysinfo_loader: Arc::new(LiveSysinfo),
         }
@@ -198,6 +202,22 @@ impl StatusCollector {
                 }
             },
             Err(e) => tracing::warn!(error = %e, "failed to collect memory info"),
+        }
+
+        // Step 3b: bhyve memory reservoir sizing. Best-effort and
+        // non-blocking -- `try_query` returns `None` while a resize holds
+        // `/dev/vmmctl`, and a missing `rsrvrctl` (non-SmartOS dev host)
+        // just skips the field. Placement reads `limit_mib`/`alloc_mib`
+        // from here to size reservoir-backed headroom.
+        match self.reservoir.try_query().await {
+            Ok(Some(rs)) => match serde_json::to_value(rs) {
+                Ok(v) => {
+                    report.fields.insert("reservoir".to_string(), v);
+                }
+                Err(e) => tracing::warn!(error = %e, "failed to encode reservoir state"),
+            },
+            Ok(None) => tracing::debug!("reservoir busy (resize in progress); skipping this tick"),
+            Err(e) => tracing::debug!(error = %e, "failed to query reservoir"),
         }
 
         // Step 4: disk usage.

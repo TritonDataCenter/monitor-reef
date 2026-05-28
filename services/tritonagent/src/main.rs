@@ -144,6 +144,27 @@ struct Cli {
     )]
     no_heartbeater: bool,
 
+    /// Disable agent management of the bhyve memory reservoir
+    /// (RFD 0185). When set, the reservoir is left untouched and guests
+    /// use transient memory. Off by default — production CNs manage a
+    /// reservoir.
+    #[arg(
+        long = "no-reservoir",
+        env = "TRITONAGENT_DISABLE_RESERVOIR",
+        default_value_t = false
+    )]
+    no_reservoir: bool,
+
+    /// Fraction of physical RAM to target for the bhyve memory reservoir
+    /// floor (`0.0..=1.0`). Clamped to the kernel's reservoir limit.
+    /// Agent-local default for now; RV-2 sources this per-CN from tritond.
+    #[arg(
+        long,
+        env = "TRITONAGENT_RESERVOIR_PERCENT",
+        default_value_t = 0.80
+    )]
+    reservoir_percent: f32,
+
     /// Disable the v2p lazy-resolver: miss events are dropped and
     /// forwarding falls back to the pre-shipped per-port `peer_table`.
     /// Flipping this needs no VM/kmod restart.
@@ -227,6 +248,8 @@ async fn main() -> Result<()> {
         fhrun_bin: PathBuf::from(cli.fhrun_bin),
         dry_run: cli.dry_run,
         spawn_heartbeater: !cli.no_heartbeater,
+        reservoir_enabled: !cli.no_reservoir,
+        reservoir_percent: cli.reservoir_percent,
         admin_ip,
         console_listen_port: cli.console_listen_port,
         console_ticket_key: outcome.console_ticket_key,
