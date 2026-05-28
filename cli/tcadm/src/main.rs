@@ -127,10 +127,6 @@ enum Commands {
         #[command(subcommand)]
         command: RouteCommand,
     },
-    ImageV1 {
-        #[command(subcommand)]
-        command: ImageV1Command,
-    },
     SshKeyV1 {
         #[command(subcommand)]
         command: SshKeyV1Command,
@@ -185,12 +181,11 @@ enum Commands {
         #[command(subcommand)]
         command: TenantCommand,
     },
-    /// Manage Public images (operator-facing root commands).
-    /// Tenant- / project- / user-scoped images live under the
-    /// `tenant`, `tenant project`, and `auth` subtrees.
+    /// Manage images (list/show via the /v1/ surface; add/delete +
+    /// `fetch-nocloud` for ad-hoc + vendor-pipeline registration).
     Image {
         #[command(subcommand)]
-        command: PublicImageCommand,
+        command: ImageCommand,
     },
     /// Manage Public SSH keys (operator-facing root commands)
     /// plus the global show/delete-by-id endpoints.
@@ -414,44 +409,6 @@ pub enum StorageSurfaceArg {
     S3,
     Fs,
     Block,
-}
-
-#[derive(Subcommand)]
-enum PublicImageCommand {
-    /// List Public images. Anonymous-accessible.
-    List {
-        #[arg(long)]
-        json: bool,
-    },
-    /// Register a new Public image. Root-only.
-    Add {
-        #[arg(long)]
-        name: String,
-        #[arg(long, default_value = "")]
-        description: String,
-        #[arg(long)]
-        os: String,
-        #[arg(long)]
-        version: String,
-        #[arg(long)]
-        size_bytes: u64,
-        #[arg(long)]
-        sha256: String,
-        #[arg(long)]
-        source_url: Option<String>,
-        #[arg(long)]
-        id: Option<Uuid>,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Read a single image by id (visibility-filtered server-side).
-    Get {
-        image_id: Uuid,
-        #[arg(long)]
-        json: bool,
-    },
-    /// Delete an image by id (ownership-gated server-side).
-    Delete { image_id: Uuid },
 }
 
 #[derive(Subcommand)]
@@ -1310,19 +1267,46 @@ enum SubnetCommand {
 }
 
 #[derive(Subcommand)]
-enum ImageV1Command {
-    /// List images at a given scope. Only `--scope=public` works today.
+enum ImageCommand {
+    /// List images at a given scope. Only `--scope=public` works
+    /// today (tritond returns ScopeNotImplemented for the other
+    /// scope values until AP-3a lands).
     List {
         #[arg(long, default_value = "public")]
         scope: String,
         #[arg(long)]
         json: bool,
     },
+    /// Read a single image by id (visibility-filtered server-side).
     Show {
         image_id: Uuid,
         #[arg(long)]
         json: bool,
     },
+    /// Register a Public-scope image with explicit fields. Root-only.
+    /// For vendor-pipeline imports prefer `fetch-nocloud`.
+    Add {
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long)]
+        os: String,
+        #[arg(long)]
+        version: String,
+        #[arg(long)]
+        size_bytes: u64,
+        #[arg(long)]
+        sha256: String,
+        #[arg(long)]
+        source_url: Option<String>,
+        #[arg(long)]
+        id: Option<Uuid>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete an image by id (ownership-gated server-side).
+    Delete { image_id: Uuid },
     /// Fetch a cloud-init NoCloud image from an upstream vendor,
     /// build a zone-dataset image bundle, and optionally register
     /// it with tritond's IMGAPI surface via an in-cluster mantad.
@@ -2128,40 +2112,6 @@ async fn main() -> Result<()> {
                 commands::subnet_delete_v1(cli.endpoint, cli.api_key, subnet_id).await
             }
         },
-        Commands::ImageV1 { command } => match command {
-            ImageV1Command::List { scope, json } => {
-                commands::image_list_v1(cli.endpoint, cli.api_key, scope, json).await
-            }
-            ImageV1Command::Show { image_id, json } => {
-                commands::image_show_v1(cli.endpoint, cli.api_key, image_id, json).await
-            }
-            ImageV1Command::FetchNocloud {
-                vendor,
-                release,
-                target,
-                silo,
-                output_dir,
-                workdir,
-                zfs_dataset,
-                insecure_no_verify,
-                dry_run,
-            } => {
-                fetch_nocloud::run(fetch_nocloud::Opts {
-                    vendor,
-                    release,
-                    target,
-                    silo,
-                    output_dir,
-                    workdir,
-                    zfs_dataset,
-                    dry_run,
-                    insecure_no_verify,
-                    tritond_endpoint: cli.endpoint.clone(),
-                    tritond_bearer: cli.api_key.clone(),
-                })
-                .await
-            }
-        },
         Commands::SshKeyV1 { command } => match command {
             SshKeyV1Command::List { scope, json } => {
                 commands::ssh_key_list_v1(cli.endpoint, cli.api_key, scope, json).await
@@ -2856,10 +2806,13 @@ async fn main() -> Result<()> {
             },
         },
         Commands::Image { command } => match command {
-            PublicImageCommand::List { json } => {
-                commands::public_image_list(cli.endpoint, cli.api_key, json).await
+            ImageCommand::List { scope, json } => {
+                commands::image_list_v1(cli.endpoint, cli.api_key, scope, json).await
             }
-            PublicImageCommand::Add {
+            ImageCommand::Show { image_id, json } => {
+                commands::image_show_v1(cli.endpoint, cli.api_key, image_id, json).await
+            }
+            ImageCommand::Add {
                 name,
                 description,
                 os,
@@ -2885,14 +2838,34 @@ async fn main() -> Result<()> {
                 )
                 .await
             }
-            PublicImageCommand::Get { image_id, json } => {
-                // Re-uses the silo_image_get helper which already
-                // calls the scope-agnostic /v1/images/{id} endpoint.
-                commands::silo_image_get(cli.endpoint, cli.api_key, Uuid::nil(), image_id, json)
-                    .await
-            }
-            PublicImageCommand::Delete { image_id } => {
+            ImageCommand::Delete { image_id } => {
                 commands::silo_image_delete(cli.endpoint, cli.api_key, Uuid::nil(), image_id).await
+            }
+            ImageCommand::FetchNocloud {
+                vendor,
+                release,
+                target,
+                silo,
+                output_dir,
+                workdir,
+                zfs_dataset,
+                insecure_no_verify,
+                dry_run,
+            } => {
+                fetch_nocloud::run(fetch_nocloud::Opts {
+                    vendor,
+                    release,
+                    target,
+                    silo,
+                    output_dir,
+                    workdir,
+                    zfs_dataset,
+                    dry_run,
+                    insecure_no_verify,
+                    tritond_endpoint: cli.endpoint.clone(),
+                    tritond_bearer: cli.api_key.clone(),
+                })
+                .await
             }
         },
         Commands::SshKey { command } => match command {
