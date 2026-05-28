@@ -1,0 +1,904 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// Copyright 2026 Edgecast Cloud LLC.
+
+//! Translation of `target/triton-nocloud-images/build.sh` into Rust:
+//! download → verify → open qcow2 in-process → create zvol of the
+//! virtual disk's size → stream qcow2 reader into the zvol's char
+//! device → snap → send → gzip → manifest. No qemu-img dependency;
+//! qcow2 decoding lives in the `qcow` crate.
+
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use anyhow::{Context, Result, bail};
+use indicatif::{ProgressBar, ProgressStyle};
+use tokio::io::AsyncWriteExt;
+use uuid::Uuid;
+
+use super::manifest::{self, ManifestInputs};
+use super::vendor::{ResolvedImage, SourceFormat};
+use super::verify;
+use super::zfs;
+
+/// All transient build datasets are named `<parent>/<DATASET_PREFIX><uuid>`
+/// so a previous interrupted run can be detected and cleaned up by the
+/// next invocation, and so manual `zfs list | grep` is unambiguous.
+const DATASET_PREFIX: &str = "tritonadm-nocloud-";
+
+/// UUID v5 namespace for tritonadm-generated nocloud images. Stable
+/// forever — derived from a stable URL via `NAMESPACE_URL`. Manifest
+/// UUIDs are then `v5(NAMESPACE, source_image_sha256_hex)`, so two
+/// runs against the same upstream image always produce the same
+/// manifest UUID, regardless of when or where the build runs.
+fn manifest_namespace() -> Uuid {
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_URL,
+        b"https://tritondatacenter.com/tritonadm/nocloud",
+    )
+}
+
+pub fn stable_manifest_uuid(source_sha256_hex: &str) -> Uuid {
+    Uuid::new_v5(&manifest_namespace(), source_sha256_hex.as_bytes())
+}
+
+pub struct PipelineOptions<'a> {
+    pub vendor: &'a str,
+    pub workdir: PathBuf,
+    pub output_dir: PathBuf,
+    pub zfs_dataset: String,
+    pub http: &'a reqwest::Client,
+    pub insecure_no_verify: bool,
+}
+
+pub struct PipelineOutputs {
+    pub gz_path: PathBuf,
+    pub manifest_path: PathBuf,
+    pub manifest_uuid: Uuid,
+}
+
+pub async fn run(resolved: ResolvedImage, opts: PipelineOptions<'_>) -> Result<PipelineOutputs> {
+    // Cancel flag set by the SIGINT handler. Long-running loops (download,
+    // qcow→zvol copy) check it and bail cleanly, which lets us run the
+    // zvol-destroy cleanup before exit. Without this, the process would
+    // die mid-write and leave the dataset behind.
+    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel_for_signal = cancel.clone();
+    let signal_task = tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            eprintln!(
+                "\nSIGINT received; finishing in-flight work then cleaning up. \
+                 Send SIGTERM (kill <pid>) to force-quit."
+            );
+            cancel_for_signal.store(true, Ordering::Relaxed);
+        }
+    });
+
+    let result = run_inner(&resolved, &opts, &cancel).await;
+
+    signal_task.abort();
+    result
+}
+
+async fn run_inner(
+    resolved: &ResolvedImage,
+    opts: &PipelineOptions<'_>,
+    cancel: &Arc<AtomicBool>,
+) -> Result<PipelineOutputs> {
+    tokio::fs::create_dir_all(&opts.workdir).await?;
+    tokio::fs::create_dir_all(&opts.output_dir).await?;
+
+    // Sweep stale datasets from a previous interrupted run before we
+    // create a new one. The prefix keeps this scoped to our own
+    // leftovers; we never touch datasets named anything else.
+    sweep_stale_datasets(&opts.zfs_dataset).await;
+
+    let (downloaded, source_sha256) = ensure_verified_source(resolved, opts, cancel).await?;
+
+    let virtual_size_bytes = read_virtual_size(&downloaded, resolved.format).await?;
+    let virtual_size_mib = virtual_size_bytes.div_ceil(1024 * 1024);
+
+    let build_uuid = Uuid::new_v4();
+    let dataset = format!("{}/{DATASET_PREFIX}{}", opts.zfs_dataset, build_uuid);
+    let zvol_rdsk = PathBuf::from(format!("/dev/zvol/rdsk/{}", dataset));
+
+    eprintln!(
+        "Creating zvol: {} ({} MiB virtual)",
+        dataset, virtual_size_mib
+    );
+    let result = build_image(
+        resolved,
+        &downloaded,
+        resolved.format,
+        &source_sha256,
+        virtual_size_bytes,
+        virtual_size_mib,
+        &dataset,
+        &zvol_rdsk,
+        &opts.output_dir,
+        opts.vendor,
+        cancel,
+    )
+    .await;
+
+    eprintln!("Destroying zvol: {}", dataset);
+    // arch-lint: allow(no-error-swallowing) reason="cleanup runs from the failure path; failing to destroy the transient zvol must not mask the outer build error"
+    if let Err(e) = zfs::destroy_recursive(&dataset).await {
+        eprintln!("warning: could not destroy {dataset}: {e}");
+    }
+
+    result
+}
+
+fn filename_from_url(url: &url::Url) -> Result<String> {
+    url.path_segments()
+        .and_then(|mut s| s.next_back())
+        .map(String::from)
+        .ok_or_else(|| anyhow::anyhow!("cannot derive filename from {}", url))
+}
+
+/// Download (if needed), hash, and verify. Returns the path to the
+/// (now-verified) source bytes and their sha256.
+///
+/// For `file://` URLs (used by TOML profiles pointing at operator-
+/// staged images), the source is read in place — no download, no
+/// caching, no redownload-on-cache-fail. The verifier still runs;
+/// for `Sha256Pinned` (the only verifier a TOML can express) that's
+/// just a hex compare against the file's hash.
+///
+/// For http(s) URLs, the file is cached in `opts.workdir`. On
+/// verification failure of a *cached* file, delete it and try once
+/// more with a fresh download — upstream serial may have moved
+/// while the cache survived.
+async fn ensure_verified_source(
+    resolved: &ResolvedImage,
+    opts: &PipelineOptions<'_>,
+    cancel: &Arc<AtomicBool>,
+) -> Result<(PathBuf, String)> {
+    if resolved.url.scheme() == "file" {
+        return verify_local_file(resolved, opts).await;
+    }
+
+    let src_filename = filename_from_url(&resolved.url)?;
+    let downloaded = opts.workdir.join(&src_filename);
+
+    let started_with_cache = tokio::fs::try_exists(&downloaded).await?;
+    if started_with_cache {
+        eprintln!("Source image already downloaded: {}", src_filename);
+    } else {
+        eprintln!("Downloading {}", src_filename);
+        eprintln!("  URL: {}", resolved.url);
+        download_with_progress(opts.http, resolved.url.as_str(), &downloaded, cancel).await?;
+    }
+
+    eprintln!("Hashing source image ...");
+    let sha256 = verify::sha256_file(&downloaded).await?;
+
+    if opts.insecure_no_verify {
+        eprintln!("WARNING: --insecure-no-verify, skipping verification");
+        return Ok((downloaded, sha256));
+    }
+
+    match resolved
+        .verifier
+        .verify(&downloaded, &sha256, opts.http)
+        .await
+    {
+        Ok(()) => Ok((downloaded, sha256)),
+        Err(first_err) if started_with_cache => {
+            eprintln!(
+                "Cached file failed verification ({first_err}); discarding and \
+                 redownloading once."
+            );
+            // arch-lint: allow(no-error-swallowing) reason="best-effort cache cleanup; the redownload below will also fail clearly if the path is unwritable"
+            if let Err(e) = tokio::fs::remove_file(&downloaded).await {
+                eprintln!(
+                    "warning: could not remove cached {}: {e}",
+                    downloaded.display()
+                );
+            }
+            download_with_progress(opts.http, resolved.url.as_str(), &downloaded, cancel).await?;
+            eprintln!("Hashing source image ...");
+            let sha256 = verify::sha256_file(&downloaded).await?;
+            resolved
+                .verifier
+                .verify(&downloaded, &sha256, opts.http)
+                .await
+                .context("verification failed after fresh download")?;
+            Ok((downloaded, sha256))
+        }
+        Err(e) => Err(e.context("verification failed")),
+    }
+}
+
+/// `file://` source: the operator has already staged the bytes
+/// somewhere on the local filesystem (typically because the upstream
+/// is a wrapper format we don't decode, or has no published checksum
+/// to fetch over the network). We hash the file in place and run the
+/// verifier — no download phase, no workdir caching.
+async fn verify_local_file(
+    resolved: &ResolvedImage,
+    opts: &PipelineOptions<'_>,
+) -> Result<(PathBuf, String)> {
+    let path = resolved.url.to_file_path().map_err(|()| {
+        anyhow::anyhow!(
+            "{} is not a usable file:// URL (need an absolute path, e.g. file:///abs/path)",
+            resolved.url
+        )
+    })?;
+    if !tokio::fs::try_exists(&path).await.unwrap_or(false) {
+        anyhow::bail!(
+            "file:// source does not exist: {} \
+             (did the operator forget to decompress / move the staged image?)",
+            path.display()
+        );
+    }
+    eprintln!("Using local file: {}", path.display());
+    eprintln!("Hashing source image ...");
+    let sha256 = verify::sha256_file(&path).await?;
+
+    if opts.insecure_no_verify {
+        eprintln!("WARNING: --insecure-no-verify, skipping verification");
+        return Ok((path, sha256));
+    }
+
+    resolved
+        .verifier
+        .verify(&path, &sha256, opts.http)
+        .await
+        .context("verification failed")?;
+    Ok((path, sha256))
+}
+
+/// Datasets younger than this are assumed to be in active use by
+/// another concurrent build and are left alone. The threshold is
+/// generous so that even a slow download phase + zvol write + zfs
+/// send + gzip on a large image stays within the in-use window.
+const SWEEP_MIN_AGE_SECS: u64 = 3600;
+
+async fn sweep_stale_datasets(parent: &str) {
+    let candidates = match zfs::list_children_with_prefix(parent, DATASET_PREFIX).await {
+        Ok(v) if v.is_empty() => return,
+        Ok(v) => v,
+        // arch-lint: allow(no-error-swallowing) reason="sweep is best-effort; failure to clean a stale dataset must not block a fresh build"
+        Err(e) => {
+            eprintln!("warning: could not list {parent} for stale datasets: {e}");
+            return;
+        }
+    };
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        // arch-lint: allow(no-silent-result-drop) reason="system clock before UNIX epoch is impossible on this platform; defaulting to 0 makes sweep skip rather than panic"
+        .unwrap_or(0);
+
+    let mut destroyed = 0usize;
+    let mut skipped = 0usize;
+    for ds in &candidates {
+        let creation = match zfs::get_creation_epoch(ds).await {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("  skipping {ds}: cannot read creation time: {e}");
+                skipped += 1;
+                continue;
+            }
+        };
+        let age = now.saturating_sub(creation);
+        if age < SWEEP_MIN_AGE_SECS {
+            // Probably another build in flight; leave it alone.
+            skipped += 1;
+            continue;
+        }
+        match zfs::try_destroy_recursive(ds).await {
+            Ok(true) => {
+                eprintln!("  destroyed stale {ds} (age {age}s)");
+                destroyed += 1;
+            }
+            Ok(false) => {
+                // Dataset is old enough but zfs refused — most likely
+                // someone has the zvol open. Don't escalate; the next
+                // run will try again.
+                eprintln!("  busy/refused {ds} (age {age}s); leaving in place");
+                skipped += 1;
+            }
+            Err(e) => {
+                eprintln!("  error destroying {ds}: {e}");
+                skipped += 1;
+            }
+        }
+    }
+    if destroyed + skipped > 0 {
+        eprintln!("Sweep summary: {destroyed} destroyed, {skipped} skipped (recent or in-use)");
+    }
+}
+
+#[allow(clippy::too_many_arguments)] // local helper
+async fn build_image(
+    resolved: &ResolvedImage,
+    src_path: &Path,
+    src_format: SourceFormat,
+    source_sha256: &str,
+    virtual_size_bytes: u64,
+    virtual_size_mib: u64,
+    dataset: &str,
+    zvol_rdsk: &Path,
+    output_dir: &Path,
+    vendor: &str,
+    cancel: &Arc<AtomicBool>,
+) -> Result<PipelineOutputs> {
+    zfs::create_zvol(dataset, virtual_size_mib).await?;
+
+    eprintln!(
+        "Writing image to zvol ({} bytes from {}) ...",
+        virtual_size_bytes,
+        match src_format {
+            SourceFormat::Qcow2 => "qcow2",
+            SourceFormat::Raw => "raw",
+            SourceFormat::Xz => "xz",
+            SourceFormat::Vmdk => "vmdk",
+            SourceFormat::RawGz => "raw.gz",
+        }
+    );
+    write_to_zvol(src_path, src_format, zvol_rdsk, virtual_size_bytes, cancel).await?;
+
+    let snap = format!("{dataset}@image");
+    eprintln!("Snapshotting zvol ...");
+    zfs::snap(&snap).await?;
+
+    let stub = format!("{}-{}-{}", vendor, resolved.series, resolved.version);
+    let zfs_path = output_dir.join(format!("{stub}.x86_64.zfs"));
+    let gz_path = output_dir.join(format!("{stub}.x86_64.zfs.gz"));
+    let manifest_path = output_dir.join(format!("{stub}.json"));
+
+    eprintln!("Exporting ZFS stream → {} ...", zfs_path.display());
+    zfs::send_to_file(&snap, &zfs_path).await?;
+
+    eprintln!("Compressing image ...");
+    let status = tokio::process::Command::new("gzip")
+        .arg("-f")
+        .arg(&zfs_path)
+        .status()
+        .await
+        .context("spawn gzip")?;
+    if !status.success() {
+        bail!("gzip exited {status}");
+    }
+
+    let sha1 = sha1_file(&gz_path).await?;
+    let size = tokio::fs::metadata(&gz_path).await?.len();
+
+    let manifest_uuid = stable_manifest_uuid(source_sha256);
+    let published_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let inputs = ManifestInputs {
+        uuid: manifest_uuid,
+        name: format!("{}-{}-nocloud", vendor, resolved.series),
+        version: resolved.version.clone(),
+        published_at,
+        os: resolved.os.clone(),
+        sha1,
+        size,
+        description: resolved.description.clone(),
+        homepage: resolved.homepage.to_string(),
+        ssh_key: resolved.ssh_key,
+        image_size_mib: virtual_size_mib,
+    };
+    let body = serde_json::to_vec_pretty(&manifest::build(&inputs))?;
+    tokio::fs::write(&manifest_path, body).await?;
+
+    Ok(PipelineOutputs {
+        gz_path,
+        manifest_path,
+        manifest_uuid,
+    })
+}
+
+/// Read the virtual disk size from the source. For qcow2 we parse the
+/// header; for raw we use the file size; xz is deferred.
+async fn read_virtual_size(path: &Path, format: SourceFormat) -> Result<u64> {
+    let path = path.to_path_buf();
+    match format {
+        SourceFormat::Raw => Ok(tokio::fs::metadata(&path).await?.len()),
+        SourceFormat::Qcow2 => tokio::task::spawn_blocking(move || -> Result<u64> {
+            let dyn_qcow = qcow::open(&path)
+                .map_err(|e| anyhow::anyhow!("open qcow2 {}: {e}", path.display()))?;
+            let qcow2 = dyn_qcow.unwrap_qcow2();
+            Ok(qcow2.header.size)
+        })
+        .await
+        .context("qcow2 header read task panicked")?,
+        SourceFormat::Xz => {
+            // Read just the xz Stream Footer + Index — no decompression
+            // needed. The total uncompressed size is the sum of all
+            // Records' Uncompressed Size VLIs.
+            tokio::task::spawn_blocking(move || -> Result<u64> {
+                xz_uncompressed_size_from_footer(&path)
+            })
+            .await
+            .context("xz footer parse task panicked")?
+        }
+        SourceFormat::Vmdk => {
+            // VmdkReader::open spins up its own internal tokio
+            // runtime, which conflicts with running on a tokio worker.
+            // Hop to a blocking task so the nested runtime is allowed.
+            tokio::task::spawn_blocking(move || -> Result<u64> {
+                let path_str = path
+                    .to_str()
+                    .ok_or_else(|| anyhow::anyhow!("vmdk path is not utf-8: {path:?}"))?;
+                let reader = vmdkrs::vmdk_reader::VmdkReader::open(path_str)
+                    .map_err(|e| anyhow::anyhow!("open vmdk {path_str}: {e}"))?;
+                Ok(reader.image_size)
+            })
+            .await
+            .context("vmdk header read task panicked")?
+        }
+        SourceFormat::RawGz => {
+            tokio::task::spawn_blocking(move || -> Result<u64> { gzip_isize(&path) })
+                .await
+                .context("gzip ISIZE read task panicked")?
+        }
+    }
+}
+
+/// Read a gzip member's `ISIZE` trailer (the last 4 bytes of the
+/// file): the original uncompressed length mod 2^32. SmartOS USB
+/// images are well under 4 GiB so the modulus is not a concern;
+/// we still sanity-check the magic bytes at the start of the
+/// stream to refuse non-gzip input early.
+fn gzip_isize(path: &Path) -> Result<u64> {
+    // arch-lint: allow(no-sync-io) reason="called from tokio::task::spawn_blocking; the lint cannot see across the function boundary"
+    let mut file = std::fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
+    // arch-lint: allow(no-sync-io) reason="called from tokio::task::spawn_blocking; the lint cannot see across the function boundary"
+    let file_len = file.metadata()?.len();
+    if file_len < 18 {
+        anyhow::bail!("gzip file too short to contain a header + trailer");
+    }
+    let mut magic = [0u8; 2];
+    file.read_exact(&mut magic)?;
+    if magic != [0x1f, 0x8b] {
+        anyhow::bail!("gzip magic mismatch (not a gzip file?)");
+    }
+    file.seek(SeekFrom::End(-4))?;
+    let mut isize_bytes = [0u8; 4];
+    file.read_exact(&mut isize_bytes)?;
+    Ok(u32::from_le_bytes(isize_bytes) as u64)
+}
+
+/// Parse an xz file's Stream Footer + Index without decompressing
+/// anything. Returns the sum of the Uncompressed Size VLIs across
+/// all Records — the size we need to provision the zvol at. Only
+/// single-stream xz files are supported (the case for every cloud
+/// image we've seen); multi-stream concatenated xz would need a
+/// loop walking back from the end.
+fn xz_uncompressed_size_from_footer(xz_path: &Path) -> Result<u64> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file =
+        // arch-lint: allow(no-sync-io) reason="called only from tokio::task::spawn_blocking; the lint cannot see across the function boundary"
+        std::fs::File::open(xz_path).with_context(|| format!("open {}", xz_path.display()))?;
+    // arch-lint: allow(no-sync-io) reason="called only from tokio::task::spawn_blocking; the lint cannot see across the function boundary"
+    let file_len = file.metadata()?.len();
+    if file_len < 12 {
+        anyhow::bail!("xz file too short to contain a Stream Footer");
+    }
+
+    file.seek(SeekFrom::End(-12))?;
+    let mut footer = [0u8; 12];
+    file.read_exact(&mut footer)?;
+    if &footer[10..12] != b"YZ" {
+        anyhow::bail!("xz Stream Footer magic mismatch (not single-stream xz?)");
+    }
+    let backward_size_field =
+        u32::from_le_bytes([footer[4], footer[5], footer[6], footer[7]]) as u64;
+    let index_size = backward_size_field
+        .checked_add(1)
+        .and_then(|n| n.checked_mul(4))
+        .ok_or_else(|| anyhow::anyhow!("xz Backward Size overflow"))?;
+    if file_len < 12 + index_size {
+        anyhow::bail!("xz file shorter than declared Index size");
+    }
+
+    file.seek(SeekFrom::End(-(12 + index_size as i64)))?;
+    let mut index_buf = vec![0u8; index_size as usize];
+    file.read_exact(&mut index_buf)?;
+
+    if index_buf.first().copied() != Some(0x00) {
+        anyhow::bail!("xz Index does not start with 0x00 indicator byte");
+    }
+    let mut p = 1usize;
+    let (num_records, n) = read_xz_vli(&index_buf[p..])?;
+    p += n;
+
+    let mut total_uncompressed = 0u64;
+    for _ in 0..num_records {
+        let (_unpadded_size, n) = read_xz_vli(&index_buf[p..])?;
+        p += n;
+        let (uncompressed_size, n) = read_xz_vli(&index_buf[p..])?;
+        p += n;
+        total_uncompressed = total_uncompressed
+            .checked_add(uncompressed_size)
+            .ok_or_else(|| anyhow::anyhow!("xz uncompressed size sum overflow"))?;
+    }
+
+    Ok(total_uncompressed)
+}
+
+/// Read an xz Variable-Length Integer (LEB128 with 7 bits per byte,
+/// MSB=1 means continue). XZ caps these at 9 bytes.
+fn read_xz_vli(buf: &[u8]) -> Result<(u64, usize)> {
+    let mut value: u64 = 0;
+    let mut shift: u32 = 0;
+    for i in 0..9 {
+        let b = *buf
+            .get(i)
+            .ok_or_else(|| anyhow::anyhow!("xz VLI: truncated buffer"))?;
+        value |= u64::from(b & 0x7f) << shift;
+        if b & 0x80 == 0 {
+            return Ok((value, i + 1));
+        }
+        shift += 7;
+    }
+    anyhow::bail!("xz VLI: more than 9 bytes")
+}
+
+async fn write_to_zvol(
+    src_path: &Path,
+    format: SourceFormat,
+    zvol_rdsk: &Path,
+    virtual_size: u64,
+    cancel: &Arc<AtomicBool>,
+) -> Result<()> {
+    let pb = ProgressBar::new(virtual_size);
+    pb.set_style(byte_progress_style("Writing"));
+
+    let src_path = src_path.to_path_buf();
+    let zvol_rdsk = zvol_rdsk.to_path_buf();
+    let pb_clone = pb.clone();
+    let cancel = cancel.clone();
+
+    let result = tokio::task::spawn_blocking(move || -> Result<()> {
+        match format {
+            SourceFormat::Qcow2 => {
+                // Two file handles on the same path: one for the
+                // metadata parse (consumed by `qcow::open`), one passed
+                // into the cluster reader. The qcow crate's docs note
+                // the reader file must be the same source as the
+                // header parse, but two reads of the same on-disk file
+                // satisfy that.
+                let dyn_qcow =
+                    qcow::open(&src_path).map_err(|e| anyhow::anyhow!("open qcow2: {e}"))?;
+                let qcow2 = dyn_qcow.unwrap_qcow2();
+                // arch-lint: allow(no-sync-io) reason="inside tokio::task::spawn_blocking; downstream qcow crate API is sync"
+                let mut file = std::fs::File::open(&src_path)
+                    .with_context(|| format!("reopen {}", src_path.display()))?;
+                let mut reader = qcow2.reader(&mut file);
+                copy_with_progress(&mut reader, &zvol_rdsk, virtual_size, &pb_clone, &cancel)
+            }
+            SourceFormat::Raw => {
+                // arch-lint: allow(no-sync-io) reason="inside tokio::task::spawn_blocking; copy_with_progress drives a sync read/write loop"
+                let mut reader = std::fs::File::open(&src_path)
+                    .with_context(|| format!("open {}", src_path.display()))?;
+                copy_with_progress(&mut reader, &zvol_rdsk, virtual_size, &pb_clone, &cancel)
+            }
+            SourceFormat::Xz => {
+                // Stream the decompressed bytes straight into the
+                // zvol via lzma-rs, no intermediate `.raw` file.
+                // The progress bar / cancel flag piggyback on a
+                // ProgressWriter wrapper around the zvol file.
+                // arch-lint: allow(no-sync-io) reason="inside tokio::task::spawn_blocking; lzma-rs xz_decompress drives sync Read/Write"
+                let xz_input = std::fs::File::open(&src_path)
+                    .with_context(|| format!("open {}", src_path.display()))?;
+                let zvol = std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(&zvol_rdsk)
+                    .with_context(|| format!("open zvol {} for write", zvol_rdsk.display()))?;
+                let mut input = std::io::BufReader::new(xz_input);
+                let mut output = ProgressWriter {
+                    inner: std::io::BufWriter::new(zvol),
+                    pb: pb_clone,
+                    cancel,
+                };
+                lzma_rs::xz_decompress(&mut input, &mut output)
+                    .map_err(|e| anyhow::anyhow!("xz_decompress: {e}"))?;
+                output.inner.flush().context("flush zvol")?;
+                Ok(())
+            }
+            SourceFormat::Vmdk => {
+                // arch-lint: allow(no-sync-io) reason="inside tokio::task::spawn_blocking; copy_with_progress drives a sync read/write loop"
+                let path_str = src_path.to_str().ok_or_else(|| {
+                    anyhow::anyhow!("vmdk path is not utf-8: {}", src_path.display())
+                })?;
+                let inner = vmdkrs::vmdk_reader::VmdkReader::open(path_str)
+                    .map_err(|e| anyhow::anyhow!("open vmdk {path_str}: {e}"))?;
+                let mut reader = VmdkReadAdapter { inner, offset: 0 };
+                copy_with_progress(&mut reader, &zvol_rdsk, virtual_size, &pb_clone, &cancel)
+            }
+            SourceFormat::RawGz => {
+                // Stream the decompressed bytes straight into the
+                // zvol via flate2, no intermediate `.raw` file. Goes
+                // through copy_with_progress so all-zero chunks are
+                // skipped and the zvol stays sparse.
+                // arch-lint: allow(no-sync-io) reason="inside tokio::task::spawn_blocking; flate2 drives sync Read"
+                let gz_input = std::fs::File::open(&src_path)
+                    .with_context(|| format!("open {}", src_path.display()))?;
+                let mut reader = flate2::read::GzDecoder::new(std::io::BufReader::new(gz_input));
+                copy_with_progress(&mut reader, &zvol_rdsk, virtual_size, &pb_clone, &cancel)
+            }
+        }
+    })
+    .await
+    .context("zvol write task panicked")?;
+
+    pb.finish_and_clear();
+    result
+}
+
+/// `Read` adapter that turns vmdk-rs's offset-addressed
+/// `read_at_offset` API into a streamable `Read` impl, so the
+/// existing zero-skipping `copy_with_progress` loop drives it
+/// the same way it drives qcow2 and raw sources.
+struct VmdkReadAdapter {
+    inner: vmdkrs::vmdk_reader::VmdkReader,
+    offset: u64,
+}
+
+impl Read for VmdkReadAdapter {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        let n = self
+            .inner
+            .read_at_offset(self.offset, buf)
+            .map_err(|e| std::io::Error::other(format!("vmdk read: {e}")))?;
+        self.offset += n as u64;
+        Ok(n)
+    }
+}
+
+/// `Write` wrapper that reports progress and honors the SIGINT
+/// cancel flag. Used for the streaming xz→zvol path, where the
+/// decompressor drives writes via the `Write` trait.
+struct ProgressWriter<W: Write> {
+    inner: W,
+    pb: ProgressBar,
+    cancel: Arc<AtomicBool>,
+}
+
+impl<W: Write> Write for ProgressWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.cancel.load(Ordering::Relaxed) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "interrupted by signal during xz decompression",
+            ));
+        }
+        let n = self.inner.write(buf)?;
+        self.pb.inc(n as u64);
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+fn copy_with_progress(
+    reader: &mut dyn Read,
+    zvol_rdsk: &Path,
+    total: u64,
+    pb: &ProgressBar,
+    cancel: &AtomicBool,
+) -> Result<()> {
+    let mut writer = std::fs::OpenOptions::new()
+        .write(true)
+        .open(zvol_rdsk)
+        .with_context(|| format!("open zvol {} for write", zvol_rdsk.display()))?;
+    let mut buf = vec![0u8; 1 << 20]; // 1 MiB
+    let mut remaining = total;
+    while remaining > 0 {
+        if cancel.load(Ordering::Relaxed) {
+            anyhow::bail!("interrupted by signal during zvol write");
+        }
+        let to_read = std::cmp::min(buf.len() as u64, remaining) as usize;
+        reader
+            .read_exact(&mut buf[..to_read])
+            .with_context(|| format!("read source ({remaining} bytes remaining)"))?;
+        // qcow2 unallocated clusters surface as zero-filled buffers
+        // through the reader API. Skipping the write keeps the zvol
+        // sparse (no block allocated, no I/O) and shrinks the resulting
+        // `zfs send` stream — important for cloud images where the
+        // virtual disk is much larger than the actual data footprint.
+        if buf[..to_read].iter().all(|&b| b == 0) {
+            writer
+                .seek(SeekFrom::Current(to_read as i64))
+                .with_context(|| format!("seek zvol ({} bytes written)", total - remaining))?;
+        } else {
+            writer
+                .write_all(&buf[..to_read])
+                .with_context(|| format!("write zvol ({} bytes written)", total - remaining))?;
+        }
+        remaining -= to_read as u64;
+        pb.inc(to_read as u64);
+    }
+    writer.flush().context("flush zvol")?;
+    Ok(())
+}
+
+async fn download_with_progress(
+    http: &reqwest::Client,
+    url: &str,
+    dest: &Path,
+    cancel: &Arc<AtomicBool>,
+) -> Result<()> {
+    let resp = http
+        .get(url)
+        .send()
+        .await
+        .with_context(|| format!("GET {url}"))?
+        .error_for_status()
+        .with_context(|| format!("status from {url}"))?;
+
+    let total: u64 = resp.content_length().unwrap_or_default();
+    let pb = if total > 0 {
+        let pb = ProgressBar::new(total);
+        pb.set_style(byte_progress_style("Downloading"));
+        pb
+    } else {
+        // Server didn't send Content-Length (rare for static cloud
+        // images, but possible on a redirect chain or chunked
+        // transfer). Fall back to a spinner.
+        let pb = ProgressBar::new_spinner();
+        pb.set_style(spinner_progress_style("Downloading"));
+        pb
+    };
+
+    let mut f = tokio::fs::File::create(dest)
+        .await
+        .with_context(|| format!("create {}", dest.display()))?;
+    let mut stream = resp;
+    let mut bytes_written: u64 = 0;
+    while let Some(chunk) = stream.chunk().await? {
+        if cancel.load(Ordering::Relaxed) {
+            anyhow::bail!("interrupted by signal during download");
+        }
+        f.write_all(&chunk).await?;
+        bytes_written += chunk.len() as u64;
+        pb.inc(chunk.len() as u64);
+    }
+    f.flush().await?;
+    pb.finish_and_clear();
+
+    // Defense in depth: hyper should already error on body truncation
+    // when Content-Length is set, but a comparison here is cheap and
+    // catches HTTP/2 stream resets, mid-stream proxy issues, and
+    // edge cases where the server sent a wrong size header. A short
+    // download produces a clear error rather than silently feeding a
+    // truncated file into the verifier (which would also catch it,
+    // but with a less actionable "checksum mismatch" message).
+    if total > 0 && bytes_written != total {
+        anyhow::bail!(
+            "download truncated: got {bytes_written} bytes, expected {total} \
+             (from Content-Length) at {url}"
+        );
+    }
+
+    Ok(())
+}
+
+// arch-lint: allow(no-silent-result-drop) reason="literal template is known-good at compile time; fallback is the identity for malformed templates"
+fn byte_progress_style(prefix: &str) -> ProgressStyle {
+    ProgressStyle::with_template(&format!(
+        "{prefix} [{{elapsed_precise}}] {{bar:40.cyan/blue}} \
+         {{bytes:>10}}/{{total_bytes:<10}} ({{bytes_per_sec}}, ETA {{eta}})"
+    ))
+    .unwrap_or_else(|_| ProgressStyle::default_bar())
+}
+
+// arch-lint: allow(no-silent-result-drop) reason="literal template is known-good at compile time; fallback is the identity for malformed templates"
+fn spinner_progress_style(prefix: &str) -> ProgressStyle {
+    ProgressStyle::with_template(&format!(
+        "{prefix} [{{elapsed_precise}}] {{spinner}} {{bytes}} ({{bytes_per_sec}})"
+    ))
+    .unwrap_or_else(|_| ProgressStyle::default_spinner())
+}
+
+/// Compute SHA-1 by shelling out to illumos `digest -a sha1`. The image
+/// manifest format mandates SHA-1 for the file digest (legacy IMGAPI
+/// requirement). Adding a SHA-1 crate just for this is more weight
+/// than calling the system tool.
+async fn sha1_file(file: &Path) -> Result<String> {
+    let out = tokio::process::Command::new("digest")
+        .args(["-a", "sha1"])
+        .arg(file)
+        .stdout(Stdio::piped())
+        .output()
+        .await
+        .context("spawn digest")?;
+    if !out.status.success() {
+        bail!(
+            "digest -a sha1 exited {}: {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    Ok(String::from_utf8(out.stdout)
+        .context("digest stdout was not UTF-8")?
+        .trim()
+        .to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manifest_uuid_is_stable_per_sha256() {
+        // Same input → same UUID every call.
+        let a = stable_manifest_uuid(
+            "5c3ddb00f60bc455dac0862fabe9d8bacec46c33ac1751143c5c3683404b110d",
+        );
+        let b = stable_manifest_uuid(
+            "5c3ddb00f60bc455dac0862fabe9d8bacec46c33ac1751143c5c3683404b110d",
+        );
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn manifest_uuid_differs_for_different_sha256() {
+        let a = stable_manifest_uuid(
+            "5c3ddb00f60bc455dac0862fabe9d8bacec46c33ac1751143c5c3683404b110d",
+        );
+        let b = stable_manifest_uuid(
+            "6e7016f2c9f4d3c00f48789eb6b9043ba2172ccc1b6b1eaf3ed1e29dd3e52bb3",
+        );
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn manifest_uuid_is_v5() {
+        let u = stable_manifest_uuid("aa");
+        assert_eq!(u.get_version_num(), 5);
+    }
+
+    #[test]
+    fn xz_vli_reads_single_byte() {
+        let (v, n) = read_xz_vli(&[0x42]).unwrap();
+        assert_eq!(v, 0x42);
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn xz_vli_reads_two_bytes() {
+        // 0x80 = continuation, 0x01 = high bits.
+        // value = 0x00 | (0x01 << 7) = 128
+        let (v, n) = read_xz_vli(&[0x80, 0x01]).unwrap();
+        assert_eq!(v, 128);
+        assert_eq!(n, 2);
+    }
+
+    #[test]
+    fn xz_vli_handles_extra_bytes_in_buffer() {
+        // Trailing garbage shouldn't matter; we stop on first byte without MSB.
+        let (v, n) = read_xz_vli(&[0x05, 0xff, 0xff]).unwrap();
+        assert_eq!(v, 5);
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn xz_vli_rejects_overlong_encoding() {
+        // 9 continuation bytes = invalid (max 9 bytes total).
+        let buf = [0x80u8; 10];
+        assert!(read_xz_vli(&buf).is_err());
+    }
+
+    #[test]
+    fn xz_vli_rejects_truncated() {
+        let buf = [0x80u8; 1];
+        assert!(read_xz_vli(&buf).is_err());
+    }
+}

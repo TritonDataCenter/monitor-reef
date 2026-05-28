@@ -1,0 +1,40 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "nocloud-import"
+version = "0.1.0"
+edition.workspace = true
+description = "Cloud-init nocloud image fetch + qcow2/vmdk/xz decode + zfs receive pipeline"
+
+[lints]
+workspace = true
+
+[lib]
+name = "nocloud_import"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+flate2 = "1"
+indicatif = { workspace = true }
+lzma-rs = { workspace = true }
+qcow = { path = "../qcow" }
+regex = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "process", "rt"] }
+toml = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true, features = ["v4", "serde"] }
+vmdk-rs = { path = "../vmdk" }

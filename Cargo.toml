@@ -27,6 +27,9 @@ members = [
     "libs/edge-manifest",
     "libs/imgapi-manifest",
     "libs/imgapi-blob-manta",
+    "libs/qcow",
+    "libs/vmdk",
+    "libs/nocloud-import",
     "libs/tritond-image-manifest",
     "libs/tritond-logs",
     "libs/tritond-metrics",
@@ -125,6 +128,9 @@ hostname = "0.4"
 http = "1"
 indexmap = "2"
 indicatif = "0.18"
+# Pure-Rust XZ decoder for unwrapping vendor .raw.xz cloud images
+# inside the nocloud-import pipeline.
+lzma-rs = "0.3"
 # CIDR types for VPC ipv4/ipv6 blocks. We rely on the serde
 # round-trip-through-string impl; JSON Schema is hand-fed on the API
 # structs (see tritond-store::types::Vpc) so we don't depend on
