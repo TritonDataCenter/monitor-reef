@@ -142,6 +142,7 @@ pub(crate) async fn create_storage_cluster_bucket(
         Action::StorageBucketCreate,
     )
     .await?;
+    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let id = path.into_inner().id;
     let req = body.into_inner();
@@ -198,6 +199,7 @@ pub(crate) async fn delete_storage_cluster_bucket(
         Action::StorageBucketDelete,
     )
     .await?;
+    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;

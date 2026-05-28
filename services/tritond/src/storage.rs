@@ -43,7 +43,111 @@ use tritond_audit::Outcome as AuditOutcome;
 use tritond_store::{StorageCluster, StorageClusterSurface, Store, StoreError};
 use uuid::Uuid;
 
+use crate::auth::Principal;
 use crate::sigv4;
+
+/// Resolved storage workspace context for a forwarder request.
+///
+/// Returned by [`resolve_workspace_scope`] so handlers can fail
+/// loudly on tenants without a workspace binding (412) before
+/// they reach the mantad call.
+///
+/// Today's storage forwarder doesn't yet pass the workspace
+/// name to mantad-client — that requires extending the mantad
+/// admin routes to accept a workspace parameter, which is its
+/// own slice. The gate is still load-bearing: it prevents a
+/// tenant whose `storage_workspace_id` is `None` from
+/// silently sharing the cluster-wide bucket / IAM namespace
+/// with bound tenants. Once the data-plane plumbing lands,
+/// every forwarder will key its mantad call off [`Self::workspace_name`].
+#[derive(Debug, Clone)]
+pub(crate) enum WorkspaceScope {
+    /// Caller is bound to one workspace; everything they see
+    /// or mutate is scoped to it.
+    Bound {
+        /// Wire-name on mantad: `t-{tenant_uuid_simple}`.
+        workspace_name: String,
+    },
+    /// Caller is a root operator. No workspace scoping; cross-
+    /// tenant visibility is allowed (audit, inventory, support).
+    /// Today this is permitted unconditionally for any root
+    /// operator; a follow-up will tighten it to an explicit
+    /// [`crate::auth::Action::WorkspaceListAcrossTenants`]
+    /// Cedar check so non-root operators can be granted the
+    /// capability without becoming root.
+    Unscoped,
+}
+
+impl WorkspaceScope {
+    /// The wire-name to pass on mantad calls, when scoped.
+    /// `None` means "unscoped" (operator cross-tenant read).
+    pub(crate) fn workspace_name(&self) -> Option<&str> {
+        match self {
+            Self::Bound { workspace_name } => Some(workspace_name.as_str()),
+            Self::Unscoped => None,
+        }
+    }
+}
+
+/// Resolve the workspace scope a forwarder call should run
+/// against, given the authenticated principal.
+///
+/// * Root operator → [`WorkspaceScope::Unscoped`].
+/// * Tenant-bound principal whose tenant has
+///   `storage_workspace_id = Some` → [`WorkspaceScope::Bound`].
+/// * Tenant-bound principal whose tenant has
+///   `storage_workspace_id = None` → 412 with an init-storage
+///   hint. The operator must register a default S3 cluster
+///   (`tcadm config set storage.default_s3_cluster_id`) and
+///   either recreate the tenant or run the retrofit flow
+///   (follow-up `tcadm tenant init-storage`).
+/// * Operator without a tenant binding and not root → 403.
+///   Such a principal has no claim on any tenant's namespace.
+pub async fn resolve_workspace_scope(
+    store: &Arc<dyn Store>,
+    principal: &Principal,
+) -> Result<WorkspaceScope, HttpError> {
+    match principal {
+        Principal::Anonymous => Err(HttpError::for_client_error(
+            Some("PreconditionFailed".to_string()),
+            ClientErrorStatusCode::PRECONDITION_FAILED,
+            "anonymous principal cannot resolve a storage workspace".to_string(),
+        )),
+        Principal::Operator { is_root: true, .. } => Ok(WorkspaceScope::Unscoped),
+        Principal::Operator {
+            tenant_id: Some(tenant_id),
+            ..
+        } => {
+            let tenant = store
+                .get_tenant(*tenant_id)
+                .await
+                .map_err(store_error_to_http)?;
+            match tenant.storage_workspace_id {
+                Some(workspace_uuid) => Ok(WorkspaceScope::Bound {
+                    workspace_name: format!("t-{}", workspace_uuid.simple()),
+                }),
+                None => Err(HttpError::for_client_error(
+                    Some("TenantStorageUnbound".to_string()),
+                    ClientErrorStatusCode::PRECONDITION_FAILED,
+                    format!(
+                        "tenant {tenant_id} has no storage binding. an operator must register a \
+                         default S3 cluster (`tcadm config set storage.default_s3_cluster_id`) \
+                         before this tenant's members can use storage endpoints"
+                    ),
+                )),
+            }
+        }
+        Principal::Operator {
+            tenant_id: None, ..
+        } => Err(HttpError::for_client_error(
+            Some("Forbidden".to_string()),
+            ClientErrorStatusCode::FORBIDDEN,
+            "operator has no tenant binding; storage forwarders require either root permission \
+             or tenant membership"
+                .to_string(),
+        )),
+    }
+}
 
 /// Resolve a registered cluster id to (record, ready-to-call client).
 ///
