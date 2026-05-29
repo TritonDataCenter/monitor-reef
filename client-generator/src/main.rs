@@ -146,10 +146,15 @@ fn configure_jira(settings: &mut GenerationSettings) {
 }
 
 fn configure_tritond(settings: &mut GenerationSettings) {
+    let value_enum_patch = TypePatch::default().with_derive("clap::ValueEnum").clone();
     settings
         .with_interface(progenitor::InterfaceStyle::Builder)
         .with_tag(progenitor::TagStyle::Merged)
         .with_derive("schemars::JsonSchema")
+        // `NetworkKind` is a CLI argument on the operator external-subnet
+        // surface; the Progenitor copy needs `ValueEnum` too (type-safety
+        // rule #3). The canonical type derives it in `tritond-store`.
+        .with_patch("NetworkKind", &value_enum_patch)
         // Metrics types live in `tritond-metrics`; reuse them across
         // the client/server boundary so producers + consumers share a
         // single definition (no double-conversion through the

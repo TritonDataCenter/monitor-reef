@@ -1515,6 +1515,53 @@ pub mod types {
         }
     }
 
+    #[doc = "The per-CN list of nic_tags this CN provides. Single-writer: only the owning CN's agent writes its row (`cn-nic-tags/<cn>`)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The per-CN list of nic_tags this CN provides. Single-writer: only the owning CN's agent writes its row (`cn-nic-tags/<cn>`).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"cn\","]
+    #[doc = "    \"provides\","]
+    #[doc = "    \"published_at\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"cn\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"provides\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/NicTagProvision\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"published_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct CnNicTagInventory {
+        pub cn: ::uuid::Uuid,
+        pub provides: ::std::vec::Vec<NicTagProvision>,
+        pub published_at: ::chrono::DateTime<::chrono::offset::Utc>,
+    }
+
+    impl CnNicTagInventory {
+        pub fn builder() -> builder::CnNicTagInventory {
+            Default::default()
+        }
+    }
+
     #[doc = "Response body for `POST /v1/cns/{server_uuid}/reservoir`. Echoes the per-CN override (`None` = inherits the cluster default) plus the resolved effective values the CN will actually apply."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -3681,12 +3728,36 @@ pub mod types {
     #[doc = "    \"description\": {"]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
+    #[doc = "    \"external_nic_tag\": {"]
+    #[doc = "      \"description\": \"External nic_tag the dataplane egresses/ingresses this FIP on. Derived read-only from `network_id`'s subnet `nic_tag` at create time — never client-set, so a FIP can never carry a nic_tag inconsistent with its subnet (invariant 17).\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"hosted_cn\": {"]
+    #[doc = "      \"description\": \"CN currently hosting this FIP's 1:1 NAT termination. Stamped on `attach` from the target instance's `host_cn_uuid`, cleared on `detach` and by the instance-delete cascade. Pins the dataplane claim/release jobs to a concrete CN.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
     #[doc = "    \"id\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"network_id\": {"]
+    #[doc = "      \"description\": \"External Subnet this address was allocated from, when the FIP was created via the pool/network path (C-3). `None` for legacy `family`-allocated records. Drives `external_nic_tag`.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"project_id\": {"]
     #[doc = "      \"type\": \"string\","]
@@ -3715,8 +3786,17 @@ pub mod types {
         pub attached_to: ::std::option::Option<FloatingIpAttachment>,
         pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
         pub description: ::std::string::String,
+        #[doc = "External nic_tag the dataplane egresses/ingresses this FIP on. Derived read-only from `network_id`'s subnet `nic_tag` at create time — never client-set, so a FIP can never carry a nic_tag inconsistent with its subnet (invariant 17)."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub external_nic_tag: ::std::option::Option<::uuid::Uuid>,
+        #[doc = "CN currently hosting this FIP's 1:1 NAT termination. Stamped on `attach` from the target instance's `host_cn_uuid`, cleared on `detach` and by the instance-delete cascade. Pins the dataplane claim/release jobs to a concrete CN."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub hosted_cn: ::std::option::Option<::uuid::Uuid>,
         pub id: ::uuid::Uuid,
         pub name: ::std::string::String,
+        #[doc = "External Subnet this address was allocated from, when the FIP was created via the pool/network path (C-3). `None` for legacy `family`-allocated records. Drives `external_nic_tag`."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub network_id: ::std::option::Option<::uuid::Uuid>,
         pub project_id: ::uuid::Uuid,
         pub tenant_id: ::uuid::Uuid,
         pub updated_at: ::chrono::DateTime<::chrono::offset::Utc>,
@@ -7399,6 +7479,178 @@ pub mod types {
         }
     }
 
+    #[doc = "Network kind. `External` is FlatL2 public space (floating-IP and NAT-gateway source); `Internal` / `Fabric` are VPC overlay subnets. An unrecognized wire value decodes to `Unknown`, which the external dataplane path treats as \"not external\" (fail closed) rather than silently behaving as `Internal`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Network kind. `External` is FlatL2 public space (floating-IP and NAT-gateway source); `Internal` / `Fabric` are VPC overlay subnets. An unrecognized wire value decodes to `Unknown`, which the external dataplane path treats as \\\"not external\\\" (fail closed) rather than silently behaving as `Internal`.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"internal\","]
+    #[doc = "    \"external\","]
+    #[doc = "    \"fabric\","]
+    #[doc = "    \"unknown\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        clap :: ValueEnum,
+        schemars :: JsonSchema,
+    )]
+    pub enum NetworkKind {
+        #[serde(rename = "internal")]
+        Internal,
+        #[serde(rename = "external")]
+        External,
+        #[serde(rename = "fabric")]
+        Fabric,
+        #[serde(rename = "unknown")]
+        Unknown,
+    }
+
+    impl ::std::fmt::Display for NetworkKind {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Internal => f.write_str("internal"),
+                Self::External => f.write_str("external"),
+                Self::Fabric => f.write_str("fabric"),
+                Self::Unknown => f.write_str("unknown"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for NetworkKind {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "internal" => Ok(Self::Internal),
+                "external" => Ok(Self::External),
+                "fabric" => Ok(Self::Fabric),
+                "unknown" => Ok(Self::Unknown),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for NetworkKind {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for NetworkKind {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for NetworkKind {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    #[doc = "An ordered list of external networks (subnets) the allocator walks in order when handing out public addresses. Carried from NAPI; v1 defaults allocation to a single network."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"An ordered list of external networks (subnets) the allocator walks in order when handing out public addresses. Carried from NAPI; v1 defaults allocation to a single network.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"networks\","]
+    #[doc = "    \"updated_at\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"networks\": {"]
+    #[doc = "      \"description\": \"Ordered external-subnet ids; allocation walks them in order.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\","]
+    #[doc = "        \"format\": \"uuid\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"owner_silos\": {"]
+    #[doc = "      \"description\": \"Silos allowed to allocate from this pool; empty = all silos.\","]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\","]
+    #[doc = "        \"format\": \"uuid\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"updated_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NetworkPool {
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub description: ::std::option::Option<::std::string::String>,
+        pub id: ::uuid::Uuid,
+        pub name: ::std::string::String,
+        #[doc = "Ordered external-subnet ids; allocation walks them in order."]
+        pub networks: ::std::vec::Vec<::uuid::Uuid>,
+        #[doc = "Silos allowed to allocate from this pool; empty = all silos."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub owner_silos: ::std::vec::Vec<::uuid::Uuid>,
+        pub updated_at: ::chrono::DateTime<::chrono::offset::Utc>,
+    }
+
+    impl NetworkPool {
+        pub fn builder() -> builder::NetworkPool {
+            Default::default()
+        }
+    }
+
     #[doc = "Request body for `POST /v1/agent/network-realization`.\n\nAgents report one `(resource, realizer)` row at a time. Tritond validates the resource exists and then lets the store enforce monotonic generation reporting for that tuple."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -7899,6 +8151,128 @@ pub mod types {
         }
     }
 
+    #[doc = "Request body for creating an operator-scoped External subnet.\n\nExternal subnets are FlatL2 public space: they carry a nic_tag + VLAN and are the source of public / floating IPs, allocated on the single global public-IP index (invariant D5). They are *not* tenant VPC subnets — there is no parent VPC — so the store stamps reserved nil ids for `tenant_id` / `project_id` / `vpc_id` / `route_table_id`. At least one of `ipv4_block` / `ipv6_block` must be `Some`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for creating an operator-scoped External subnet.\\n\\nExternal subnets are FlatL2 public space: they carry a nic_tag + VLAN and are the source of public / floating IPs, allocated on the single global public-IP index (invariant D5). They are *not* tenant VPC subnets — there is no parent VPC — so the store stamps reserved nil ids for `tenant_id` / `project_id` / `vpc_id` / `route_table_id`. At least one of `ipv4_block` / `ipv6_block` must be `Some`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"name\","]
+    #[doc = "    \"nic_tag\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"ipv4_block\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"ipv6_block\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"nic_tag\": {"]
+    #[doc = "      \"description\": \"The nic_tag this external subnet egresses on. Must resolve to a registered [`NicTag`].\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"owner_silos\": {"]
+    #[doc = "      \"description\": \"Silos allowed to allocate from this subnet; empty = all silos. Not enforced until C-3.\","]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\","]
+    #[doc = "        \"format\": \"uuid\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"provision_end_ipv4\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"ipv4\""]
+    #[doc = "    },"]
+    #[doc = "    \"provision_end_ipv6\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"ipv6\""]
+    #[doc = "    },"]
+    #[doc = "    \"provision_start_ipv4\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"ipv4\""]
+    #[doc = "    },"]
+    #[doc = "    \"provision_start_ipv6\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"ipv6\""]
+    #[doc = "    },"]
+    #[doc = "    \"vlan_id\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint16\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewExternalSubnet {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub description: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub ipv4_block: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub ipv6_block: ::std::option::Option<::std::string::String>,
+        pub name: ::std::string::String,
+        #[doc = "The nic_tag this external subnet egresses on. Must resolve to a registered [`NicTag`]."]
+        pub nic_tag: ::uuid::Uuid,
+        #[doc = "Silos allowed to allocate from this subnet; empty = all silos. Not enforced until C-3."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub owner_silos: ::std::vec::Vec<::uuid::Uuid>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub provision_end_ipv4: ::std::option::Option<::std::net::Ipv4Addr>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub provision_end_ipv6: ::std::option::Option<::std::net::Ipv6Addr>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub provision_start_ipv4: ::std::option::Option<::std::net::Ipv4Addr>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub provision_start_ipv6: ::std::option::Option<::std::net::Ipv6Addr>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub vlan_id: ::std::option::Option<u16>,
+    }
+
+    impl NewExternalSubnet {
+        pub fn builder() -> builder::NewExternalSubnet {
+            Default::default()
+        }
+    }
+
     #[doc = "Request body for creating a [`FirewallRule`]. The owning tenant / project / VPC come from the URL path; the server assigns `id` and `created_at`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -8025,16 +8399,15 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for allocating a new FloatingIp. The server picks the actual address from the family-specific Phase 0 pool; the caller asks for `V4` or `V6` and gets the lowest free address."]
+    #[doc = "Request body for allocating a new FloatingIp. The address source is one of three mutually exclusive selectors:\n\n* `network_id` — allocate the lowest-free address from a specific External subnet (C-3, preferred); * `pool_id` — walk a [`NetworkPool`]'s ordered networks and take the first free address (C-3); * `family` — the legacy Phase-0 path that draws from the hardcoded `FLOATING_IP_V*_POOL`.\n\nAt most one may be set; the server rejects a request with more than one selector ([`StoreError::Conflict`]). All three are `#[serde(default)]` so the additive `network_id` / `pool_id` fields preserve wire back-compat with pre-C-3 `family`-only bodies."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for allocating a new FloatingIp. The server picks the actual address from the family-specific Phase 0 pool; the caller asks for `V4` or `V6` and gets the lowest free address.\","]
+    #[doc = "  \"description\": \"Request body for allocating a new FloatingIp. The address source is one of three mutually exclusive selectors:\\n\\n* `network_id` — allocate the lowest-free address from a specific External subnet (C-3, preferred); * `pool_id` — walk a [`NetworkPool`]'s ordered networks and take the first free address (C-3); * `family` — the legacy Phase-0 path that draws from the hardcoded `FLOATING_IP_V*_POOL`.\\n\\nAt most one may be set; the server rejects a request with more than one selector ([`StoreError::Conflict`]). All three are `#[serde(default)]` so the additive `network_id` / `pool_id` fields preserve wire back-compat with pre-C-3 `family`-only bodies.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
-    #[doc = "    \"family\","]
     #[doc = "    \"name\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
@@ -8045,10 +8418,38 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"family\": {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/AddressFamily\""]
+    #[doc = "      \"description\": \"Legacy Phase-0 family selector. Mutually exclusive with `network_id` / `pool_id`. `None` only when one of those is set.\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/AddressFamily\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"network_id\": {"]
+    #[doc = "      \"description\": \"External subnet to allocate from. Stamps `FloatingIp::network_id` and derives `external_nic_tag`. Mutually exclusive with the other two selectors.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"pool_id\": {"]
+    #[doc = "      \"description\": \"Network pool to allocate from (walks its ordered networks). Mutually exclusive with the other two selectors.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -8060,8 +8461,16 @@ pub mod types {
     pub struct NewFloatingIp {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub description: ::std::option::Option<::std::string::String>,
-        pub family: AddressFamily,
+        #[doc = "Legacy Phase-0 family selector. Mutually exclusive with `network_id` / `pool_id`. `None` only when one of those is set."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub family: ::std::option::Option<AddressFamily>,
         pub name: ::std::string::String,
+        #[doc = "External subnet to allocate from. Stamps `FloatingIp::network_id` and derives `external_nic_tag`. Mutually exclusive with the other two selectors."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub network_id: ::std::option::Option<::uuid::Uuid>,
+        #[doc = "Network pool to allocate from (walks its ordered networks). Mutually exclusive with the other two selectors."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub pool_id: ::std::option::Option<::uuid::Uuid>,
     }
 
     impl NewFloatingIp {
@@ -8485,6 +8894,113 @@ pub mod types {
 
     impl NewNatGateway {
         pub fn builder() -> builder::NewNatGateway {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request body for creating a network pool."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for creating a network pool.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"name\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"networks\": {"]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\","]
+    #[doc = "        \"format\": \"uuid\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"owner_silos\": {"]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\","]
+    #[doc = "        \"format\": \"uuid\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewNetworkPool {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub description: ::std::option::Option<::std::string::String>,
+        pub name: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub networks: ::std::vec::Vec<::uuid::Uuid>,
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub owner_silos: ::std::vec::Vec<::uuid::Uuid>,
+    }
+
+    impl NewNetworkPool {
+        pub fn builder() -> builder::NewNetworkPool {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request body for registering a nic_tag."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for registering a nic_tag.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"mtu\","]
+    #[doc = "    \"name\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"mtu\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewNicTag {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub description: ::std::option::Option<::std::string::String>,
+        pub mtu: u32,
+        pub name: ::std::string::String,
+    }
+
+    impl NewNicTag {
+        pub fn builder() -> builder::NewNicTag {
             Default::default()
         }
     }
@@ -9073,6 +9589,122 @@ pub mod types {
 
     impl Nic {
         pub fn builder() -> builder::Nic {
+            Default::default()
+        }
+    }
+
+    #[doc = "A named L2 segment a CN can attach VNICs to (e.g. `external`, `internal`, `sdc_underlay`). External subnets reference one by id; per-CN provisioning lives in [`CnNicTagInventory`]."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A named L2 segment a CN can attach VNICs to (e.g. `external`, `internal`, `sdc_underlay`). External subnets reference one by id; per-CN provisioning lives in [`CnNicTagInventory`].\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"description\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"mtu\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"updated_at\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"mtu\": {"]
+    #[doc = "      \"description\": \"Effective MTU of the tag's link; a subnet's MTU must not exceed this.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"updated_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NicTag {
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub description: ::std::string::String,
+        pub id: ::uuid::Uuid,
+        #[doc = "Effective MTU of the tag's link; a subnet's MTU must not exceed this."]
+        pub mtu: u32,
+        pub name: ::std::string::String,
+        pub updated_at: ::chrono::DateTime<::chrono::offset::Utc>,
+    }
+
+    impl NicTag {
+        pub fn builder() -> builder::NicTag {
+            Default::default()
+        }
+    }
+
+    #[doc = "One nic_tag a CN's hardware provides, with the physical link, VLAN, and MTU it lands on. Published by `tritonagent` from sysinfo / nictagadm; read by placement and the FIP allocator."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One nic_tag a CN's hardware provides, with the physical link, VLAN, and MTU it lands on. Published by `tritonagent` from sysinfo / nictagadm; read by placement and the FIP allocator.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"mtu\","]
+    #[doc = "    \"nic_tag\","]
+    #[doc = "    \"physical_nic\","]
+    #[doc = "    \"vlan_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"mtu\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"nic_tag\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"physical_nic\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"vlan_id\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint16\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NicTagProvision {
+        pub mtu: u32,
+        pub nic_tag: ::uuid::Uuid,
+        pub physical_nic: ::std::string::String,
+        pub vlan_id: u16,
+    }
+
+    impl NicTagProvision {
+        pub fn builder() -> builder::NicTagProvision {
             Default::default()
         }
     }
@@ -10914,6 +11546,14 @@ pub mod types {
     #[doc = "    \"hostname\": {"]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
+    #[doc = "    \"nic_tags\": {"]
+    #[doc = "      \"description\": \"Local nic_tags this CN provides, named the way SmartOS knows them. tritond resolves each `name` to a registered nic_tag id and publishes the CN's [`tritond_store::CnNicTagInventory`] in the register transaction (single-writer, attributed to this CN). Additive: an older agent omits the field entirely.\","]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/RegisterNicTagProvision\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
     #[doc = "    \"server_uuid\": {"]
     #[doc = "      \"description\": \"SmartOS server UUID, read from `/usr/bin/sysinfo`. Identity for the entire registration record.\","]
     #[doc = "      \"type\": \"string\","]
@@ -10951,27 +11591,6 @@ pub mod types {
 
     impl RegisterCnRequest {
         pub fn builder() -> builder::RegisterCnRequest {
-            Default::default()
-        }
-    }
-
-    #[doc = "One nic_tag the registering CN reports it provides, named the way SmartOS knows it (`nictagadm` / sysinfo). tritond resolves `name` against the fleet-wide nic_tag registry to build the CN's [`tritond_store::CnNicTagInventory`]; an unresolved name is skipped (fail-closed — tritond never invents a tag id)."]
-    #[derive(
-        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
-    )]
-    pub struct RegisterNicTagProvision {
-        #[doc = "Effective MTU of the link the tag lands on."]
-        pub mtu: u32,
-        #[doc = "nic_tag name as reported by the CN (e.g. `external`, `admin`)."]
-        pub name: ::std::string::String,
-        #[doc = "Physical link the tag lands on (`nictagadm` `link`)."]
-        pub physical_nic: ::std::string::String,
-        #[doc = "VLAN id the tag uses (`0` for untagged)."]
-        pub vlan_id: u16,
-    }
-
-    impl RegisterNicTagProvision {
-        pub fn builder() -> builder::RegisterNicTagProvision {
             Default::default()
         }
     }
@@ -11034,6 +11653,65 @@ pub mod types {
 
     impl RegisterCnResponse {
         pub fn builder() -> builder::RegisterCnResponse {
+            Default::default()
+        }
+    }
+
+    #[doc = "One nic_tag the registering CN reports it provides, named the way SmartOS knows it (`nictagadm` / sysinfo). tritond resolves `name` against the fleet-wide nic_tag registry to build the CN's [`tritond_store::CnNicTagInventory`]; an unresolved name is skipped (fail-closed — tritond never invents a tag id)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One nic_tag the registering CN reports it provides, named the way SmartOS knows it (`nictagadm` / sysinfo). tritond resolves `name` against the fleet-wide nic_tag registry to build the CN's [`tritond_store::CnNicTagInventory`]; an unresolved name is skipped (fail-closed — tritond never invents a tag id).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"mtu\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"physical_nic\","]
+    #[doc = "    \"vlan_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"mtu\": {"]
+    #[doc = "      \"description\": \"Effective MTU of the link the tag lands on.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"description\": \"nic_tag name as reported by the CN (e.g. `external`, `admin`).\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"physical_nic\": {"]
+    #[doc = "      \"description\": \"Physical link the tag lands on (`nictagadm` `link`).\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"vlan_id\": {"]
+    #[doc = "      \"description\": \"VLAN id the tag uses (`0` for untagged).\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint16\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct RegisterNicTagProvision {
+        #[doc = "Effective MTU of the link the tag lands on."]
+        pub mtu: u32,
+        #[doc = "nic_tag name as reported by the CN (e.g. `external`, `admin`)."]
+        pub name: ::std::string::String,
+        #[doc = "Physical link the tag lands on (`nictagadm` `link`)."]
+        pub physical_nic: ::std::string::String,
+        #[doc = "VLAN id the tag uses (`0` for untagged)."]
+        pub vlan_id: u16,
+    }
+
+    impl RegisterNicTagProvision {
+        pub fn builder() -> builder::RegisterNicTagProvision {
             Default::default()
         }
     }
@@ -11392,6 +12070,49 @@ pub mod types {
             value: ::std::string::String,
         ) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
+        }
+    }
+
+    #[doc = "Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\n\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\\n\\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"items\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"items\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/CnNicTagInventory\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"next_page\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ResultsPageForCnNicTagInventory {
+        pub items: ::std::vec::Vec<CnNicTagInventory>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub next_page: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ResultsPageForCnNicTagInventory {
+        pub fn builder() -> builder::ResultsPageForCnNicTagInventory {
+            Default::default()
         }
     }
 
@@ -11797,6 +12518,49 @@ pub mod types {
     #[doc = "    \"items\": {"]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/NetworkPool\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"next_page\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ResultsPageForNetworkPool {
+        pub items: ::std::vec::Vec<NetworkPool>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub next_page: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ResultsPageForNetworkPool {
+        pub fn builder() -> builder::ResultsPageForNetworkPool {
+            Default::default()
+        }
+    }
+
+    #[doc = "Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\n\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\\n\\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"items\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"items\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
     #[doc = "        \"$ref\": \"#/components/schemas/Nic\""]
     #[doc = "      }"]
     #[doc = "    },"]
@@ -11821,6 +12585,49 @@ pub mod types {
 
     impl ResultsPageForNic {
         pub fn builder() -> builder::ResultsPageForNic {
+            Default::default()
+        }
+    }
+
+    #[doc = "Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\n\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\\n\\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"items\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"items\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/NicTag\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"next_page\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ResultsPageForNicTag {
+        pub items: ::std::vec::Vec<NicTag>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub next_page: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ResultsPageForNicTag {
+        pub fn builder() -> builder::ResultsPageForNicTag {
             Default::default()
         }
     }
@@ -14336,12 +15143,59 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
+    #[doc = "    \"kind\": {"]
+    #[doc = "      \"description\": \"What kind of network this subnet is. `External` subnets carry a FlatL2 nic_tag + VLAN and are the source of public / floating IPs; `Internal` / `Fabric` are VPC overlay subnets. Defaults to `Internal` for wire back-compat with pre-C-1 subnet rows.\","]
+    #[doc = "      \"default\": \"internal\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/NetworkKind\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"nic_tag\": {"]
+    #[doc = "      \"description\": \"FK to the [`NicTag`] this subnet's traffic egresses on. Set for `External` subnets; `None` for overlay subnets.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"project_id\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"provision_end_ipv4\": {"]
+    #[doc = "      \"description\": \"Highest IPv4 the allocator may hand out (inclusive); `None` falls back to the block's last usable host.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"ipv4\""]
+    #[doc = "    },"]
+    #[doc = "    \"provision_end_ipv6\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"ipv6\""]
+    #[doc = "    },"]
+    #[doc = "    \"provision_start_ipv4\": {"]
+    #[doc = "      \"description\": \"Lowest IPv4 the allocator may hand out (inclusive); `None` falls back to the block's first usable host. Scopes a pool to a sub-range of a larger upstream block.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"ipv4\""]
+    #[doc = "    },"]
+    #[doc = "    \"provision_start_ipv6\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"ipv6\""]
     #[doc = "    },"]
     #[doc = "    \"route_table_id\": {"]
     #[doc = "      \"description\": \"Active route table for this subnet. Defaults to the parent VPC's `main_route_table_id` at create time.\","]
@@ -14351,6 +15205,15 @@ pub mod types {
     #[doc = "    \"tenant_id\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"vlan_id\": {"]
+    #[doc = "      \"description\": \"802.1Q VLAN id for an `External` subnet's nic_tag link (`None` = untagged). The agent's `EnsureExternalLink` creates the matching VLAN-tagged VNIC on the nic_tag's physical link.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint16\","]
+    #[doc = "      \"minimum\": 0.0"]
     #[doc = "    },"]
     #[doc = "    \"vpc_id\": {"]
     #[doc = "      \"type\": \"string\","]
@@ -14373,11 +15236,30 @@ pub mod types {
         #[doc = "IPv6 CIDR for this subnet. Must be a subnet of the parent VPC's `ipv6_block`, and must not overlap any other subnet's IPv6 CIDR in the same VPC."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub ipv6_block: ::std::option::Option<::std::string::String>,
+        #[doc = "What kind of network this subnet is. `External` subnets carry a FlatL2 nic_tag + VLAN and are the source of public / floating IPs; `Internal` / `Fabric` are VPC overlay subnets. Defaults to `Internal` for wire back-compat with pre-C-1 subnet rows."]
+        #[serde(default = "defaults::subnet_kind")]
+        pub kind: NetworkKind,
         pub name: ::std::string::String,
+        #[doc = "FK to the [`NicTag`] this subnet's traffic egresses on. Set for `External` subnets; `None` for overlay subnets."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub nic_tag: ::std::option::Option<::uuid::Uuid>,
         pub project_id: ::uuid::Uuid,
+        #[doc = "Highest IPv4 the allocator may hand out (inclusive); `None` falls back to the block's last usable host."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub provision_end_ipv4: ::std::option::Option<::std::net::Ipv4Addr>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub provision_end_ipv6: ::std::option::Option<::std::net::Ipv6Addr>,
+        #[doc = "Lowest IPv4 the allocator may hand out (inclusive); `None` falls back to the block's first usable host. Scopes a pool to a sub-range of a larger upstream block."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub provision_start_ipv4: ::std::option::Option<::std::net::Ipv4Addr>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub provision_start_ipv6: ::std::option::Option<::std::net::Ipv6Addr>,
         #[doc = "Active route table for this subnet. Defaults to the parent VPC's `main_route_table_id` at create time."]
         pub route_table_id: ::uuid::Uuid,
         pub tenant_id: ::uuid::Uuid,
+        #[doc = "802.1Q VLAN id for an `External` subnet's nic_tag link (`None` = untagged). The agent's `EnsureExternalLink` creates the matching VLAN-tagged VNIC on the nic_tag's physical link."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub vlan_id: ::std::option::Option<u16>,
         pub vpc_id: ::uuid::Uuid,
     }
 
@@ -16419,6 +17301,85 @@ pub mod types {
         impl ::std::convert::From<super::ClaimJobResponse> for ClaimJobResponse {
             fn from(value: super::ClaimJobResponse) -> Self {
                 Self { job: Ok(value.job) }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct CnNicTagInventory {
+            cn: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            provides: ::std::result::Result<
+                ::std::vec::Vec<super::NicTagProvision>,
+                ::std::string::String,
+            >,
+            published_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for CnNicTagInventory {
+            fn default() -> Self {
+                Self {
+                    cn: Err("no value supplied for cn".to_string()),
+                    provides: Err("no value supplied for provides".to_string()),
+                    published_at: Err("no value supplied for published_at".to_string()),
+                }
+            }
+        }
+
+        impl CnNicTagInventory {
+            pub fn cn<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.cn = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for cn: {e}"));
+                self
+            }
+            pub fn provides<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::NicTagProvision>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provides = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for provides: {e}"));
+                self
+            }
+            pub fn published_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.published_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for published_at: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<CnNicTagInventory> for super::CnNicTagInventory {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: CnNicTagInventory,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    cn: value.cn?,
+                    provides: value.provides?,
+                    published_at: value.published_at?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::CnNicTagInventory> for CnNicTagInventory {
+            fn from(value: super::CnNicTagInventory) -> Self {
+                Self {
+                    cn: Ok(value.cn),
+                    provides: Ok(value.provides),
+                    published_at: Ok(value.published_at),
+                }
             }
         }
 
@@ -18550,8 +19511,14 @@ pub mod types {
                 ::std::string::String,
             >,
             description: ::std::result::Result<::std::string::String, ::std::string::String>,
+            external_nic_tag:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
+            hosted_cn:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            network_id:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             updated_at: ::std::result::Result<
@@ -18567,8 +19534,11 @@ pub mod types {
                     attached_to: Ok(Default::default()),
                     created_at: Err("no value supplied for created_at".to_string()),
                     description: Err("no value supplied for description".to_string()),
+                    external_nic_tag: Ok(Default::default()),
+                    hosted_cn: Ok(Default::default()),
                     id: Err("no value supplied for id".to_string()),
                     name: Err("no value supplied for name".to_string()),
+                    network_id: Ok(Default::default()),
                     project_id: Err("no value supplied for project_id".to_string()),
                     tenant_id: Err("no value supplied for tenant_id".to_string()),
                     updated_at: Err("no value supplied for updated_at".to_string()),
@@ -18617,6 +19587,26 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for description: {e}"));
                 self
             }
+            pub fn external_nic_tag<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.external_nic_tag = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for external_nic_tag: {e}")
+                });
+                self
+            }
+            pub fn hosted_cn<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.hosted_cn = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for hosted_cn: {e}"));
+                self
+            }
             pub fn id<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::uuid::Uuid>,
@@ -18635,6 +19625,16 @@ pub mod types {
                 self.name = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn network_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.network_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for network_id: {e}"));
                 self
             }
             pub fn project_id<T>(mut self, value: T) -> Self
@@ -18679,8 +19679,11 @@ pub mod types {
                     attached_to: value.attached_to?,
                     created_at: value.created_at?,
                     description: value.description?,
+                    external_nic_tag: value.external_nic_tag?,
+                    hosted_cn: value.hosted_cn?,
                     id: value.id?,
                     name: value.name?,
+                    network_id: value.network_id?,
                     project_id: value.project_id?,
                     tenant_id: value.tenant_id?,
                     updated_at: value.updated_at?,
@@ -18695,8 +19698,11 @@ pub mod types {
                     attached_to: Ok(value.attached_to),
                     created_at: Ok(value.created_at),
                     description: Ok(value.description),
+                    external_nic_tag: Ok(value.external_nic_tag),
+                    hosted_cn: Ok(value.hosted_cn),
                     id: Ok(value.id),
                     name: Ok(value.name),
+                    network_id: Ok(value.network_id),
                     project_id: Ok(value.project_id),
                     tenant_id: Ok(value.tenant_id),
                     updated_at: Ok(value.updated_at),
@@ -21677,6 +22683,145 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct NetworkPool {
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            description: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            networks: ::std::result::Result<::std::vec::Vec<::uuid::Uuid>, ::std::string::String>,
+            owner_silos:
+                ::std::result::Result<::std::vec::Vec<::uuid::Uuid>, ::std::string::String>,
+            updated_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for NetworkPool {
+            fn default() -> Self {
+                Self {
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    description: Ok(Default::default()),
+                    id: Err("no value supplied for id".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    networks: Err("no value supplied for networks".to_string()),
+                    owner_silos: Ok(Default::default()),
+                    updated_at: Err("no value supplied for updated_at".to_string()),
+                }
+            }
+        }
+
+        impl NetworkPool {
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn networks<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.networks = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for networks: {e}"));
+                self
+            }
+            pub fn owner_silos<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.owner_silos = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for owner_silos: {e}"));
+                self
+            }
+            pub fn updated_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated_at: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NetworkPool> for super::NetworkPool {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NetworkPool,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    created_at: value.created_at?,
+                    description: value.description?,
+                    id: value.id?,
+                    name: value.name?,
+                    networks: value.networks?,
+                    owner_silos: value.owner_silos?,
+                    updated_at: value.updated_at?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NetworkPool> for NetworkPool {
+            fn from(value: super::NetworkPool) -> Self {
+                Self {
+                    created_at: Ok(value.created_at),
+                    description: Ok(value.description),
+                    id: Ok(value.id),
+                    name: Ok(value.name),
+                    networks: Ok(value.networks),
+                    owner_silos: Ok(value.owner_silos),
+                    updated_at: Ok(value.updated_at),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct NetworkRealizationRequest {
             generation: ::std::result::Result<u64, ::std::string::String>,
             message: ::std::result::Result<
@@ -22072,6 +23217,213 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct NewExternalSubnet {
+            description: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            ipv4_block: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            ipv6_block: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            nic_tag: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            owner_silos:
+                ::std::result::Result<::std::vec::Vec<::uuid::Uuid>, ::std::string::String>,
+            provision_end_ipv4: ::std::result::Result<
+                ::std::option::Option<::std::net::Ipv4Addr>,
+                ::std::string::String,
+            >,
+            provision_end_ipv6: ::std::result::Result<
+                ::std::option::Option<::std::net::Ipv6Addr>,
+                ::std::string::String,
+            >,
+            provision_start_ipv4: ::std::result::Result<
+                ::std::option::Option<::std::net::Ipv4Addr>,
+                ::std::string::String,
+            >,
+            provision_start_ipv6: ::std::result::Result<
+                ::std::option::Option<::std::net::Ipv6Addr>,
+                ::std::string::String,
+            >,
+            vlan_id: ::std::result::Result<::std::option::Option<u16>, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewExternalSubnet {
+            fn default() -> Self {
+                Self {
+                    description: Ok(Default::default()),
+                    ipv4_block: Ok(Default::default()),
+                    ipv6_block: Ok(Default::default()),
+                    name: Err("no value supplied for name".to_string()),
+                    nic_tag: Err("no value supplied for nic_tag".to_string()),
+                    owner_silos: Ok(Default::default()),
+                    provision_end_ipv4: Ok(Default::default()),
+                    provision_end_ipv6: Ok(Default::default()),
+                    provision_start_ipv4: Ok(Default::default()),
+                    provision_start_ipv6: Ok(Default::default()),
+                    vlan_id: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl NewExternalSubnet {
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn ipv4_block<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ipv4_block = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ipv4_block: {e}"));
+                self
+            }
+            pub fn ipv6_block<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ipv6_block = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ipv6_block: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn nic_tag<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.nic_tag = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for nic_tag: {e}"));
+                self
+            }
+            pub fn owner_silos<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.owner_silos = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for owner_silos: {e}"));
+                self
+            }
+            pub fn provision_end_ipv4<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::net::Ipv4Addr>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provision_end_ipv4 = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for provision_end_ipv4: {e}")
+                });
+                self
+            }
+            pub fn provision_end_ipv6<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::net::Ipv6Addr>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provision_end_ipv6 = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for provision_end_ipv6: {e}")
+                });
+                self
+            }
+            pub fn provision_start_ipv4<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::net::Ipv4Addr>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provision_start_ipv4 = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for provision_start_ipv4: {e}")
+                });
+                self
+            }
+            pub fn provision_start_ipv6<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::net::Ipv6Addr>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provision_start_ipv6 = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for provision_start_ipv6: {e}")
+                });
+                self
+            }
+            pub fn vlan_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u16>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.vlan_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for vlan_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewExternalSubnet> for super::NewExternalSubnet {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewExternalSubnet,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    description: value.description?,
+                    ipv4_block: value.ipv4_block?,
+                    ipv6_block: value.ipv6_block?,
+                    name: value.name?,
+                    nic_tag: value.nic_tag?,
+                    owner_silos: value.owner_silos?,
+                    provision_end_ipv4: value.provision_end_ipv4?,
+                    provision_end_ipv6: value.provision_end_ipv6?,
+                    provision_start_ipv4: value.provision_start_ipv4?,
+                    provision_start_ipv6: value.provision_start_ipv6?,
+                    vlan_id: value.vlan_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewExternalSubnet> for NewExternalSubnet {
+            fn from(value: super::NewExternalSubnet) -> Self {
+                Self {
+                    description: Ok(value.description),
+                    ipv4_block: Ok(value.ipv4_block),
+                    ipv6_block: Ok(value.ipv6_block),
+                    name: Ok(value.name),
+                    nic_tag: Ok(value.nic_tag),
+                    owner_silos: Ok(value.owner_silos),
+                    provision_end_ipv4: Ok(value.provision_end_ipv4),
+                    provision_end_ipv6: Ok(value.provision_end_ipv6),
+                    provision_start_ipv4: Ok(value.provision_start_ipv4),
+                    provision_start_ipv6: Ok(value.provision_start_ipv6),
+                    vlan_id: Ok(value.vlan_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct NewFirewallRule {
             action: ::std::result::Result<super::FirewallAction, ::std::string::String>,
             description: ::std::result::Result<
@@ -22280,16 +23632,25 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
-            family: ::std::result::Result<super::AddressFamily, ::std::string::String>,
+            family: ::std::result::Result<
+                ::std::option::Option<super::AddressFamily>,
+                ::std::string::String,
+            >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            network_id:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
+            pool_id:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
         }
 
         impl ::std::default::Default for NewFloatingIp {
             fn default() -> Self {
                 Self {
                     description: Ok(Default::default()),
-                    family: Err("no value supplied for family".to_string()),
+                    family: Ok(Default::default()),
                     name: Err("no value supplied for name".to_string()),
+                    network_id: Ok(Default::default()),
+                    pool_id: Ok(Default::default()),
                 }
             }
         }
@@ -22307,7 +23668,7 @@ pub mod types {
             }
             pub fn family<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<super::AddressFamily>,
+                T: ::std::convert::TryInto<::std::option::Option<super::AddressFamily>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.family = value
@@ -22325,6 +23686,26 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for name: {e}"));
                 self
             }
+            pub fn network_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.network_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for network_id: {e}"));
+                self
+            }
+            pub fn pool_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.pool_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for pool_id: {e}"));
+                self
+            }
         }
 
         impl ::std::convert::TryFrom<NewFloatingIp> for super::NewFloatingIp {
@@ -22336,6 +23717,8 @@ pub mod types {
                     description: value.description?,
                     family: value.family?,
                     name: value.name?,
+                    network_id: value.network_id?,
+                    pool_id: value.pool_id?,
                 })
             }
         }
@@ -22346,6 +23729,8 @@ pub mod types {
                     description: Ok(value.description),
                     family: Ok(value.family),
                     name: Ok(value.name),
+                    network_id: Ok(value.network_id),
+                    pool_id: Ok(value.pool_id),
                 }
             }
         }
@@ -23021,6 +24406,173 @@ pub mod types {
                 Self {
                     description: Ok(value.description),
                     family: Ok(value.family),
+                    name: Ok(value.name),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct NewNetworkPool {
+            description: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            networks: ::std::result::Result<::std::vec::Vec<::uuid::Uuid>, ::std::string::String>,
+            owner_silos:
+                ::std::result::Result<::std::vec::Vec<::uuid::Uuid>, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewNetworkPool {
+            fn default() -> Self {
+                Self {
+                    description: Ok(Default::default()),
+                    name: Err("no value supplied for name".to_string()),
+                    networks: Ok(Default::default()),
+                    owner_silos: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl NewNetworkPool {
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn networks<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.networks = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for networks: {e}"));
+                self
+            }
+            pub fn owner_silos<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.owner_silos = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for owner_silos: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewNetworkPool> for super::NewNetworkPool {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewNetworkPool,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    description: value.description?,
+                    name: value.name?,
+                    networks: value.networks?,
+                    owner_silos: value.owner_silos?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewNetworkPool> for NewNetworkPool {
+            fn from(value: super::NewNetworkPool) -> Self {
+                Self {
+                    description: Ok(value.description),
+                    name: Ok(value.name),
+                    networks: Ok(value.networks),
+                    owner_silos: Ok(value.owner_silos),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct NewNicTag {
+            description: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            mtu: ::std::result::Result<u32, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewNicTag {
+            fn default() -> Self {
+                Self {
+                    description: Ok(Default::default()),
+                    mtu: Err("no value supplied for mtu".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                }
+            }
+        }
+
+        impl NewNicTag {
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn mtu<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.mtu = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for mtu: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewNicTag> for super::NewNicTag {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewNicTag,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    description: value.description?,
+                    mtu: value.mtu?,
+                    name: value.name?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewNicTag> for NewNicTag {
+            fn from(value: super::NewNicTag) -> Self {
+                Self {
+                    description: Ok(value.description),
+                    mtu: Ok(value.mtu),
                     name: Ok(value.name),
                 }
             }
@@ -24025,6 +25577,214 @@ pub mod types {
                     subnet_id: Ok(value.subnet_id),
                     tenant_id: Ok(value.tenant_id),
                     vpc_id: Ok(value.vpc_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct NicTag {
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            description: ::std::result::Result<::std::string::String, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            mtu: ::std::result::Result<u32, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            updated_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for NicTag {
+            fn default() -> Self {
+                Self {
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    description: Err("no value supplied for description".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    mtu: Err("no value supplied for mtu".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    updated_at: Err("no value supplied for updated_at".to_string()),
+                }
+            }
+        }
+
+        impl NicTag {
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn mtu<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.mtu = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for mtu: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn updated_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated_at: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NicTag> for super::NicTag {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NicTag,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    created_at: value.created_at?,
+                    description: value.description?,
+                    id: value.id?,
+                    mtu: value.mtu?,
+                    name: value.name?,
+                    updated_at: value.updated_at?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NicTag> for NicTag {
+            fn from(value: super::NicTag) -> Self {
+                Self {
+                    created_at: Ok(value.created_at),
+                    description: Ok(value.description),
+                    id: Ok(value.id),
+                    mtu: Ok(value.mtu),
+                    name: Ok(value.name),
+                    updated_at: Ok(value.updated_at),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct NicTagProvision {
+            mtu: ::std::result::Result<u32, ::std::string::String>,
+            nic_tag: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            physical_nic: ::std::result::Result<::std::string::String, ::std::string::String>,
+            vlan_id: ::std::result::Result<u16, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NicTagProvision {
+            fn default() -> Self {
+                Self {
+                    mtu: Err("no value supplied for mtu".to_string()),
+                    nic_tag: Err("no value supplied for nic_tag".to_string()),
+                    physical_nic: Err("no value supplied for physical_nic".to_string()),
+                    vlan_id: Err("no value supplied for vlan_id".to_string()),
+                }
+            }
+        }
+
+        impl NicTagProvision {
+            pub fn mtu<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.mtu = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for mtu: {e}"));
+                self
+            }
+            pub fn nic_tag<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.nic_tag = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for nic_tag: {e}"));
+                self
+            }
+            pub fn physical_nic<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.physical_nic = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for physical_nic: {e}"));
+                self
+            }
+            pub fn vlan_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u16>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.vlan_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for vlan_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NicTagProvision> for super::NicTagProvision {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NicTagProvision,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    mtu: value.mtu?,
+                    nic_tag: value.nic_tag?,
+                    physical_nic: value.physical_nic?,
+                    vlan_id: value.vlan_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NicTagProvision> for NicTagProvision {
+            fn from(value: super::NicTagProvision) -> Self {
+                Self {
+                    mtu: Ok(value.mtu),
+                    nic_tag: Ok(value.nic_tag),
+                    physical_nic: Ok(value.physical_nic),
+                    vlan_id: Ok(value.vlan_id),
                 }
             }
         }
@@ -26047,93 +27807,6 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
-        pub struct RegisterNicTagProvision {
-            mtu: ::std::result::Result<u32, ::std::string::String>,
-            name: ::std::result::Result<::std::string::String, ::std::string::String>,
-            physical_nic: ::std::result::Result<::std::string::String, ::std::string::String>,
-            vlan_id: ::std::result::Result<u16, ::std::string::String>,
-        }
-
-        impl ::std::default::Default for RegisterNicTagProvision {
-            fn default() -> Self {
-                Self {
-                    mtu: Err("no value supplied for mtu".to_string()),
-                    name: Err("no value supplied for name".to_string()),
-                    physical_nic: Err("no value supplied for physical_nic".to_string()),
-                    vlan_id: Err("no value supplied for vlan_id".to_string()),
-                }
-            }
-        }
-
-        impl RegisterNicTagProvision {
-            pub fn mtu<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<u32>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.mtu = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for mtu: {e}"));
-                self
-            }
-            pub fn name<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::string::String>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.name = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for name: {e}"));
-                self
-            }
-            pub fn physical_nic<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::string::String>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.physical_nic = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for physical_nic: {e}"));
-                self
-            }
-            pub fn vlan_id<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<u16>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.vlan_id = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for vlan_id: {e}"));
-                self
-            }
-        }
-
-        impl ::std::convert::TryFrom<RegisterNicTagProvision> for super::RegisterNicTagProvision {
-            type Error = super::error::ConversionError;
-            fn try_from(
-                value: RegisterNicTagProvision,
-            ) -> ::std::result::Result<Self, super::error::ConversionError> {
-                Ok(Self {
-                    mtu: value.mtu?,
-                    name: value.name?,
-                    physical_nic: value.physical_nic?,
-                    vlan_id: value.vlan_id?,
-                })
-            }
-        }
-
-        impl ::std::convert::From<super::RegisterNicTagProvision> for RegisterNicTagProvision {
-            fn from(value: super::RegisterNicTagProvision) -> Self {
-                Self {
-                    mtu: Ok(value.mtu),
-                    name: Ok(value.name),
-                    physical_nic: Ok(value.physical_nic),
-                    vlan_id: Ok(value.vlan_id),
-                }
-            }
-        }
-
-        #[derive(Clone, Debug)]
         pub struct RegisterCnResponse {
             claim_code: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -26238,6 +27911,93 @@ pub mod types {
                     poll_token: Ok(value.poll_token),
                     server_uuid: Ok(value.server_uuid),
                     state: Ok(value.state),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct RegisterNicTagProvision {
+            mtu: ::std::result::Result<u32, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            physical_nic: ::std::result::Result<::std::string::String, ::std::string::String>,
+            vlan_id: ::std::result::Result<u16, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for RegisterNicTagProvision {
+            fn default() -> Self {
+                Self {
+                    mtu: Err("no value supplied for mtu".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    physical_nic: Err("no value supplied for physical_nic".to_string()),
+                    vlan_id: Err("no value supplied for vlan_id".to_string()),
+                }
+            }
+        }
+
+        impl RegisterNicTagProvision {
+            pub fn mtu<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.mtu = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for mtu: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn physical_nic<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.physical_nic = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for physical_nic: {e}"));
+                self
+            }
+            pub fn vlan_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u16>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.vlan_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for vlan_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<RegisterNicTagProvision> for super::RegisterNicTagProvision {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: RegisterNicTagProvision,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    mtu: value.mtu?,
+                    name: value.name?,
+                    physical_nic: value.physical_nic?,
+                    vlan_id: value.vlan_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::RegisterNicTagProvision> for RegisterNicTagProvision {
+            fn from(value: super::RegisterNicTagProvision) -> Self {
+                Self {
+                    mtu: Ok(value.mtu),
+                    name: Ok(value.name),
+                    physical_nic: Ok(value.physical_nic),
+                    vlan_id: Ok(value.vlan_id),
                 }
             }
         }
@@ -26527,6 +28287,75 @@ pub mod types {
                 Self {
                     id: Ok(value.id),
                     scope: Ok(value.scope),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct ResultsPageForCnNicTagInventory {
+            items: ::std::result::Result<
+                ::std::vec::Vec<super::CnNicTagInventory>,
+                ::std::string::String,
+            >,
+            next_page: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for ResultsPageForCnNicTagInventory {
+            fn default() -> Self {
+                Self {
+                    items: Err("no value supplied for items".to_string()),
+                    next_page: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl ResultsPageForCnNicTagInventory {
+            pub fn items<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::CnNicTagInventory>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.items = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for items: {e}"));
+                self
+            }
+            pub fn next_page<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.next_page = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for next_page: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ResultsPageForCnNicTagInventory>
+            for super::ResultsPageForCnNicTagInventory
+        {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ResultsPageForCnNicTagInventory,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    items: value.items?,
+                    next_page: value.next_page?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ResultsPageForCnNicTagInventory>
+            for ResultsPageForCnNicTagInventory
+        {
+            fn from(value: super::ResultsPageForCnNicTagInventory) -> Self {
+                Self {
+                    items: Ok(value.items),
+                    next_page: Ok(value.next_page),
                 }
             }
         }
@@ -27096,6 +28925,69 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct ResultsPageForNetworkPool {
+            items:
+                ::std::result::Result<::std::vec::Vec<super::NetworkPool>, ::std::string::String>,
+            next_page: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for ResultsPageForNetworkPool {
+            fn default() -> Self {
+                Self {
+                    items: Err("no value supplied for items".to_string()),
+                    next_page: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl ResultsPageForNetworkPool {
+            pub fn items<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::NetworkPool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.items = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for items: {e}"));
+                self
+            }
+            pub fn next_page<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.next_page = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for next_page: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ResultsPageForNetworkPool> for super::ResultsPageForNetworkPool {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ResultsPageForNetworkPool,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    items: value.items?,
+                    next_page: value.next_page?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ResultsPageForNetworkPool> for ResultsPageForNetworkPool {
+            fn from(value: super::ResultsPageForNetworkPool) -> Self {
+                Self {
+                    items: Ok(value.items),
+                    next_page: Ok(value.next_page),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct ResultsPageForNic {
             items: ::std::result::Result<::std::vec::Vec<super::Nic>, ::std::string::String>,
             next_page: ::std::result::Result<
@@ -27150,6 +29042,68 @@ pub mod types {
 
         impl ::std::convert::From<super::ResultsPageForNic> for ResultsPageForNic {
             fn from(value: super::ResultsPageForNic) -> Self {
+                Self {
+                    items: Ok(value.items),
+                    next_page: Ok(value.next_page),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct ResultsPageForNicTag {
+            items: ::std::result::Result<::std::vec::Vec<super::NicTag>, ::std::string::String>,
+            next_page: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for ResultsPageForNicTag {
+            fn default() -> Self {
+                Self {
+                    items: Err("no value supplied for items".to_string()),
+                    next_page: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl ResultsPageForNicTag {
+            pub fn items<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::NicTag>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.items = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for items: {e}"));
+                self
+            }
+            pub fn next_page<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.next_page = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for next_page: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ResultsPageForNicTag> for super::ResultsPageForNicTag {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ResultsPageForNicTag,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    items: value.items?,
+                    next_page: value.next_page?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ResultsPageForNicTag> for ResultsPageForNicTag {
+            fn from(value: super::ResultsPageForNicTag) -> Self {
                 Self {
                     items: Ok(value.items),
                     next_page: Ok(value.next_page),
@@ -30065,10 +32019,30 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            kind: ::std::result::Result<super::NetworkKind, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            nic_tag:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            provision_end_ipv4: ::std::result::Result<
+                ::std::option::Option<::std::net::Ipv4Addr>,
+                ::std::string::String,
+            >,
+            provision_end_ipv6: ::std::result::Result<
+                ::std::option::Option<::std::net::Ipv6Addr>,
+                ::std::string::String,
+            >,
+            provision_start_ipv4: ::std::result::Result<
+                ::std::option::Option<::std::net::Ipv4Addr>,
+                ::std::string::String,
+            >,
+            provision_start_ipv6: ::std::result::Result<
+                ::std::option::Option<::std::net::Ipv6Addr>,
+                ::std::string::String,
+            >,
             route_table_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            vlan_id: ::std::result::Result<::std::option::Option<u16>, ::std::string::String>,
             vpc_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
         }
 
@@ -30080,10 +32054,17 @@ pub mod types {
                     id: Err("no value supplied for id".to_string()),
                     ipv4_block: Ok(Default::default()),
                     ipv6_block: Ok(Default::default()),
+                    kind: Ok(super::defaults::subnet_kind()),
                     name: Err("no value supplied for name".to_string()),
+                    nic_tag: Ok(Default::default()),
                     project_id: Err("no value supplied for project_id".to_string()),
+                    provision_end_ipv4: Ok(Default::default()),
+                    provision_end_ipv6: Ok(Default::default()),
+                    provision_start_ipv4: Ok(Default::default()),
+                    provision_start_ipv6: Ok(Default::default()),
                     route_table_id: Err("no value supplied for route_table_id".to_string()),
                     tenant_id: Err("no value supplied for tenant_id".to_string()),
+                    vlan_id: Ok(Default::default()),
                     vpc_id: Err("no value supplied for vpc_id".to_string()),
                 }
             }
@@ -30140,6 +32121,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for ipv6_block: {e}"));
                 self
             }
+            pub fn kind<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::NetworkKind>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kind = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kind: {e}"));
+                self
+            }
             pub fn name<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::string::String>,
@@ -30150,6 +32141,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for name: {e}"));
                 self
             }
+            pub fn nic_tag<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.nic_tag = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for nic_tag: {e}"));
+                self
+            }
             pub fn project_id<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::uuid::Uuid>,
@@ -30158,6 +32159,46 @@ pub mod types {
                 self.project_id = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for project_id: {e}"));
+                self
+            }
+            pub fn provision_end_ipv4<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::net::Ipv4Addr>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provision_end_ipv4 = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for provision_end_ipv4: {e}")
+                });
+                self
+            }
+            pub fn provision_end_ipv6<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::net::Ipv6Addr>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provision_end_ipv6 = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for provision_end_ipv6: {e}")
+                });
+                self
+            }
+            pub fn provision_start_ipv4<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::net::Ipv4Addr>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provision_start_ipv4 = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for provision_start_ipv4: {e}")
+                });
+                self
+            }
+            pub fn provision_start_ipv6<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::net::Ipv6Addr>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provision_start_ipv6 = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for provision_start_ipv6: {e}")
+                });
                 self
             }
             pub fn route_table_id<T>(mut self, value: T) -> Self
@@ -30178,6 +32219,16 @@ pub mod types {
                 self.tenant_id = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for tenant_id: {e}"));
+                self
+            }
+            pub fn vlan_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u16>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.vlan_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for vlan_id: {e}"));
                 self
             }
             pub fn vpc_id<T>(mut self, value: T) -> Self
@@ -30203,10 +32254,17 @@ pub mod types {
                     id: value.id?,
                     ipv4_block: value.ipv4_block?,
                     ipv6_block: value.ipv6_block?,
+                    kind: value.kind?,
                     name: value.name?,
+                    nic_tag: value.nic_tag?,
                     project_id: value.project_id?,
+                    provision_end_ipv4: value.provision_end_ipv4?,
+                    provision_end_ipv6: value.provision_end_ipv6?,
+                    provision_start_ipv4: value.provision_start_ipv4?,
+                    provision_start_ipv6: value.provision_start_ipv6?,
                     route_table_id: value.route_table_id?,
                     tenant_id: value.tenant_id?,
+                    vlan_id: value.vlan_id?,
                     vpc_id: value.vpc_id?,
                 })
             }
@@ -30220,10 +32278,17 @@ pub mod types {
                     id: Ok(value.id),
                     ipv4_block: Ok(value.ipv4_block),
                     ipv6_block: Ok(value.ipv6_block),
+                    kind: Ok(value.kind),
                     name: Ok(value.name),
+                    nic_tag: Ok(value.nic_tag),
                     project_id: Ok(value.project_id),
+                    provision_end_ipv4: Ok(value.provision_end_ipv4),
+                    provision_end_ipv6: Ok(value.provision_end_ipv6),
+                    provision_start_ipv4: Ok(value.provision_start_ipv4),
+                    provision_start_ipv6: Ok(value.provision_start_ipv6),
                     route_table_id: Ok(value.route_table_id),
                     tenant_id: Ok(value.tenant_id),
+                    vlan_id: Ok(value.vlan_id),
                     vpc_id: Ok(value.vpc_id),
                 }
             }
@@ -30772,6 +32837,10 @@ pub mod types {
 
         pub(super) fn new_storage_cluster_default_region() -> ::std::string::String {
             "us-east-1".to_string()
+        }
+
+        pub(super) fn subnet_kind() -> super::NetworkKind {
+            super::NetworkKind::Internal
         }
 
         pub(super) fn user_view_capabilities() -> Vec<super::Capability> {
@@ -31603,6 +33672,11 @@ impl Client {
         builder::DeleteSubnetV1::new(self)
     }
 
+    #[doc = "`GET /v1/system/cn-nic-tags`. Aggregate per-CN nic_tag\n\ninventory across the fleet, token-scoped to `SystemRead` (no admin-backend fan-out confused-deputy). Backs the U-6 read-only inventory view.\n\nSends a `GET` request to `/v1/system/cn-nic-tags`\n\n```ignore\nlet response = client.list_system_cn_nic_tags_v1()\n    .send()\n    .await;\n```"]
+    pub fn list_system_cn_nic_tags_v1(&self) -> builder::ListSystemCnNicTagsV1<'_> {
+        builder::ListSystemCnNicTagsV1::new(self)
+    }
+
     #[doc = "RFD 00007 `GET /v1/system/cns?state=`. Fleet CN inventory\n\nCapability: `SystemRead`.\n\nSends a `GET` request to `/v1/system/cns`\n\n```ignore\nlet response = client.list_system_cns_v1()\n    .state(state)\n    .send()\n    .await;\n```"]
     pub fn list_system_cns_v1(&self) -> builder::ListSystemCnsV1<'_> {
         builder::ListSystemCnsV1::new(self)
@@ -31618,6 +33692,16 @@ impl Client {
         builder::ListSystemCnInstancesV1::new(self)
     }
 
+    #[doc = "`GET /v1/system/external-subnets`. List all external subnets\n\nCapability: `SystemRead`.\n\nSends a `GET` request to `/v1/system/external-subnets`\n\n```ignore\nlet response = client.list_system_external_subnets_v1()\n    .send()\n    .await;\n```"]
+    pub fn list_system_external_subnets_v1(&self) -> builder::ListSystemExternalSubnetsV1<'_> {
+        builder::ListSystemExternalSubnetsV1::new(self)
+    }
+
+    #[doc = "`POST /v1/system/external-subnets`. Create an operator-scoped\n\nExternal subnet (FlatL2 public space; source of floating IPs). The store rejects a CIDR that overlaps an existing external subnet (409 `SubnetCidrOverlap`). Capability: `SystemConfigWrite`.\n\nSends a `POST` request to `/v1/system/external-subnets`\n\n```ignore\nlet response = client.create_system_external_subnet_v1()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_system_external_subnet_v1(&self) -> builder::CreateSystemExternalSubnetV1<'_> {
+        builder::CreateSystemExternalSubnetV1::new(self)
+    }
+
     #[doc = "RFD 00007 `GET /v1/system/images/{image_id}/instances`\n\nFixed-axis \"what's using this image?\" view (the answer to the question that opened RFD 00007). Capability: `SystemRead`.\n\nSends a `GET` request to `/v1/system/images/{image_id}/instances`\n\n```ignore\nlet response = client.list_system_image_instances_v1()\n    .image_id(image_id)\n    .send()\n    .await;\n```"]
     pub fn list_system_image_instances_v1(&self) -> builder::ListSystemImageInstancesV1<'_> {
         builder::ListSystemImageInstancesV1::new(self)
@@ -31628,9 +33712,49 @@ impl Client {
         builder::ListSystemInstancesV1::new(self)
     }
 
+    #[doc = "`GET /v1/system/network-pools`. Capability: `SystemRead`\n\nSends a `GET` request to `/v1/system/network-pools`\n\n```ignore\nlet response = client.list_system_network_pools_v1()\n    .send()\n    .await;\n```"]
+    pub fn list_system_network_pools_v1(&self) -> builder::ListSystemNetworkPoolsV1<'_> {
+        builder::ListSystemNetworkPoolsV1::new(self)
+    }
+
+    #[doc = "`POST /v1/system/network-pools`. Capability: `SystemConfigWrite`\n\nSends a `POST` request to `/v1/system/network-pools`\n\n```ignore\nlet response = client.create_system_network_pool_v1()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_system_network_pool_v1(&self) -> builder::CreateSystemNetworkPoolV1<'_> {
+        builder::CreateSystemNetworkPoolV1::new(self)
+    }
+
+    #[doc = "`GET /v1/system/network-pools/{pool_id}`. Capability: `SystemRead`\n\nSends a `GET` request to `/v1/system/network-pools/{pool_id}`\n\n```ignore\nlet response = client.get_system_network_pool_v1()\n    .pool_id(pool_id)\n    .send()\n    .await;\n```"]
+    pub fn get_system_network_pool_v1(&self) -> builder::GetSystemNetworkPoolV1<'_> {
+        builder::GetSystemNetworkPoolV1::new(self)
+    }
+
+    #[doc = "`DELETE /v1/system/network-pools/{pool_id}`. Capability:\n\n`SystemConfigWrite`.\n\nSends a `DELETE` request to `/v1/system/network-pools/{pool_id}`\n\n```ignore\nlet response = client.delete_system_network_pool_v1()\n    .pool_id(pool_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_system_network_pool_v1(&self) -> builder::DeleteSystemNetworkPoolV1<'_> {
+        builder::DeleteSystemNetworkPoolV1::new(self)
+    }
+
     #[doc = "RFD 00007 `GET /v1/system/networking/nics?ip=&subnet=&instance=`\n\nFleet-wide NIC search (\"who owns 10.x.x.x?\"). Capability: `SystemRead`. Backed by the AP-1c IP and subnet indexes.\n\nSends a `GET` request to `/v1/system/networking/nics`\n\nArguments:\n- `instance`: Restrict to NICs attached to a single instance. Backed by the existing `nic/in_instance/<instance>/<nic>` index.\n- `ip`: Resolve the unique NIC owning a given IP. Backed by AP-1c's `nic/by_ip/<ip>` keyspace; returns at most one row.\n- `project`: Restrict to a single project.\n- `silo`: Restrict to a single silo (fleet-admin only).\n- `subnet`: Restrict to NICs in a single subnet. Backed by AP-1c's `nic/in_subnet/<subnet>/<nic>` keyspace.\n- `tenant`: Restrict to a single tenant.\n```ignore\nlet response = client.list_system_nics_v1()\n    .instance(instance)\n    .ip(ip)\n    .project(project)\n    .silo(silo)\n    .subnet(subnet)\n    .tenant(tenant)\n    .send()\n    .await;\n```"]
     pub fn list_system_nics_v1(&self) -> builder::ListSystemNicsV1<'_> {
         builder::ListSystemNicsV1::new(self)
+    }
+
+    #[doc = "`GET /v1/system/nic-tags`. Fleet nic_tag registry. Capability:\n\n`SystemRead`. The nic_tag registry is operator-cardinal — there is no tenant/project scope.\n\nSends a `GET` request to `/v1/system/nic-tags`\n\n```ignore\nlet response = client.list_system_nic_tags_v1()\n    .send()\n    .await;\n```"]
+    pub fn list_system_nic_tags_v1(&self) -> builder::ListSystemNicTagsV1<'_> {
+        builder::ListSystemNicTagsV1::new(self)
+    }
+
+    #[doc = "`POST /v1/system/nic-tags`. Register a nic_tag. Capability:\n\n`SystemConfigWrite`.\n\nSends a `POST` request to `/v1/system/nic-tags`\n\n```ignore\nlet response = client.create_system_nic_tag_v1()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_system_nic_tag_v1(&self) -> builder::CreateSystemNicTagV1<'_> {
+        builder::CreateSystemNicTagV1::new(self)
+    }
+
+    #[doc = "`GET /v1/system/nic-tags/{nic_tag_id}`. Capability: `SystemRead`\n\nSends a `GET` request to `/v1/system/nic-tags/{nic_tag_id}`\n\n```ignore\nlet response = client.get_system_nic_tag_v1()\n    .nic_tag_id(nic_tag_id)\n    .send()\n    .await;\n```"]
+    pub fn get_system_nic_tag_v1(&self) -> builder::GetSystemNicTagV1<'_> {
+        builder::GetSystemNicTagV1::new(self)
+    }
+
+    #[doc = "`DELETE /v1/system/nic-tags/{nic_tag_id}`. The store rejects a\n\ndelete while an external subnet still references the tag (409 `NicTagInUse`). Capability: `SystemConfigWrite`.\n\nSends a `DELETE` request to `/v1/system/nic-tags/{nic_tag_id}`\n\n```ignore\nlet response = client.delete_system_nic_tag_v1()\n    .nic_tag_id(nic_tag_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_system_nic_tag_v1(&self) -> builder::DeleteSystemNicTagV1<'_> {
+        builder::DeleteSystemNicTagV1::new(self)
     }
 
     #[doc = "RFD 00007 `PUT /v1/system/users/{user_id}/capabilities/{capability}`\n\nGrant a capability to a user. Capability gate: `SystemOperate`. Idempotent: granting an already-present capability is a no-op. Returns the updated UserView on success.\n\nSends a `PUT` request to `/v1/system/users/{user_id}/capabilities/{capability}`\n\n```ignore\nlet response = client.grant_user_capability_v1()\n    .user_id(user_id)\n    .capability(capability)\n    .send()\n    .await;\n```"]
@@ -45056,6 +47180,59 @@ pub mod builder {
         }
     }
 
+    #[doc = "Builder for [`Client::list_system_cn_nic_tags_v1`]\n\n[`Client::list_system_cn_nic_tags_v1`]: super::Client::list_system_cn_nic_tags_v1"]
+    #[derive(Debug, Clone)]
+    pub struct ListSystemCnNicTagsV1<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> ListSystemCnNicTagsV1<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/system/cn-nic-tags`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::ResultsPageForCnNicTagInventory>, Error<types::Error>>
+        {
+            let Self { client } = self;
+            let url = format!("{}/v1/system/cn-nic-tags", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_system_cn_nic_tags_v1",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
     #[doc = "Builder for [`Client::list_system_cns_v1`]\n\n[`Client::list_system_cns_v1`]: super::Client::list_system_cns_v1"]
     #[derive(Debug, Clone)]
     pub struct ListSystemCnsV1<'a> {
@@ -45254,6 +47431,138 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_system_external_subnets_v1`]\n\n[`Client::list_system_external_subnets_v1`]: super::Client::list_system_external_subnets_v1"]
+    #[derive(Debug, Clone)]
+    pub struct ListSystemExternalSubnetsV1<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> ListSystemExternalSubnetsV1<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/system/external-subnets`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::ResultsPageForSubnet>, Error<types::Error>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/system/external-subnets", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_system_external_subnets_v1",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_system_external_subnet_v1`]\n\n[`Client::create_system_external_subnet_v1`]: super::Client::create_system_external_subnet_v1"]
+    #[derive(Debug, Clone)]
+    pub struct CreateSystemExternalSubnetV1<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::NewExternalSubnet, String>,
+    }
+
+    impl<'a> CreateSystemExternalSubnetV1<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewExternalSubnet>,
+            <V as std::convert::TryInto<types::NewExternalSubnet>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewExternalSubnet` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::NewExternalSubnet,
+                ) -> types::builder::NewExternalSubnet,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/system/external-subnets`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Subnet>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::NewExternalSubnet::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/system/external-subnets", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_system_external_subnet_v1",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -45487,6 +47796,274 @@ pub mod builder {
         }
     }
 
+    #[doc = "Builder for [`Client::list_system_network_pools_v1`]\n\n[`Client::list_system_network_pools_v1`]: super::Client::list_system_network_pools_v1"]
+    #[derive(Debug, Clone)]
+    pub struct ListSystemNetworkPoolsV1<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> ListSystemNetworkPoolsV1<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/system/network-pools`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::ResultsPageForNetworkPool>, Error<types::Error>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/system/network-pools", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_system_network_pools_v1",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_system_network_pool_v1`]\n\n[`Client::create_system_network_pool_v1`]: super::Client::create_system_network_pool_v1"]
+    #[derive(Debug, Clone)]
+    pub struct CreateSystemNetworkPoolV1<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::NewNetworkPool, String>,
+    }
+
+    impl<'a> CreateSystemNetworkPoolV1<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewNetworkPool>,
+            <V as std::convert::TryInto<types::NewNetworkPool>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewNetworkPool` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewNetworkPool) -> types::builder::NewNetworkPool,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/system/network-pools`"]
+        pub async fn send(self) -> Result<ResponseValue<types::NetworkPool>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::NewNetworkPool::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/system/network-pools", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_system_network_pool_v1",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_system_network_pool_v1`]\n\n[`Client::get_system_network_pool_v1`]: super::Client::get_system_network_pool_v1"]
+    #[derive(Debug, Clone)]
+    pub struct GetSystemNetworkPoolV1<'a> {
+        client: &'a super::Client,
+        pool_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetSystemNetworkPoolV1<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                pool_id: Err("pool_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn pool_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.pool_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for pool_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/system/network-pools/{pool_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::NetworkPool>, Error<types::Error>> {
+            let Self { client, pool_id } = self;
+            let pool_id = pool_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/system/network-pools/{}",
+                client.baseurl,
+                encode_path(&pool_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_system_network_pool_v1",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_system_network_pool_v1`]\n\n[`Client::delete_system_network_pool_v1`]: super::Client::delete_system_network_pool_v1"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteSystemNetworkPoolV1<'a> {
+        client: &'a super::Client,
+        pool_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteSystemNetworkPoolV1<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                pool_id: Err("pool_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn pool_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.pool_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for pool_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v1/system/network-pools/{pool_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, pool_id } = self;
+            let pool_id = pool_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/system/network-pools/{}",
+                client.baseurl,
+                encode_path(&pool_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_system_network_pool_v1",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
     #[doc = "Builder for [`Client::list_system_nics_v1`]\n\n[`Client::list_system_nics_v1`]: super::Client::list_system_nics_v1"]
     #[derive(Debug, Clone)]
     pub struct ListSystemNicsV1<'a> {
@@ -45628,6 +48205,274 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_system_nic_tags_v1`]\n\n[`Client::list_system_nic_tags_v1`]: super::Client::list_system_nic_tags_v1"]
+    #[derive(Debug, Clone)]
+    pub struct ListSystemNicTagsV1<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> ListSystemNicTagsV1<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/system/nic-tags`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::ResultsPageForNicTag>, Error<types::Error>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/system/nic-tags", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_system_nic_tags_v1",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_system_nic_tag_v1`]\n\n[`Client::create_system_nic_tag_v1`]: super::Client::create_system_nic_tag_v1"]
+    #[derive(Debug, Clone)]
+    pub struct CreateSystemNicTagV1<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::NewNicTag, String>,
+    }
+
+    impl<'a> CreateSystemNicTagV1<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewNicTag>,
+            <V as std::convert::TryInto<types::NewNicTag>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewNicTag` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewNicTag) -> types::builder::NewNicTag,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/system/nic-tags`"]
+        pub async fn send(self) -> Result<ResponseValue<types::NicTag>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::NewNicTag::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/system/nic-tags", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_system_nic_tag_v1",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_system_nic_tag_v1`]\n\n[`Client::get_system_nic_tag_v1`]: super::Client::get_system_nic_tag_v1"]
+    #[derive(Debug, Clone)]
+    pub struct GetSystemNicTagV1<'a> {
+        client: &'a super::Client,
+        nic_tag_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetSystemNicTagV1<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                nic_tag_id: Err("nic_tag_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn nic_tag_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.nic_tag_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for nic_tag_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/system/nic-tags/{nic_tag_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::NicTag>, Error<types::Error>> {
+            let Self { client, nic_tag_id } = self;
+            let nic_tag_id = nic_tag_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/system/nic-tags/{}",
+                client.baseurl,
+                encode_path(&nic_tag_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_system_nic_tag_v1",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_system_nic_tag_v1`]\n\n[`Client::delete_system_nic_tag_v1`]: super::Client::delete_system_nic_tag_v1"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteSystemNicTagV1<'a> {
+        client: &'a super::Client,
+        nic_tag_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteSystemNicTagV1<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                nic_tag_id: Err("nic_tag_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn nic_tag_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.nic_tag_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for nic_tag_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v1/system/nic-tags/{nic_tag_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, nic_tag_id } = self;
+            let nic_tag_id = nic_tag_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/system/nic-tags/{}",
+                client.baseurl,
+                encode_path(&nic_tag_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_system_nic_tag_v1",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

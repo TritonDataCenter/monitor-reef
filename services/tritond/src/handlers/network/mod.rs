@@ -9,6 +9,7 @@
 pub(crate) mod dhcp;
 pub(crate) mod firewall;
 pub(crate) mod nat;
+pub(crate) mod operator;
 pub(crate) mod routes;
 pub(crate) mod subnet;
 pub(crate) mod vpc;

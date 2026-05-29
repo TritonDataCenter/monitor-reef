@@ -23,6 +23,7 @@ foundationdb = ["dep:foundationdb", "dep:sha2"]
 [dependencies]
 async-trait = { workspace = true }
 chrono = { workspace = true }
+clap = { workspace = true }
 foundationdb = { workspace = true, optional = true }
 ipnetwork = { workspace = true }
 rand = { workspace = true }

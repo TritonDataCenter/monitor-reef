@@ -6838,6 +6838,34 @@
         }
       }
     },
+    "/v1/system/cn-nic-tags": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "`GET /v1/system/cn-nic-tags`. Aggregate per-CN nic_tag",
+        "description": "inventory across the fleet, token-scoped to `SystemRead` (no admin-backend fan-out confused-deputy). Backs the U-6 read-only inventory view.",
+        "operationId": "list_system_cn_nic_tags_v1",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsPage_for_CnNicTagInventory"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/system/cns": {
       "get": {
         "tags": [
@@ -6940,6 +6968,70 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ResultsPage_for_Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/system/external-subnets": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "`GET /v1/system/external-subnets`. List all external subnets.",
+        "description": "Capability: `SystemRead`.",
+        "operationId": "list_system_external_subnets_v1",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsPage_for_Subnet"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "`POST /v1/system/external-subnets`. Create an operator-scoped",
+        "description": "External subnet (FlatL2 public space; source of floating IPs). The store rejects a CIDR that overlaps an existing external subnet (409 `SubnetCidrOverlap`). Capability: `SystemConfigWrite`.",
+        "operationId": "create_system_external_subnet_v1",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewExternalSubnet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Subnet"
                 }
               }
             }
@@ -7081,6 +7173,136 @@
         }
       }
     },
+    "/v1/system/network-pools": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "`GET /v1/system/network-pools`. Capability: `SystemRead`.",
+        "operationId": "list_system_network_pools_v1",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsPage_for_NetworkPool"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "`POST /v1/system/network-pools`. Capability: `SystemConfigWrite`.",
+        "operationId": "create_system_network_pool_v1",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewNetworkPool"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkPool"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/system/network-pools/{pool_id}": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "`GET /v1/system/network-pools/{pool_id}`. Capability: `SystemRead`.",
+        "operationId": "get_system_network_pool_v1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pool_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkPool"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "system"
+        ],
+        "summary": "`DELETE /v1/system/network-pools/{pool_id}`. Capability:",
+        "description": "`SystemConfigWrite`.",
+        "operationId": "delete_system_network_pool_v1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pool_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/system/networking/nics": {
       "get": {
         "tags": [
@@ -7161,6 +7383,138 @@
                 }
               }
             }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/system/nic-tags": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "`GET /v1/system/nic-tags`. Fleet nic_tag registry. Capability:",
+        "description": "`SystemRead`. The nic_tag registry is operator-cardinal — there is no tenant/project scope.",
+        "operationId": "list_system_nic_tags_v1",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsPage_for_NicTag"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "`POST /v1/system/nic-tags`. Register a nic_tag. Capability:",
+        "description": "`SystemConfigWrite`.",
+        "operationId": "create_system_nic_tag_v1",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewNicTag"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NicTag"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/system/nic-tags/{nic_tag_id}": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "`GET /v1/system/nic-tags/{nic_tag_id}`. Capability: `SystemRead`.",
+        "operationId": "get_system_nic_tag_v1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nic_tag_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NicTag"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "system"
+        ],
+        "summary": "`DELETE /v1/system/nic-tags/{nic_tag_id}`. The store rejects a",
+        "description": "delete while an external subnet still references the tag (409 `NicTagInUse`). Capability: `SystemConfigWrite`.",
+        "operationId": "delete_system_nic_tag_v1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nic_tag_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
@@ -11120,6 +11474,31 @@
           }
         }
       },
+      "CnNicTagInventory": {
+        "description": "The per-CN list of nic_tags this CN provides. Single-writer: only the owning CN's agent writes its row (`cn-nic-tags/<cn>`).",
+        "type": "object",
+        "properties": {
+          "cn": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "provides": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NicTagProvision"
+            }
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "cn",
+          "provides",
+          "published_at"
+        ]
+      },
       "CnReservoirView": {
         "description": "Response body for `POST /v1/cns/{server_uuid}/reservoir`. Echoes the per-CN override (`None` = inherits the cluster default) plus the resolved effective values the CN will actually apply.",
         "type": "object",
@@ -12061,12 +12440,33 @@
           "description": {
             "type": "string"
           },
+          "external_nic_tag": {
+            "nullable": true,
+            "description": "External nic_tag the dataplane egresses/ingresses this FIP on. Derived read-only from `network_id`'s subnet `nic_tag` at create time — never client-set, so a FIP can never carry a nic_tag inconsistent with its subnet (invariant 17).",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          },
+          "hosted_cn": {
+            "nullable": true,
+            "description": "CN currently hosting this FIP's 1:1 NAT termination. Stamped on `attach` from the target instance's `host_cn_uuid`, cleared on `detach` and by the instance-delete cascade. Pins the dataplane claim/release jobs to a concrete CN.",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          },
           "id": {
             "type": "string",
             "format": "uuid"
           },
           "name": {
             "type": "string"
+          },
+          "network_id": {
+            "nullable": true,
+            "description": "External Subnet this address was allocated from, when the FIP was created via the pool/network path (C-3). `None` for legacy `family`-allocated records. Drives `external_nic_tag`.",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
           },
           "project_id": {
             "type": "string",
@@ -14090,6 +14490,66 @@
           "vpc_id"
         ]
       },
+      "NetworkKind": {
+        "description": "Network kind. `External` is FlatL2 public space (floating-IP and NAT-gateway source); `Internal` / `Fabric` are VPC overlay subnets. An unrecognized wire value decodes to `Unknown`, which the external dataplane path treats as \"not external\" (fail closed) rather than silently behaving as `Internal`.",
+        "type": "string",
+        "enum": [
+          "internal",
+          "external",
+          "fabric",
+          "unknown"
+        ]
+      },
+      "NetworkPool": {
+        "description": "An ordered list of external networks (subnets) the allocator walks in order when handing out public addresses. Carried from NAPI; v1 defaults allocation to a single network.",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "networks": {
+            "description": "Ordered external-subnet ids; allocation walks them in order.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "owner_silos": {
+            "description": "Silos allowed to allocate from this pool; empty = all silos.",
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "created_at",
+          "id",
+          "name",
+          "networks",
+          "updated_at"
+        ]
+      },
       "NetworkRealizationRequest": {
         "description": "Request body for `POST /v1/agent/network-realization`.\n\nAgents report one `(resource, realizer)` row at a time. Tritond validates the resource exists and then lets the store enforce monotonic generation reporting for that tuple.",
         "type": "object",
@@ -14421,6 +14881,79 @@
           "mac"
         ]
       },
+      "NewExternalSubnet": {
+        "description": "Request body for creating an operator-scoped External subnet.\n\nExternal subnets are FlatL2 public space: they carry a nic_tag + VLAN and are the source of public / floating IPs, allocated on the single global public-IP index (invariant D5). They are *not* tenant VPC subnets — there is no parent VPC — so the store stamps reserved nil ids for `tenant_id` / `project_id` / `vpc_id` / `route_table_id`. At least one of `ipv4_block` / `ipv6_block` must be `Some`.",
+        "type": "object",
+        "properties": {
+          "description": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "ipv4_block": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "ipv6_block": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "nic_tag": {
+            "description": "The nic_tag this external subnet egresses on. Must resolve to a registered [`NicTag`].",
+            "type": "string",
+            "format": "uuid"
+          },
+          "owner_silos": {
+            "description": "Silos allowed to allocate from this subnet; empty = all silos. Not enforced until C-3.",
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "provision_end_ipv4": {
+            "nullable": true,
+            "default": null,
+            "type": "string",
+            "format": "ipv4"
+          },
+          "provision_end_ipv6": {
+            "nullable": true,
+            "default": null,
+            "type": "string",
+            "format": "ipv6"
+          },
+          "provision_start_ipv4": {
+            "nullable": true,
+            "default": null,
+            "type": "string",
+            "format": "ipv4"
+          },
+          "provision_start_ipv6": {
+            "nullable": true,
+            "default": null,
+            "type": "string",
+            "format": "ipv6"
+          },
+          "vlan_id": {
+            "nullable": true,
+            "default": null,
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "name",
+          "nic_tag"
+        ]
+      },
       "NewFirewallRule": {
         "description": "Request body for creating a [`FirewallRule`]. The owning tenant / project / VPC come from the URL path; the server assigns `id` and `created_at`.",
         "type": "object",
@@ -14494,7 +15027,7 @@
         ]
       },
       "NewFloatingIp": {
-        "description": "Request body for allocating a new FloatingIp. The server picks the actual address from the family-specific Phase 0 pool; the caller asks for `V4` or `V6` and gets the lowest free address.",
+        "description": "Request body for allocating a new FloatingIp. The address source is one of three mutually exclusive selectors:\n\n* `network_id` — allocate the lowest-free address from a specific External subnet (C-3, preferred); * `pool_id` — walk a [`NetworkPool`]'s ordered networks and take the first free address (C-3); * `family` — the legacy Phase-0 path that draws from the hardcoded `FLOATING_IP_V*_POOL`.\n\nAt most one may be set; the server rejects a request with more than one selector ([`StoreError::Conflict`]). All three are `#[serde(default)]` so the additive `network_id` / `pool_id` fields preserve wire back-compat with pre-C-3 `family`-only bodies.",
         "type": "object",
         "properties": {
           "description": {
@@ -14503,14 +15036,34 @@
             "type": "string"
           },
           "family": {
-            "$ref": "#/components/schemas/AddressFamily"
+            "nullable": true,
+            "description": "Legacy Phase-0 family selector. Mutually exclusive with `network_id` / `pool_id`. `None` only when one of those is set.",
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AddressFamily"
+              }
+            ]
           },
           "name": {
             "type": "string"
+          },
+          "network_id": {
+            "nullable": true,
+            "description": "External subnet to allocate from. Stamps `FloatingIp::network_id` and derives `external_nic_tag`. Mutually exclusive with the other two selectors.",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          },
+          "pool_id": {
+            "nullable": true,
+            "description": "Network pool to allocate from (walks its ordered networks). Mutually exclusive with the other two selectors.",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [
-          "family",
           "name"
         ]
       },
@@ -14734,6 +15287,62 @@
         },
         "required": [
           "family",
+          "name"
+        ]
+      },
+      "NewNetworkPool": {
+        "description": "Request body for creating a network pool.",
+        "type": "object",
+        "properties": {
+          "description": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "networks": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "owner_silos": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "NewNicTag": {
+        "description": "Request body for registering a nic_tag.",
+        "type": "object",
+        "properties": {
+          "description": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "mtu": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mtu",
           "name"
         ]
       },
@@ -15032,6 +15641,73 @@
           "subnet_id",
           "tenant_id",
           "vpc_id"
+        ]
+      },
+      "NicTag": {
+        "description": "A named L2 segment a CN can attach VNICs to (e.g. `external`, `internal`, `sdc_underlay`). External subnets reference one by id; per-CN provisioning lives in [`CnNicTagInventory`].",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mtu": {
+            "description": "Effective MTU of the tag's link; a subnet's MTU must not exceed this.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "created_at",
+          "description",
+          "id",
+          "mtu",
+          "name",
+          "updated_at"
+        ]
+      },
+      "NicTagProvision": {
+        "description": "One nic_tag a CN's hardware provides, with the physical link, VLAN, and MTU it lands on. Published by `tritonagent` from sysinfo / nictagadm; read by placement and the FIP allocator.",
+        "type": "object",
+        "properties": {
+          "mtu": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "nic_tag": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "physical_nic": {
+            "type": "string"
+          },
+          "vlan_id": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "mtu",
+          "nic_tag",
+          "physical_nic",
+          "vlan_id"
         ]
       },
       "OpenAutoApproveRequest": {
@@ -16044,6 +16720,14 @@
           "hostname": {
             "type": "string"
           },
+          "nic_tags": {
+            "description": "Local nic_tags this CN provides, named the way SmartOS knows them. tritond resolves each `name` to a registered nic_tag id and publishes the CN's [`tritond_store::CnNicTagInventory`] in the register transaction (single-writer, attributed to this CN). Additive: an older agent omits the field entirely.",
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RegisterNicTagProvision"
+            }
+          },
           "server_uuid": {
             "description": "SmartOS server UUID, read from `/usr/bin/sysinfo`. Identity for the entire registration record.",
             "type": "string",
@@ -16090,6 +16774,38 @@
           "poll_token",
           "server_uuid",
           "state"
+        ]
+      },
+      "RegisterNicTagProvision": {
+        "description": "One nic_tag the registering CN reports it provides, named the way SmartOS knows it (`nictagadm` / sysinfo). tritond resolves `name` against the fleet-wide nic_tag registry to build the CN's [`tritond_store::CnNicTagInventory`]; an unresolved name is skipped (fail-closed — tritond never invents a tag id).",
+        "type": "object",
+        "properties": {
+          "mtu": {
+            "description": "Effective MTU of the link the tag lands on.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "name": {
+            "description": "nic_tag name as reported by the CN (e.g. `external`, `admin`).",
+            "type": "string"
+          },
+          "physical_nic": {
+            "description": "Physical link the tag lands on (`nictagadm` `link`).",
+            "type": "string"
+          },
+          "vlan_id": {
+            "description": "VLAN id the tag uses (`0` for untagged).",
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "mtu",
+          "name",
+          "physical_nic",
+          "vlan_id"
         ]
       },
       "RegisterStatusResponse": {
@@ -16203,6 +16919,25 @@
           "route_table",
           "edge_cluster",
           "job"
+        ]
+      },
+      "ResultsPage_for_CnNicTagInventory": {
+        "description": "Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\n\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CnNicTagInventory"
+            }
+          },
+          "next_page": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
         ]
       },
       "ResultsPage_for_CnView": {
@@ -16376,6 +17111,25 @@
           "items"
         ]
       },
+      "ResultsPage_for_NetworkPool": {
+        "description": "Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\n\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NetworkPool"
+            }
+          },
+          "next_page": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
       "ResultsPage_for_Nic": {
         "description": "Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\n\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted.",
         "type": "object",
@@ -16384,6 +17138,25 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Nic"
+            }
+          },
+          "next_page": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "ResultsPage_for_NicTag": {
+        "description": "Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\n\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NicTag"
             }
           },
           "next_page": {
@@ -17821,12 +18594,54 @@
             "description": "IPv6 CIDR for this subnet. Must be a subnet of the parent VPC's `ipv6_block`, and must not overlap any other subnet's IPv6 CIDR in the same VPC.",
             "type": "string"
           },
+          "kind": {
+            "description": "What kind of network this subnet is. `External` subnets carry a FlatL2 nic_tag + VLAN and are the source of public / floating IPs; `Internal` / `Fabric` are VPC overlay subnets. Defaults to `Internal` for wire back-compat with pre-C-1 subnet rows.",
+            "default": "internal",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NetworkKind"
+              }
+            ]
+          },
           "name": {
             "type": "string"
+          },
+          "nic_tag": {
+            "nullable": true,
+            "description": "FK to the [`NicTag`] this subnet's traffic egresses on. Set for `External` subnets; `None` for overlay subnets.",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
           },
           "project_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "provision_end_ipv4": {
+            "nullable": true,
+            "description": "Highest IPv4 the allocator may hand out (inclusive); `None` falls back to the block's last usable host.",
+            "default": null,
+            "type": "string",
+            "format": "ipv4"
+          },
+          "provision_end_ipv6": {
+            "nullable": true,
+            "default": null,
+            "type": "string",
+            "format": "ipv6"
+          },
+          "provision_start_ipv4": {
+            "nullable": true,
+            "description": "Lowest IPv4 the allocator may hand out (inclusive); `None` falls back to the block's first usable host. Scopes a pool to a sub-range of a larger upstream block.",
+            "default": null,
+            "type": "string",
+            "format": "ipv4"
+          },
+          "provision_start_ipv6": {
+            "nullable": true,
+            "default": null,
+            "type": "string",
+            "format": "ipv6"
           },
           "route_table_id": {
             "description": "Active route table for this subnet. Defaults to the parent VPC's `main_route_table_id` at create time.",
@@ -17836,6 +18651,14 @@
           "tenant_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "vlan_id": {
+            "nullable": true,
+            "description": "802.1Q VLAN id for an `External` subnet's nic_tag link (`None` = untagged). The agent's `EnsureExternalLink` creates the matching VLAN-tagged VNIC on the nic_tag's physical link.",
+            "default": null,
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0
           },
           "vpc_id": {
             "type": "string",

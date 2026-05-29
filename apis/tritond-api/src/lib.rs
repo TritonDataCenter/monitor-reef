@@ -31,13 +31,14 @@ use uuid::Uuid;
 
 use crate::types::{
     ApiKeyScope, ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, AutoApproveWindow,
-    CnRole, CnState, CnView, DhcpLease, DhcpPool, DhcpReservation, Disk, FirewallRule, FloatingIp,
-    IdpConfigView, Image, ImdsBindingWire, Instance, JobKind, JobOutcome, LegacyVm,
-    ManagedIdentity, NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation,
-    NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewNatGateway, NewProject, NewQuota,
-    NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc,
-    Nic, Project, ProvisioningJob, Quota, RealizationStatus, RealizerId, Route, RouteTable, Silo,
-    SshKey, StorageClusterView, Subnet, Tenant, Vpc,
+    CnNicTagInventory, CnRole, CnState, CnView, DhcpLease, DhcpPool, DhcpReservation, Disk,
+    FirewallRule, FloatingIp, IdpConfigView, Image, ImdsBindingWire, Instance, JobKind, JobOutcome,
+    LegacyVm, ManagedIdentity, NatGateway, NetworkPool, NetworkResourceId, NewDhcpPool,
+    NewDhcpReservation, NewExternalSubnet, NewFirewallRule, NewFloatingIp, NewImage, NewInstance,
+    NewNatGateway, NewNetworkPool, NewNicTag, NewProject, NewQuota, NewRoute, NewRouteTable,
+    NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, NicTag, Project,
+    ProvisioningJob, Quota, RealizationStatus, RealizerId, Route, RouteTable, Silo, SshKey,
+    StorageClusterView, Subnet, Tenant, Vpc,
 };
 
 /// Liveness response.
@@ -4987,4 +4988,136 @@ pub trait TritondApi {
         path: Path<MetaScopePath>,
         query: Query<MetaKeyQuery>,
     ) -> Result<HttpResponseOk<AffectedInstancesResponse>, HttpError>;
+
+    // ----- Operator networking: nic_tags / network-pools / external-subnets -----
+
+    /// `GET /v1/system/nic-tags`. Fleet nic_tag registry. Capability:
+    /// `SystemRead`. The nic_tag registry is operator-cardinal — there
+    /// is no tenant/project scope.
+    #[endpoint {
+        method = GET,
+        path = "/v1/system/nic-tags",
+        tags = ["system"],
+    }]
+    async fn list_system_nic_tags_v1(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<NicTag>>, HttpError>;
+
+    /// `GET /v1/system/nic-tags/{nic_tag_id}`. Capability: `SystemRead`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/system/nic-tags/{nic_tag_id}",
+        tags = ["system"],
+    }]
+    async fn get_system_nic_tag_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::SystemNicTagPath>,
+    ) -> Result<HttpResponseOk<NicTag>, HttpError>;
+
+    /// `POST /v1/system/nic-tags`. Register a nic_tag. Capability:
+    /// `SystemConfigWrite`.
+    #[endpoint {
+        method = POST,
+        path = "/v1/system/nic-tags",
+        tags = ["system"],
+    }]
+    async fn create_system_nic_tag_v1(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<NewNicTag>,
+    ) -> Result<HttpResponseCreated<NicTag>, HttpError>;
+
+    /// `DELETE /v1/system/nic-tags/{nic_tag_id}`. The store rejects a
+    /// delete while an external subnet still references the tag (409
+    /// `NicTagInUse`). Capability: `SystemConfigWrite`.
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/system/nic-tags/{nic_tag_id}",
+        tags = ["system"],
+    }]
+    async fn delete_system_nic_tag_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::SystemNicTagPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// `GET /v1/system/network-pools`. Capability: `SystemRead`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/system/network-pools",
+        tags = ["system"],
+    }]
+    async fn list_system_network_pools_v1(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<NetworkPool>>, HttpError>;
+
+    /// `GET /v1/system/network-pools/{pool_id}`. Capability: `SystemRead`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/system/network-pools/{pool_id}",
+        tags = ["system"],
+    }]
+    async fn get_system_network_pool_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::SystemNetworkPoolPath>,
+    ) -> Result<HttpResponseOk<NetworkPool>, HttpError>;
+
+    /// `POST /v1/system/network-pools`. Capability: `SystemConfigWrite`.
+    #[endpoint {
+        method = POST,
+        path = "/v1/system/network-pools",
+        tags = ["system"],
+    }]
+    async fn create_system_network_pool_v1(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<NewNetworkPool>,
+    ) -> Result<HttpResponseCreated<NetworkPool>, HttpError>;
+
+    /// `DELETE /v1/system/network-pools/{pool_id}`. Capability:
+    /// `SystemConfigWrite`.
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/system/network-pools/{pool_id}",
+        tags = ["system"],
+    }]
+    async fn delete_system_network_pool_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::SystemNetworkPoolPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// `POST /v1/system/external-subnets`. Create an operator-scoped
+    /// External subnet (FlatL2 public space; source of floating IPs).
+    /// The store rejects a CIDR that overlaps an existing external
+    /// subnet (409 `SubnetCidrOverlap`). Capability: `SystemConfigWrite`.
+    #[endpoint {
+        method = POST,
+        path = "/v1/system/external-subnets",
+        tags = ["system"],
+    }]
+    async fn create_system_external_subnet_v1(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<NewExternalSubnet>,
+    ) -> Result<HttpResponseCreated<Subnet>, HttpError>;
+
+    /// `GET /v1/system/external-subnets`. List all external subnets.
+    /// Capability: `SystemRead`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/system/external-subnets",
+        tags = ["system"],
+    }]
+    async fn list_system_external_subnets_v1(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<Subnet>>, HttpError>;
+
+    /// `GET /v1/system/cn-nic-tags`. Aggregate per-CN nic_tag
+    /// inventory across the fleet, token-scoped to `SystemRead` (no
+    /// admin-backend fan-out confused-deputy). Backs the U-6 read-only
+    /// inventory view.
+    #[endpoint {
+        method = GET,
+        path = "/v1/system/cn-nic-tags",
+        tags = ["system"],
+    }]
+    async fn list_system_cn_nic_tags_v1(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<CnNicTagInventory>>, HttpError>;
 }

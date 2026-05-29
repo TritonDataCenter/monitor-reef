@@ -1686,6 +1686,88 @@ impl TritondApi for TritondServiceImpl {
     ) -> Result<HttpResponseOk<tritond_logs::LogTailResult>, HttpError> {
         crate::handlers::telemetry::instance_logs_tail(rqctx, path, query).await
     }
+
+    // ----- Operator networking (C-6) -----
+
+    async fn list_system_nic_tags_v1(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<tritond_api::types::NicTag>>, HttpError>
+    {
+        crate::handlers::network::operator::list_system_nic_tags_v1(rqctx).await
+    }
+
+    async fn get_system_nic_tag_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::SystemNicTagPath>,
+    ) -> Result<HttpResponseOk<tritond_api::types::NicTag>, HttpError> {
+        crate::handlers::network::operator::get_system_nic_tag_v1(rqctx, path).await
+    }
+
+    async fn create_system_nic_tag_v1(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<tritond_api::types::NewNicTag>,
+    ) -> Result<HttpResponseCreated<tritond_api::types::NicTag>, HttpError> {
+        crate::handlers::network::operator::create_system_nic_tag_v1(rqctx, body).await
+    }
+
+    async fn delete_system_nic_tag_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::SystemNicTagPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        crate::handlers::network::operator::delete_system_nic_tag_v1(rqctx, path).await
+    }
+
+    async fn list_system_network_pools_v1(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<
+        HttpResponseOk<tritond_api::v1::ResultsPage<tritond_api::types::NetworkPool>>,
+        HttpError,
+    > {
+        crate::handlers::network::operator::list_system_network_pools_v1(rqctx).await
+    }
+
+    async fn get_system_network_pool_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::SystemNetworkPoolPath>,
+    ) -> Result<HttpResponseOk<tritond_api::types::NetworkPool>, HttpError> {
+        crate::handlers::network::operator::get_system_network_pool_v1(rqctx, path).await
+    }
+
+    async fn create_system_network_pool_v1(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<tritond_api::types::NewNetworkPool>,
+    ) -> Result<HttpResponseCreated<tritond_api::types::NetworkPool>, HttpError> {
+        crate::handlers::network::operator::create_system_network_pool_v1(rqctx, body).await
+    }
+
+    async fn delete_system_network_pool_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::SystemNetworkPoolPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        crate::handlers::network::operator::delete_system_network_pool_v1(rqctx, path).await
+    }
+
+    async fn create_system_external_subnet_v1(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<tritond_api::types::NewExternalSubnet>,
+    ) -> Result<HttpResponseCreated<Subnet>, HttpError> {
+        crate::handlers::network::operator::create_system_external_subnet_v1(rqctx, body).await
+    }
+
+    async fn list_system_external_subnets_v1(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Subnet>>, HttpError> {
+        crate::handlers::network::operator::list_system_external_subnets_v1(rqctx).await
+    }
+
+    async fn list_system_cn_nic_tags_v1(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<
+        HttpResponseOk<tritond_api::v1::ResultsPage<tritond_api::types::CnNicTagInventory>>,
+        HttpError,
+    > {
+        crate::handlers::network::operator::list_system_cn_nic_tags_v1(rqctx).await
+    }
 }
 
 /// Convert a short range identifier (`5m`, `1h`, `30d`) into the

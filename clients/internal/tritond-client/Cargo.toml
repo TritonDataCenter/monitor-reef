@@ -30,3 +30,5 @@ uuid = { workspace = true }
 # upgrade-handshake code builds the `Sec-WebSocket-Key` nonce with these.
 base64 = { workspace = true }
 rand = { workspace = true }
+# clap::ValueEnum on generated enum types (NetworkKind) for CLI consumers
+clap = { workspace = true }

@@ -415,7 +415,16 @@ pub struct NewSubnet {
 /// dataplane path treats as "not external" (fail closed) rather than
 /// silently behaving as `Internal`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Default,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    clap::ValueEnum,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum NetworkKind {

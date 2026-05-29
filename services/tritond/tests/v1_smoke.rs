@@ -817,3 +817,247 @@ async fn v1_cn_host_index_via_set_instance_host_cn() {
 
     test.close().await;
 }
+
+// ----- C-6: operator networking endpoints -----
+
+#[tokio::test]
+async fn system_nic_tag_crud_roundtrips() {
+    use tritond_client::types::NewNicTag;
+    let test = TestServer::start().await;
+    let root = test.root_client();
+
+    // Create.
+    let tag = root
+        .create_system_nic_tag_v1()
+        .body(NewNicTag {
+            name: "external".to_string(),
+            description: Some("public egress".to_string()),
+            mtu: 1500,
+        })
+        .send()
+        .await
+        .expect("create nic_tag")
+        .into_inner();
+    assert_eq!(tag.name, "external");
+
+    // List + get.
+    let page = root
+        .list_system_nic_tags_v1()
+        .send()
+        .await
+        .expect("list nic_tags")
+        .into_inner();
+    assert_eq!(page.items.len(), 1);
+    let got = root
+        .get_system_nic_tag_v1()
+        .nic_tag_id(tag.id)
+        .send()
+        .await
+        .expect("get nic_tag")
+        .into_inner();
+    assert_eq!(got.id, tag.id);
+
+    // Delete (not in use) succeeds.
+    root.delete_system_nic_tag_v1()
+        .nic_tag_id(tag.id)
+        .send()
+        .await
+        .expect("delete unused nic_tag");
+    let page = root
+        .list_system_nic_tags_v1()
+        .send()
+        .await
+        .expect("list after delete")
+        .into_inner();
+    assert!(page.items.is_empty());
+
+    test.close().await;
+}
+
+#[tokio::test]
+async fn system_nic_tag_writes_require_config_write_capability() {
+    use tritond_client::types::NewNicTag;
+    let test = TestServer::start().await;
+
+    // The fleet-admin user carries SystemRead + SystemOperate but NOT
+    // SystemConfigWrite, so a create must 404 (require_capability
+    // cross-scope-deny shape) while a read succeeds.
+    let fleet = test.fleet_client();
+    fleet
+        .list_system_nic_tags_v1()
+        .send()
+        .await
+        .expect("SystemRead may list nic_tags");
+    let err = fleet
+        .create_system_nic_tag_v1()
+        .body(NewNicTag {
+            name: "x".to_string(),
+            description: None,
+            mtu: 1500,
+        })
+        .send()
+        .await
+        .expect_err("create without SystemConfigWrite must fail");
+    assert_eq!(err.status().map(|s| s.as_u16()), Some(404));
+
+    // A bare user without SystemRead sees 404 even on the read.
+    let err = test
+        .bare_client()
+        .list_system_nic_tags_v1()
+        .send()
+        .await
+        .expect_err("bare user must 404 on read");
+    assert_eq!(err.status().map(|s| s.as_u16()), Some(404));
+
+    test.close().await;
+}
+
+#[tokio::test]
+async fn system_network_pool_crud_roundtrips() {
+    use tritond_client::types::NewNetworkPool;
+    let test = TestServer::start().await;
+    let root = test.root_client();
+
+    let pool = root
+        .create_system_network_pool_v1()
+        .body(NewNetworkPool {
+            name: "public".to_string(),
+            description: None,
+            networks: vec![],
+            owner_silos: vec![],
+        })
+        .send()
+        .await
+        .expect("create pool")
+        .into_inner();
+
+    let got = root
+        .get_system_network_pool_v1()
+        .pool_id(pool.id)
+        .send()
+        .await
+        .expect("get pool")
+        .into_inner();
+    assert_eq!(got.id, pool.id);
+
+    let page = root
+        .list_system_network_pools_v1()
+        .send()
+        .await
+        .expect("list pools")
+        .into_inner();
+    assert_eq!(page.items.len(), 1);
+
+    root.delete_system_network_pool_v1()
+        .pool_id(pool.id)
+        .send()
+        .await
+        .expect("delete pool");
+    let page = root
+        .list_system_network_pools_v1()
+        .send()
+        .await
+        .expect("list after delete")
+        .into_inner();
+    assert!(page.items.is_empty());
+
+    test.close().await;
+}
+
+#[tokio::test]
+async fn system_external_subnet_create_and_list() {
+    use tritond_client::types::{NewExternalSubnet, NewNicTag};
+    let test = TestServer::start().await;
+    let root = test.root_client();
+
+    let tag = root
+        .create_system_nic_tag_v1()
+        .body(NewNicTag {
+            name: "external".to_string(),
+            description: None,
+            mtu: 1500,
+        })
+        .send()
+        .await
+        .expect("create nic_tag")
+        .into_inner();
+
+    let subnet = root
+        .create_system_external_subnet_v1()
+        .body(NewExternalSubnet {
+            name: "public-a".to_string(),
+            description: None,
+            ipv4_block: Some("203.0.113.0/24".to_string()),
+            ipv6_block: None,
+            nic_tag: tag.id,
+            vlan_id: None,
+            provision_start_ipv4: None,
+            provision_end_ipv4: None,
+            provision_start_ipv6: None,
+            provision_end_ipv6: None,
+            owner_silos: vec![],
+        })
+        .send()
+        .await
+        .expect("create external subnet")
+        .into_inner();
+    assert_eq!(subnet.kind, tritond_client::types::NetworkKind::External);
+    assert_eq!(subnet.nic_tag, Some(tag.id));
+
+    let page = root
+        .list_system_external_subnets_v1()
+        .send()
+        .await
+        .expect("list external subnets")
+        .into_inner();
+    assert_eq!(page.items.len(), 1);
+
+    // An overlapping external CIDR is rejected (invariant D5).
+    let err = root
+        .create_system_external_subnet_v1()
+        .body(NewExternalSubnet {
+            name: "public-b".to_string(),
+            description: None,
+            ipv4_block: Some("203.0.113.0/25".to_string()),
+            ipv6_block: None,
+            nic_tag: tag.id,
+            vlan_id: None,
+            provision_start_ipv4: None,
+            provision_end_ipv4: None,
+            provision_start_ipv6: None,
+            provision_end_ipv6: None,
+            owner_silos: vec![],
+        })
+        .send()
+        .await
+        .expect_err("overlapping external CIDR must be rejected");
+    assert_eq!(err.status().map(|s| s.as_u16()), Some(409));
+
+    test.close().await;
+}
+
+#[tokio::test]
+async fn system_cn_nic_tags_aggregate_is_token_scoped() {
+    let test = TestServer::start().await;
+
+    // Empty fleet returns an empty page under SystemRead.
+    let page = test
+        .fleet_client()
+        .list_system_cn_nic_tags_v1()
+        .send()
+        .await
+        .expect("SystemRead may read cn-nic-tags aggregate")
+        .into_inner();
+    assert!(page.items.is_empty());
+
+    // Bare user (no SystemRead) is denied with the 404 shape.
+    let err = test
+        .bare_client()
+        .list_system_cn_nic_tags_v1()
+        .send()
+        .await
+        .expect_err("bare user must 404");
+    assert_eq!(err.status().map(|s| s.as_u16()), Some(404));
+
+    test.close().await;
+}

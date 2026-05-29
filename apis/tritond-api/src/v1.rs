@@ -225,6 +225,20 @@ pub struct SystemImagePath {
     pub image_id: Uuid,
 }
 
+/// Path parameters for `/v1/system/nic-tags/{nic_tag_id}` (C-6). The
+/// operator nic_tag registry is fleet-cardinal, so there is no
+/// tenant/project segment.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SystemNicTagPath {
+    pub nic_tag_id: Uuid,
+}
+
+/// Path parameters for `/v1/system/network-pools/{pool_id}` (C-6).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SystemNetworkPoolPath {
+    pub pool_id: Uuid,
+}
+
 /// Image scope selector for `/v1/images?scope=...`. Per RFD 00007
 /// D-Ap-1 + Locked Decision #33 the five legacy image URL surfaces
 /// collapse into one path discriminated by this enum. AP-2h ships
