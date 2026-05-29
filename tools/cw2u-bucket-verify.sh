@@ -5,14 +5,17 @@
 #
 # Copyright 2026 Edgecast Cloud LLC.
 
-# cw2u (Phase D slice, bucket-only) live verify.
+# cw2u (Phase D) live verify — buckets + IAM (users, access keys, policies).
 #
 # Exercises the mantad-side wire shape introduced by:
 #   manta-storage 138d00e — workspace-scope query param on bucket admin routes
 #   monitor-reef  c38293e4 — tritond threads workspace scope through bucket forwarders
+#   manta-storage 9ed8dcd — workspace-scope query param on IAM admin routes
+#   monitor-reef  26206a1f — tritond threads workspace scope through IAM forwarders
 #
 # Drives mantad directly via curl + the admin token, asserts every
-# `?workspace=` semantic. Tritond gets a smoke check (root-operator
+# `?workspace=` semantic across all 15 cw2u routes (4 bucket + 4 user
+# + 3 access key + 4 policy). Tritond gets a smoke check (root-operator
 # forwarder still works); a true tenant-principal end-to-end is a
 # follow-up because tenant API-key minting isn't yet wired.
 #
@@ -180,6 +183,132 @@ pass "get A after delete returns 404"
 expect_status 204 DELETE "/admin/v1/buckets/$BUCKET_B?workspace=$WS_B" > /dev/null
 expect_status 204 DELETE "/admin/v1/buckets/$BUCKET_ROOT" > /dev/null
 pass "cleanup: B + root buckets deleted"
+
+# -------- IAM: users --------------------------------------------
+
+USER_A="cw2u-user-a-$$"
+USER_B="cw2u-user-b-$$"
+USER_ROOT="cw2u-user-root-$$"
+
+# create scoped users stamp the workspace
+body_ua=$(expect_status 200 POST "/admin/v1/users?workspace=$WS_A" \
+    "{\"name\":\"$USER_A\"}")
+echo "$body_ua" | grep -q "\"workspace\":\"$WS_A\"" \
+    || fatal "create_user A — workspace field not stamped (got: $body_ua)"
+pass "create_user?workspace=A stamps workspace field"
+
+body_ub=$(expect_status 200 POST "/admin/v1/users?workspace=$WS_B" \
+    "{\"name\":\"$USER_B\"}")
+echo "$body_ub" | grep -q "\"workspace\":\"$WS_B\"" \
+    || fatal "create_user B — workspace field not stamped"
+pass "create_user?workspace=B stamps workspace field"
+
+body_ur=$(expect_status 200 POST /admin/v1/users \
+    "{\"name\":\"$USER_ROOT\"}")
+echo "$body_ur" | grep -q '"workspace":""' \
+    || fatal "create_user unscoped — workspace should be empty (got: $body_ur)"
+pass "create_user without workspace leaves field empty"
+
+# create against unknown workspace → 404
+expect_status 404 POST "/admin/v1/users?workspace=t-doesnotexist00000000000000000000" \
+    "{\"name\":\"never-user\"}" > /dev/null
+pass "create_user?workspace=BOGUS returns 404"
+
+# list scoping
+u_list_root=$(expect_status 200 GET /admin/v1/users)
+for needed in "$USER_A" "$USER_B" "$USER_ROOT"; do
+    echo "$u_list_root" | grep -q "\"name\":\"$needed\"" \
+        || fatal "list_users (root) missing $needed"
+done
+pass "list_users (no workspace) returns all three"
+
+u_list_a=$(expect_status 200 GET "/admin/v1/users?workspace=$WS_A")
+echo "$u_list_a" | grep -q "\"name\":\"$USER_A\"" || fatal "list_users?workspace=A missing $USER_A"
+if echo "$u_list_a" | grep -q "\"name\":\"$USER_B\""; then fatal "list_users?workspace=A leaked $USER_B"; fi
+if echo "$u_list_a" | grep -q "\"name\":\"$USER_ROOT\""; then fatal "list_users?workspace=A leaked $USER_ROOT"; fi
+pass "list_users?workspace=A returns only A's user"
+
+# get-user scoping
+expect_status 200 GET "/admin/v1/users/$USER_A?workspace=$WS_A" > /dev/null
+pass "get_user A?workspace=A returns 200"
+
+expect_status 404 GET "/admin/v1/users/$USER_A?workspace=$WS_B" > /dev/null
+pass "get_user A?workspace=B returns 404 (cross-tenant probe blocked)"
+
+# -------- IAM: access keys --------------------------------------
+
+ak_a_body=$(expect_status 200 POST "/admin/v1/users/$USER_A/access-keys?workspace=$WS_A")
+echo "$ak_a_body" | grep -q "\"workspace\":\"$WS_A\"" \
+    || fatal "create_access_key A — workspace not stamped (got: $ak_a_body)"
+AK_A_ID=$(printf '%s' "$ak_a_body" | sed -n 's/.*"access_key_id":"\([^"]*\)".*/\1/p')
+[ -n "$AK_A_ID" ] || fatal "could not extract AKID from create_access_key response"
+pass "create_access_key A?workspace=A stamps workspace + returns AKID ($AK_A_ID)"
+
+# cross-tenant create against a user that belongs to the OTHER workspace → 404
+expect_status 404 POST "/admin/v1/users/$USER_A/access-keys?workspace=$WS_B" > /dev/null
+pass "create_access_key on A?workspace=B returns 404 (cross-tenant blocked)"
+
+# list AKs scoped
+ak_list=$(expect_status 200 GET "/admin/v1/users/$USER_A/access-keys?workspace=$WS_A")
+echo "$ak_list" | grep -q "\"access_key_id\":\"$AK_A_ID\"" \
+    || fatal "list_access_keys A?workspace=A missing $AK_A_ID"
+pass "list_access_keys A?workspace=A returns own key"
+
+expect_status 404 GET "/admin/v1/users/$USER_A/access-keys?workspace=$WS_B" > /dev/null
+pass "list_access_keys A?workspace=B returns 404"
+
+# delete AK cross-tenant blocked
+expect_status 404 DELETE "/admin/v1/access-keys/$AK_A_ID?workspace=$WS_B" > /dev/null
+pass "delete_access_key cross-tenant returns 404"
+
+expect_status 204 DELETE "/admin/v1/access-keys/$AK_A_ID?workspace=$WS_A" > /dev/null
+pass "delete_access_key own returns 204"
+
+# -------- IAM: policies -----------------------------------------
+
+POLICY_A="cw2u-policy-a"
+POLICY_DOC='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:ListBucket","Resource":"*"}]}'
+
+# put policy scoped
+expect_status 204 PUT "/admin/v1/users/$USER_A/policies/$POLICY_A?workspace=$WS_A" "$POLICY_DOC" > /dev/null
+pass "put_user_policy A/p?workspace=A returns 204"
+
+# put policy cross-tenant blocked
+expect_status 404 PUT "/admin/v1/users/$USER_A/policies/other?workspace=$WS_B" "$POLICY_DOC" > /dev/null
+pass "put_user_policy A/p?workspace=B returns 404 (cross-tenant write blocked)"
+
+# list / get scoped
+pol_list=$(expect_status 200 GET "/admin/v1/users/$USER_A/policies?workspace=$WS_A")
+echo "$pol_list" | grep -q "\"$POLICY_A\"" \
+    || fatal "list_user_policies A?workspace=A missing $POLICY_A"
+pass "list_user_policies A?workspace=A includes our policy"
+
+expect_status 404 GET "/admin/v1/users/$USER_A/policies?workspace=$WS_B" > /dev/null
+pass "list_user_policies A?workspace=B returns 404"
+
+expect_status 200 GET "/admin/v1/users/$USER_A/policies/$POLICY_A?workspace=$WS_A" > /dev/null
+pass "get_user_policy A/p?workspace=A returns 200"
+
+expect_status 404 GET "/admin/v1/users/$USER_A/policies/$POLICY_A?workspace=$WS_B" > /dev/null
+pass "get_user_policy A/p?workspace=B returns 404"
+
+# delete policy scoped
+expect_status 404 DELETE "/admin/v1/users/$USER_A/policies/$POLICY_A?workspace=$WS_B" > /dev/null
+pass "delete_user_policy cross-tenant returns 404"
+
+expect_status 204 DELETE "/admin/v1/users/$USER_A/policies/$POLICY_A?workspace=$WS_A" > /dev/null
+pass "delete_user_policy own returns 204"
+
+# -------- IAM cleanup -------------------------------------------
+
+# Cross-tenant delete-user blocked
+expect_status 404 DELETE "/admin/v1/users/$USER_A?workspace=$WS_B" > /dev/null
+pass "delete_user A?workspace=B returns 404 (cross-tenant blocked)"
+
+expect_status 204 DELETE "/admin/v1/users/$USER_A?workspace=$WS_A" > /dev/null
+expect_status 204 DELETE "/admin/v1/users/$USER_B?workspace=$WS_B" > /dev/null
+expect_status 204 DELETE "/admin/v1/users/$USER_ROOT" > /dev/null
+pass "cleanup: IAM users deleted"
 
 # -------- tritond root smoke (no regression on the cluster-wide path) ----
 
