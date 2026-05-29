@@ -4628,6 +4628,9 @@ impl Store for FdbStore {
         req: NewFloatingIp,
     ) -> Result<FloatingIp, StoreError> {
         validate::name("floating_ip", &req.name)?;
+        // Reject zero / >1 of family / network_id / pool_id before any
+        // FDB work; the dispatch mirrors MemStore.
+        let source = crate::types::floating_ip_source(&req)?;
         let project_check_key = keys::project_by_id_key(project_id);
         let by_name_key = keys::floating_ip_by_project_name_key(project_id, &req.name);
         let alloc_v4_prefix = keys::floating_ip_alloc_v4_prefix().to_vec();
@@ -4641,12 +4644,18 @@ impl Store for FdbStore {
         let by_id_key = keys::floating_ip_by_id_key(fip_id);
         let in_project_key = keys::floating_ip_in_project_key(project_id, fip_id);
         let id_str = fip_id.to_string();
+        let holder =
+            keys::public_ip_holder_value(NetworkResourceId::FloatingIp { id: fip_id });
 
         enum Outcome {
             Created(Box<FloatingIp>),
             ProjectMissingOrWrongTenant,
             NameTaken,
-            PoolExhausted,
+            SubnetMissing,
+            SubnetNotExternal(Uuid),
+            PoolMissing,
+            Exhausted,
+            FamilyExhausted,
         }
 
         let req_for_txn = req.clone();
@@ -4662,6 +4671,7 @@ impl Store for FdbStore {
                 let v6_begin = v6_begin.clone();
                 let v6_end = v6_end.clone();
                 let id_bytes = id_str.as_bytes().to_vec();
+                let holder = holder.clone();
                 let req = req_for_txn.clone();
                 async move {
                     // Project + same-tenant check.
@@ -4680,52 +4690,139 @@ impl Store for FdbStore {
                     if tr.get(&by_name_key, false).await?.is_some() {
                         return Ok(Outcome::NameTaken);
                     }
-                    // Allocate from the appropriate pool.
-                    let address: std::net::IpAddr = match req.family {
-                        AddressFamily::V4 => {
-                            let opt = RangeOption {
-                                begin: KeySelector::first_greater_or_equal(v4_begin),
-                                end: KeySelector::first_greater_or_equal(v4_end),
-                                ..RangeOption::default()
-                            };
-                            let kvs = tr.get_range(&opt, 1, false).await?;
-                            let mut allocated: std::collections::HashSet<std::net::Ipv4Addr> =
-                                std::collections::HashSet::new();
-                            for kv in kvs.iter() {
-                                let suffix = &kv.key()[v4_prefix_len..];
-                                if let Ok(s) = std::str::from_utf8(suffix)
-                                    && let Ok(ip) = s.parse::<std::net::Ipv4Addr>()
-                                {
-                                    allocated.insert(ip);
+                    // Resolve address + provenance per selector.
+                    let (address, network_id, external_nic_tag): (
+                        std::net::IpAddr,
+                        Option<Uuid>,
+                        Option<Uuid>,
+                    ) = match source {
+                        crate::types::FloatingIpSource::Family(family) => {
+                            let address = match family {
+                                AddressFamily::V4 => {
+                                    let opt = RangeOption {
+                                        begin: KeySelector::first_greater_or_equal(v4_begin),
+                                        end: KeySelector::first_greater_or_equal(v4_end),
+                                        ..RangeOption::default()
+                                    };
+                                    let kvs = tr.get_range(&opt, 1, false).await?;
+                                    let mut allocated: HashSet<std::net::Ipv4Addr> = HashSet::new();
+                                    for kv in kvs.iter() {
+                                        let suffix = &kv.key()[v4_prefix_len..];
+                                        if let Ok(s) = std::str::from_utf8(suffix)
+                                            && let Ok(ip) = s.parse::<std::net::Ipv4Addr>()
+                                        {
+                                            allocated.insert(ip);
+                                        }
+                                    }
+                                    drop(kvs);
+                                    match crate::types::allocate_ipv4(
+                                        FLOATING_IP_V4_POOL,
+                                        &allocated,
+                                    ) {
+                                        Some(ip) => {
+                                            tr.set(&keys::floating_ip_alloc_v4_key(ip), &holder);
+                                            std::net::IpAddr::V4(ip)
+                                        }
+                                        None => return Ok(Outcome::FamilyExhausted),
+                                    }
                                 }
+                                AddressFamily::V6 => {
+                                    let opt = RangeOption {
+                                        begin: KeySelector::first_greater_or_equal(v6_begin),
+                                        end: KeySelector::first_greater_or_equal(v6_end),
+                                        ..RangeOption::default()
+                                    };
+                                    let kvs = tr.get_range(&opt, 1, false).await?;
+                                    let mut allocated: HashSet<std::net::Ipv6Addr> = HashSet::new();
+                                    for kv in kvs.iter() {
+                                        let suffix = &kv.key()[v6_prefix_len..];
+                                        if let Ok(s) = std::str::from_utf8(suffix)
+                                            && let Ok(ip) = s.parse::<std::net::Ipv6Addr>()
+                                        {
+                                            allocated.insert(ip);
+                                        }
+                                    }
+                                    drop(kvs);
+                                    match crate::types::allocate_ipv6(
+                                        FLOATING_IP_V6_POOL,
+                                        &allocated,
+                                    ) {
+                                        Some(ip) => {
+                                            tr.set(&keys::floating_ip_alloc_v6_key(ip), &holder);
+                                            std::net::IpAddr::V6(ip)
+                                        }
+                                        None => return Ok(Outcome::FamilyExhausted),
+                                    }
+                                }
+                            };
+                            (address, None, None)
+                        }
+                        crate::types::FloatingIpSource::Network(subnet_id) => {
+                            let subnet_bytes = match tr
+                                .get(&keys::subnet_by_id_key(subnet_id), false)
+                                .await?
+                            {
+                                Some(b) => b,
+                                None => return Ok(Outcome::SubnetMissing),
+                            };
+                            let subnet: Subnet = match serde_json::from_slice(&subnet_bytes) {
+                                Ok(s) => s,
+                                Err(_) => return Ok(Outcome::SubnetMissing),
+                            };
+                            if subnet.kind != crate::types::NetworkKind::External {
+                                return Ok(Outcome::SubnetNotExternal(subnet_id));
                             }
-                            drop(kvs);
-                            match crate::types::allocate_ipv4(FLOATING_IP_V4_POOL, &allocated) {
-                                Some(ip) => ip.into(),
-                                None => return Ok(Outcome::PoolExhausted),
+                            let Some(family) = crate::types::subnet_family(&subnet) else {
+                                return Ok(Outcome::Exhausted);
+                            };
+                            match alloc_external_in_subnet_txn(&tr, &subnet, family, &holder)
+                                .await?
+                            {
+                                Some(addr) => (addr, Some(subnet_id), subnet.nic_tag),
+                                None => return Ok(Outcome::Exhausted),
                             }
                         }
-                        AddressFamily::V6 => {
-                            let opt = RangeOption {
-                                begin: KeySelector::first_greater_or_equal(v6_begin),
-                                end: KeySelector::first_greater_or_equal(v6_end),
-                                ..RangeOption::default()
+                        crate::types::FloatingIpSource::Pool(pool_id) => {
+                            let pool_bytes = match tr
+                                .get(&keys::network_pool_by_id_key(pool_id), false)
+                                .await?
+                            {
+                                Some(b) => b,
+                                None => return Ok(Outcome::PoolMissing),
                             };
-                            let kvs = tr.get_range(&opt, 1, false).await?;
-                            let mut allocated: std::collections::HashSet<std::net::Ipv6Addr> =
-                                std::collections::HashSet::new();
-                            for kv in kvs.iter() {
-                                let suffix = &kv.key()[v6_prefix_len..];
-                                if let Ok(s) = std::str::from_utf8(suffix)
-                                    && let Ok(ip) = s.parse::<std::net::Ipv6Addr>()
+                            let pool: NetworkPool = match serde_json::from_slice(&pool_bytes) {
+                                Ok(p) => p,
+                                Err(_) => return Ok(Outcome::PoolMissing),
+                            };
+                            let mut allocated: Option<(std::net::IpAddr, Uuid, Option<Uuid>)> =
+                                None;
+                            for sid in pool.networks {
+                                let subnet_bytes =
+                                    match tr.get(&keys::subnet_by_id_key(sid), false).await? {
+                                        Some(b) => b,
+                                        None => continue,
+                                    };
+                                let subnet: Subnet = match serde_json::from_slice(&subnet_bytes) {
+                                    Ok(s) => s,
+                                    Err(_) => continue,
+                                };
+                                if subnet.kind != crate::types::NetworkKind::External {
+                                    continue;
+                                }
+                                let Some(family) = crate::types::subnet_family(&subnet) else {
+                                    continue;
+                                };
+                                if let Some(addr) =
+                                    alloc_external_in_subnet_txn(&tr, &subnet, family, &holder)
+                                        .await?
                                 {
-                                    allocated.insert(ip);
+                                    allocated = Some((addr, subnet.id, subnet.nic_tag));
+                                    break;
                                 }
                             }
-                            drop(kvs);
-                            match crate::types::allocate_ipv6(FLOATING_IP_V6_POOL, &allocated) {
-                                Some(ip) => ip.into(),
-                                None => return Ok(Outcome::PoolExhausted),
+                            match allocated {
+                                Some((addr, sid, tag)) => (addr, Some(sid), tag),
+                                None => return Ok(Outcome::Exhausted),
                             }
                         }
                     };
@@ -4738,29 +4835,19 @@ impl Store for FdbStore {
                         description: req.description.unwrap_or_default(),
                         address,
                         attached_to: None,
-                        network_id: None,
-                        external_nic_tag: None,
+                        network_id,
+                        external_nic_tag,
                         hosted_cn: None,
                         created_at: now,
                         updated_at: now,
                     };
                     let value = match serde_json::to_vec(&fip) {
                         Ok(v) => v,
-                        Err(_) => return Ok(Outcome::PoolExhausted), // surrogate; treated as backend
+                        Err(_) => return Ok(Outcome::Exhausted), // surrogate; treated as backend
                     };
                     tr.set(&by_id_key, &value);
                     tr.set(&by_name_key, &id_bytes);
                     tr.set(&in_project_key, b"");
-                    let holder =
-                        keys::public_ip_holder_value(NetworkResourceId::FloatingIp { id: fip_id });
-                    match address {
-                        std::net::IpAddr::V4(v4) => {
-                            tr.set(&keys::floating_ip_alloc_v4_key(v4), &holder);
-                        }
-                        std::net::IpAddr::V6(v6) => {
-                            tr.set(&keys::floating_ip_alloc_v6_key(v6), &holder);
-                        }
-                    }
                     Ok(Outcome::Created(Box::new(fip)))
                 }
             })
@@ -4773,7 +4860,13 @@ impl Store for FdbStore {
                 "floating ip with name {:?} already exists in project {project_id}",
                 req.name
             ))),
-            Ok(Outcome::PoolExhausted) => Err(StoreError::Backend(
+            Ok(Outcome::SubnetMissing) | Ok(Outcome::PoolMissing) => Err(StoreError::NotFound),
+            Ok(Outcome::SubnetNotExternal(id)) => Err(StoreError::SubnetNotExternal(id)),
+            Ok(Outcome::Exhausted) => Err(StoreError::PoolExhausted(
+                "floating ip address source has no free address".to_string(),
+            )),
+            // The legacy family path keeps its pre-C-3 Backend error.
+            Ok(Outcome::FamilyExhausted) => Err(StoreError::Backend(
                 "floating ip pool exhausted".to_string(),
             )),
             Err(e) => Err(e.into()),
@@ -5081,26 +5174,31 @@ impl Store for FdbStore {
     }
 
     async fn delete_nic_tag(&self, id: Uuid) -> Result<(), StoreError> {
-        // The in-use check scans every external subnet (the only
-        // subnets that carry a nic_tag) outside the delete txn; an
-        // external subnet referencing this tag can only be created via
-        // create_external_subnet, which fails NotFound if the tag is
-        // gone, so the window is benign.
-        let external = self.list_external_subnets().await?;
-        if external.iter().any(|s| s.nic_tag == Some(id)) {
-            return Err(StoreError::NicTagInUse(id));
-        }
+        // The in-use scan runs INSIDE the delete txn: it reads the
+        // external-subnet index range and each subnet record, so a
+        // concurrent create_external_subnet that adds a row referencing
+        // this tag lands in the read-conflict set and forces a retry.
+        // (create_external_subnet also reads the nic_tag key, so a
+        // create racing the clear conflicts the other direction too.)
+        // This closes the TOCTOU window where the old out-of-txn scan
+        // could leave a subnet pointing at a deleted tag.
         let by_id_key = keys::nic_tag_by_id_key(id);
+        let ext_prefix = keys::external_subnet_index_prefix().to_vec();
+        let (ext_begin, ext_end) = prefix_range(&ext_prefix);
+        let ext_prefix_len = ext_prefix.len();
 
         enum Out {
             Deleted,
             Vanished,
+            InUse,
             Corrupt(String),
         }
         let outcome: Result<Out, FdbBindingError> = self
             .db
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
+                let ext_begin = ext_begin.clone();
+                let ext_end = ext_end.clone();
                 async move {
                     let bytes = match tr.get(&by_id_key, false).await? {
                         Some(b) => b,
@@ -5110,6 +5208,37 @@ impl Store for FdbStore {
                         Ok(t) => t,
                         Err(e) => return Ok(Out::Corrupt(e.to_string())),
                     };
+                    // Collect peer external-subnet ids, then load each
+                    // record (the index value carries no nic_tag).
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(ext_begin),
+                        end: KeySelector::first_greater_or_equal(ext_end),
+                        ..RangeOption::default()
+                    };
+                    let index = tr.get_range(&opt, 1, false).await?;
+                    let mut ids: Vec<Uuid> = Vec::new();
+                    for kv in index.iter() {
+                        let suffix = &kv.key()[ext_prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix)
+                            && let Ok(sid) = Uuid::parse_str(s)
+                        {
+                            ids.push(sid);
+                        }
+                    }
+                    drop(index);
+                    for sid in ids {
+                        let sbytes = match tr.get(&keys::subnet_by_id_key(sid), false).await? {
+                            Some(b) => b,
+                            None => continue,
+                        };
+                        let subnet: Subnet = match serde_json::from_slice(&sbytes) {
+                            Ok(s) => s,
+                            Err(_) => continue,
+                        };
+                        if subnet.nic_tag == Some(id) {
+                            return Ok(Out::InUse);
+                        }
+                    }
                     tr.clear(&by_id_key);
                     tr.clear(&keys::nic_tag_by_name_key(&tag.name));
                     Ok(Out::Deleted)
@@ -5120,6 +5249,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(Out::Deleted) => Ok(()),
             Ok(Out::Vanished) => Err(StoreError::NotFound),
+            Ok(Out::InUse) => Err(StoreError::NicTagInUse(id)),
             Ok(Out::Corrupt(e)) => Err(StoreError::Backend(format!("deserialize nic tag: {e}"))),
             Err(e) => Err(e.into()),
         }
@@ -8528,6 +8658,94 @@ async fn mint_unique_claim_and_poll(
         return Ok(None);
     };
     Ok(Some((claim, poll)))
+}
+
+/// Allocate the lowest-free external address from `subnet` on the
+/// single global public-IP index inside an existing transaction,
+/// recording `holder`. Mirrors the standalone
+/// `FdbStore::allocate_external_ip` so `create_floating_ip` can
+/// allocate + write the FIP record atomically in one txn. Returns
+/// `Ok(None)` when the subnet carries no block for `family` or the
+/// provision window is exhausted (the pool walk skips to the next
+/// network on `None`).
+async fn alloc_external_in_subnet_txn(
+    tr: &foundationdb::RetryableTransaction,
+    subnet: &Subnet,
+    family: AddressFamily,
+    holder: &[u8],
+) -> Result<Option<IpAddr>, FdbBindingError> {
+    match family {
+        AddressFamily::V4 => {
+            let Some(cidr) = subnet.ipv4_block else {
+                return Ok(None);
+            };
+            let prefix = keys::floating_ip_alloc_v4_prefix().to_vec();
+            let (begin, end) = prefix_range(&prefix);
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut allocated: HashSet<std::net::Ipv4Addr> = HashSet::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix.len()..];
+                if let Ok(s) = std::str::from_utf8(suffix)
+                    && let Ok(ip) = s.parse::<std::net::Ipv4Addr>()
+                {
+                    allocated.insert(ip);
+                }
+            }
+            drop(kvs);
+            match crate::types::allocate_ipv4_in_range(
+                cidr,
+                subnet.provision_start_ipv4,
+                subnet.provision_end_ipv4,
+                &allocated,
+            ) {
+                Some(ip) => {
+                    tr.set(&keys::floating_ip_alloc_v4_key(ip), holder);
+                    Ok(Some(IpAddr::V4(ip)))
+                }
+                None => Ok(None),
+            }
+        }
+        AddressFamily::V6 => {
+            let Some(cidr) = subnet.ipv6_block else {
+                return Ok(None);
+            };
+            let prefix = keys::floating_ip_alloc_v6_prefix().to_vec();
+            let (begin, end) = prefix_range(&prefix);
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut allocated: HashSet<std::net::Ipv6Addr> = HashSet::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix.len()..];
+                if let Ok(s) = std::str::from_utf8(suffix)
+                    && let Ok(ip) = s.parse::<std::net::Ipv6Addr>()
+                {
+                    allocated.insert(ip);
+                }
+            }
+            drop(kvs);
+            match crate::types::allocate_ipv6_in_range(
+                cidr,
+                subnet.provision_start_ipv6,
+                subnet.provision_end_ipv6,
+                &allocated,
+            ) {
+                Some(ip) => {
+                    tr.set(&keys::floating_ip_alloc_v6_key(ip), holder);
+                    Ok(Some(IpAddr::V6(ip)))
+                }
+                None => Ok(None),
+            }
+        }
+    }
 }
 
 /// Atomically: read the auto-approve window singleton; if it's open,

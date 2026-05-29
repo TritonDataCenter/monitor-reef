@@ -3197,15 +3197,91 @@ pub struct FloatingIp {
     pub updated_at: DateTime<Utc>,
 }
 
-/// Request body for allocating a new FloatingIp. The server picks
-/// the actual address from the family-specific Phase 0 pool; the
-/// caller asks for `V4` or `V6` and gets the lowest free address.
+/// Request body for allocating a new FloatingIp. The address source
+/// is one of three mutually exclusive selectors:
+///
+/// * `network_id` — allocate the lowest-free address from a specific
+///   External subnet (C-3, preferred);
+/// * `pool_id` — walk a [`NetworkPool`]'s ordered networks and take
+///   the first free address (C-3);
+/// * `family` — the legacy Phase-0 path that draws from the hardcoded
+///   `FLOATING_IP_V*_POOL`.
+///
+/// At most one may be set; the server rejects a request with more
+/// than one selector ([`StoreError::Conflict`]). All three are
+/// `#[serde(default)]` so the additive `network_id` / `pool_id`
+/// fields preserve wire back-compat with pre-C-3 `family`-only bodies.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct NewFloatingIp {
     pub name: String,
     #[serde(default)]
     pub description: Option<String>,
-    pub family: AddressFamily,
+    /// Legacy Phase-0 family selector. Mutually exclusive with
+    /// `network_id` / `pool_id`. `None` only when one of those is set.
+    #[serde(default)]
+    pub family: Option<AddressFamily>,
+    /// External subnet to allocate from. Stamps `FloatingIp::network_id`
+    /// and derives `external_nic_tag`. Mutually exclusive with the
+    /// other two selectors.
+    #[serde(default)]
+    pub network_id: Option<Uuid>,
+    /// Network pool to allocate from (walks its ordered networks).
+    /// Mutually exclusive with the other two selectors.
+    #[serde(default)]
+    pub pool_id: Option<Uuid>,
+}
+
+/// Which address source a [`NewFloatingIp`] selected. The three
+/// selectors are mutually exclusive; [`floating_ip_source`] enforces
+/// that and projects them into this enum. Shared by MemStore and
+/// FdbStore so the reject and dispatch stay byte-identical. `Copy` so
+/// the FdbStore retry closure (an `Fn`) can match it each attempt.
+#[derive(Clone, Copy)]
+pub(crate) enum FloatingIpSource {
+    Family(AddressFamily),
+    Network(Uuid),
+    Pool(Uuid),
+}
+
+/// Validate the mutually-exclusive `family` / `network_id` / `pool_id`
+/// selectors on a [`NewFloatingIp`]. Exactly one must be set; zero or
+/// more than one is a [`StoreError::Conflict`].
+pub(crate) fn floating_ip_source(
+    req: &NewFloatingIp,
+) -> Result<FloatingIpSource, crate::StoreError> {
+    let set = usize::from(req.family.is_some())
+        + usize::from(req.network_id.is_some())
+        + usize::from(req.pool_id.is_some());
+    match set {
+        1 => {
+            if let Some(family) = req.family {
+                Ok(FloatingIpSource::Family(family))
+            } else if let Some(network_id) = req.network_id {
+                Ok(FloatingIpSource::Network(network_id))
+            } else {
+                Ok(FloatingIpSource::Pool(req.pool_id.expect("set == 1")))
+            }
+        }
+        0 => Err(crate::StoreError::Conflict(
+            "floating ip request must set exactly one of family / network_id / pool_id".to_string(),
+        )),
+        _ => Err(crate::StoreError::Conflict(
+            "floating ip family / network_id / pool_id are mutually exclusive".to_string(),
+        )),
+    }
+}
+
+/// The address family an External subnet hands out, preferring IPv4
+/// when the subnet carries both blocks. `None` if it carries neither.
+#[must_use]
+pub(crate) fn subnet_family(subnet: &Subnet) -> Option<AddressFamily> {
+    if subnet.ipv4_block.is_some() {
+        Some(AddressFamily::V4)
+    } else if subnet.ipv6_block.is_some() {
+        Some(AddressFamily::V6)
+    } else {
+        None
+    }
 }
 
 /// Cluster-level system keys. Phase 0 ships two: the JWT signing

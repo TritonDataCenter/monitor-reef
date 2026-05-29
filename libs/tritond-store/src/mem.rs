@@ -378,6 +378,114 @@ fn public_ip_holder(kind: &str, id: Uuid) -> String {
     format!("{kind}:{id}")
 }
 
+/// Legacy Phase-0 floating-IP allocation from the hardcoded
+/// FLOATING_IP_V*_POOL. Kept byte-identical to the pre-C-3 path so
+/// `family`-only requests are unchanged. Does NOT record the holder
+/// (the caller does, mirroring the pre-C-3 sequencing).
+fn alloc_legacy_floating_ip(guard: &Inner, family: AddressFamily) -> Result<IpAddr, StoreError> {
+    match family {
+        AddressFamily::V4 => {
+            let allocated = guard.public_ipv4_allocations.keys().copied().collect();
+            crate::types::allocate_ipv4(FLOATING_IP_V4_POOL, &allocated)
+                .map(IpAddr::from)
+                .ok_or_else(|| StoreError::Backend("floating ip v4 pool exhausted".to_string()))
+        }
+        AddressFamily::V6 => {
+            let allocated = guard.public_ipv6_allocations.keys().copied().collect();
+            crate::types::allocate_ipv6(FLOATING_IP_V6_POOL, &allocated)
+                .map(IpAddr::from)
+                .ok_or_else(|| StoreError::Backend("floating ip v6 pool exhausted".to_string()))
+        }
+    }
+}
+
+/// Allocate the lowest-free external address from `subnet` on the
+/// single global public-IP index and record `holder`. Mirrors
+/// `Store::allocate_external_ip` but operates on a held `&mut Inner`
+/// so create_floating_ip can allocate + write the record under one
+/// lock.
+fn alloc_external_in_subnet(
+    guard: &mut Inner,
+    subnet: &Subnet,
+    family: AddressFamily,
+    holder: String,
+) -> Result<IpAddr, StoreError> {
+    match family {
+        AddressFamily::V4 => {
+            let cidr = subnet.ipv4_block.ok_or_else(|| {
+                StoreError::PoolExhausted(format!("external subnet {} has no ipv4_block", subnet.id))
+            })?;
+            let allocated: HashSet<Ipv4Addr> =
+                guard.public_ipv4_allocations.keys().copied().collect();
+            let ip = crate::types::allocate_ipv4_in_range(
+                cidr,
+                subnet.provision_start_ipv4,
+                subnet.provision_end_ipv4,
+                &allocated,
+            )
+            .ok_or_else(|| {
+                StoreError::PoolExhausted(format!(
+                    "external subnet {} ipv4 provision range exhausted",
+                    subnet.id
+                ))
+            })?;
+            guard.public_ipv4_allocations.insert(ip, holder);
+            Ok(IpAddr::V4(ip))
+        }
+        AddressFamily::V6 => {
+            let cidr = subnet.ipv6_block.ok_or_else(|| {
+                StoreError::PoolExhausted(format!("external subnet {} has no ipv6_block", subnet.id))
+            })?;
+            let allocated: HashSet<Ipv6Addr> =
+                guard.public_ipv6_allocations.keys().copied().collect();
+            let ip = crate::types::allocate_ipv6_in_range(
+                cidr,
+                subnet.provision_start_ipv6,
+                subnet.provision_end_ipv6,
+                &allocated,
+            )
+            .ok_or_else(|| {
+                StoreError::PoolExhausted(format!(
+                    "external subnet {} ipv6 provision range exhausted",
+                    subnet.id
+                ))
+            })?;
+            guard.public_ipv6_allocations.insert(ip, holder);
+            Ok(IpAddr::V6(ip))
+        }
+    }
+}
+
+/// Walk a pool's ordered `networks`, allocating from the first that
+/// yields a free external address. Returns the address plus the
+/// landing subnet's id and nic_tag so the FloatingIp can be stamped.
+fn alloc_external_from_pool(
+    guard: &mut Inner,
+    pool_id: Uuid,
+    networks: &[Uuid],
+    holder: String,
+) -> Result<(IpAddr, Option<Uuid>, Option<Uuid>), StoreError> {
+    for subnet_id in networks {
+        let Some(subnet) = guard.subnets_by_id.get(subnet_id).cloned() else {
+            continue;
+        };
+        if subnet.kind != NetworkKind::External {
+            continue;
+        }
+        let Some(family) = crate::types::subnet_family(&subnet) else {
+            continue;
+        };
+        match alloc_external_in_subnet(guard, &subnet, family, holder.clone()) {
+            Ok(addr) => return Ok((addr, Some(subnet.id), subnet.nic_tag)),
+            Err(StoreError::PoolExhausted(_)) => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(StoreError::PoolExhausted(format!(
+        "network pool {pool_id} has no free address"
+    )))
+}
+
 fn realization_rows(
     realizations: &HashMap<(NetworkResourceId, RealizerId), Realization>,
     resource: NetworkResourceId,
@@ -2969,6 +3077,8 @@ impl Store for MemStore {
         req: NewFloatingIp,
     ) -> Result<FloatingIp, StoreError> {
         validate::name("floating_ip", &req.name)?;
+        let source = crate::types::floating_ip_source(&req)?;
+        let fip_id = Uuid::new_v4();
         let mut guard = self.inner.write().await;
         let project = guard
             .projects_by_id
@@ -2984,35 +3094,57 @@ impl Store for MemStore {
                 req.name
             )));
         }
-        let address: IpAddr = match req.family {
-            AddressFamily::V4 => {
-                let allocated = guard.public_ipv4_allocations.keys().copied().collect();
-                crate::types::allocate_ipv4(FLOATING_IP_V4_POOL, &allocated)
-                    .ok_or_else(|| {
-                        StoreError::Backend("floating ip v4 pool exhausted".to_string())
-                    })?
-                    .into()
-            }
-            AddressFamily::V6 => {
-                let allocated = guard.public_ipv6_allocations.keys().copied().collect();
-                crate::types::allocate_ipv6(FLOATING_IP_V6_POOL, &allocated)
-                    .ok_or_else(|| {
-                        StoreError::Backend("floating ip v6 pool exhausted".to_string())
-                    })?
-                    .into()
-            }
-        };
+
+        // Resolve address + provenance per selector. The legacy
+        // `family` path stays byte-for-byte on FLOATING_IP_V*_POOL with
+        // no network/nic_tag provenance; the network/pool paths
+        // allocate from the global external index and stamp the
+        // originating subnet's id + nic_tag (invariant 17).
+        let holder = public_ip_holder("floating_ip", fip_id);
+        let (address, network_id, external_nic_tag): (IpAddr, Option<Uuid>, Option<Uuid>) =
+            match source {
+                crate::types::FloatingIpSource::Family(family) => {
+                    let addr = alloc_legacy_floating_ip(&guard, family)?;
+                    (addr, None, None)
+                }
+                crate::types::FloatingIpSource::Network(subnet_id) => {
+                    let subnet = guard
+                        .subnets_by_id
+                        .get(&subnet_id)
+                        .cloned()
+                        .ok_or(StoreError::NotFound)?;
+                    if subnet.kind != NetworkKind::External {
+                        return Err(StoreError::SubnetNotExternal(subnet_id));
+                    }
+                    let family = crate::types::subnet_family(&subnet).ok_or_else(|| {
+                        StoreError::PoolExhausted(format!(
+                            "external subnet {subnet_id} has no addressable block"
+                        ))
+                    })?;
+                    let addr = alloc_external_in_subnet(&mut guard, &subnet, family, holder.clone())?;
+                    (addr, Some(subnet_id), subnet.nic_tag)
+                }
+                crate::types::FloatingIpSource::Pool(pool_id) => {
+                    let networks = guard
+                        .network_pools_by_id
+                        .get(&pool_id)
+                        .map(|p| p.networks.clone())
+                        .ok_or(StoreError::NotFound)?;
+                    alloc_external_from_pool(&mut guard, pool_id, &networks, holder.clone())?
+                }
+            };
+
         let now = Utc::now();
         let fip = FloatingIp {
-            id: Uuid::new_v4(),
+            id: fip_id,
             tenant_id,
             project_id,
             name: req.name.clone(),
             description: req.description.unwrap_or_default(),
             address,
             attached_to: None,
-            network_id: None,
-            external_nic_tag: None,
+            network_id,
+            external_nic_tag,
             hosted_cn: None,
             created_at: now,
             updated_at: now,
@@ -3020,13 +3152,16 @@ impl Store for MemStore {
         guard
             .floating_ip_id_by_project_name
             .insert(name_key, fip.id);
-        let holder = public_ip_holder("floating_ip", fip.id);
-        match address {
-            IpAddr::V4(v4) => {
-                guard.public_ipv4_allocations.insert(v4, holder);
-            }
-            IpAddr::V6(v6) => {
-                guard.public_ipv6_allocations.insert(v6, holder);
+        // The external paths already recorded the holder while
+        // allocating; only the legacy path still needs to insert it.
+        if network_id.is_none() {
+            match address {
+                IpAddr::V4(v4) => {
+                    guard.public_ipv4_allocations.insert(v4, holder);
+                }
+                IpAddr::V6(v6) => {
+                    guard.public_ipv6_allocations.insert(v6, holder);
+                }
             }
         }
         guard.floating_ips_by_id.insert(fip.id, fip.clone());
@@ -8347,7 +8482,29 @@ mod tests {
         NewFloatingIp {
             name: name.to_string(),
             description: None,
-            family,
+            family: Some(family),
+            network_id: None,
+            pool_id: None,
+        }
+    }
+
+    fn fip_req_network(name: &str, network_id: Uuid) -> NewFloatingIp {
+        NewFloatingIp {
+            name: name.to_string(),
+            description: None,
+            family: None,
+            network_id: Some(network_id),
+            pool_id: None,
+        }
+    }
+
+    fn fip_req_pool(name: &str, pool_id: Uuid) -> NewFloatingIp {
+        NewFloatingIp {
+            name: name.to_string(),
+            description: None,
+            family: None,
+            network_id: None,
+            pool_id: Some(pool_id),
         }
     }
 
@@ -9046,6 +9203,183 @@ mod tests {
             primary.primary_ipv4,
             Some("10.0.1.2".parse::<Ipv4Addr>().unwrap())
         );
+    }
+
+    // ----- C-3: pool-driven FIP allocation + nic_tag placement --------
+
+    #[tokio::test]
+    async fn create_floating_ip_legacy_family_still_works() {
+        // The legacy `family` path is unchanged: draws from
+        // FLOATING_IP_V4_POOL (203.0.113.0/24) and carries no
+        // network/nic_tag provenance.
+        let store = MemStore::new();
+        let (_silo, tenant_id, project_id) = make_silo_and_project(&store).await;
+        let fip = store
+            .create_floating_ip(tenant_id, project_id, fip_req("legacy", AddressFamily::V4))
+            .await
+            .unwrap();
+        assert_eq!(fip.address, "203.0.113.2".parse::<IpAddr>().unwrap());
+        assert_eq!(fip.network_id, None);
+        assert_eq!(fip.external_nic_tag, None);
+    }
+
+    #[tokio::test]
+    async fn create_floating_ip_from_network_stamps_provenance() {
+        let store = MemStore::new();
+        let (_silo, tenant_id, project_id) = make_silo_and_project(&store).await;
+        let tag = store.create_nic_tag(nic_tag_req("external")).await.unwrap();
+        let subnet = store
+            .create_external_subnet(ext_subnet_req(
+                "pub",
+                tag.id,
+                "192.0.2.0/24",
+                Some(("192.0.2.10", "192.0.2.12")),
+            ))
+            .await
+            .unwrap();
+        let fip = store
+            .create_floating_ip(tenant_id, project_id, fip_req_network("net", subnet.id))
+            .await
+            .unwrap();
+        // Lowest free in the provision window.
+        assert_eq!(fip.address, "192.0.2.10".parse::<IpAddr>().unwrap());
+        assert_eq!(fip.network_id, Some(subnet.id));
+        assert_eq!(fip.external_nic_tag, Some(tag.id));
+    }
+
+    #[tokio::test]
+    async fn create_floating_ip_from_network_rejects_internal_subnet() {
+        let store = MemStore::new();
+        let (tenant_id, project_id, _img, subnet_id, _ssh) = make_instance_fixture(&store).await;
+        let err = store
+            .create_floating_ip(tenant_id, project_id, fip_req_network("net", subnet_id))
+            .await
+            .expect_err("internal subnet is not an external FIP source");
+        assert!(matches!(err, StoreError::SubnetNotExternal(id) if id == subnet_id));
+    }
+
+    #[tokio::test]
+    async fn create_floating_ip_from_pool_stamps_landing_subnet() {
+        let store = MemStore::new();
+        let (_silo, tenant_id, project_id) = make_silo_and_project(&store).await;
+        let tag = store.create_nic_tag(nic_tag_req("external")).await.unwrap();
+        // First subnet holds a single address; the second is the
+        // fallthrough the pool walk lands on for the 2nd allocation.
+        let first = store
+            .create_external_subnet(ext_subnet_req(
+                "first",
+                tag.id,
+                "192.0.2.0/24",
+                Some(("192.0.2.10", "192.0.2.10")),
+            ))
+            .await
+            .unwrap();
+        let second_tag = store.create_nic_tag(nic_tag_req("external2")).await.unwrap();
+        let second = store
+            .create_external_subnet(ext_subnet_req(
+                "second",
+                second_tag.id,
+                "198.51.100.0/24",
+                Some(("198.51.100.20", "198.51.100.21")),
+            ))
+            .await
+            .unwrap();
+        let pool = store
+            .create_network_pool(NewNetworkPool {
+                name: "pool".to_string(),
+                description: None,
+                networks: vec![first.id, second.id],
+                owner_silos: Vec::new(),
+            })
+            .await
+            .unwrap();
+
+        // First lands in `first` and stamps its nic_tag.
+        let a = store
+            .create_floating_ip(tenant_id, project_id, fip_req_pool("a", pool.id))
+            .await
+            .unwrap();
+        assert_eq!(a.address, "192.0.2.10".parse::<IpAddr>().unwrap());
+        assert_eq!(a.network_id, Some(first.id));
+        assert_eq!(a.external_nic_tag, Some(tag.id));
+
+        // Second falls through to `second` and stamps ITS nic_tag.
+        let b = store
+            .create_floating_ip(tenant_id, project_id, fip_req_pool("b", pool.id))
+            .await
+            .unwrap();
+        assert_eq!(b.address, "198.51.100.20".parse::<IpAddr>().unwrap());
+        assert_eq!(b.network_id, Some(second.id));
+        assert_eq!(b.external_nic_tag, Some(second_tag.id));
+    }
+
+    #[tokio::test]
+    async fn create_floating_ip_selectors_mutually_exclusive() {
+        let store = MemStore::new();
+        let (_silo, tenant_id, project_id) = make_silo_and_project(&store).await;
+        // family + network_id both set.
+        let both = NewFloatingIp {
+            name: "x".to_string(),
+            description: None,
+            family: Some(AddressFamily::V4),
+            network_id: Some(Uuid::new_v4()),
+            pool_id: None,
+        };
+        let err = store
+            .create_floating_ip(tenant_id, project_id, both)
+            .await
+            .expect_err("more than one selector must conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+
+        // None set.
+        let none = NewFloatingIp {
+            name: "y".to_string(),
+            description: None,
+            family: None,
+            network_id: None,
+            pool_id: None,
+        };
+        let err = store
+            .create_floating_ip(tenant_id, project_id, none)
+            .await
+            .expect_err("zero selectors must conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn delete_floating_ip_from_network_releases_external_ip() {
+        // Deleting a network-allocated FIP frees its address on the
+        // shared global index for re-allocation.
+        let store = MemStore::new();
+        let (_silo, tenant_id, project_id) = make_silo_and_project(&store).await;
+        let tag = store.create_nic_tag(nic_tag_req("external")).await.unwrap();
+        let subnet = store
+            .create_external_subnet(ext_subnet_req(
+                "pub",
+                tag.id,
+                "192.0.2.0/24",
+                Some(("192.0.2.10", "192.0.2.10")),
+            ))
+            .await
+            .unwrap();
+        let fip = store
+            .create_floating_ip(tenant_id, project_id, fip_req_network("net", subnet.id))
+            .await
+            .unwrap();
+        assert_eq!(fip.address, "192.0.2.10".parse::<IpAddr>().unwrap());
+        // Window is full now.
+        let err = store
+            .create_floating_ip(tenant_id, project_id, fip_req_network("net2", subnet.id))
+            .await
+            .expect_err("single-address window exhausted");
+        assert!(matches!(err, StoreError::PoolExhausted(_)));
+        // Delete releases the address; a re-allocation reuses it.
+        store.delete_floating_ip(fip.id).await.unwrap();
+        let reuse = store
+            .create_floating_ip(tenant_id, project_id, fip_req_network("net3", subnet.id))
+            .await
+            .unwrap();
+        assert_eq!(reuse.address, "192.0.2.10".parse::<IpAddr>().unwrap());
     }
 
     #[tokio::test]
