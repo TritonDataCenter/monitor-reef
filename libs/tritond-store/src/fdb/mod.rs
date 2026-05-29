@@ -4321,10 +4321,13 @@ impl Store for FdbStore {
 
                     // Cascade: discover NIC ids via the in-instance
                     // index, then read each NIC record to free its
-                    // IP allocations.
+                    // IP allocations. `WantAll`: an instance with more
+                    // NICs than one batch must still drain fully or we
+                    // leak NIC records + IP allocations on delete.
                     let opt = RangeOption {
                         begin: KeySelector::first_greater_or_equal(nic_begin),
                         end: KeySelector::first_greater_or_equal(nic_end),
+                        mode: StreamingMode::WantAll,
                         ..RangeOption::default()
                     };
                     let kvs = tr.get_range(&opt, 1, false).await?;
@@ -4378,10 +4381,13 @@ impl Store for FdbStore {
                     }
 
                     // Cascade disks: discover, then clear each
-                    // disk record + its membership entry.
+                    // disk record + its membership entry. `WantAll`:
+                    // drain every disk or a VM with many disks leaks
+                    // disk records beyond the first batch.
                     let disk_opt = RangeOption {
                         begin: KeySelector::first_greater_or_equal(disk_begin),
                         end: KeySelector::first_greater_or_equal(disk_end),
+                        mode: StreamingMode::WantAll,
                         ..RangeOption::default()
                     };
                     let disk_kvs = tr.get_range(&disk_opt, 1, false).await?;

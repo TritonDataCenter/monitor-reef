@@ -790,6 +790,13 @@ mod tests {
             description: String::new(),
             ipv4_block: Some("10.199.199.0/24".to_string()),
             ipv6_block: None,
+            kind: tritond_client::types::NetworkKind::Internal,
+            nic_tag: None,
+            vlan_id: None,
+            provision_start_ipv4: None,
+            provision_end_ipv4: None,
+            provision_start_ipv6: None,
+            provision_end_ipv6: None,
             created_at: now,
         };
         ProvisioningBlueprint {

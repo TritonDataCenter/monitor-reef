@@ -286,7 +286,9 @@ async fn allocate_v4_from_test_net_3_pool() {
         .body(NewFloatingIp {
             name: "public".to_string(),
             description: None,
-            family: AddressFamily::V4,
+            family: Some(AddressFamily::V4),
+            network_id: None,
+            pool_id: None,
         })
         .send()
         .await
@@ -316,7 +318,9 @@ async fn allocate_v6_from_documentation_pool() {
         .body(NewFloatingIp {
             name: "v6".to_string(),
             description: None,
-            family: AddressFamily::V6,
+            family: Some(AddressFamily::V6),
+            network_id: None,
+            pool_id: None,
         })
         .send()
         .await
@@ -378,7 +382,9 @@ async fn attach_replaces_existing_attachment_atomically() {
         .body(NewFloatingIp {
             name: "public".to_string(),
             description: None,
-            family: AddressFamily::V4,
+            family: Some(AddressFamily::V4),
+            network_id: None,
+            pool_id: None,
         })
         .send()
         .await
@@ -452,7 +458,9 @@ async fn delete_while_attached_returns_409() {
         .body(NewFloatingIp {
             name: "public".to_string(),
             description: None,
-            family: AddressFamily::V4,
+            family: Some(AddressFamily::V4),
+            network_id: None,
+            pool_id: None,
         })
         .send()
         .await
@@ -522,7 +530,9 @@ async fn instance_delete_auto_detaches_but_does_not_release() {
         .body(NewFloatingIp {
             name: "public".to_string(),
             description: None,
-            family: AddressFamily::V4,
+            family: Some(AddressFamily::V4),
+            network_id: None,
+            pool_id: None,
         })
         .send()
         .await
@@ -621,7 +631,9 @@ async fn cross_project_attach_target_returns_404() {
         .body(NewFloatingIp {
             name: "public".to_string(),
             description: None,
-            family: AddressFamily::V4,
+            family: Some(AddressFamily::V4),
+            network_id: None,
+            pool_id: None,
         })
         .send()
         .await
@@ -657,7 +669,9 @@ async fn detach_is_idempotent() {
         .body(NewFloatingIp {
             name: "public".to_string(),
             description: None,
-            family: AddressFamily::V4,
+            family: Some(AddressFamily::V4),
+            network_id: None,
+            pool_id: None,
         })
         .send()
         .await

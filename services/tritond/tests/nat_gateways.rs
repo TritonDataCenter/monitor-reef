@@ -339,7 +339,9 @@ async fn nat_gateway_shares_public_pool_with_floating_ips() {
         .body(NewFloatingIp {
             name: "public".to_string(),
             description: None,
-            family: AddressFamily::V4,
+            family: Some(AddressFamily::V4),
+            network_id: None,
+            pool_id: None,
         })
         .send()
         .await

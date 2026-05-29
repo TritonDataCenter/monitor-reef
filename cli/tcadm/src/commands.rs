@@ -4072,7 +4072,9 @@ pub async fn floating_ip_create_v1(
         .body(tritond_client::types::NewFloatingIp {
             name,
             description: Some(description),
-            family,
+            family: Some(family),
+            network_id: None,
+            pool_id: None,
         })
         .send()
         .await
