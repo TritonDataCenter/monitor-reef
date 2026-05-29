@@ -90,7 +90,7 @@ pub(crate) async fn list_storage_cluster_access_keys(
         Action::StorageAccessKeyList,
     )
     .await?;
-    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
     let keys = client
@@ -117,7 +117,7 @@ pub(crate) async fn create_storage_cluster_access_key(
         Action::StorageAccessKeyCreate,
     )
     .await?;
-    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
     let payload = serde_json::json!({ "user": p.user });
@@ -178,7 +178,7 @@ pub(crate) async fn delete_storage_cluster_access_key(
         Action::StorageAccessKeyDelete,
     )
     .await?;
-    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;

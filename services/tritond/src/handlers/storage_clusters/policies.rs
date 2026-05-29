@@ -90,7 +90,7 @@ pub(crate) async fn list_storage_cluster_user_policies(
         Action::StorageUserPolicyList,
     )
     .await?;
-    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
     let policies = client
@@ -113,7 +113,7 @@ pub(crate) async fn get_storage_cluster_user_policy(
         Action::StorageUserPolicyGet,
     )
     .await?;
-    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
     let doc = client
@@ -137,7 +137,7 @@ pub(crate) async fn put_storage_cluster_user_policy(
         Action::StorageUserPolicyPut,
     )
     .await?;
-    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
     let doc = body.into_inner();
@@ -192,7 +192,7 @@ pub(crate) async fn delete_storage_cluster_user_policy(
         Action::StorageUserPolicyDelete,
     )
     .await?;
-    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;

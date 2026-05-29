@@ -165,7 +165,7 @@ pub(crate) async fn presign_storage_cluster_object_put(
         Action::StorageObjectPresignPut,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let _scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let id = path.into_inner().id;
     let req = body.into_inner();
@@ -214,7 +214,7 @@ pub(crate) async fn presign_storage_cluster_object_get(
         Action::StorageObjectPresignGet,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let _scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let id = path.into_inner().id;
     let req = body.into_inner();
     let resp = crate::storage::mint_presigned_url(

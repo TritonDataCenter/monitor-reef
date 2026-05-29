@@ -68,13 +68,12 @@ pub(crate) enum WorkspaceScope {
         /// Wire-name on mantad: `t-{tenant_uuid_simple}`.
         workspace_name: String,
     },
-    /// Caller is a root operator. No workspace scoping; cross-
-    /// tenant visibility is allowed (audit, inventory, support).
-    /// Today this is permitted unconditionally for any root
-    /// operator; a follow-up will tighten it to an explicit
-    /// [`crate::auth::Action::WorkspaceListAcrossTenants`]
-    /// Cedar check so non-root operators can be granted the
-    /// capability without becoming root.
+    /// Caller is permitted cross-tenant visibility (fleet audit,
+    /// inventory, support tooling). Granted via the
+    /// [`crate::auth::Action::WorkspaceListAcrossTenants`] Cedar
+    /// action — root principals match by the catch-all root rule,
+    /// and a non-root operator can be granted the capability
+    /// without becoming root.
     Unscoped,
 }
 
@@ -92,28 +91,46 @@ impl WorkspaceScope {
 /// Resolve the workspace scope a forwarder call should run
 /// against, given the authenticated principal.
 ///
-/// * Root operator → [`WorkspaceScope::Unscoped`].
-/// * Tenant-bound principal whose tenant has
-///   `storage_workspace_id = Some` → [`WorkspaceScope::Bound`].
-/// * Tenant-bound principal whose tenant has
-///   `storage_workspace_id = None` → 412 with an init-storage
-///   hint. The operator must register a default S3 cluster
-///   (`tcadm config set storage.default_s3_cluster_id`) and
-///   either recreate the tenant or run the retrofit flow
-///   (follow-up `tcadm tenant init-storage`).
-/// * Operator without a tenant binding and not root → 403.
-///   Such a principal has no claim on any tenant's namespace.
+/// Scope resolution order:
+///
+/// 1. **Anonymous principal** → 412. No workspace can be
+///    resolved without an identity.
+/// 2. **Principal permitted [`crate::auth::Action::WorkspaceListAcrossTenants`]**
+///    → [`WorkspaceScope::Unscoped`]. Root operators match by
+///    the catch-all root permit rule; non-root principals can
+///    be granted the capability explicitly. This branch fires
+///    before the tenant-binding check so a fleet operator who
+///    *also* happens to be tenant-bound still sees cross-tenant.
+/// 3. **Tenant-bound principal with `storage_workspace_id = Some`**
+///    → [`WorkspaceScope::Bound`].
+/// 4. **Tenant-bound principal with `storage_workspace_id = None`**
+///    → 412 `TenantStorageUnbound` with the init-storage hint.
+/// 5. **Operator without a tenant binding and without the
+///    cross-tenant capability** → 403.
 pub async fn resolve_workspace_scope(
+    auth: &crate::auth::AuthService,
     store: &Arc<dyn Store>,
     principal: &Principal,
 ) -> Result<WorkspaceScope, HttpError> {
-    match principal {
-        Principal::Anonymous => Err(HttpError::for_client_error(
+    if matches!(principal, Principal::Anonymous) {
+        return Err(HttpError::for_client_error(
             Some("PreconditionFailed".to_string()),
             ClientErrorStatusCode::PRECONDITION_FAILED,
             "anonymous principal cannot resolve a storage workspace".to_string(),
-        )),
-        Principal::Operator { is_root: true, .. } => Ok(WorkspaceScope::Unscoped),
+        ));
+    }
+    // Cross-tenant view: gate on the explicit action so the
+    // capability can be granted to non-root fleet operators
+    // without elevating them to root. Cedar's deny-by-default
+    // means the existing root permit-all rule still satisfies
+    // this for `is_root: true` principals.
+    if auth
+        .authorize(principal, crate::auth::Action::WorkspaceListAcrossTenants)
+        .is_ok()
+    {
+        return Ok(WorkspaceScope::Unscoped);
+    }
+    match principal {
         Principal::Operator {
             tenant_id: Some(tenant_id),
             ..
@@ -142,10 +159,11 @@ pub async fn resolve_workspace_scope(
         } => Err(HttpError::for_client_error(
             Some("Forbidden".to_string()),
             ClientErrorStatusCode::FORBIDDEN,
-            "operator has no tenant binding; storage forwarders require either root permission \
-             or tenant membership"
+            "operator has no tenant binding and lacks the workspace_list_across_tenants \
+             capability; storage forwarders require either fleet permission or tenant membership"
                 .to_string(),
         )),
+        Principal::Anonymous => unreachable!("anonymous handled above"),
     }
 }
 

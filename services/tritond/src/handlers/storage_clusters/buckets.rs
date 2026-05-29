@@ -91,7 +91,7 @@ pub(crate) async fn list_storage_cluster_buckets(
         Action::StorageBucketList,
     )
     .await?;
-    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let id = path.into_inner().id;
     let with_stats = query.into_inner().stats.unwrap_or(false);
     let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
@@ -120,7 +120,7 @@ pub(crate) async fn get_storage_cluster_bucket(
         Action::StorageBucketGet,
     )
     .await?;
-    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
     let b = client
@@ -144,7 +144,7 @@ pub(crate) async fn create_storage_cluster_bucket(
         Action::StorageBucketCreate,
     )
     .await?;
-    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let id = path.into_inner().id;
     let req = body.into_inner();
@@ -204,7 +204,7 @@ pub(crate) async fn delete_storage_cluster_bucket(
         Action::StorageBucketDelete,
     )
     .await?;
-    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
@@ -258,7 +258,7 @@ pub(crate) async fn list_storage_cluster_objects(
         Action::StorageObjectList,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let _scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let p = path.into_inner();
     let q = crate::storage::objects_query_to(query.into_inner());
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
