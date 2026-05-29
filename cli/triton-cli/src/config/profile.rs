@@ -18,6 +18,12 @@ pub struct Profile {
     /// CloudAPI URL
     pub url: String,
 
+    /// Gateway/triton-api-server URL for k8s commands (optional).
+    /// When set, k8s subcommands use this URL instead of `url`.
+    /// Useful in dev setups where the gateway is separate from CloudAPI.
+    #[serde(rename = "gatewayUrl", skip_serializing_if = "Option::is_none")]
+    pub gateway_url: Option<String>,
+
     /// Account login name
     pub account: String,
 
@@ -48,6 +54,7 @@ impl Profile {
         Self {
             name,
             url,
+            gateway_url: None,
             account,
             key_id,
             insecure: false,

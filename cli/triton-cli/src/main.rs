@@ -669,11 +669,30 @@ async fn try_main() -> Result<()> {
         }
         Commands::K8s { command } => {
             let (client, profile) = cli.build_client().await?;
-            if let commands::k8s::K8sCommand::RelayBridge(args) = command.clone() {
-                let (base_url, _) = cli.resolve_url_and_insecure(&profile);
-                commands::k8s::relay_bridge::run(args, &client, &base_url).await
+            let (base_url, _) = cli.resolve_url_and_insecure(&profile);
+            // When no explicit --url / TRITON_URL override is in effect,
+            // prefer profile.gateway_url for all k8s commands.
+            let k8s_url = if cli.url.is_none()
+                && std::env::var("TRITON_URL").is_err()
+                && std::env::var("SDC_URL").is_err()
+            {
+                profile
+                    .gateway_url
+                    .as_deref()
+                    .unwrap_or(&base_url)
+                    .to_string()
             } else {
-                command.clone().run(&client, cli.json).await
+                base_url.clone()
+            };
+            let k8s_client = if k8s_url != base_url {
+                client.with_base_url(&k8s_url)
+            } else {
+                client
+            };
+            if let commands::k8s::K8sCommand::RelayBridge(args) = command.clone() {
+                commands::k8s::relay_bridge::run(args, &k8s_client, &k8s_url).await
+            } else {
+                command.clone().run(&k8s_client, cli.json).await
             }
         }
         Commands::Info => {

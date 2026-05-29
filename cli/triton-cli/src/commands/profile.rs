@@ -419,6 +419,7 @@ async fn create_profile(
     let profile = Profile {
         name: name.clone(),
         url,
+        gateway_url: None,
         account,
         key_id,
         insecure,

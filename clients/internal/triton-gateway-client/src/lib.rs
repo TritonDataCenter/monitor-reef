@@ -279,6 +279,12 @@ impl TypedClient {
             GatewayAuthMethod::Bearer { .. } => None,
         }
     }
+
+    /// Return a copy of this client pointed at a different base URL,
+    /// reusing the same auth config and HTTP client.
+    pub fn with_base_url(&self, base_url: &str) -> Self {
+        Self::new_with_http_client(base_url, self.auth_config.clone(), self.http_client.clone())
+    }
 }
 
 // =============================================================================

@@ -1494,6 +1494,7 @@ async fn create_user_profile(
     let profile = Profile {
         name: profile_name.clone(),
         url: base_profile.url.clone(),
+        gateway_url: base_profile.gateway_url.clone(),
         account: base_profile.account.clone(),
         key_id: key_fingerprint.to_string(),
         insecure: base_profile.insecure,
