@@ -136,9 +136,12 @@ impl LifecycleOp {
 
     /// Concrete `JobKind` for the agent. The dispatcher matches
     /// on this kind to know whether to power on, off, or cycle.
+    /// Start emits `JobKind::Start` (`vmadm start`), not `Provision`
+    /// (`vmadm create`): the zone already exists, so re-creating it
+    /// would fail with "VM already exists".
     pub fn job_kind(self, instance_id: Uuid) -> JobKind {
         match self {
-            LifecycleOp::Start => JobKind::Provision { instance_id },
+            LifecycleOp::Start => JobKind::Start { instance_id },
             LifecycleOp::Stop => JobKind::Stop { instance_id },
             LifecycleOp::Restart => JobKind::Restart { instance_id },
         }

@@ -476,8 +476,10 @@ pub(crate) fn cn_accepts_tenant_jobs(cn: &Cn) -> bool {
 }
 
 /// Drive the instance lifecycle forward in response to an agent
-/// claiming a job. For Provision: Pending → Provisioning. Stop /
-/// Restart already entered Stopping in the operator-facing
+/// claiming a job. For Provision: Pending → Provisioning. Start
+/// stays Pending (there is no Provisioning step when booting an
+/// existing zone); it advances straight to Running on complete.
+/// Stop / Restart already entered Stopping in the operator-facing
 /// `instance_*` handler before the job was enqueued, so claim
 /// has nothing to advance. CAS failures are logged but do not
 /// propagate — the job is already in InProgress regardless.
@@ -506,6 +508,7 @@ pub(crate) async fn drive_lifecycle_for_claim(store: &dyn Store, job: &Provision
 /// | JobKind / Outcome      | Lifecycle target                 |
 /// |------------------------|----------------------------------|
 /// | Provision / Completed  | Provisioning → Running           |
+/// | Start / Completed      | Pending → Running                |
 /// | Stop / Completed       | Stopping → Stopped               |
 /// | Restart / Completed    | Stopping → Running               |
 /// | (any) / Failed{reason} | (current) → Failed{reason}       |
@@ -531,6 +534,12 @@ pub(crate) async fn drive_lifecycle_for_complete(
         match (&job.kind, outcome) {
             (JobKind::Provision { .. }, JobOutcome::Completed) => {
                 (&[LifecycleStateKind::Provisioning], LifecycleState::Running)
+            }
+            // Start powers on an existing zone; it never enters
+            // Provisioning (claim leaves it Pending), so it lands
+            // Running directly from Pending.
+            (JobKind::Start { .. }, JobOutcome::Completed) => {
+                (&[LifecycleStateKind::Pending], LifecycleState::Running)
             }
             (JobKind::Stop { .. }, JobOutcome::Completed) => {
                 (&[LifecycleStateKind::Stopping], LifecycleState::Stopped)

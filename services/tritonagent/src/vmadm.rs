@@ -209,6 +209,17 @@ async fn run_create_payload(
     Ok(want)
 }
 
+/// Run `vmadm start <uuid>`. Used for `JobKind::Start` jobs.
+///
+/// Boots an already-provisioned zone that is stopped. The zone and
+/// its Proteus ports persist across a power cycle, so this is a
+/// power-on only — no zone or port re-create (contrast
+/// `create_zone`, which `JobKind::Provision` uses for first-time
+/// create).
+pub async fn start_zone(instance_id: Uuid) -> Result<()> {
+    run_simple(&["start", &instance_id.to_string()]).await
+}
+
 /// Run `vmadm stop <uuid>`. Used for `JobKind::Stop` jobs.
 pub async fn stop_zone(instance_id: Uuid) -> Result<()> {
     run_simple(&["stop", &instance_id.to_string()]).await

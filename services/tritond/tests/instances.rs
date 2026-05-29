@@ -383,8 +383,8 @@ async fn instance_lifecycle_start_stop_restart() {
         .expect_err("stop a stopped instance must 409");
     assert_status(err, 409);
 
-    // Stopped → Pending → Running (start enqueues a Provision; agent
-    // drives Pending → Provisioning → Running).
+    // Stopped → Pending → Running (start enqueues a Start job —
+    // `vmadm start`, not a re-create; agent drives Pending → Running).
     let start_response = root
         .start_instance_v1()
         .instance_id(inst.id)

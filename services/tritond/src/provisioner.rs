@@ -98,6 +98,7 @@ async fn process(job: &ProvisioningJob, store: &Arc<dyn Store>) -> JobOutcome {
     debug!(%job_id, kind = ?job.kind, "stub-provisioner claimed job");
     let result = match &job.kind {
         JobKind::Provision { instance_id } => provision(*instance_id, store).await,
+        JobKind::Start { instance_id } => start(*instance_id, store).await,
         JobKind::Stop { instance_id } => stop(*instance_id, store).await,
         JobKind::Restart { instance_id } => restart(*instance_id, store).await,
         // The stub has no SmartOS to talk to, so a Delete job is
@@ -129,9 +130,8 @@ async fn process(job: &ProvisioningJob, store: &Arc<dyn Store>) -> JobOutcome {
     }
 }
 
-/// Drive Pending → Provisioning → Running. Used both for first-time
-/// create and for `start` (which transitions Stopped → Pending and
-/// then enqueues a Provision job).
+/// Drive Pending → Provisioning → Running. First-time create only;
+/// powering on an existing stopped instance uses [`start`].
 async fn provision(instance_id: Uuid, store: &Arc<dyn Store>) -> Result<(), String> {
     cas(
         store,
@@ -150,6 +150,21 @@ async fn provision(instance_id: Uuid, store: &Arc<dyn Store>) -> Result<(), Stri
     )
     .await?;
     Ok(())
+}
+
+/// Drive Pending → Running for a `start`. The start handler has
+/// already transitioned Stopped → Pending; booting an existing zone
+/// never enters Provisioning, so the stub mirrors the agent and
+/// lands Running directly.
+async fn start(instance_id: Uuid, store: &Arc<dyn Store>) -> Result<(), String> {
+    cas(
+        store,
+        instance_id,
+        &[LifecycleStateKind::Pending],
+        LifecycleState::Running,
+        "Pending->Running (start)",
+    )
+    .await
 }
 
 /// Drive Stopping → Stopped. Caller (the stop handler) has already

@@ -2268,9 +2268,18 @@ pub struct NewInstanceNic {
 #[non_exhaustive]
 pub enum JobKind {
     /// Drive a Pending instance through Provisioning → Running.
-    /// Used both for first-time create and for `start` (which
-    /// transitions Stopped → Pending and then enqueues a Provision).
+    /// First-time create only: the agent runs `vmadm create`.
+    /// Powering on an already-provisioned (Stopped) instance uses
+    /// [`JobKind::Start`] instead — re-running `vmadm create` on an
+    /// existing zone fails with "VM already exists".
     Provision { instance_id: Uuid },
+    /// Power on an already-provisioned instance that is Stopped:
+    /// the agent runs `vmadm start <uuid>`. The zone and its Proteus
+    /// ports already exist and persist across a power cycle (the same
+    /// reason `Restart` re-realizes nothing), so the agent only boots
+    /// the zone — no zone or port re-create. Drives the lifecycle
+    /// Pending → Running.
+    Start { instance_id: Uuid },
     /// Drive a Running instance through Stopping → Stopped.
     Stop { instance_id: Uuid },
     /// Drive a Running instance through Stopping → Pending →
@@ -2458,6 +2467,7 @@ impl JobKind {
     pub fn instance_id(&self) -> Option<Uuid> {
         match self {
             JobKind::Provision { instance_id }
+            | JobKind::Start { instance_id }
             | JobKind::Stop { instance_id }
             | JobKind::Restart { instance_id }
             | JobKind::Delete { instance_id } => Some(*instance_id),
@@ -2486,6 +2496,7 @@ impl JobKind {
             }
             | JobKind::EdgeReap { edge_instance_id } => Some(*edge_instance_id),
             JobKind::Provision { .. }
+            | JobKind::Start { .. }
             | JobKind::Stop { .. }
             | JobKind::Restart { .. }
             | JobKind::Delete { .. }
@@ -2549,6 +2560,10 @@ mod job_kind_tests {
 
         assert_eq!(
             JobKind::Provision { instance_id }.instance_id(),
+            Some(instance_id)
+        );
+        assert_eq!(
+            JobKind::Start { instance_id }.instance_id(),
             Some(instance_id)
         );
         assert_eq!(JobKind::EdgeReap { edge_instance_id }.instance_id(), None);
