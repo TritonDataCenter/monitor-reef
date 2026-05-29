@@ -32,7 +32,11 @@ set -eu
 
 DATA_VERSION_FILE=/data/version
 EXPECTED_DATA_VERSION=730           # FDB 7.3 on-disk format
-FDB_ETC=/etc/fdb
+# Config (cluster file + public_ip) lives on the delegated dataset so it
+# survives reprovision — the zone root does not. FDB itself rewrites
+# fdb.cluster as coordinators move, so it must persist, not be regenerated.
+# /etc/fdb is symlinked to this below for fdbcli + the /etc/profile env.
+FDB_ETC=/data/etc/fdb
 FDB_DATA=/data/state/fdb/data
 FDB_LOG=/data/state/fdb/log
 FDB_BIN=/opt/fdb/bin
@@ -66,6 +70,14 @@ else
 fi
 
 mkdir -p "$FDB_ETC" "$FDB_DATA" "$FDB_LOG"
+
+# Expose the on-dataset config at the conventional /etc/fdb (a symlink) so
+# `fdbcli` and the /etc/profile env (FDB_CLUSTER_FILE=/etc/fdb/fdb.cluster)
+# resolve to the persisted, reprovision-safe location.
+if [ ! -L /etc/fdb ]; then
+    rm -rf /etc/fdb 2>/dev/null || true
+    ln -s "$FDB_ETC" /etc/fdb
+fi
 
 NEEDS_BOOTSTRAP=0
 if [ ! -f "$DATA_VERSION_FILE" ]; then
