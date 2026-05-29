@@ -2297,6 +2297,38 @@ pub enum JobKind {
     /// blueprint-affecting mutation on a running VM (FIP attach/detach,
     /// firewall, routes).
     ApplyPortBlueprint { instance_id: Uuid, nic_id: Uuid },
+    /// Realize a CN-terminated 1:1 NAT floating IP on the hosting CN.
+    /// Enqueued by the attach saga, pinned to `hosted_cn`. The agent
+    /// applies the recomputed port blueprint (which lands the SetSrc /
+    /// SetDst rules + the `hosted_fips` delta), ensures the external
+    /// link, adds the `<fip>/32` ipadm alias, and fires a gratuitous
+    /// ARP burst. `instance_id` pins the job to the VM the FIP attaches
+    /// to so the per-VM job view surfaces it; `nic_id` is the OPTE port
+    /// to recompute; `generation` is the bumped port generation the
+    /// blueprint carries so a stale re-apply is fenced.
+    FipClaim {
+        floating_ip_id: Uuid,
+        nic_id: Uuid,
+        instance_id: Uuid,
+        fip_addr: String,
+        external_nic_tag: Option<String>,
+        generation: u64,
+    },
+    /// Withdraw a CN-terminated floating IP from a CN. Enqueued by the
+    /// attach saga's undo, the detach saga, the FIP-delete-while-hosted
+    /// path, and the instance-delete cascade — always pinned to the CN
+    /// that was hosting the termination. The agent invalidates the
+    /// `hosted_fips` entry, removes the ipadm alias, and (for a
+    /// surviving port) re-applies the withdrawn blueprint. Carries no
+    /// `instance_id`: by release time the attachment / instance may
+    /// already be gone, so `target_id()` falls back to
+    /// `floating_ip_id`.
+    FipRelease {
+        floating_ip_id: Uuid,
+        fip_addr: String,
+        external_nic_tag: Option<String>,
+        hosted_cn: Uuid,
+    },
     /// Apply or update a firehyve/fhrun edge instance on the
     /// target CN. The manifest is JSON bytes rendered by tritond
     /// from the EdgeCluster's desired state; the agent persists it
@@ -2430,13 +2462,18 @@ impl JobKind {
             | JobKind::Restart { instance_id }
             | JobKind::Delete { instance_id } => Some(*instance_id),
             JobKind::ApplyPortBlueprint { instance_id, .. }
+            | JobKind::FipClaim { instance_id, .. }
             | JobKind::MigrateZfsSend { instance_id, .. }
             | JobKind::MigrateVmmStream { instance_id, .. }
             | JobKind::ProteusActivate { instance_id, .. }
             | JobKind::ProteusDeactivate { instance_id, .. }
             | JobKind::MigrationCleanupTarget { instance_id, .. }
             | JobKind::MigrationCleanupSource { instance_id, .. } => Some(*instance_id),
-            JobKind::EdgeApply { .. } | JobKind::EdgeReap { .. } => None,
+            // FipRelease carries no instance_id (the attachment may be
+            // gone by release time); see `target_id` for its fallback.
+            JobKind::FipRelease { .. }
+            | JobKind::EdgeApply { .. }
+            | JobKind::EdgeReap { .. } => None,
         }
     }
 
@@ -2453,6 +2490,8 @@ impl JobKind {
             | JobKind::Restart { .. }
             | JobKind::Delete { .. }
             | JobKind::ApplyPortBlueprint { .. }
+            | JobKind::FipClaim { .. }
+            | JobKind::FipRelease { .. }
             | JobKind::MigrateZfsSend { .. }
             | JobKind::MigrateVmmStream { .. }
             | JobKind::ProteusActivate { .. }
@@ -2480,12 +2519,22 @@ impl JobKind {
         }
     }
 
-    /// Stable target id used for logs and queue diagnostics.
+    /// Stable target id used for logs and queue diagnostics. Total
+    /// over every variant: instance jobs surface their `instance_id`,
+    /// edge jobs their `edge_instance_id`, and `FipRelease` (which
+    /// carries neither, because its attachment may be gone) falls back
+    /// to its `floating_ip_id`. The historical `.expect(...)` panicked
+    /// for any variant with no instance/edge id, so this fallback keeps
+    /// `target_id` from ever aborting the process.
     #[must_use]
     pub fn target_id(&self) -> Uuid {
         self.instance_id()
             .or_else(|| self.edge_instance_id())
-            .expect("every JobKind variant carries a target uuid")
+            .or_else(|| match self {
+                JobKind::FipRelease { floating_ip_id, .. } => Some(*floating_ip_id),
+                _ => None,
+            })
+            .unwrap_or_else(Uuid::nil)
     }
 }
 
@@ -2624,6 +2673,56 @@ mod job_kind_tests {
             serde_json::Value::String(edge_instance_id.to_string())
         );
 
+        let decoded: JobKind = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded, kind);
+    }
+
+    #[test]
+    fn fip_claim_carries_instance_and_round_trips() {
+        let floating_ip_id = Uuid::new_v4();
+        let nic_id = Uuid::new_v4();
+        let instance_id = Uuid::new_v4();
+        let kind = JobKind::FipClaim {
+            floating_ip_id,
+            nic_id,
+            instance_id,
+            fip_addr: "192.0.2.10".to_string(),
+            external_nic_tag: Some("external".to_string()),
+            generation: 4,
+        };
+        assert_eq!(kind.instance_id(), Some(instance_id));
+        assert_eq!(kind.edge_instance_id(), None);
+        assert_eq!(kind.migration_id(), None);
+        // FipClaim resolves its target to the pinned instance.
+        assert_eq!(kind.target_id(), instance_id);
+
+        let json = serde_json::to_value(&kind).unwrap();
+        assert_eq!(json["kind"].as_str(), Some("fip_claim"));
+        let decoded: JobKind = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded, kind);
+    }
+
+    #[test]
+    fn fip_release_target_id_does_not_panic() {
+        // FipRelease carries no instance/edge id; `target_id` must
+        // fall back to the floating_ip_id rather than panic on the
+        // historical `.expect(...)`.
+        let floating_ip_id = Uuid::new_v4();
+        let hosted_cn = Uuid::new_v4();
+        let kind = JobKind::FipRelease {
+            floating_ip_id,
+            fip_addr: "192.0.2.10".to_string(),
+            external_nic_tag: None,
+            hosted_cn,
+        };
+        assert_eq!(kind.instance_id(), None);
+        assert_eq!(kind.edge_instance_id(), None);
+        assert_eq!(kind.migration_id(), None);
+        // The load-bearing assertion: total, no panic.
+        assert_eq!(kind.target_id(), floating_ip_id);
+
+        let json = serde_json::to_value(&kind).unwrap();
+        assert_eq!(json["kind"].as_str(), Some("fip_release"));
         let decoded: JobKind = serde_json::from_value(json).unwrap();
         assert_eq!(decoded, kind);
     }

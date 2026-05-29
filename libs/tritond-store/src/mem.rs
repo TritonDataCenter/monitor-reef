@@ -3279,6 +3279,66 @@ impl Store for MemStore {
         Ok(fip.clone())
     }
 
+    async fn attach_floating_ip_cas(
+        &self,
+        fip_id: Uuid,
+        target_nic_id: Uuid,
+        expected_hosted_cn: Option<Uuid>,
+    ) -> Result<FloatingIp, StoreError> {
+        let mut guard = self.inner.write().await;
+        // Per-FIP serialization: refuse the claim unless the current
+        // hosted_cn matches the caller's expected precondition. A
+        // cross-CN move must detach (→ None) before the new CN's claim
+        // (which expects None) can win; two concurrent claims for
+        // different CNs cannot both match.
+        let (fip_tenant, fip_project) = {
+            let fip = guard
+                .floating_ips_by_id
+                .get(&fip_id)
+                .ok_or(StoreError::NotFound)?;
+            if fip.hosted_cn != expected_hosted_cn {
+                return Err(StoreError::Conflict(format!(
+                    "floating ip {fip_id} hosted_cn changed under the attach \
+                     (expected {expected_hosted_cn:?}, found {:?}); \
+                     release-before-claim ordering violated",
+                    fip.hosted_cn
+                )));
+            }
+            (fip.tenant_id, fip.project_id)
+        };
+        let nic = guard
+            .nics_by_id
+            .get(&target_nic_id)
+            .ok_or(StoreError::NotFound)?;
+        if nic.tenant_id != fip_tenant || nic.project_id != fip_project {
+            return Err(StoreError::NotFound);
+        }
+        let nic_instance_id = nic.instance_id;
+        let host_cn_uuid = guard
+            .instances_by_id
+            .get(&nic_instance_id)
+            .ok_or(StoreError::NotFound)?
+            .host_cn_uuid
+            .ok_or_else(|| {
+                StoreError::Conflict(format!(
+                    "instance {nic_instance_id} has no host CN yet; cannot attach floating ip"
+                ))
+            })?;
+        let new_attachment = FloatingIpAttachment {
+            instance_id: nic_instance_id,
+            nic_id: target_nic_id,
+            attached_at: Utc::now(),
+        };
+        let fip = guard
+            .floating_ips_by_id
+            .get_mut(&fip_id)
+            .ok_or(StoreError::NotFound)?;
+        fip.attached_to = Some(new_attachment);
+        fip.hosted_cn = Some(host_cn_uuid);
+        fip.updated_at = Utc::now();
+        Ok(fip.clone())
+    }
+
     async fn detach_floating_ip(&self, fip_id: Uuid) -> Result<FloatingIp, StoreError> {
         let mut guard = self.inner.write().await;
         let fip = guard
@@ -9857,6 +9917,92 @@ mod tests {
         // Detach clears hosted_cn.
         let detached = store.detach_floating_ip(fip.id).await.unwrap();
         assert!(detached.hosted_cn.is_none(), "detach clears hosted_cn");
+    }
+
+    #[tokio::test]
+    async fn attach_floating_ip_cas_enforces_release_before_claim() {
+        // The per-FIP CAS (C-4a invariant 6) is the store-side
+        // serialization of the `hosted_cn` transition. A fresh claim
+        // passes `expected = None`; a cross-CN move must detach
+        // (-> None) before the new CN's claim can win.
+        let store = MemStore::new();
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+
+        // Two instances, each on its own CN.
+        let InstanceCreateResult {
+            instance: inst_a,
+            nics: nics_a,
+            ..
+        } = store
+            .create_instance(
+                tenant_id,
+                project_id,
+                instance_req("a", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        let InstanceCreateResult {
+            instance: inst_b,
+            nics: nics_b,
+            ..
+        } = store
+            .create_instance(
+                tenant_id,
+                project_id,
+                instance_req("b", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        let cn_a = Uuid::new_v4();
+        let cn_b = Uuid::new_v4();
+        store
+            .set_instance_host_cn(inst_a.id, Some(cn_a))
+            .await
+            .unwrap();
+        store
+            .set_instance_host_cn(inst_b.id, Some(cn_b))
+            .await
+            .unwrap();
+
+        let fip = store
+            .create_floating_ip(tenant_id, project_id, fip_req("p", AddressFamily::V4))
+            .await
+            .unwrap();
+
+        // Fresh claim onto CN A: precondition None matches, succeeds.
+        let attached = store
+            .attach_floating_ip_cas(fip.id, nics_a[0].id, None)
+            .await
+            .unwrap();
+        assert_eq!(attached.hosted_cn, Some(cn_a));
+
+        // A claim onto CN B that skips the detach (still expects None)
+        // must lose: the FIP is hosted on CN A, not None.
+        let err = store
+            .attach_floating_ip_cas(fip.id, nics_b[0].id, None)
+            .await
+            .expect_err("claim-without-release must conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+        // The losing claim must not have moved the binding.
+        let still = store.get_floating_ip(fip.id).await.unwrap();
+        assert_eq!(still.hosted_cn, Some(cn_a));
+
+        // Release-before-claim: detach drives hosted_cn back to None,
+        // then the CN B claim (expecting None) wins.
+        store.detach_floating_ip(fip.id).await.unwrap();
+        let moved = store
+            .attach_floating_ip_cas(fip.id, nics_b[0].id, None)
+            .await
+            .unwrap();
+        assert_eq!(moved.hosted_cn, Some(cn_b));
+
+        // A stale precondition (expecting the OLD CN A) also loses.
+        let err = store
+            .attach_floating_ip_cas(fip.id, nics_a[0].id, Some(cn_a))
+            .await
+            .expect_err("stale precondition must conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
     }
 
     #[tokio::test]

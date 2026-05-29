@@ -369,6 +369,50 @@ pub(crate) async fn build_port_blueprint(
         .get_port_generation(port_id)
         .await
         .map_err(store_error_to_http)?;
+
+    // CN-terminated FIP dataplane wiring (C-4a). For each FIP attached
+    // to THIS port, resolve its external nic_tag to a link name and
+    // thread it into the intent so the proteus compiler turns on the
+    // external-NIC leg. A port that hosts at least one such FIP also
+    // gets a synthesized `0.0.0.0/0 -> External` default route so the
+    // overlay's destination-based external branch (P-3) has an egress
+    // target; the router treats `External` as a non-drop catch-all so
+    // every in-VPC subnet permit still wins (P-2). FIPs not attached to
+    // this port keep `external_nic_tag = None` (a pure NAT rewrite).
+    let mut floating_ip_intents = Vec::with_capacity(floating_ips.len());
+    let mut external_attachment_id: Option<Uuid> = None;
+    for fip in &floating_ips {
+        let attached_here = fip
+            .attached_to
+            .as_ref()
+            .is_some_and(|a| a.nic_id == port_id);
+        let external_nic_tag = if attached_here {
+            let name = resolve_external_nic_tag_name(store, fip).await;
+            if name.is_some() {
+                // The attachment id correlates the route back to the
+                // control-plane FIP; reuse the FIP id (the store has no
+                // separate attachment id, and the proteus binding keys
+                // on the FIP id too).
+                external_attachment_id.get_or_insert(fip.id);
+            }
+            name
+        } else {
+            None
+        };
+        floating_ip_intents.push(floating_ip_intent(fip, external_nic_tag));
+    }
+
+    let mut routes = build_routes_with_imds_and_local_subnet(
+        &routes,
+        subnet.route_table_id,
+        imds_enabled,
+        subnet.ipv4_block.map(|c| c.to_string()),
+        !peers.is_empty(),
+    )?;
+    if let Some(attachment_id) = external_attachment_id {
+        routes.push(external_default_route(subnet.route_table_id, attachment_id));
+    }
+
     let intent = TritondPortIntentV1 {
         silo_id: tenant.silo_id,
         tenant_id: nic.tenant_id,
@@ -409,15 +453,9 @@ pub(crate) async fn build_port_blueprint(
         },
         instance_id: instance.id,
         port_id,
-        routes: build_routes_with_imds_and_local_subnet(
-            &routes,
-            subnet.route_table_id,
-            imds_enabled,
-            subnet.ipv4_block.map(|c| c.to_string()),
-            !peers.is_empty(),
-        )?,
+        routes,
         nat_gateways: nat_gateways.iter().map(nat_gateway_intent).collect(),
-        floating_ips: floating_ips.iter().map(floating_ip_intent).collect(),
+        floating_ips: floating_ip_intents,
         edge_clusters: edge_clusters
             .iter()
             .map(edge_cluster_intent)
@@ -602,6 +640,37 @@ fn derive_local_subnet_seed(route_table_id: Uuid) -> [u8; 32] {
     let mut out = [0u8; 32];
     out[..16].copy_from_slice(route_table_id.as_bytes());
     out[16..].copy_from_slice(b"local-subnet\0\0\0\0");
+    out
+}
+
+/// Synthesize the `0.0.0.0/0 -> External` default route for a port that
+/// hosts a CN-terminated FIP (C-4a). Stable synthetic id derived from
+/// the route table so re-emission is idempotent. The proteus router
+/// maps `External` to a non-drop catch-all at the lowest priority, so
+/// any in-VPC subnet permit still wins (P-2); the actual egress is
+/// driven by the overlay's destination-based external branch (P-3).
+fn external_default_route(route_table_id: Uuid, attachment_id: Uuid) -> RouteIntentV1 {
+    let synthetic_id = Uuid::new_v5(
+        &Uuid::NAMESPACE_OID,
+        &derive_external_route_seed(route_table_id),
+    );
+    RouteIntentV1 {
+        id: synthetic_id,
+        tenant_id: Uuid::nil(),
+        project_id: Uuid::nil(),
+        vpc_id: Uuid::nil(),
+        route_table_id,
+        name: "fip-external".to_string(),
+        description: "Synthesized: 0.0.0.0/0 -> External (CN-terminated FIP egress)".to_string(),
+        destination: "0.0.0.0/0".to_string(),
+        target: RouteTargetIntentV1::External { attachment_id },
+    }
+}
+
+fn derive_external_route_seed(route_table_id: Uuid) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    out[..16].copy_from_slice(route_table_id.as_bytes());
+    out[16..].copy_from_slice(b"fip-external\0\0\0\0");
     out
 }
 
@@ -804,7 +873,17 @@ pub(crate) fn edge_cluster_intent(cluster: &EdgeCluster) -> Result<EdgeClusterIn
     })
 }
 
-pub(crate) fn floating_ip_intent(fip: &FloatingIp) -> FloatingIpIntentV1 {
+/// Build the proteus FIP intent. `external_nic_tag` is the resolved
+/// external-link NAME (not the store's nic_tag Uuid) — the caller
+/// resolves it via [`resolve_external_nic_tag_name`] for a
+/// CN-terminated FIP attached to this port, and passes `None` for any
+/// other FIP. Threading the name turns on the external-NIC dataplane
+/// leg in the proteus compiler (C-4a); a `None` keeps the binding a
+/// pure NAT rewrite.
+pub(crate) fn floating_ip_intent(
+    fip: &FloatingIp,
+    external_nic_tag: Option<String>,
+) -> FloatingIpIntentV1 {
     FloatingIpIntentV1 {
         id: fip.id,
         tenant_id: fip.tenant_id,
@@ -820,6 +899,24 @@ pub(crate) fn floating_ip_intent(fip: &FloatingIp) -> FloatingIpIntentV1 {
                 nic_id: attachment.nic_id,
             }),
         edge_cluster_id: None,
+        external_nic_tag,
+    }
+}
+
+/// Resolve a FIP's `external_nic_tag` (a store nic_tag Uuid) to the
+/// concrete external-link NAME the host CN egresses on. Returns `None`
+/// for a legacy FIP that carries no `external_nic_tag`. A tag Uuid that
+/// resolves to no [`tritond_store::NicTag`] record fails closed
+/// (`None`) so a dangling reference can never turn on the external leg
+/// with a bogus link name (D10f / invariant 17).
+pub(crate) async fn resolve_external_nic_tag_name(
+    store: &dyn Store,
+    fip: &FloatingIp,
+) -> Option<String> {
+    let tag_id = fip.external_nic_tag?;
+    match store.get_nic_tag(tag_id).await {
+        Ok(tag) => Some(tag.name),
+        Err(_) => None,
     }
 }
 
@@ -1018,22 +1115,39 @@ mod imds_tests {
     }
 
     #[test]
-    fn floating_ip_intent_ignores_c2_fields() {
-        // The C-2 fields (network_id / external_nic_tag / hosted_cn) are
-        // tritond/agent/UI-only and must NOT change the proteus wire
-        // shape: the intent built from a FIP carrying them must be
-        // byte-identical to the intent from a FIP without them.
-        let bare = floating_ip_intent(&fip_with(None, None));
-        let stamped = floating_ip_intent(&fip_with(
-            Some(Uuid::from_u128(0xaaaa)),
-            Some(Uuid::from_u128(0xbbbb)),
-        ));
-        assert_eq!(bare, stamped, "C-2 fields must not affect the intent");
+    fn floating_ip_intent_ignores_c2_store_fields() {
+        // The C-2 store fields (network_id / external_nic_tag Uuid /
+        // hosted_cn) are tritond-internal and must NOT leak into the
+        // proteus wire shape: the only external-leg signal is the
+        // RESOLVED nic_tag NAME threaded as the explicit
+        // `external_nic_tag` argument (C-4a). With the same argument,
+        // two FIPs differing only in their C-2 store fields produce a
+        // byte-identical intent.
+        let bare = floating_ip_intent(&fip_with(None, None), None);
+        let stamped = floating_ip_intent(
+            &fip_with(
+                Some(Uuid::from_u128(0xaaaa)),
+                Some(Uuid::from_u128(0xbbbb)),
+            ),
+            None,
+        );
+        assert_eq!(bare, stamped, "C-2 store fields must not affect the intent");
         let bare_bytes = postcard::to_allocvec(&bare).unwrap();
         let stamped_bytes = postcard::to_allocvec(&stamped).unwrap();
         assert_eq!(
             bare_bytes, stamped_bytes,
-            "floating_ip_intent postcard bytes must be unchanged by C-2"
+            "floating_ip_intent postcard bytes must be unchanged by C-2 store fields"
         );
+    }
+
+    #[test]
+    fn floating_ip_intent_threads_resolved_nic_tag_name() {
+        // C-4a: a CN-terminated FIP attached to this port carries the
+        // resolved external-link NAME, which turns on the proteus
+        // external-NIC leg. A FIP not attached here passes `None`.
+        let with_tag = floating_ip_intent(&fip_with(None, None), Some("external0".to_string()));
+        assert_eq!(with_tag.external_nic_tag.as_deref(), Some("external0"));
+        let without = floating_ip_intent(&fip_with(None, None), None);
+        assert_eq!(without.external_nic_tag, None);
     }
 }

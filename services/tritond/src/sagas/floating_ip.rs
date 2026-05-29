@@ -7,11 +7,31 @@
 //! `floating-ip-allocate` / `floating-ip-attach` /
 //! `floating-ip-detach` sagas.
 //!
-//! Single-store-call operations on the surface — saga-shape is
-//! light. Their value is the resource-reference index entries
-//! (tenant / project / fip / nic) so the per-FIP and per-VM saga
-//! views can surface them, and the standard saga unwind story
-//! (record the original state, restore on failure).
+//! `allocate` stays a single-store-call saga (its value is the
+//! resource-reference index entries + the standard unwind).
+//!
+//! `attach` / `detach` carry the **dataplane realization stage**
+//! (C-4a). A CN-terminated 1:1 NAT floating IP is only live once its
+//! hosting CN has applied the recomputed port blueprint (the SetSrc /
+//! SetDst rules + `hosted_fips` delta), so attach/detach are modeled
+//! on the Provision job lifecycle: take the per-FIP + per-port
+//! serialization, bump the port generation, enqueue a *pinned*
+//! `FipClaim` / `FipRelease` job, and await its terminal status. The
+//! undo enqueues the compensating job.
+//!
+//! Two serialization homes (security invariants 6 + 7):
+//!
+//! * **Per-FIP** — `Store::attach_floating_ip_cas` only commits the
+//!   `hosted_cn` transition when the FIP's current `hosted_cn` matches
+//!   the precondition the handler captured. This is the "at-most-one
+//!   hosted_cn + release-before-claim across CNs" invariant encoded in
+//!   store state; a cross-CN move must detach (→ `hosted_cn = None`)
+//!   before the new CN's claim (which expects `None`) can win.
+//! * **Per-port** — `Store::bump_port_generation` is a monotonic
+//!   fencing token. Concurrent attach / firewall / route mutations on
+//!   one port each bump it and recompute the full blueprint; the
+//!   highest generation wins and the kmod fences stale re-applies. No
+//!   separate advisory lock is needed.
 
 use std::sync::Arc;
 
@@ -20,10 +40,13 @@ use tritond_saga::{
     ActionContext, ActionError, ActionFunc, ActionRegistry, DagBuilder, Node, ResourceRef,
     ResourceScope, SagaDag, SagaError, SagaName, SagaResult, TritondSagaType,
 };
-use tritond_store::{FloatingIp, NewFloatingIp};
+use tritond_store::{FloatingIp, JobKind, NewFloatingIp, NewJob, ProvisioningJob};
 use uuid::Uuid;
 
-use super::common::{ACTION_TIMEOUT_STORE, Ctx, fence_check, no_op_undo, store_err_to_action_err};
+use super::common::{
+    ACTION_TIMEOUT_STORE, Ctx, await_provisioning_job_terminal, fence_check, no_op_undo,
+    store_err_to_action_err,
+};
 
 pub const SAGA_NAME_ALLOCATE: &str = "floating-ip-allocate";
 pub const SAGA_NAME_ATTACH: &str = "floating-ip-attach";
@@ -42,10 +65,41 @@ pub fn register(reg: &mut ActionRegistry) {
         attach_undo,
     ));
     reg.register(ActionFunc::new_action(
+        "floating_ip.enqueue_claim",
+        enqueue_claim,
+        enqueue_claim_undo,
+    ));
+    reg.register(ActionFunc::new_action(
+        "floating_ip.await_claim",
+        await_claim,
+        no_op_undo,
+    ));
+    reg.register(ActionFunc::new_action(
         "floating_ip.detach",
         detach,
         detach_undo,
     ));
+    reg.register(ActionFunc::new_action(
+        "floating_ip.release_detach",
+        release_detach,
+        no_op_undo,
+    ));
+    reg.register(ActionFunc::new_action(
+        "floating_ip.await_release",
+        await_release,
+        no_op_undo,
+    ));
+}
+
+/// Resolve a FIP's `external_nic_tag` (a store nic_tag Uuid) to the
+/// external-link NAME the agent egresses on. `None` for a legacy FIP
+/// with no tag, or a tag that resolves to no record (fail closed).
+async fn resolve_external_nic_tag_name(
+    store: &dyn tritond_store::Store,
+    fip: &FloatingIp,
+) -> Option<String> {
+    let tag_id = fip.external_nic_tag?;
+    store.get_nic_tag(tag_id).await.ok().map(|t| t.name)
 }
 
 // ===============================================================
@@ -127,14 +181,36 @@ pub struct FloatingIpAttachParams {
     /// attach up.
     #[serde(default)]
     pub target_instance_id: Option<Uuid>,
+    /// The FIP's `hosted_cn` captured by the handler *before* the
+    /// saga runs. Used as the per-FIP CAS precondition (invariant 6):
+    /// the attach only commits the `hosted_cn` transition when the
+    /// live record still matches this. `None` = the FIP was unhosted,
+    /// the common fresh-claim case; a cross-CN move arrives here only
+    /// after a detach drove it back to `None`.
+    #[serde(default)]
+    pub prior_hosted_cn: Option<Uuid>,
 }
 
 pub fn build_attach_dag(params: &FloatingIpAttachParams) -> SagaResult<Arc<SagaDag>> {
     let mut b = DagBuilder::new(SagaName::new(SAGA_NAME_ATTACH));
+    // 1. Commit the per-FIP CAS `hosted_cn` transition (undo detaches).
     b.append(Node::action(
         "attached",
         "attach",
         &*ActionFunc::new_action("floating_ip.attach", attach, attach_undo),
+    ));
+    // 2. Bump the port generation + enqueue a pinned FipClaim (undo
+    //    enqueues the compensating FipRelease).
+    b.append(Node::action(
+        "claim_job",
+        "enqueue_claim",
+        &*ActionFunc::new_action("floating_ip.enqueue_claim", enqueue_claim, enqueue_claim_undo),
+    ));
+    // 3. Await the agent's terminal job status (provision-style).
+    b.append(Node::action(
+        "claimed",
+        "await_claim",
+        &*ActionFunc::new_action("floating_ip.await_claim", await_claim, no_op_undo),
     ));
     let dag = b
         .build()
@@ -171,8 +247,17 @@ async fn attach(ctx: Ctx) -> Result<FloatingIp, ActionError> {
         validate_nic_tag_placement(&*store, params.fip_id, params.target_nic_id)
             .await
             .map_err(store_err_to_action_err)?;
+        // Per-FIP CAS (invariant 6): commit the `hosted_cn` transition
+        // only if it still matches the precondition captured by the
+        // handler. A concurrent claim that already flipped it loses
+        // here as a Conflict (→ 409); a cross-CN move that skipped the
+        // detach lands here as a Conflict too.
         store
-            .attach_floating_ip(params.fip_id, params.target_nic_id)
+            .attach_floating_ip_cas(
+                params.fip_id,
+                params.target_nic_id,
+                params.prior_hosted_cn,
+            )
             .await
             .map_err(store_err_to_action_err)
     })
@@ -246,6 +331,112 @@ async fn attach_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
     }
 }
 
+/// Bump the port generation and enqueue a `FipClaim` pinned to the
+/// FIP's hosting CN. The generation bump is the per-port fence
+/// (invariant 7): a concurrent firewall / route / attach mutation on
+/// the same port bumps it too, and the agent applies the recomputed
+/// blueprint at a strictly-greater generation. Returns the enqueued
+/// job so `await_claim` can poll it.
+async fn enqueue_claim(ctx: Ctx) -> Result<ProvisioningJob, ActionError> {
+    crate::sagas::with_action_timeout(
+        "floating_ip.enqueue_claim",
+        ACTION_TIMEOUT_STORE,
+        async move {
+            let user_ctx = ctx.user_data();
+            fence_check(user_ctx).await?;
+            let store = user_ctx.store().clone();
+            let params: FloatingIpAttachParams = ctx.saga_params()?;
+            let fip: FloatingIp = ctx.lookup("attached")?;
+            let host_cn = fip.hosted_cn.ok_or_else(|| {
+                // The attach action just stamped hosted_cn; a None here
+                // means the record was mutated out from under the saga.
+                ActionError::action_failed(serde_json::json!({
+                    "kind": "conflict",
+                    "message": format!(
+                        "floating ip {} lost its hosted_cn before claim enqueue",
+                        params.fip_id
+                    ),
+                }))
+            })?;
+            // Per-port fence: bump before recompute so the agent's
+            // re-applied blueprint carries a strictly-greater generation
+            // and is not swallowed as a same-generation no-op.
+            let generation = store
+                .bump_port_generation(params.target_nic_id)
+                .await
+                .map_err(store_err_to_action_err)?;
+            let external_nic_tag = resolve_external_nic_tag_name(&*store, &fip).await;
+            let instance_id = params
+                .target_instance_id
+                .unwrap_or(fip.attached_to.as_ref().map_or(host_cn, |a| a.instance_id));
+            let job = store
+                .enqueue_job(NewJob {
+                    kind: JobKind::FipClaim {
+                        floating_ip_id: params.fip_id,
+                        nic_id: params.target_nic_id,
+                        instance_id,
+                        fip_addr: fip.address.to_string(),
+                        external_nic_tag,
+                        generation,
+                    },
+                    target_cn_uuid: Some(host_cn),
+                })
+                .await
+                .map_err(store_err_to_action_err)?;
+            Ok(job)
+        },
+    )
+    .await
+}
+
+/// Undo for `enqueue_claim`: enqueue the compensating `FipRelease`
+/// pinned to the CN that the claim targeted so a half-applied
+/// blueprint is withdrawn (release-before-claim symmetry).
+async fn enqueue_claim_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
+    let store = ctx.user_data().store().clone();
+    let log = ctx.user_data().log().clone();
+    let params: FloatingIpAttachParams = ctx.saga_params()?;
+    // Use the FIP captured at attach time (its hosted_cn was stamped
+    // there). If the lookup is missing, fall back to a re-read.
+    let fip = match ctx.lookup::<FloatingIp>("attached") {
+        Ok(f) => f,
+        Err(_) => match store.get_floating_ip(params.fip_id).await {
+            Ok(f) => f,
+            Err(_) => return Ok(()),
+        },
+    };
+    let Some(host_cn) = fip.hosted_cn else {
+        return Ok(());
+    };
+    let external_nic_tag = resolve_external_nic_tag_name(&*store, &fip).await;
+    if let Err(e) = store
+        .enqueue_job(NewJob {
+            kind: JobKind::FipRelease {
+                floating_ip_id: params.fip_id,
+                fip_addr: fip.address.to_string(),
+                external_nic_tag,
+                hosted_cn: host_cn,
+            },
+            target_cn_uuid: Some(host_cn),
+        })
+        .await
+    {
+        slog::warn!(
+            log,
+            "floating-ip-attach undo: enqueue FipRelease failed; dataplane may leak until reconcile";
+            "fip_id" => %params.fip_id,
+            "hosted_cn" => %host_cn,
+            "error" => %e,
+        );
+    }
+    Ok(())
+}
+
+/// Await the `FipClaim` job's terminal status (provision-style).
+async fn await_claim(ctx: Ctx) -> Result<(), ActionError> {
+    await_provisioning_job_terminal(ctx, "claim_job", "floating_ip.await_claim").await
+}
+
 // ===============================================================
 // floating-ip-detach
 // ===============================================================
@@ -262,10 +453,40 @@ pub struct FloatingIpDetachParams {
     pub prior_nic_id: Option<Uuid>,
     #[serde(default)]
     pub prior_instance_id: Option<Uuid>,
+    /// The FIP's `hosted_cn` captured before the saga runs. The
+    /// withdraw job is pinned to it (release-before-claim, invariant
+    /// 6): the dataplane is torn down on the old CN *before* the store
+    /// binding clears, so a subsequent attach on a new CN can't race a
+    /// still-live termination on the old one. `None` = the FIP was
+    /// already unhosted; the release step is a no-op.
+    #[serde(default)]
+    pub prior_hosted_cn: Option<Uuid>,
+    /// The FIP address captured before the saga runs, so the withdraw
+    /// job carries it without re-reading after the binding clears.
+    #[serde(default)]
+    pub prior_fip_addr: Option<String>,
 }
 
 pub fn build_detach_dag(params: &FloatingIpDetachParams) -> SagaResult<Arc<SagaDag>> {
     let mut b = DagBuilder::new(SagaName::new(SAGA_NAME_DETACH));
+    // Release-before-claim: withdraw the dataplane termination on the
+    // hosting CN (enqueue FipRelease + await terminal) BEFORE clearing
+    // the store binding, so the slot is genuinely free for a later
+    // attach on a different CN.
+    b.append(Node::action(
+        "release_job",
+        "release_detach",
+        &*ActionFunc::new_action(
+            "floating_ip.release_detach",
+            release_detach,
+            no_op_undo,
+        ),
+    ));
+    b.append(Node::action(
+        "released",
+        "await_release",
+        &*ActionFunc::new_action("floating_ip.await_release", await_release, no_op_undo),
+    ));
     b.append(Node::action(
         "detached",
         "detach",
@@ -292,6 +513,111 @@ pub fn build_detach_references(params: &FloatingIpDetachParams) -> Vec<ResourceR
         out.push(ResourceRef::new(ResourceScope::Instance, iid));
     }
     out
+}
+
+/// Enqueue the withdraw job pinned to the FIP's prior hosting CN, and
+/// bump the surviving port's generation so a subsequent re-apply is
+/// not swallowed. Outputs `Some(job)` when there was a hosting CN to
+/// withdraw from, `None` when the FIP was already unhosted (the await
+/// step then no-ops). This runs BEFORE the store binding clears
+/// (release-before-claim).
+async fn release_detach(ctx: Ctx) -> Result<Option<ProvisioningJob>, ActionError> {
+    crate::sagas::with_action_timeout(
+        "floating_ip.release_detach",
+        ACTION_TIMEOUT_STORE,
+        async move {
+            let user_ctx = ctx.user_data();
+            fence_check(user_ctx).await?;
+            let store = user_ctx.store().clone();
+            let params: FloatingIpDetachParams = ctx.saga_params()?;
+            let Some(host_cn) = params.prior_hosted_cn else {
+                // FIP was floating; nothing to withdraw.
+                return Ok(None);
+            };
+            // Bump the surviving port's generation (best-effort) so the
+            // agent's withdraw re-apply lands at a strictly-greater
+            // generation. The prior nic may be gone (instance deleted
+            // out from under a manual detach) — tolerate NotFound.
+            if let Some(nic_id) = params.prior_nic_id {
+                match store.bump_port_generation(nic_id).await {
+                    Ok(_) | Err(tritond_store::StoreError::NotFound) => {}
+                    Err(e) => return Err(store_err_to_action_err(e)),
+                }
+            }
+            let fip_addr = match params.prior_fip_addr.clone() {
+                Some(a) => a,
+                None => store
+                    .get_floating_ip(params.fip_id)
+                    .await
+                    .map(|f| f.address.to_string())
+                    .map_err(store_err_to_action_err)?,
+            };
+            let external_nic_tag = match store.get_floating_ip(params.fip_id).await {
+                Ok(f) => resolve_external_nic_tag_name(&*store, &f).await,
+                Err(_) => None,
+            };
+            let job = store
+                .enqueue_job(NewJob {
+                    kind: JobKind::FipRelease {
+                        floating_ip_id: params.fip_id,
+                        fip_addr,
+                        external_nic_tag,
+                        hosted_cn: host_cn,
+                    },
+                    target_cn_uuid: Some(host_cn),
+                })
+                .await
+                .map_err(store_err_to_action_err)?;
+            Ok(Some(job))
+        },
+    )
+    .await
+}
+
+/// Await the withdraw job (if one was enqueued). A `None` release
+/// (the FIP was already unhosted) terminates immediately. The
+/// `release_job` node holds an `Option<ProvisioningJob>`, so this
+/// can't reuse `await_provisioning_job_terminal` (which expects a bare
+/// `ProvisioningJob`); the poll loop is inlined for the `Some` case.
+async fn await_release(ctx: Ctx) -> Result<(), ActionError> {
+    let maybe_job: Option<ProvisioningJob> = ctx.lookup("release_job").map_err(|e| {
+        ActionError::action_failed(serde_json::json!({
+            "kind": "store_other",
+            "message": format!("await_release lookup release_job: {e}"),
+        }))
+    })?;
+    let Some(job) = maybe_job else {
+        return Ok(());
+    };
+    crate::sagas::with_action_timeout(
+        "floating_ip.await_release",
+        super::common::ACTION_TIMEOUT_AWAIT,
+        async move {
+            let user_ctx = ctx.user_data();
+            fence_check(user_ctx).await?;
+            let store = user_ctx.store().clone();
+            let job_id = job.id;
+            const POLL: std::time::Duration = std::time::Duration::from_millis(50);
+            loop {
+                let current = store.get_job(job_id).await.map_err(store_err_to_action_err)?;
+                match current.status.kind() {
+                    tritond_store::JobStatusKind::Completed => return Ok(()),
+                    tritond_store::JobStatusKind::Failed => {
+                        return Err(ActionError::action_failed(serde_json::json!({
+                            "kind": "provision_failed",
+                            "job_id": job_id.to_string(),
+                            "reason": match &current.status {
+                                tritond_store::JobStatus::Failed { reason } => reason.clone(),
+                                _ => "(no reason)".to_string(),
+                            },
+                        })));
+                    }
+                    _ => tokio::time::sleep(POLL).await,
+                }
+            }
+        },
+    )
+    .await
 }
 
 async fn detach(ctx: Ctx) -> Result<FloatingIp, ActionError> {

@@ -5073,6 +5073,97 @@ impl Store for FdbStore {
         }
     }
 
+    async fn attach_floating_ip_cas(
+        &self,
+        fip_id: Uuid,
+        target_nic_id: Uuid,
+        expected_hosted_cn: Option<Uuid>,
+    ) -> Result<FloatingIp, StoreError> {
+        let by_id_key = keys::floating_ip_by_id_key(fip_id);
+        let nic_check_key = keys::nic_by_id_key(target_nic_id);
+
+        enum Out {
+            Attached(Box<FloatingIp>),
+            FipMissing,
+            NicMissingOrWrongParent,
+            NoHostCn(Uuid),
+            HostedCnMismatch(Option<Uuid>),
+        }
+        let outcome: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let nic_check_key = nic_check_key.clone();
+                async move {
+                    let fip_bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Out::FipMissing),
+                    };
+                    let mut fip: FloatingIp = match serde_json::from_slice(&fip_bytes) {
+                        Ok(f) => f,
+                        Err(_) => return Ok(Out::FipMissing),
+                    };
+                    // Per-FIP serialization: the read + the conditional
+                    // write are inside one serializable txn, so a racing
+                    // claim that flips hosted_cn forces this txn to retry
+                    // and observe the new value (then mismatch).
+                    if fip.hosted_cn != expected_hosted_cn {
+                        return Ok(Out::HostedCnMismatch(fip.hosted_cn));
+                    }
+                    let nic_bytes = match tr.get(&nic_check_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Out::NicMissingOrWrongParent),
+                    };
+                    let nic: Nic = match serde_json::from_slice(&nic_bytes) {
+                        Ok(n) => n,
+                        Err(_) => return Ok(Out::NicMissingOrWrongParent),
+                    };
+                    if nic.tenant_id != fip.tenant_id || nic.project_id != fip.project_id {
+                        return Ok(Out::NicMissingOrWrongParent);
+                    }
+                    let inst_key = keys::instance_by_id_key(nic.instance_id);
+                    let host_cn_uuid = match tr.get(&inst_key, false).await? {
+                        Some(b) => match serde_json::from_slice::<Instance>(&b) {
+                            Ok(inst) => match inst.host_cn_uuid {
+                                Some(cn) => cn,
+                                None => return Ok(Out::NoHostCn(nic.instance_id)),
+                            },
+                            Err(_) => return Ok(Out::NicMissingOrWrongParent),
+                        },
+                        None => return Ok(Out::NicMissingOrWrongParent),
+                    };
+                    fip.attached_to = Some(FloatingIpAttachment {
+                        instance_id: nic.instance_id,
+                        nic_id: target_nic_id,
+                        attached_at: Utc::now(),
+                    });
+                    fip.hosted_cn = Some(host_cn_uuid);
+                    fip.updated_at = Utc::now();
+                    let value = match serde_json::to_vec(&fip) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Out::FipMissing),
+                    };
+                    tr.set(&by_id_key, &value);
+                    Ok(Out::Attached(Box::new(fip)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Out::Attached(fip)) => Ok(*fip),
+            Ok(Out::FipMissing) | Ok(Out::NicMissingOrWrongParent) => Err(StoreError::NotFound),
+            Ok(Out::NoHostCn(instance_id)) => Err(StoreError::Conflict(format!(
+                "instance {instance_id} has no host CN yet; cannot attach floating ip"
+            ))),
+            Ok(Out::HostedCnMismatch(found)) => Err(StoreError::Conflict(format!(
+                "floating ip {fip_id} hosted_cn changed under the attach \
+                 (expected {expected_hosted_cn:?}, found {found:?}); \
+                 release-before-claim ordering violated"
+            ))),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     async fn detach_floating_ip(&self, fip_id: Uuid) -> Result<FloatingIp, StoreError> {
         let by_id_key = keys::floating_ip_by_id_key(fip_id);
 

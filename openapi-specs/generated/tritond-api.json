@@ -13091,6 +13091,83 @@
             ]
           },
           {
+            "description": "Realize a CN-terminated 1:1 NAT floating IP on the hosting CN. Enqueued by the attach saga, pinned to `hosted_cn`. The agent applies the recomputed port blueprint (which lands the SetSrc / SetDst rules + the `hosted_fips` delta), ensures the external link, adds the `<fip>/32` ipadm alias, and fires a gratuitous ARP burst. `instance_id` pins the job to the VM the FIP attaches to so the per-VM job view surfaces it; `nic_id` is the OPTE port to recompute; `generation` is the bumped port generation the blueprint carries so a stale re-apply is fenced.",
+            "type": "object",
+            "properties": {
+              "external_nic_tag": {
+                "nullable": true,
+                "type": "string"
+              },
+              "fip_addr": {
+                "type": "string"
+              },
+              "floating_ip_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "generation": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "fip_claim"
+                ]
+              },
+              "nic_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "fip_addr",
+              "floating_ip_id",
+              "generation",
+              "instance_id",
+              "kind",
+              "nic_id"
+            ]
+          },
+          {
+            "description": "Withdraw a CN-terminated floating IP from a CN. Enqueued by the attach saga's undo, the detach saga, the FIP-delete-while-hosted path, and the instance-delete cascade — always pinned to the CN that was hosting the termination. The agent invalidates the `hosted_fips` entry, removes the ipadm alias, and (for a surviving port) re-applies the withdrawn blueprint. Carries no `instance_id`: by release time the attachment / instance may already be gone, so `target_id()` falls back to `floating_ip_id`.",
+            "type": "object",
+            "properties": {
+              "external_nic_tag": {
+                "nullable": true,
+                "type": "string"
+              },
+              "fip_addr": {
+                "type": "string"
+              },
+              "floating_ip_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "hosted_cn": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "fip_release"
+                ]
+              }
+            },
+            "required": [
+              "fip_addr",
+              "floating_ip_id",
+              "hosted_cn",
+              "kind"
+            ]
+          },
+          {
             "description": "Apply or update a firehyve/fhrun edge instance on the target CN. The manifest is JSON bytes rendered by tritond from the EdgeCluster's desired state; the agent persists it to the host runtime path, asks fhrun/firehyve to converge, and reports realization for the carried EdgeCluster generation.",
             "type": "object",
             "properties": {

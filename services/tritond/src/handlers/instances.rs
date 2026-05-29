@@ -1885,6 +1885,10 @@ pub(crate) async fn attach_project_floating_ip(
         target_nic_id: req.nic_id,
         prior_nic_id,
         target_instance_id,
+        // Per-FIP CAS precondition: the live hosted_cn at the moment we
+        // captured the record. A cross-CN move only reaches a fresh
+        // attach after a detach drove this to None.
+        prior_hosted_cn: fip.hosted_cn,
     };
     let saga_dag = crate::sagas::floating_ip::build_attach_dag(&saga_params).map_err(|e| {
         HttpError::for_internal_error(format!("floating-ip-attach saga dag build: {e}"))
@@ -1982,6 +1986,11 @@ pub(crate) async fn detach_project_floating_ip(
         fip_id: floating_ip_id,
         prior_nic_id,
         prior_instance_id,
+        // Pin the withdraw job to the CN that was hosting the
+        // termination, and carry the address so the job is complete
+        // even after the binding clears (release-before-claim).
+        prior_hosted_cn: fip.hosted_cn,
+        prior_fip_addr: Some(fip.address.to_string()),
     };
     let saga_dag = crate::sagas::floating_ip::build_detach_dag(&saga_params).map_err(|e| {
         HttpError::for_internal_error(format!("floating-ip-detach saga dag build: {e}"))

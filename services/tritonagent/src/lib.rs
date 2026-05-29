@@ -1050,6 +1050,34 @@ async fn drive_job(
                 "proteus-deactivate: dispatcher pending — completing stub",
             );
         }
+        // FIP dataplane realization. C-4a introduces the saga → job
+        // lifecycle (enqueue pinned + await terminal); the real agent
+        // handler (apply recomputed blueprint, EnsureExternalLink,
+        // ipadm /32 alias, gratuitous-ARP burst) lands in C-4b. Until
+        // then the arms log + complete so the saga's await terminates
+        // and the lock/generation serialization can be exercised
+        // end-to-end without a live kmod.
+        JobKind::FipClaim {
+            floating_ip_id,
+            nic_id,
+            instance_id,
+            ..
+        } => {
+            info!(
+                %floating_ip_id, %nic_id, %instance_id,
+                "fip-claim: dispatcher pending — completing stub (C-4b)",
+            );
+        }
+        JobKind::FipRelease {
+            floating_ip_id,
+            hosted_cn,
+            ..
+        } => {
+            info!(
+                %floating_ip_id, %hosted_cn,
+                "fip-release: dispatcher pending — completing stub (C-4b)",
+            );
+        }
     }
 
     Ok(())

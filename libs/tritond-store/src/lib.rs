@@ -1146,6 +1146,34 @@ pub trait Store: Send + Sync + 'static {
         target_nic_id: Uuid,
     ) -> Result<FloatingIp, StoreError>;
 
+    /// Compare-and-set variant of [`Store::attach_floating_ip`] that
+    /// serializes the `hosted_cn` transition (the per-FIP lock from the
+    /// C-4a realization stage). The attach only proceeds when the
+    /// FIP's *current* `hosted_cn` equals `expected_hosted_cn`;
+    /// otherwise it returns [`StoreError::Conflict`].
+    ///
+    /// This encodes the "at-most-one hosted_cn + release-before-claim
+    /// across CNs" invariant directly in store state rather than via a
+    /// generic advisory lock:
+    ///
+    /// * a fresh claim passes `expected_hosted_cn = None` — it fails if
+    ///   the FIP is still hosted on some CN whose release has not yet
+    ///   run, so a cross-CN move must detach (→ `hosted_cn = None`)
+    ///   first;
+    /// * a same-CN re-attach to a different NIC passes the current
+    ///   `Some(cn)` and swaps the binding in place.
+    ///
+    /// Concurrent attach sagas racing to claim the same floating IP for
+    /// different CNs cannot both win: whichever commits first flips
+    /// `hosted_cn`, and the loser's `expected_hosted_cn` no longer
+    /// matches.
+    async fn attach_floating_ip_cas(
+        &self,
+        fip_id: Uuid,
+        target_nic_id: Uuid,
+        expected_hosted_cn: Option<Uuid>,
+    ) -> Result<FloatingIp, StoreError>;
+
     /// Clear the FloatingIp's `attached_to`. No-op (returns the
     /// current record) if already detached. The IP stays owned by
     /// the project.
