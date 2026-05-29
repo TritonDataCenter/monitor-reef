@@ -51,11 +51,13 @@ pub use types::{
     MAX_META_VALUE_BYTES, MAX_REALIZED_BYTES_PER_INSTANCE, META_KEY_IMDS_ENABLED,
     META_KEY_IMDS_HOP_LIMIT, META_KEY_USER_DATA, ManagedIdentity, MetaError, MetaProvenance,
     MetaScope, MetaValue, MetricsBackend, MigrationAction, MigrationJobRole, MigrationPhase,
-    MigrationProgressEvent, MigrationRecord, MigrationState, NatGateway, NetworkResourceId,
-    NewDhcpPool, NewDhcpReservation, NewEdgeCluster, NewFirewallRule, NewFloatingIp, NewImage,
-    NewInstance, NewInstanceNic, NewJob, NewMigration, NewNatGateway, NewProject, NewQuota,
-    NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc,
-    Nic, NumaNode, Project, ProvisioningJob, Quota, Realization, RealizationStatus, RealizedMeta,
+    MigrationProgressEvent, MigrationRecord, MigrationState, NatGateway, NetworkKind, NetworkPool,
+    NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster, NewExternalSubnet,
+    NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewInstanceNic, NewJob, NewMigration,
+    NewNatGateway, NewNetworkPool, NewNicTag, NewProject, NewQuota, NewRoute, NewRouteTable,
+    NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, NicTag,
+    NicTagProvision, CnNicTagInventory, NumaNode, Project, ProvisioningJob, Quota, Realization,
+    RealizationStatus, RealizedMeta,
     RealizedNetworkState, RealizedView, RealizerId, Route, RouteTable, RouteTarget, Settings, Silo,
     SourceFilesystemDetails, SshKey, SshKeyScope, StorageCluster, StorageClusterStatus,
     StorageClusterSurface, StorageClusterView, StorageTier, Subnet, SystemKey,
@@ -68,6 +70,8 @@ pub use types::{
     generate_poll_token, meta_key_guest_writable_allowed, normalize_claim_code, parse_vm_reports,
     validate_meta_entry, validate_meta_key,
 };
+
+use std::net::IpAddr;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -1146,6 +1150,132 @@ pub trait Store: Send + Sync + 'static {
     /// current record) if already detached. The IP stays owned by
     /// the project.
     async fn detach_floating_ip(&self, fip_id: Uuid) -> Result<FloatingIp, StoreError>;
+
+    // ------------------------------------------------------------------
+    // nic_tag registry (operator-scoped, fleet-wide)
+    // ------------------------------------------------------------------
+
+    /// Register a nic_tag. The server assigns `id` and timestamps;
+    /// `name` must be unique fleet-wide (collision →
+    /// [`StoreError::Conflict`]).
+    async fn create_nic_tag(&self, req: NewNicTag) -> Result<NicTag, StoreError>;
+
+    /// Look up a nic_tag by id. [`StoreError::NotFound`] if absent.
+    async fn get_nic_tag(&self, id: Uuid) -> Result<NicTag, StoreError>;
+
+    /// List every registered nic_tag. Order is by name.
+    async fn list_nic_tags(&self) -> Result<Vec<NicTag>, StoreError>;
+
+    /// Delete a nic_tag by id. Rejected with
+    /// [`StoreError::NicTagInUse`] if any subnet still references it
+    /// (`subnet.nic_tag == Some(id)`); [`StoreError::NotFound`] if the
+    /// id does not exist.
+    async fn delete_nic_tag(&self, id: Uuid) -> Result<(), StoreError>;
+
+    // ------------------------------------------------------------------
+    // Per-CN nic_tag inventory (single-writer per CN)
+    // ------------------------------------------------------------------
+
+    /// Overwrite the calling CN's nic_tag inventory row. Single-writer:
+    /// only the owning CN's agent publishes `inv.cn`.
+    async fn publish_cn_nic_tags(&self, inv: CnNicTagInventory) -> Result<(), StoreError>;
+
+    /// Read a CN's nic_tag inventory, or `None` if it has never
+    /// published.
+    async fn get_cn_nic_tags(&self, cn: Uuid) -> Result<Option<CnNicTagInventory>, StoreError>;
+
+    /// List every CN's nic_tag inventory. Order is by CN uuid.
+    async fn list_cn_nic_tags(&self) -> Result<Vec<CnNicTagInventory>, StoreError>;
+
+    // ------------------------------------------------------------------
+    // Network pools (ordered external-subnet allocation lists)
+    // ------------------------------------------------------------------
+
+    /// Create a network pool. The server assigns `id` and timestamps;
+    /// `name` must be unique fleet-wide.
+    async fn create_network_pool(&self, req: NewNetworkPool) -> Result<NetworkPool, StoreError>;
+
+    /// Look up a network pool by id. [`StoreError::NotFound`] if absent.
+    async fn get_network_pool(&self, id: Uuid) -> Result<NetworkPool, StoreError>;
+
+    /// List every network pool. Order is by name.
+    async fn list_network_pools(&self) -> Result<Vec<NetworkPool>, StoreError>;
+
+    /// Delete a network pool by id. [`StoreError::NotFound`] if absent.
+    async fn delete_network_pool(&self, id: Uuid) -> Result<(), StoreError>;
+
+    // ------------------------------------------------------------------
+    // External subnets (operator-scoped FlatL2 public space)
+    // ------------------------------------------------------------------
+
+    /// Create an operator-scoped External subnet (FlatL2 public space).
+    ///
+    /// Invariants enforced by the implementation:
+    ///
+    /// * `req.nic_tag` must resolve to a registered [`NicTag`];
+    ///   otherwise [`StoreError::NotFound`].
+    /// * At least one of `ipv4_block` / `ipv6_block` is `Some`;
+    ///   neither present → [`StoreError::Conflict`].
+    /// * No present family block may overlap an existing External
+    ///   subnet's block in the same family →
+    ///   [`StoreError::SubnetCidrOverlap`]. This keeps the single
+    ///   global public-IP index unambiguous.
+    /// * `name` must be unique among External subnets.
+    ///
+    /// The returned [`Subnet`] has `kind == NetworkKind::External`,
+    /// `nic_tag == Some(req.nic_tag)`, and reserved nil ids for
+    /// `tenant_id` / `project_id` / `vpc_id` / `route_table_id`.
+    async fn create_external_subnet(&self, req: NewExternalSubnet) -> Result<Subnet, StoreError>;
+
+    /// List every External subnet (`kind == NetworkKind::External`).
+    /// Order is by name.
+    async fn list_external_subnets(&self) -> Result<Vec<Subnet>, StoreError>;
+
+    // ------------------------------------------------------------------
+    // External-IP allocation on the single global public-IP index
+    // ------------------------------------------------------------------
+
+    /// Allocate the lowest-free external address from `subnet_id` on
+    /// the single global public-IP index (the same index
+    /// [`Store::create_floating_ip`] and [`Store::create_nat_gateway`]
+    /// reserve from — invariant D5).
+    ///
+    /// * The subnet must exist and be `NetworkKind::External`;
+    ///   otherwise [`StoreError::NotFound`] /
+    ///   [`StoreError::SubnetNotExternal`].
+    /// * The candidate window is `[provision_start, provision_end]`
+    ///   when set, else the whole family block (reserved
+    ///   network / gateway / broadcast slots are always skipped).
+    /// * No free address in the window →
+    ///   [`StoreError::PoolExhausted`].
+    ///
+    /// `holder_kind` + `holder_id` record the owner in the index value
+    /// (e.g. `"floating_ip"` + the FIP id).
+    async fn allocate_external_ip(
+        &self,
+        subnet_id: Uuid,
+        family: AddressFamily,
+        holder_kind: &str,
+        holder_id: Uuid,
+    ) -> Result<IpAddr, StoreError>;
+
+    /// Release an external address back to the global public-IP index.
+    /// Idempotent: releasing an address that was never (or no longer)
+    /// allocated is a no-op.
+    async fn release_external_ip(&self, addr: IpAddr) -> Result<(), StoreError>;
+
+    /// Allocate an external address by walking a pool's `networks` in
+    /// order, calling [`Store::allocate_external_ip`] on each; the
+    /// first success wins. All networks exhausted →
+    /// [`StoreError::PoolExhausted`]. `owner_silos` is not enforced
+    /// yet (that is C-3).
+    async fn allocate_external_ip_from_pool(
+        &self,
+        pool_id: Uuid,
+        family: AddressFamily,
+        holder_kind: &str,
+        holder_id: Uuid,
+    ) -> Result<IpAddr, StoreError>;
 
     // ------------------------------------------------------------------
     // Per-port proteus-blueprint generation

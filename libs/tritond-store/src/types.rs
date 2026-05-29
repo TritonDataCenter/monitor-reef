@@ -501,6 +501,45 @@ pub struct NewNetworkPool {
     pub owner_silos: Vec<Uuid>,
 }
 
+/// Request body for creating an operator-scoped External subnet.
+///
+/// External subnets are FlatL2 public space: they carry a nic_tag +
+/// VLAN and are the source of public / floating IPs, allocated on the
+/// single global public-IP index (invariant D5). They are *not*
+/// tenant VPC subnets — there is no parent VPC — so the store stamps
+/// reserved nil ids for `tenant_id` / `project_id` / `vpc_id` /
+/// `route_table_id`. At least one of `ipv4_block` / `ipv6_block` must
+/// be `Some`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewExternalSubnet {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    #[schemars(with = "Option<String>")]
+    pub ipv4_block: Option<Ipv4Network>,
+    #[serde(default)]
+    #[schemars(with = "Option<String>")]
+    pub ipv6_block: Option<Ipv6Network>,
+    /// The nic_tag this external subnet egresses on. Must resolve to a
+    /// registered [`NicTag`].
+    pub nic_tag: Uuid,
+    #[serde(default)]
+    pub vlan_id: Option<u16>,
+    #[serde(default)]
+    pub provision_start_ipv4: Option<Ipv4Addr>,
+    #[serde(default)]
+    pub provision_end_ipv4: Option<Ipv4Addr>,
+    #[serde(default)]
+    pub provision_start_ipv6: Option<Ipv6Addr>,
+    #[serde(default)]
+    pub provision_end_ipv6: Option<Ipv6Addr>,
+    /// Silos allowed to allocate from this subnet; empty = all silos.
+    /// Not enforced until C-3.
+    #[serde(default)]
+    pub owner_silos: Vec<Uuid>,
+}
+
 /// Named set of routes inside a VPC. Every VPC has one auto-created
 /// main table; additional tables can be created and later associated
 /// to subnets when the route-table API lands.
@@ -2852,6 +2891,80 @@ pub fn allocate_ipv6(cidr: Ipv6Network, already_allocated: &HashSet<Ipv6Addr>) -
             return None;
         }
         if !already_allocated.contains(&candidate) {
+            return Some(candidate);
+        }
+        candidate = next_ipv6(candidate)?;
+    }
+}
+
+/// Allocate the lowest unused IPv4 inside `cidr` restricted to the
+/// inclusive `[start, end]` provision window. `None` bounds fall back
+/// to the block's first / last usable host. Skips the reserved
+/// network / gateway / broadcast slots like [`allocate_ipv4`] and
+/// checks the same `already_allocated` set so external allocation
+/// stays collision-free with floating IPs and NAT gateways on the
+/// single global index. Returns `None` if every address in the window
+/// is taken.
+#[must_use]
+pub fn allocate_ipv4_in_range(
+    cidr: Ipv4Network,
+    start: Option<Ipv4Addr>,
+    end: Option<Ipv4Addr>,
+    already_allocated: &HashSet<Ipv4Addr>,
+) -> Option<Ipv4Addr> {
+    let network = cidr.network();
+    let broadcast = cidr.broadcast();
+    let gateway = next_ipv4(network)?;
+    let lo = start.unwrap_or(network);
+    let hi = end.unwrap_or(broadcast);
+    if u32::from(lo) > u32::from(hi) {
+        return None;
+    }
+    for candidate in cidr.iter() {
+        if candidate < lo || candidate > hi {
+            continue;
+        }
+        if candidate == network || candidate == gateway || candidate == broadcast {
+            continue;
+        }
+        if !already_allocated.contains(&candidate) {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+/// IPv6 sibling of [`allocate_ipv4_in_range`]. Walks from the window's
+/// lower bound (or the block gateway + 1) upward and stops at the
+/// first free address that is still inside `cidr` and `<= end`.
+#[must_use]
+pub fn allocate_ipv6_in_range(
+    cidr: Ipv6Network,
+    start: Option<Ipv6Addr>,
+    end: Option<Ipv6Addr>,
+    already_allocated: &HashSet<Ipv6Addr>,
+) -> Option<Ipv6Addr> {
+    let network = cidr.network();
+    let gateway = next_ipv6(network)?;
+    // Lower bound: the requested start, or the first host after the
+    // gateway. Never hand out the network or gateway slot.
+    let mut candidate = match start {
+        Some(s) if s > gateway => s,
+        _ => next_ipv6(gateway)?,
+    };
+    loop {
+        if !cidr.contains(candidate) {
+            return None;
+        }
+        if let Some(hi) = end
+            && candidate > hi
+        {
+            return None;
+        }
+        if candidate != network
+            && candidate != gateway
+            && !already_allocated.contains(&candidate)
+        {
             return Some(candidate);
         }
         candidate = next_ipv6(candidate)?;

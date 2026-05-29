@@ -155,6 +155,50 @@ pub(super) fn subnet_in_vpc_prefix(vpc_id: Uuid) -> Vec<u8> {
     format!("subnet/in_vpc/{vpc_id}/").into_bytes()
 }
 
+pub(super) fn external_subnet_by_name_key(name: &str) -> Vec<u8> {
+    format!("external-subnet-by-name/{name}").into_bytes()
+}
+
+pub(super) fn external_subnet_index_key(id: Uuid) -> Vec<u8> {
+    format!("external-subnet/{id}").into_bytes()
+}
+
+pub(super) fn external_subnet_index_prefix() -> &'static [u8] {
+    b"external-subnet/"
+}
+
+pub(super) fn nic_tag_by_id_key(id: Uuid) -> Vec<u8> {
+    format!("nic_tag/by_id/{id}").into_bytes()
+}
+
+pub(super) fn nic_tag_by_name_key(name: &str) -> Vec<u8> {
+    format!("nic_tag/by_name/{name}").into_bytes()
+}
+
+pub(super) fn nic_tag_by_id_prefix() -> &'static [u8] {
+    b"nic_tag/by_id/"
+}
+
+pub(super) fn cn_nic_tags_key(cn: Uuid) -> Vec<u8> {
+    format!("cn-nic-tags/{cn}").into_bytes()
+}
+
+pub(super) fn cn_nic_tags_prefix() -> &'static [u8] {
+    b"cn-nic-tags/"
+}
+
+pub(super) fn network_pool_by_id_key(id: Uuid) -> Vec<u8> {
+    format!("network-pool/{id}").into_bytes()
+}
+
+pub(super) fn network_pool_by_name_key(name: &str) -> Vec<u8> {
+    format!("network-pool-by-name/{name}").into_bytes()
+}
+
+pub(super) fn network_pool_by_id_prefix() -> &'static [u8] {
+    b"network-pool/"
+}
+
 pub(super) fn route_table_by_id_key(id: Uuid) -> Vec<u8> {
     format!("route_table/by_id/{id}").into_bytes()
 }
@@ -896,5 +940,48 @@ mod tests {
         let rt = uuid("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
         let r = uuid("ffffffff-ffff-ffff-ffff-ffffffffffff");
         assert!(route_in_table_key(rt, r).starts_with(&route_in_table_prefix(rt)));
+    }
+
+    #[test]
+    fn external_networking_keys() {
+        let id = uuid("12121212-1212-1212-1212-121212121212");
+        let cn = uuid("34343434-3434-3434-3434-343434343434");
+        assert_eq!(
+            nic_tag_by_id_key(id),
+            b"nic_tag/by_id/12121212-1212-1212-1212-121212121212",
+        );
+        assert_eq!(nic_tag_by_name_key("external"), b"nic_tag/by_name/external");
+        assert!(nic_tag_by_id_key(id).starts_with(nic_tag_by_id_prefix()));
+        assert_eq!(
+            cn_nic_tags_key(cn),
+            b"cn-nic-tags/34343434-3434-3434-3434-343434343434",
+        );
+        assert!(cn_nic_tags_key(cn).starts_with(cn_nic_tags_prefix()));
+        assert_eq!(
+            network_pool_by_id_key(id),
+            b"network-pool/12121212-1212-1212-1212-121212121212",
+        );
+        assert_eq!(
+            network_pool_by_name_key("default"),
+            b"network-pool-by-name/default",
+        );
+        assert!(network_pool_by_id_key(id).starts_with(network_pool_by_id_prefix()));
+        assert_eq!(
+            external_subnet_index_key(id),
+            b"external-subnet/12121212-1212-1212-1212-121212121212",
+        );
+        assert_eq!(
+            external_subnet_by_name_key("pub"),
+            b"external-subnet-by-name/pub",
+        );
+        assert!(external_subnet_index_key(id).starts_with(external_subnet_index_prefix()));
+
+        // The `*-by-name/` keys must NOT fall inside the `*/<uuid>`
+        // index range that range scans cover. The byte after the
+        // shared stem is `-` (0x2D) for `-by-name` vs `/` (0x2F) for
+        // the index, so the name keys sort strictly before the index
+        // range begin and are excluded from list scans.
+        assert!(external_subnet_by_name_key("z") < external_subnet_index_prefix().to_vec());
+        assert!(network_pool_by_name_key("z") < network_pool_by_id_prefix().to_vec());
     }
 }

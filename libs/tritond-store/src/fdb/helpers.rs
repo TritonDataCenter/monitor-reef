@@ -68,6 +68,31 @@ impl FdbStore {
         Ok(out)
     }
 
+    /// Range-scan a `prefix` and return the raw value bytes of every
+    /// key. Used by the fleet-wide registries (nic_tag, cn-nic-tags,
+    /// network-pool) whose value rows are the full JSON record, so the
+    /// caller deserialises directly without a second by_id read.
+    pub(super) async fn scan_values(&self, prefix: Vec<u8>) -> Result<Vec<Vec<u8>>, StoreError> {
+        let (begin, end) = prefix_range(&prefix);
+        let values: Result<Vec<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    Ok(kvs.iter().map(|kv| kv.value().to_vec()).collect())
+                }
+            })
+            .await;
+        values.map_err(StoreError::from)
+    }
+
     pub(super) async fn read_edge_cluster_record(
         &self,
         edge_cluster_id: Uuid,

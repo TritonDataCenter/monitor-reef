@@ -23,19 +23,20 @@ use crate::types::{EdgeClusterRecord, NatGatewayRecord};
 use crate::validate;
 use crate::{
     AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnCapacity, CnLoadSummary,
-    CnPickSnapshot, CnPlacement, CnReservation, CnRole, CnState, DhcpLease, DhcpPool,
-    DhcpReservation, Disk, DiskKind, EdgeCluster, EdgeClusterKind, EdgeClusterResource,
+    CnNicTagInventory, CnPickSnapshot, CnPlacement, CnReservation, CnRole, CnState, DhcpLease,
+    DhcpPool, DhcpReservation, Disk, DiskKind, EdgeCluster, EdgeClusterKind, EdgeClusterResource,
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FirewallProtocol, FirewallRule, FloatingIp,
     FloatingIpAttachment, IdpConfig, Image, ImageScope, Instance, InstanceAffinity, InstanceBrand,
     InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind, LegacyVm, LifecycleState,
     LifecycleStateKind, MetaScope, MetaValue, MigrationPhase, MigrationProgressEvent,
-    MigrationRecord, MigrationState, NatGateway, NetworkResourceId, NewDhcpPool,
-    NewDhcpReservation, NewEdgeCluster, NewFirewallRule, NewFloatingIp, NewImage, NewInstance,
-    NewJob, NewMigration, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo,
-    NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob,
-    Quota, Realization, RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Settings,
-    Silo, SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, Store, StoreError, Subnet,
-    SystemKey, Tenant, TenantInstanceProjection, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    MigrationRecord, MigrationState, NatGateway, NetworkKind, NetworkPool, NetworkResourceId,
+    NewDhcpPool, NewDhcpReservation, NewEdgeCluster, NewExternalSubnet, NewFirewallRule,
+    NewFloatingIp, NewImage, NewInstance, NewJob, NewMigration, NewNatGateway, NewNetworkPool,
+    NewNicTag, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster,
+    NewSubnet, NewTenant, NewVpc, Nic, NicTag, Project, ProvisioningJob, Quota, Realization,
+    RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Settings, Silo, SshKey,
+    SshKeyScope, StorageCluster, StorageClusterStatus, Store, StoreError, Subnet, SystemKey, Tenant,
+    TenantInstanceProjection, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
     default_boot_disk_size_bytes, generate_claim_code, generate_poll_token,
 };
 #[cfg(test)]
@@ -153,6 +154,23 @@ struct Inner {
     /// `(vpc_id, name)` → subnet_id index for within-vpc name
     /// uniqueness.
     subnet_id_by_vpc_name: HashMap<(Uuid, String), Uuid>,
+    /// External-subnet name uniqueness index (`name` → subnet_id).
+    /// External subnets carry reserved nil VPC ids so they can't share
+    /// the per-VPC index; they live in `subnets_by_id` keyed by
+    /// `kind == NetworkKind::External`.
+    external_subnet_id_by_name: HashMap<String, Uuid>,
+    /// Fleet-wide nic_tag registry, keyed by id.
+    nic_tags_by_id: HashMap<Uuid, NicTag>,
+    /// `name` → nic_tag id index for the fleet-wide uniqueness check.
+    nic_tag_id_by_name: HashMap<String, Uuid>,
+    /// Per-CN nic_tag inventory (single-writer per CN), keyed by CN
+    /// uuid. Mirrors the FDB `cn-nic-tags/<cn>` keyspace.
+    cn_nic_tags_by_cn: HashMap<Uuid, CnNicTagInventory>,
+    /// Fleet-wide network pools, keyed by id.
+    network_pools_by_id: HashMap<Uuid, NetworkPool>,
+    /// `name` → network pool id index for the fleet-wide uniqueness
+    /// check.
+    network_pool_id_by_name: HashMap<String, Uuid>,
     route_tables_by_id: HashMap<Uuid, RouteTable>,
     /// `(vpc_id, name)` → route_table_id index for within-VPC name
     /// uniqueness. The auto-created main route table reserves
@@ -3115,6 +3133,333 @@ impl Store for MemStore {
         fip.attached_to = None;
         fip.updated_at = Utc::now();
         Ok(fip.clone())
+    }
+
+    // --- nic_tag registry -------------------------------------------------
+
+    async fn create_nic_tag(&self, req: NewNicTag) -> Result<NicTag, StoreError> {
+        validate::name("nic_tag", &req.name)?;
+        let mut guard = self.inner.write().await;
+        if guard.nic_tag_id_by_name.contains_key(&req.name) {
+            return Err(StoreError::Conflict(format!(
+                "nic tag with name {:?} already exists",
+                req.name
+            )));
+        }
+        let now = Utc::now();
+        let tag = NicTag {
+            id: Uuid::new_v4(),
+            name: req.name.clone(),
+            description: req.description.unwrap_or_default(),
+            mtu: req.mtu,
+            created_at: now,
+            updated_at: now,
+        };
+        guard.nic_tag_id_by_name.insert(req.name, tag.id);
+        guard.nic_tags_by_id.insert(tag.id, tag.clone());
+        Ok(tag)
+    }
+
+    async fn get_nic_tag(&self, id: Uuid) -> Result<NicTag, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .nic_tags_by_id
+            .get(&id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_nic_tags(&self) -> Result<Vec<NicTag>, StoreError> {
+        let guard = self.inner.read().await;
+        let mut out: Vec<NicTag> = guard.nic_tags_by_id.values().cloned().collect();
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(out)
+    }
+
+    async fn delete_nic_tag(&self, id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        if !guard.nic_tags_by_id.contains_key(&id) {
+            return Err(StoreError::NotFound);
+        }
+        let in_use = guard
+            .subnets_by_id
+            .values()
+            .any(|s| s.nic_tag == Some(id));
+        if in_use {
+            return Err(StoreError::NicTagInUse(id));
+        }
+        let tag = guard.nic_tags_by_id.remove(&id).ok_or(StoreError::NotFound)?;
+        guard.nic_tag_id_by_name.remove(&tag.name);
+        Ok(())
+    }
+
+    // --- per-CN nic_tag inventory ----------------------------------------
+
+    async fn publish_cn_nic_tags(&self, inv: CnNicTagInventory) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        guard.cn_nic_tags_by_cn.insert(inv.cn, inv);
+        Ok(())
+    }
+
+    async fn get_cn_nic_tags(&self, cn: Uuid) -> Result<Option<CnNicTagInventory>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard.cn_nic_tags_by_cn.get(&cn).cloned())
+    }
+
+    async fn list_cn_nic_tags(&self) -> Result<Vec<CnNicTagInventory>, StoreError> {
+        let guard = self.inner.read().await;
+        let mut out: Vec<CnNicTagInventory> = guard.cn_nic_tags_by_cn.values().cloned().collect();
+        out.sort_by(|a, b| a.cn.cmp(&b.cn));
+        Ok(out)
+    }
+
+    // --- network pools ----------------------------------------------------
+
+    async fn create_network_pool(&self, req: NewNetworkPool) -> Result<NetworkPool, StoreError> {
+        validate::name("network_pool", &req.name)?;
+        let mut guard = self.inner.write().await;
+        if guard.network_pool_id_by_name.contains_key(&req.name) {
+            return Err(StoreError::Conflict(format!(
+                "network pool with name {:?} already exists",
+                req.name
+            )));
+        }
+        let now = Utc::now();
+        let pool = NetworkPool {
+            id: Uuid::new_v4(),
+            name: req.name.clone(),
+            description: req.description,
+            networks: req.networks,
+            owner_silos: req.owner_silos,
+            created_at: now,
+            updated_at: now,
+        };
+        guard.network_pool_id_by_name.insert(req.name, pool.id);
+        guard.network_pools_by_id.insert(pool.id, pool.clone());
+        Ok(pool)
+    }
+
+    async fn get_network_pool(&self, id: Uuid) -> Result<NetworkPool, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .network_pools_by_id
+            .get(&id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_network_pools(&self) -> Result<Vec<NetworkPool>, StoreError> {
+        let guard = self.inner.read().await;
+        let mut out: Vec<NetworkPool> = guard.network_pools_by_id.values().cloned().collect();
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(out)
+    }
+
+    async fn delete_network_pool(&self, id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        let pool = guard
+            .network_pools_by_id
+            .remove(&id)
+            .ok_or(StoreError::NotFound)?;
+        guard.network_pool_id_by_name.remove(&pool.name);
+        Ok(())
+    }
+
+    // --- external subnets -------------------------------------------------
+
+    async fn create_external_subnet(&self, req: NewExternalSubnet) -> Result<Subnet, StoreError> {
+        validate::name("external_subnet", &req.name)?;
+        if req.ipv4_block.is_none() && req.ipv6_block.is_none() {
+            return Err(StoreError::Conflict(
+                "external subnet needs at least one of ipv4_block / ipv6_block".to_string(),
+            ));
+        }
+        let mut guard = self.inner.write().await;
+        if !guard.nic_tags_by_id.contains_key(&req.nic_tag) {
+            return Err(StoreError::NotFound);
+        }
+        if guard.external_subnet_id_by_name.contains_key(&req.name) {
+            return Err(StoreError::Conflict(format!(
+                "external subnet with name {:?} already exists",
+                req.name
+            )));
+        }
+        // Overlap check against every existing External subnet, per
+        // family, so the single global public-IP index stays
+        // unambiguous.
+        for peer in guard.subnets_by_id.values() {
+            if peer.kind != NetworkKind::External {
+                continue;
+            }
+            if let (Some(v4), Some(peer_v4)) = (req.ipv4_block, peer.ipv4_block)
+                && v4.overlaps(peer_v4)
+            {
+                return Err(StoreError::SubnetCidrOverlap(format!(
+                    "ipv4_block {v4} overlaps external subnet {} ipv4_block {peer_v4}",
+                    peer.id
+                )));
+            }
+            if let (Some(v6), Some(peer_v6)) = (req.ipv6_block, peer.ipv6_block)
+                && v6.overlaps(peer_v6)
+            {
+                return Err(StoreError::SubnetCidrOverlap(format!(
+                    "ipv6_block {v6} overlaps external subnet {} ipv6_block {peer_v6}",
+                    peer.id
+                )));
+            }
+        }
+
+        let subnet = Subnet {
+            id: Uuid::new_v4(),
+            tenant_id: Uuid::nil(),
+            project_id: Uuid::nil(),
+            vpc_id: Uuid::nil(),
+            route_table_id: Uuid::nil(),
+            name: req.name.clone(),
+            description: req.description.unwrap_or_default(),
+            ipv4_block: req.ipv4_block,
+            ipv6_block: req.ipv6_block,
+            kind: NetworkKind::External,
+            nic_tag: Some(req.nic_tag),
+            vlan_id: req.vlan_id,
+            provision_start_ipv4: req.provision_start_ipv4,
+            provision_end_ipv4: req.provision_end_ipv4,
+            provision_start_ipv6: req.provision_start_ipv6,
+            provision_end_ipv6: req.provision_end_ipv6,
+            created_at: Utc::now(),
+        };
+        guard
+            .external_subnet_id_by_name
+            .insert(req.name, subnet.id);
+        guard.subnets_by_id.insert(subnet.id, subnet.clone());
+        Ok(subnet)
+    }
+
+    async fn list_external_subnets(&self) -> Result<Vec<Subnet>, StoreError> {
+        let guard = self.inner.read().await;
+        let mut out: Vec<Subnet> = guard
+            .subnets_by_id
+            .values()
+            .filter(|s| s.kind == NetworkKind::External)
+            .cloned()
+            .collect();
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(out)
+    }
+
+    // --- external-IP allocation on the single global public-IP index ------
+
+    async fn allocate_external_ip(
+        &self,
+        subnet_id: Uuid,
+        family: AddressFamily,
+        holder_kind: &str,
+        holder_id: Uuid,
+    ) -> Result<IpAddr, StoreError> {
+        let mut guard = self.inner.write().await;
+        let subnet = guard
+            .subnets_by_id
+            .get(&subnet_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)?;
+        if subnet.kind != NetworkKind::External {
+            return Err(StoreError::SubnetNotExternal(subnet_id));
+        }
+        let holder = public_ip_holder(holder_kind, holder_id);
+        match family {
+            AddressFamily::V4 => {
+                let cidr = subnet.ipv4_block.ok_or_else(|| {
+                    StoreError::PoolExhausted(format!(
+                        "external subnet {subnet_id} has no ipv4_block"
+                    ))
+                })?;
+                let allocated: HashSet<Ipv4Addr> =
+                    guard.public_ipv4_allocations.keys().copied().collect();
+                let ip = crate::types::allocate_ipv4_in_range(
+                    cidr,
+                    subnet.provision_start_ipv4,
+                    subnet.provision_end_ipv4,
+                    &allocated,
+                )
+                .ok_or_else(|| {
+                    StoreError::PoolExhausted(format!(
+                        "external subnet {subnet_id} ipv4 provision range exhausted"
+                    ))
+                })?;
+                guard.public_ipv4_allocations.insert(ip, holder);
+                Ok(IpAddr::V4(ip))
+            }
+            AddressFamily::V6 => {
+                let cidr = subnet.ipv6_block.ok_or_else(|| {
+                    StoreError::PoolExhausted(format!(
+                        "external subnet {subnet_id} has no ipv6_block"
+                    ))
+                })?;
+                let allocated: HashSet<Ipv6Addr> =
+                    guard.public_ipv6_allocations.keys().copied().collect();
+                let ip = crate::types::allocate_ipv6_in_range(
+                    cidr,
+                    subnet.provision_start_ipv6,
+                    subnet.provision_end_ipv6,
+                    &allocated,
+                )
+                .ok_or_else(|| {
+                    StoreError::PoolExhausted(format!(
+                        "external subnet {subnet_id} ipv6 provision range exhausted"
+                    ))
+                })?;
+                guard.public_ipv6_allocations.insert(ip, holder);
+                Ok(IpAddr::V6(ip))
+            }
+        }
+    }
+
+    async fn release_external_ip(&self, addr: IpAddr) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        match addr {
+            IpAddr::V4(v4) => {
+                guard.public_ipv4_allocations.remove(&v4);
+            }
+            IpAddr::V6(v6) => {
+                guard.public_ipv6_allocations.remove(&v6);
+            }
+        }
+        Ok(())
+    }
+
+    async fn allocate_external_ip_from_pool(
+        &self,
+        pool_id: Uuid,
+        family: AddressFamily,
+        holder_kind: &str,
+        holder_id: Uuid,
+    ) -> Result<IpAddr, StoreError> {
+        let networks = {
+            let guard = self.inner.read().await;
+            guard
+                .network_pools_by_id
+                .get(&pool_id)
+                .map(|p| p.networks.clone())
+                .ok_or(StoreError::NotFound)?
+        };
+        for subnet_id in networks {
+            match self
+                .allocate_external_ip(subnet_id, family, holder_kind, holder_id)
+                .await
+            {
+                Ok(addr) => return Ok(addr),
+                // A pool may legitimately reference a subnet that is
+                // exhausted, missing, or wrong-family; walk to the
+                // next candidate rather than failing the whole pool.
+                Err(StoreError::PoolExhausted(_))
+                | Err(StoreError::NotFound)
+                | Err(StoreError::SubnetNotExternal(_)) => continue,
+                Err(e) => return Err(e),
+            }
+        }
+        Err(StoreError::PoolExhausted(format!(
+            "network pool {pool_id} has no free {family:?} address"
+        )))
     }
 
     async fn delete_quota(&self, tenant_id: Uuid, project_id: Uuid) -> Result<(), StoreError> {
@@ -8233,6 +8578,453 @@ mod tests {
             }
             other => panic!("expected two v4 addresses, got {other:?}"),
         }
+    }
+
+    // ── C-1b: nic_tag / cn-nic-tags / network pool / external subnet ──────
+
+    fn nic_tag_req(name: &str) -> NewNicTag {
+        NewNicTag {
+            name: name.to_string(),
+            description: None,
+            mtu: 1500,
+        }
+    }
+
+    /// Build an External-subnet request on the given nic_tag with an
+    /// IPv4 block and optional provision window.
+    fn ext_subnet_req(
+        name: &str,
+        nic_tag: Uuid,
+        ipv4_block: &str,
+        provision: Option<(&str, &str)>,
+    ) -> NewExternalSubnet {
+        let (start, end) = match provision {
+            Some((s, e)) => (
+                Some(s.parse::<Ipv4Addr>().unwrap()),
+                Some(e.parse::<Ipv4Addr>().unwrap()),
+            ),
+            None => (None, None),
+        };
+        NewExternalSubnet {
+            name: name.to_string(),
+            description: None,
+            ipv4_block: Some(ipv4_cidr(ipv4_block)),
+            ipv6_block: None,
+            nic_tag,
+            vlan_id: Some(100),
+            provision_start_ipv4: start,
+            provision_end_ipv4: end,
+            provision_start_ipv6: None,
+            provision_end_ipv6: None,
+            owner_silos: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn nic_tag_create_get_list_and_name_conflict() {
+        let store = MemStore::new();
+        let tag = store.create_nic_tag(nic_tag_req("external")).await.unwrap();
+        assert_eq!(tag.name, "external");
+        assert_eq!(tag.mtu, 1500);
+
+        let fetched = store.get_nic_tag(tag.id).await.unwrap();
+        assert_eq!(fetched, tag);
+
+        store.create_nic_tag(nic_tag_req("internal")).await.unwrap();
+        let listed = store.list_nic_tags().await.unwrap();
+        assert_eq!(listed.len(), 2);
+        // Sorted by name.
+        assert_eq!(listed[0].name, "external");
+        assert_eq!(listed[1].name, "internal");
+
+        let err = store
+            .create_nic_tag(nic_tag_req("external"))
+            .await
+            .expect_err("duplicate nic_tag name should conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn delete_nic_tag_in_use_by_external_subnet_is_rejected() {
+        let store = MemStore::new();
+        let tag = store.create_nic_tag(nic_tag_req("external")).await.unwrap();
+        let _subnet = store
+            .create_external_subnet(ext_subnet_req("pub", tag.id, "198.51.100.0/24", None))
+            .await
+            .unwrap();
+
+        let err = store
+            .delete_nic_tag(tag.id)
+            .await
+            .expect_err("nic_tag referenced by a subnet must not delete");
+        assert!(matches!(err, StoreError::NicTagInUse(id) if id == tag.id));
+
+        // A free tag deletes cleanly.
+        let free = store.create_nic_tag(nic_tag_req("spare")).await.unwrap();
+        store.delete_nic_tag(free.id).await.unwrap();
+        assert!(matches!(
+            store.get_nic_tag(free.id).await,
+            Err(StoreError::NotFound)
+        ));
+    }
+
+    #[tokio::test]
+    async fn cn_nic_tags_publish_get_list_overwrites() {
+        let store = MemStore::new();
+        let cn = Uuid::new_v4();
+        let tag_a = Uuid::new_v4();
+        let tag_b = Uuid::new_v4();
+
+        assert!(store.get_cn_nic_tags(cn).await.unwrap().is_none());
+
+        store
+            .publish_cn_nic_tags(CnNicTagInventory {
+                cn,
+                provides: vec![crate::NicTagProvision {
+                    nic_tag: tag_a,
+                    physical_nic: "igb0".to_string(),
+                    vlan_id: 0,
+                    mtu: 1500,
+                }],
+                published_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+        let got = store.get_cn_nic_tags(cn).await.unwrap().unwrap();
+        assert_eq!(got.provides.len(), 1);
+        assert_eq!(got.provides[0].nic_tag, tag_a);
+
+        // Re-publish overwrites the whole row (single-writer per CN).
+        store
+            .publish_cn_nic_tags(CnNicTagInventory {
+                cn,
+                provides: vec![crate::NicTagProvision {
+                    nic_tag: tag_b,
+                    physical_nic: "igb1".to_string(),
+                    vlan_id: 100,
+                    mtu: 9000,
+                }],
+                published_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+        let got = store.get_cn_nic_tags(cn).await.unwrap().unwrap();
+        assert_eq!(got.provides.len(), 1);
+        assert_eq!(got.provides[0].nic_tag, tag_b);
+
+        // A second CN's row is independent.
+        let cn2 = Uuid::new_v4();
+        store
+            .publish_cn_nic_tags(CnNicTagInventory {
+                cn: cn2,
+                provides: Vec::new(),
+                published_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+        let listed = store.list_cn_nic_tags().await.unwrap();
+        assert_eq!(listed.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn network_pool_create_get_list_delete() {
+        let store = MemStore::new();
+        let n1 = Uuid::new_v4();
+        let n2 = Uuid::new_v4();
+        let pool = store
+            .create_network_pool(NewNetworkPool {
+                name: "default".to_string(),
+                description: Some("primary".to_string()),
+                networks: vec![n1, n2],
+                owner_silos: Vec::new(),
+            })
+            .await
+            .unwrap();
+        // Ordered networks preserved.
+        assert_eq!(pool.networks, vec![n1, n2]);
+
+        let fetched = store.get_network_pool(pool.id).await.unwrap();
+        assert_eq!(fetched, pool);
+
+        store
+            .create_network_pool(NewNetworkPool {
+                name: "secondary".to_string(),
+                description: None,
+                networks: Vec::new(),
+                owner_silos: Vec::new(),
+            })
+            .await
+            .unwrap();
+        let err = store
+            .create_network_pool(NewNetworkPool {
+                name: "default".to_string(),
+                description: None,
+                networks: Vec::new(),
+                owner_silos: Vec::new(),
+            })
+            .await
+            .expect_err("duplicate pool name should conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+
+        let listed = store.list_network_pools().await.unwrap();
+        assert_eq!(listed.len(), 2);
+
+        store.delete_network_pool(pool.id).await.unwrap();
+        assert!(matches!(
+            store.get_network_pool(pool.id).await,
+            Err(StoreError::NotFound)
+        ));
+        assert_eq!(store.list_network_pools().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn create_external_subnet_sets_kind_and_rejects_overlap() {
+        let store = MemStore::new();
+        let tag = store.create_nic_tag(nic_tag_req("external")).await.unwrap();
+
+        // Missing nic_tag → NotFound.
+        let err = store
+            .create_external_subnet(ext_subnet_req("bad", Uuid::new_v4(), "192.0.2.0/24", None))
+            .await
+            .expect_err("unknown nic_tag should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
+
+        let subnet = store
+            .create_external_subnet(ext_subnet_req("pub", tag.id, "192.0.2.0/24", None))
+            .await
+            .unwrap();
+        assert_eq!(subnet.kind, NetworkKind::External);
+        assert_eq!(subnet.nic_tag, Some(tag.id));
+        assert_eq!(subnet.vlan_id, Some(100));
+        // Operator-scoped: reserved nil ids.
+        assert_eq!(subnet.tenant_id, Uuid::nil());
+        assert_eq!(subnet.vpc_id, Uuid::nil());
+
+        // Overlapping block in the same family → SubnetCidrOverlap.
+        let err = store
+            .create_external_subnet(ext_subnet_req("overlap", tag.id, "192.0.2.128/25", None))
+            .await
+            .expect_err("overlapping external block must be rejected");
+        assert!(matches!(err, StoreError::SubnetCidrOverlap(_)));
+
+        // A disjoint block is fine.
+        store
+            .create_external_subnet(ext_subnet_req("pub2", tag.id, "198.51.100.0/24", None))
+            .await
+            .unwrap();
+
+        // No block present at all → Conflict.
+        let mut empty = ext_subnet_req("empty", tag.id, "203.0.113.0/24", None);
+        empty.ipv4_block = None;
+        empty.ipv6_block = None;
+        let err = store
+            .create_external_subnet(empty)
+            .await
+            .expect_err("external subnet with no block should conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+
+        let listed = store.list_external_subnets().await.unwrap();
+        assert_eq!(listed.len(), 2);
+        assert!(listed.iter().all(|s| s.kind == NetworkKind::External));
+    }
+
+    #[tokio::test]
+    async fn allocate_external_ip_lowest_free_within_provision_range() {
+        let store = MemStore::new();
+        let tag = store.create_nic_tag(nic_tag_req("external")).await.unwrap();
+        // /24 with a 3-address provision window .10-.12.
+        let subnet = store
+            .create_external_subnet(ext_subnet_req(
+                "pub",
+                tag.id,
+                "192.0.2.0/24",
+                Some(("192.0.2.10", "192.0.2.12")),
+            ))
+            .await
+            .unwrap();
+
+        let h = Uuid::new_v4();
+        let a = store
+            .allocate_external_ip(subnet.id, AddressFamily::V4, "floating_ip", h)
+            .await
+            .unwrap();
+        let b = store
+            .allocate_external_ip(subnet.id, AddressFamily::V4, "floating_ip", h)
+            .await
+            .unwrap();
+        let c = store
+            .allocate_external_ip(subnet.id, AddressFamily::V4, "floating_ip", h)
+            .await
+            .unwrap();
+        assert_eq!(a, "192.0.2.10".parse::<IpAddr>().unwrap());
+        assert_eq!(b, "192.0.2.11".parse::<IpAddr>().unwrap());
+        assert_eq!(c, "192.0.2.12".parse::<IpAddr>().unwrap());
+
+        // Window exhausted → PoolExhausted (does NOT spill past .12).
+        let err = store
+            .allocate_external_ip(subnet.id, AddressFamily::V4, "floating_ip", h)
+            .await
+            .expect_err("provision window is full");
+        assert!(matches!(err, StoreError::PoolExhausted(_)));
+
+        // Release frees the address for reuse (idempotent).
+        store.release_external_ip(b).await.unwrap();
+        store.release_external_ip(b).await.unwrap();
+        let again = store
+            .allocate_external_ip(subnet.id, AddressFamily::V4, "floating_ip", h)
+            .await
+            .unwrap();
+        assert_eq!(again, b);
+    }
+
+    #[tokio::test]
+    async fn allocate_external_ip_non_external_subnet_rejected() {
+        let store = MemStore::new();
+        let (tenant_id, project_id, _img, subnet_id, _ssh) = make_instance_fixture(&store).await;
+        // The instance-fixture subnet is Internal.
+        let err = store
+            .allocate_external_ip(subnet_id, AddressFamily::V4, "floating_ip", Uuid::new_v4())
+            .await
+            .expect_err("internal subnet must not allocate external IPs");
+        assert!(matches!(err, StoreError::SubnetNotExternal(id) if id == subnet_id));
+        let _ = (tenant_id, project_id);
+    }
+
+    #[tokio::test]
+    async fn allocate_external_ip_from_pool_walks_ordered_networks() {
+        let store = MemStore::new();
+        let tag = store.create_nic_tag(nic_tag_req("external")).await.unwrap();
+        // First subnet: a single usable address (.10 only).
+        let first = store
+            .create_external_subnet(ext_subnet_req(
+                "first",
+                tag.id,
+                "192.0.2.0/24",
+                Some(("192.0.2.10", "192.0.2.10")),
+            ))
+            .await
+            .unwrap();
+        let second = store
+            .create_external_subnet(ext_subnet_req(
+                "second",
+                tag.id,
+                "198.51.100.0/24",
+                Some(("198.51.100.20", "198.51.100.21")),
+            ))
+            .await
+            .unwrap();
+        let pool = store
+            .create_network_pool(NewNetworkPool {
+                name: "pool".to_string(),
+                description: None,
+                networks: vec![first.id, second.id],
+                owner_silos: Vec::new(),
+            })
+            .await
+            .unwrap();
+
+        let h = Uuid::new_v4();
+        // First allocation drains `first` (.10).
+        let a = store
+            .allocate_external_ip_from_pool(pool.id, AddressFamily::V4, "floating_ip", h)
+            .await
+            .unwrap();
+        assert_eq!(a, "192.0.2.10".parse::<IpAddr>().unwrap());
+        // Next two fall through to `second`.
+        let b = store
+            .allocate_external_ip_from_pool(pool.id, AddressFamily::V4, "floating_ip", h)
+            .await
+            .unwrap();
+        assert_eq!(b, "198.51.100.20".parse::<IpAddr>().unwrap());
+        let c = store
+            .allocate_external_ip_from_pool(pool.id, AddressFamily::V4, "floating_ip", h)
+            .await
+            .unwrap();
+        assert_eq!(c, "198.51.100.21".parse::<IpAddr>().unwrap());
+        // All exhausted.
+        let err = store
+            .allocate_external_ip_from_pool(pool.id, AddressFamily::V4, "floating_ip", h)
+            .await
+            .expect_err("pool fully drained");
+        assert!(matches!(err, StoreError::PoolExhausted(_)));
+    }
+
+    #[tokio::test]
+    async fn external_alloc_and_floating_ip_never_collide_on_shared_space() {
+        // Regression for invariant D5: allocate_external_ip writes the
+        // same global public-IP index as create_floating_ip, so an
+        // external subnet whose block IS the floating-IP pool can never
+        // hand out an address that create_floating_ip already gave.
+        let store = MemStore::new();
+        let (_silo, tenant_id, project_id) = make_silo_and_project(&store).await;
+        let tag = store.create_nic_tag(nic_tag_req("external")).await.unwrap();
+        // Same CIDR as FLOATING_IP_V4_POOL (203.0.113.0/24).
+        let subnet = store
+            .create_external_subnet(ext_subnet_req("shared", tag.id, "203.0.113.0/24", None))
+            .await
+            .unwrap();
+
+        // Floating IP takes 203.0.113.2 (first usable after net+gw).
+        let fip = store
+            .create_floating_ip(tenant_id, project_id, fip_req("fip", AddressFamily::V4))
+            .await
+            .unwrap();
+        assert_eq!(fip.address, "203.0.113.2".parse::<IpAddr>().unwrap());
+
+        // External allocation must skip .2 and hand out .3.
+        let ext = store
+            .allocate_external_ip(subnet.id, AddressFamily::V4, "external_nic", Uuid::new_v4())
+            .await
+            .unwrap();
+        assert_ne!(ext, fip.address);
+        assert_eq!(ext, "203.0.113.3".parse::<IpAddr>().unwrap());
+
+        // And a subsequent floating IP must skip both .2 and .3.
+        let fip2 = store
+            .create_floating_ip(tenant_id, project_id, fip_req("fip2", AddressFamily::V4))
+            .await
+            .unwrap();
+        assert_eq!(fip2.address, "203.0.113.4".parse::<IpAddr>().unwrap());
+    }
+
+    #[tokio::test]
+    async fn internal_nic_allocation_unaffected_by_external_path() {
+        // Internal IPAM stays on its own per-subnet keyspace; creating
+        // external subnets / allocating external IPs must not perturb
+        // a normal instance NIC allocation.
+        let store = MemStore::new();
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+
+        // Stir the external path on an unrelated subnet first.
+        let tag = store.create_nic_tag(nic_tag_req("external")).await.unwrap();
+        let ext = store
+            .create_external_subnet(ext_subnet_req("pub", tag.id, "192.0.2.0/24", None))
+            .await
+            .unwrap();
+        let _ = store
+            .allocate_external_ip(ext.id, AddressFamily::V4, "floating_ip", Uuid::new_v4())
+            .await
+            .unwrap();
+
+        // A normal instance still gets its internal primary IPv4 from
+        // the 10.0.1.0/24 fixture subnet (first usable .2).
+        let InstanceCreateResult { nics, .. } = store
+            .create_instance(
+                tenant_id,
+                project_id,
+                instance_req("web", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        let primary = nics
+            .iter()
+            .find(|n| n.subnet_id == subnet_id)
+            .expect("instance has a NIC on the primary subnet");
+        assert_eq!(
+            primary.primary_ipv4,
+            Some("10.0.1.2".parse::<Ipv4Addr>().unwrap())
+        );
     }
 
     #[tokio::test]

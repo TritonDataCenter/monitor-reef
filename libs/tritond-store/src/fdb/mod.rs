@@ -28,6 +28,7 @@
 //! uniqueness and index consistency are enforced atomically.
 
 use std::collections::HashSet;
+use std::net::IpAddr;
 use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
@@ -42,20 +43,21 @@ use crate::types::{EdgeClusterRecord, NatGatewayRecord};
 use crate::validate;
 use crate::{
     AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnCapacity, CnLoadSummary,
-    CnPickSnapshot, CnPlacement, CnReservation, CnRole, CnState, DhcpLease, DhcpPool,
-    DhcpReservation, Disk, DiskKind, EdgeCluster, EdgeClusterKind, EdgeClusterResource,
+    CnNicTagInventory, CnPickSnapshot, CnPlacement, CnReservation, CnRole, CnState, DhcpLease,
+    DhcpPool, DhcpReservation, Disk, DiskKind, EdgeCluster, EdgeClusterKind, EdgeClusterResource,
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FirewallRule, FloatingIp, FloatingIpAttachment,
     IdpConfig, Image, ImageScope, Instance, InstanceAffinity, InstanceBrand, InstanceCreateResult,
     JobOutcome, JobStatus, JobStatusKind, LegacyVm, LifecycleState, LifecycleStateKind, MetaScope,
     MetaValue, MigrationPhase, MigrationProgressEvent, MigrationRecord, MigrationState, NatGateway,
-    NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster, NewFirewallRule,
-    NewFloatingIp, NewImage, NewInstance, NewJob, NewMigration, NewNatGateway, NewProject,
-    NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant,
-    NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId,
-    Route, RouteTable, RouteTarget, Settings, Silo, SshKey, SshKeyScope, StorageCluster,
-    StorageClusterStatus, Store, StoreError, Subnet, SystemKey, Tenant, TenantInstanceProjection,
-    User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, default_boot_disk_size_bytes,
-    generate_claim_code, generate_poll_token,
+    NetworkPool, NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster,
+    NewExternalSubnet, NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewJob, NewMigration,
+    NewNatGateway, NewNetworkPool, NewNicTag, NewProject, NewQuota, NewRoute, NewRouteTable,
+    NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, NicTag, Project,
+    ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId, Route, RouteTable,
+    RouteTarget, Settings, Silo, SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, Store,
+    StoreError, Subnet, SystemKey, Tenant, TenantInstanceProjection, User, VPC_VNI_MAX,
+    VPC_VNI_RESERVED_CEILING, Vpc, default_boot_disk_size_bytes, generate_claim_code,
+    generate_poll_token,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
@@ -4974,6 +4976,635 @@ impl Store for FdbStore {
             Ok(Out::Vanished) => Err(StoreError::NotFound),
             Err(e) => Err(e.into()),
         }
+    }
+
+    // --- nic_tag registry -------------------------------------------------
+
+    async fn create_nic_tag(&self, req: NewNicTag) -> Result<NicTag, StoreError> {
+        validate::name("nic_tag", &req.name)?;
+        let id = Uuid::new_v4();
+        let by_id_key = keys::nic_tag_by_id_key(id);
+        let by_name_key = keys::nic_tag_by_name_key(&req.name);
+        let id_bytes = id.to_string().into_bytes();
+
+        enum Outcome {
+            Created(Box<NicTag>),
+            NameTaken,
+            SerializeFailed(String),
+        }
+
+        let req_for_txn = req.clone();
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let id_bytes = id_bytes.clone();
+                let req = req_for_txn.clone();
+                async move {
+                    if tr.get(&by_name_key, false).await?.is_some() {
+                        return Ok(Outcome::NameTaken);
+                    }
+                    let now = Utc::now();
+                    let tag = NicTag {
+                        id,
+                        name: req.name.clone(),
+                        description: req.description.unwrap_or_default(),
+                        mtu: req.mtu,
+                        created_at: now,
+                        updated_at: now,
+                    };
+                    let value = match serde_json::to_vec(&tag) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(Outcome::SerializeFailed(e.to_string())),
+                    };
+                    tr.set(&by_id_key, &value);
+                    tr.set(&by_name_key, &id_bytes);
+                    Ok(Outcome::Created(Box::new(tag)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Created(t)) => Ok(*t),
+            Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
+                "nic tag with name {:?} already exists",
+                req.name
+            ))),
+            Ok(Outcome::SerializeFailed(e)) => {
+                Err(StoreError::Backend(format!("serialize nic tag: {e}")))
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    async fn get_nic_tag(&self, id: Uuid) -> Result<NicTag, StoreError> {
+        let key = keys::nic_tag_by_id_key(id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes).map_err(de_err("nic tag"))
+    }
+
+    async fn list_nic_tags(&self) -> Result<Vec<NicTag>, StoreError> {
+        let prefix = keys::nic_tag_by_id_prefix().to_vec();
+        let values = self.scan_values(prefix).await?;
+        let mut out = Vec::with_capacity(values.len());
+        for bytes in values {
+            let tag: NicTag = serde_json::from_slice(&bytes).map_err(de_err("nic tag"))?;
+            out.push(tag);
+        }
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(out)
+    }
+
+    async fn delete_nic_tag(&self, id: Uuid) -> Result<(), StoreError> {
+        // The in-use check scans every external subnet (the only
+        // subnets that carry a nic_tag) outside the delete txn; an
+        // external subnet referencing this tag can only be created via
+        // create_external_subnet, which fails NotFound if the tag is
+        // gone, so the window is benign.
+        let external = self.list_external_subnets().await?;
+        if external.iter().any(|s| s.nic_tag == Some(id)) {
+            return Err(StoreError::NicTagInUse(id));
+        }
+        let by_id_key = keys::nic_tag_by_id_key(id);
+
+        enum Out {
+            Deleted,
+            Vanished,
+            Corrupt(String),
+        }
+        let outcome: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Out::Vanished),
+                    };
+                    let tag: NicTag = match serde_json::from_slice(&bytes) {
+                        Ok(t) => t,
+                        Err(e) => return Ok(Out::Corrupt(e.to_string())),
+                    };
+                    tr.clear(&by_id_key);
+                    tr.clear(&keys::nic_tag_by_name_key(&tag.name));
+                    Ok(Out::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Out::Deleted) => Ok(()),
+            Ok(Out::Vanished) => Err(StoreError::NotFound),
+            Ok(Out::Corrupt(e)) => Err(StoreError::Backend(format!("deserialize nic tag: {e}"))),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    // --- per-CN nic_tag inventory ----------------------------------------
+
+    async fn publish_cn_nic_tags(&self, inv: CnNicTagInventory) -> Result<(), StoreError> {
+        let key = keys::cn_nic_tags_key(inv.cn);
+        let value = serde_json::to_vec(&inv).map_err(ser_err("cn nic tags"))?;
+        fdb_txn!(self.db, [key, value], |tr| {
+            tr.set(&key, &value);
+            Ok(())
+        })
+        .map_err(StoreError::from)
+    }
+
+    async fn get_cn_nic_tags(&self, cn: Uuid) -> Result<Option<CnNicTagInventory>, StoreError> {
+        let key = keys::cn_nic_tags_key(cn);
+        match self.read_bytes(&key).await? {
+            Some(bytes) => {
+                let inv: CnNicTagInventory =
+                    serde_json::from_slice(&bytes).map_err(de_err("cn nic tags"))?;
+                Ok(Some(inv))
+            }
+            None => Ok(None),
+        }
+    }
+
+    async fn list_cn_nic_tags(&self) -> Result<Vec<CnNicTagInventory>, StoreError> {
+        let prefix = keys::cn_nic_tags_prefix().to_vec();
+        let values = self.scan_values(prefix).await?;
+        let mut out = Vec::with_capacity(values.len());
+        for bytes in values {
+            let inv: CnNicTagInventory =
+                serde_json::from_slice(&bytes).map_err(de_err("cn nic tags"))?;
+            out.push(inv);
+        }
+        out.sort_by(|a, b| a.cn.cmp(&b.cn));
+        Ok(out)
+    }
+
+    // --- network pools ----------------------------------------------------
+
+    async fn create_network_pool(&self, req: NewNetworkPool) -> Result<NetworkPool, StoreError> {
+        validate::name("network_pool", &req.name)?;
+        let id = Uuid::new_v4();
+        let by_id_key = keys::network_pool_by_id_key(id);
+        let by_name_key = keys::network_pool_by_name_key(&req.name);
+        let id_bytes = id.to_string().into_bytes();
+
+        enum Outcome {
+            Created(Box<NetworkPool>),
+            NameTaken,
+            SerializeFailed(String),
+        }
+
+        let req_for_txn = req.clone();
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let id_bytes = id_bytes.clone();
+                let req = req_for_txn.clone();
+                async move {
+                    if tr.get(&by_name_key, false).await?.is_some() {
+                        return Ok(Outcome::NameTaken);
+                    }
+                    let now = Utc::now();
+                    let pool = NetworkPool {
+                        id,
+                        name: req.name.clone(),
+                        description: req.description.clone(),
+                        networks: req.networks.clone(),
+                        owner_silos: req.owner_silos.clone(),
+                        created_at: now,
+                        updated_at: now,
+                    };
+                    let value = match serde_json::to_vec(&pool) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(Outcome::SerializeFailed(e.to_string())),
+                    };
+                    tr.set(&by_id_key, &value);
+                    tr.set(&by_name_key, &id_bytes);
+                    Ok(Outcome::Created(Box::new(pool)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Created(p)) => Ok(*p),
+            Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
+                "network pool with name {:?} already exists",
+                req.name
+            ))),
+            Ok(Outcome::SerializeFailed(e)) => {
+                Err(StoreError::Backend(format!("serialize network pool: {e}")))
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    async fn get_network_pool(&self, id: Uuid) -> Result<NetworkPool, StoreError> {
+        let key = keys::network_pool_by_id_key(id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes).map_err(de_err("network pool"))
+    }
+
+    async fn list_network_pools(&self) -> Result<Vec<NetworkPool>, StoreError> {
+        let prefix = keys::network_pool_by_id_prefix().to_vec();
+        let values = self.scan_values(prefix).await?;
+        let mut out = Vec::with_capacity(values.len());
+        for bytes in values {
+            let pool: NetworkPool =
+                serde_json::from_slice(&bytes).map_err(de_err("network pool"))?;
+            out.push(pool);
+        }
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(out)
+    }
+
+    async fn delete_network_pool(&self, id: Uuid) -> Result<(), StoreError> {
+        let by_id_key = keys::network_pool_by_id_key(id);
+
+        enum Out {
+            Deleted,
+            Vanished,
+            Corrupt(String),
+        }
+        let outcome: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Out::Vanished),
+                    };
+                    let pool: NetworkPool = match serde_json::from_slice(&bytes) {
+                        Ok(p) => p,
+                        Err(e) => return Ok(Out::Corrupt(e.to_string())),
+                    };
+                    tr.clear(&by_id_key);
+                    tr.clear(&keys::network_pool_by_name_key(&pool.name));
+                    Ok(Out::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Out::Deleted) => Ok(()),
+            Ok(Out::Vanished) => Err(StoreError::NotFound),
+            Ok(Out::Corrupt(e)) => {
+                Err(StoreError::Backend(format!("deserialize network pool: {e}")))
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    // --- external subnets -------------------------------------------------
+
+    async fn create_external_subnet(&self, req: NewExternalSubnet) -> Result<Subnet, StoreError> {
+        validate::name("external_subnet", &req.name)?;
+        if req.ipv4_block.is_none() && req.ipv6_block.is_none() {
+            return Err(StoreError::Conflict(
+                "external subnet needs at least one of ipv4_block / ipv6_block".to_string(),
+            ));
+        }
+        let nic_tag_key = keys::nic_tag_by_id_key(req.nic_tag);
+        let by_name_key = keys::external_subnet_by_name_key(&req.name);
+        let ext_prefix = keys::external_subnet_index_prefix().to_vec();
+        let (peer_begin, peer_end) = prefix_range(&ext_prefix);
+        let ext_prefix_len = ext_prefix.len();
+
+        let id = Uuid::new_v4();
+        let by_id_key = keys::subnet_by_id_key(id);
+        let index_key = keys::external_subnet_index_key(id);
+        let id_bytes = id.to_string().into_bytes();
+
+        enum Outcome {
+            Created(Box<Subnet>),
+            NicTagMissing,
+            NameTaken,
+            Overlap(String),
+            SerializeFailed(String),
+        }
+
+        let req_for_txn = req.clone();
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let nic_tag_key = nic_tag_key.clone();
+                let by_name_key = by_name_key.clone();
+                let by_id_key = by_id_key.clone();
+                let index_key = index_key.clone();
+                let peer_begin = peer_begin.clone();
+                let peer_end = peer_end.clone();
+                let id_bytes = id_bytes.clone();
+                let req = req_for_txn.clone();
+                async move {
+                    if tr.get(&nic_tag_key, false).await?.is_none() {
+                        return Ok(Outcome::NicTagMissing);
+                    }
+                    if tr.get(&by_name_key, false).await?.is_some() {
+                        return Ok(Outcome::NameTaken);
+                    }
+
+                    // Collect peer external-subnet ids, then load each
+                    // record (the index value carries no CIDR). Keep
+                    // the FDB iterator off the per-peer await boundary.
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(peer_begin),
+                        end: KeySelector::first_greater_or_equal(peer_end),
+                        ..RangeOption::default()
+                    };
+                    let peer_index = tr.get_range(&opt, 1, false).await?;
+                    let mut peer_ids: Vec<Uuid> = Vec::new();
+                    for kv in peer_index.iter() {
+                        let suffix = &kv.key()[ext_prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix)
+                            && let Ok(pid) = Uuid::parse_str(s)
+                        {
+                            peer_ids.push(pid);
+                        }
+                    }
+                    drop(peer_index);
+                    for peer_id in peer_ids {
+                        let peer_bytes = match tr.get(&keys::subnet_by_id_key(peer_id), false).await?
+                        {
+                            Some(b) => b,
+                            None => continue,
+                        };
+                        let peer: Subnet = match serde_json::from_slice(&peer_bytes) {
+                            Ok(p) => p,
+                            Err(_) => continue,
+                        };
+                        if let (Some(v4), Some(peer_v4)) = (req.ipv4_block, peer.ipv4_block)
+                            && v4.overlaps(peer_v4)
+                        {
+                            return Ok(Outcome::Overlap(format!(
+                                "ipv4_block {v4} overlaps external subnet {} ipv4_block {peer_v4}",
+                                peer.id
+                            )));
+                        }
+                        if let (Some(v6), Some(peer_v6)) = (req.ipv6_block, peer.ipv6_block)
+                            && v6.overlaps(peer_v6)
+                        {
+                            return Ok(Outcome::Overlap(format!(
+                                "ipv6_block {v6} overlaps external subnet {} ipv6_block {peer_v6}",
+                                peer.id
+                            )));
+                        }
+                    }
+
+                    let subnet = Subnet {
+                        id,
+                        tenant_id: Uuid::nil(),
+                        project_id: Uuid::nil(),
+                        vpc_id: Uuid::nil(),
+                        route_table_id: Uuid::nil(),
+                        name: req.name.clone(),
+                        description: req.description.clone().unwrap_or_default(),
+                        ipv4_block: req.ipv4_block,
+                        ipv6_block: req.ipv6_block,
+                        kind: crate::types::NetworkKind::External,
+                        nic_tag: Some(req.nic_tag),
+                        vlan_id: req.vlan_id,
+                        provision_start_ipv4: req.provision_start_ipv4,
+                        provision_end_ipv4: req.provision_end_ipv4,
+                        provision_start_ipv6: req.provision_start_ipv6,
+                        provision_end_ipv6: req.provision_end_ipv6,
+                        created_at: Utc::now(),
+                    };
+                    let value = match serde_json::to_vec(&subnet) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(Outcome::SerializeFailed(e.to_string())),
+                    };
+                    tr.set(&by_id_key, &value);
+                    tr.set(&by_name_key, &id_bytes);
+                    tr.set(&index_key, b"");
+                    Ok(Outcome::Created(Box::new(subnet)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Created(s)) => Ok(*s),
+            Ok(Outcome::NicTagMissing) => Err(StoreError::NotFound),
+            Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
+                "external subnet with name {:?} already exists",
+                req.name
+            ))),
+            Ok(Outcome::Overlap(msg)) => Err(StoreError::SubnetCidrOverlap(msg)),
+            Ok(Outcome::SerializeFailed(e)) => Err(StoreError::Backend(format!(
+                "serialize external subnet: {e}"
+            ))),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    async fn list_external_subnets(&self) -> Result<Vec<Subnet>, StoreError> {
+        let prefix = keys::external_subnet_index_prefix().to_vec();
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut ids = Vec::new();
+            for kv in kvs.iter() {
+                let suffix = &kv.key()[prefix_len..];
+                if let Ok(s) = std::str::from_utf8(suffix) {
+                    ids.push(s.to_string());
+                }
+            }
+            Ok(ids)
+        });
+        let id_strs = id_strs.map_err(StoreError::from)?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("external subnet index uuid: {e}")))?;
+            if let Some(bytes) = self.read_bytes(&keys::subnet_by_id_key(id)).await? {
+                let subnet: Subnet = serde_json::from_slice(&bytes).map_err(de_err("subnet"))?;
+                out.push(subnet);
+            }
+        }
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(out)
+    }
+
+    // --- external-IP allocation on the single global public-IP index ------
+
+    async fn allocate_external_ip(
+        &self,
+        subnet_id: Uuid,
+        family: AddressFamily,
+        holder_kind: &str,
+        holder_id: Uuid,
+    ) -> Result<IpAddr, StoreError> {
+        let subnet_key = keys::subnet_by_id_key(subnet_id);
+        let alloc_v4_prefix = keys::floating_ip_alloc_v4_prefix().to_vec();
+        let alloc_v6_prefix = keys::floating_ip_alloc_v6_prefix().to_vec();
+        let (v4_begin, v4_end) = prefix_range(&alloc_v4_prefix);
+        let (v6_begin, v6_end) = prefix_range(&alloc_v6_prefix);
+        let v4_prefix_len = alloc_v4_prefix.len();
+        let v6_prefix_len = alloc_v6_prefix.len();
+        let holder = format!("{holder_kind}:{holder_id}").into_bytes();
+
+        enum Outcome {
+            Allocated(IpAddr),
+            SubnetMissing,
+            NotExternal,
+            NoBlock,
+            Exhausted,
+        }
+
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let subnet_key = subnet_key.clone();
+                let v4_begin = v4_begin.clone();
+                let v4_end = v4_end.clone();
+                let v6_begin = v6_begin.clone();
+                let v6_end = v6_end.clone();
+                let holder = holder.clone();
+                async move {
+                    let subnet_bytes = match tr.get(&subnet_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::SubnetMissing),
+                    };
+                    let subnet: Subnet = match serde_json::from_slice(&subnet_bytes) {
+                        Ok(s) => s,
+                        Err(_) => return Ok(Outcome::SubnetMissing),
+                    };
+                    if subnet.kind != crate::types::NetworkKind::External {
+                        return Ok(Outcome::NotExternal);
+                    }
+                    match family {
+                        AddressFamily::V4 => {
+                            let cidr = match subnet.ipv4_block {
+                                Some(c) => c,
+                                None => return Ok(Outcome::NoBlock),
+                            };
+                            let opt = RangeOption {
+                                begin: KeySelector::first_greater_or_equal(v4_begin),
+                                end: KeySelector::first_greater_or_equal(v4_end),
+                                ..RangeOption::default()
+                            };
+                            let kvs = tr.get_range(&opt, 1, false).await?;
+                            let mut allocated: std::collections::HashSet<std::net::Ipv4Addr> =
+                                std::collections::HashSet::new();
+                            for kv in kvs.iter() {
+                                let suffix = &kv.key()[v4_prefix_len..];
+                                if let Ok(s) = std::str::from_utf8(suffix)
+                                    && let Ok(ip) = s.parse::<std::net::Ipv4Addr>()
+                                {
+                                    allocated.insert(ip);
+                                }
+                            }
+                            drop(kvs);
+                            match crate::types::allocate_ipv4_in_range(
+                                cidr,
+                                subnet.provision_start_ipv4,
+                                subnet.provision_end_ipv4,
+                                &allocated,
+                            ) {
+                                Some(ip) => {
+                                    tr.set(&keys::floating_ip_alloc_v4_key(ip), &holder);
+                                    Ok(Outcome::Allocated(IpAddr::V4(ip)))
+                                }
+                                None => Ok(Outcome::Exhausted),
+                            }
+                        }
+                        AddressFamily::V6 => {
+                            let cidr = match subnet.ipv6_block {
+                                Some(c) => c,
+                                None => return Ok(Outcome::NoBlock),
+                            };
+                            let opt = RangeOption {
+                                begin: KeySelector::first_greater_or_equal(v6_begin),
+                                end: KeySelector::first_greater_or_equal(v6_end),
+                                ..RangeOption::default()
+                            };
+                            let kvs = tr.get_range(&opt, 1, false).await?;
+                            let mut allocated: std::collections::HashSet<std::net::Ipv6Addr> =
+                                std::collections::HashSet::new();
+                            for kv in kvs.iter() {
+                                let suffix = &kv.key()[v6_prefix_len..];
+                                if let Ok(s) = std::str::from_utf8(suffix)
+                                    && let Ok(ip) = s.parse::<std::net::Ipv6Addr>()
+                                {
+                                    allocated.insert(ip);
+                                }
+                            }
+                            drop(kvs);
+                            match crate::types::allocate_ipv6_in_range(
+                                cidr,
+                                subnet.provision_start_ipv6,
+                                subnet.provision_end_ipv6,
+                                &allocated,
+                            ) {
+                                Some(ip) => {
+                                    tr.set(&keys::floating_ip_alloc_v6_key(ip), &holder);
+                                    Ok(Outcome::Allocated(IpAddr::V6(ip)))
+                                }
+                                None => Ok(Outcome::Exhausted),
+                            }
+                        }
+                    }
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Allocated(ip)) => Ok(ip),
+            Ok(Outcome::SubnetMissing) => Err(StoreError::NotFound),
+            Ok(Outcome::NotExternal) => Err(StoreError::SubnetNotExternal(subnet_id)),
+            Ok(Outcome::NoBlock) => Err(StoreError::PoolExhausted(format!(
+                "external subnet {subnet_id} has no block for the requested family"
+            ))),
+            Ok(Outcome::Exhausted) => Err(StoreError::PoolExhausted(format!(
+                "external subnet {subnet_id} provision range exhausted"
+            ))),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    async fn release_external_ip(&self, addr: IpAddr) -> Result<(), StoreError> {
+        let key = match addr {
+            IpAddr::V4(v4) => keys::floating_ip_alloc_v4_key(v4),
+            IpAddr::V6(v6) => keys::floating_ip_alloc_v6_key(v6),
+        };
+        fdb_txn!(self.db, [key], |tr| {
+            tr.clear(&key);
+            Ok(())
+        })
+        .map_err(StoreError::from)
+    }
+
+    async fn allocate_external_ip_from_pool(
+        &self,
+        pool_id: Uuid,
+        family: AddressFamily,
+        holder_kind: &str,
+        holder_id: Uuid,
+    ) -> Result<IpAddr, StoreError> {
+        let pool = self.get_network_pool(pool_id).await?;
+        for subnet_id in pool.networks {
+            match self
+                .allocate_external_ip(subnet_id, family, holder_kind, holder_id)
+                .await
+            {
+                Ok(addr) => return Ok(addr),
+                Err(StoreError::PoolExhausted(_))
+                | Err(StoreError::NotFound)
+                | Err(StoreError::SubnetNotExternal(_)) => continue,
+                Err(e) => return Err(e),
+            }
+        }
+        Err(StoreError::PoolExhausted(format!(
+            "network pool {pool_id} has no free {family:?} address"
+        )))
     }
 
     async fn get_port_generation(&self, port_id: Uuid) -> Result<u64, StoreError> {
