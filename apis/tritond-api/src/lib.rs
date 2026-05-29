@@ -2679,6 +2679,38 @@ pub trait TritondApi {
         path: Path<SiloTenantPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
+    /// Retrofit a storage workspace binding onto an existing tenant.
+    ///
+    /// For tenants created before `storage.default_s3_cluster_id`
+    /// was registered (those rows carry `storage_workspace_id =
+    /// None`), this endpoint mints the mantad workspace and writes
+    /// both binding columns. Idempotent on the mantad side (keyed
+    /// by `tenant_uuid`), so a retried call after a partial
+    /// failure resolves the existing workspace and commits the
+    /// Tenant row.
+    ///
+    /// Failure modes:
+    ///
+    /// * 412 `NoDefaultStorageCluster` — `storage.default_s3_cluster_id`
+    ///   not set; operator must register a cluster first.
+    /// * 409 `Conflict` — tenant already has a binding. Operators
+    ///   must drop the existing binding explicitly before
+    ///   rebinding (no silent re-bind to avoid orphaning the
+    ///   previous workspace).
+    /// * 503 `StorageClusterUnreachable` — the default cluster's
+    ///   last health probe failed; refresh with
+    ///   `tcadm storage health <id>` and retry.
+    /// * 404 — tenant does not exist or belongs to another silo.
+    #[endpoint {
+        method = POST,
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}/init-storage",
+        tags = ["silos", "tenants"],
+    }]
+    async fn init_silo_tenant_storage(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantPath>,
+    ) -> Result<HttpResponseOk<Tenant>, HttpError>;
+
     /// List the projects inside a tenant.
     #[endpoint {
         method = GET,
@@ -3559,7 +3591,6 @@ pub trait TritondApi {
         body: TypedBody<NewSshKey>,
     ) -> Result<HttpResponseCreated<SshKey>, HttpError>;
 
-
     /// Delete an SSH key by id. Returns 404 when the key does
     /// not exist OR the principal lacks ownership for the key's
     /// scope:
@@ -3766,7 +3797,6 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<NewImage>,
     ) -> Result<HttpResponseCreated<Image>, HttpError>;
-
 
     /// Delete an image by id. Returns 404 when the image does
     /// not exist OR the principal lacks ownership for the

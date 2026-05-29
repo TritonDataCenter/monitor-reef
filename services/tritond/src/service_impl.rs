@@ -294,6 +294,13 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::tenants::delete_silo_tenant(rqctx, path).await
     }
 
+    async fn init_silo_tenant_storage(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantPath>,
+    ) -> Result<HttpResponseOk<Tenant>, HttpError> {
+        crate::handlers::tenants::init_silo_tenant_storage(rqctx, path).await
+    }
+
     async fn list_tenant_projects(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantPath>,

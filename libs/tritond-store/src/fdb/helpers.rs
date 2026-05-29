@@ -31,14 +31,16 @@ impl FdbStore {
     ) -> Result<NatGatewayRecord, StoreError> {
         let key = keys::nat_gateway_by_id_key(nat_gateway_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("nat gateway"))
+        serde_json::from_slice(&bytes).map_err(de_err("nat gateway"))
     }
 
     /// Range-scan a `dhcp_lease/by_vpc/...` prefix and decode every
     /// value as a [`DhcpLease`]. Used by both the per-VPC list and
     /// the `list_all_dhcp_leases` reconciler-feeding scan.
-    pub(super) async fn scan_dhcp_leases(&self, prefix: Vec<u8>) -> Result<Vec<DhcpLease>, StoreError> {
+    pub(super) async fn scan_dhcp_leases(
+        &self,
+        prefix: Vec<u8>,
+    ) -> Result<Vec<DhcpLease>, StoreError> {
         let (begin, end) = prefix_range(&prefix);
         let values: Result<Vec<Vec<u8>>, FdbBindingError> = self
             .db
@@ -60,8 +62,7 @@ impl FdbStore {
 
         let mut out = Vec::with_capacity(values.len());
         for bytes in values {
-            let lease: DhcpLease = serde_json::from_slice(&bytes)
-                .map_err(de_err("dhcp lease"))?;
+            let lease: DhcpLease = serde_json::from_slice(&bytes).map_err(de_err("dhcp lease"))?;
             out.push(lease);
         }
         Ok(out)
@@ -73,8 +74,7 @@ impl FdbStore {
     ) -> Result<EdgeClusterRecord, StoreError> {
         let key = keys::edge_cluster_by_id_key(edge_cluster_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("edge cluster"))
+        serde_json::from_slice(&bytes).map_err(de_err("edge cluster"))
     }
 
     /// Shared body for the per-scope `create_image_*` methods.
@@ -115,8 +115,7 @@ impl FdbStore {
             compatibility: req.compatibility.clone(),
             created_at: Utc::now(),
         };
-        let value = serde_json::to_vec(&image)
-            .map_err(ser_err("image"))?;
+        let value = serde_json::to_vec(&image).map_err(ser_err("image"))?;
         let by_id_key = keys::image_by_id_key(image.id);
         let in_scope_key = in_scope_key_for(image.id);
         let id_str = image.id.to_string();
@@ -175,7 +174,10 @@ impl FdbStore {
     /// Shared body for the per-scope `list_images_*` methods.
     /// Walks a `image/in_*` membership-index prefix, parses the
     /// suffix uuids, then fetches each image record by id.
-    pub(super) async fn list_images_via_index(&self, prefix: Vec<u8>) -> Result<Vec<Image>, StoreError> {
+    pub(super) async fn list_images_via_index(
+        &self,
+        prefix: Vec<u8>,
+    ) -> Result<Vec<Image>, StoreError> {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
         let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
@@ -201,8 +203,7 @@ impl FdbStore {
                 .map_err(|e| StoreError::Backend(format!("image index uuid: {e}")))?;
             let by_id_key = keys::image_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
-                let image: Image = serde_json::from_slice(&bytes)
-                    .map_err(de_err("image"))?;
+                let image: Image = serde_json::from_slice(&bytes).map_err(de_err("image"))?;
                 out.push(image);
             }
         }
@@ -241,8 +242,7 @@ impl FdbStore {
             fingerprint: fingerprint.clone(),
             created_at: Utc::now(),
         };
-        let value = serde_json::to_vec(&key)
-            .map_err(ser_err("ssh key"))?;
+        let value = serde_json::to_vec(&key).map_err(ser_err("ssh key"))?;
         let by_id_key = keys::ssh_key_by_id_key(key.id);
         let in_scope_key = in_scope_key_for(key.id);
         let id_str = key.id.to_string();
@@ -309,7 +309,10 @@ impl FdbStore {
 
     /// Shared body for the per-scope `list_ssh_keys_*` methods.
     /// Mirrors [`Self::list_images_via_index`].
-    pub(super) async fn list_ssh_keys_via_index(&self, prefix: Vec<u8>) -> Result<Vec<SshKey>, StoreError> {
+    pub(super) async fn list_ssh_keys_via_index(
+        &self,
+        prefix: Vec<u8>,
+    ) -> Result<Vec<SshKey>, StoreError> {
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
         let id_strs: Result<Vec<String>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
@@ -335,8 +338,7 @@ impl FdbStore {
                 .map_err(|e| StoreError::Backend(format!("ssh key index uuid: {e}")))?;
             let by_id_key = keys::ssh_key_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
-                let key: SshKey = serde_json::from_slice(&bytes)
-                    .map_err(de_err("ssh key"))?;
+                let key: SshKey = serde_json::from_slice(&bytes).map_err(de_err("ssh key"))?;
                 out.push(key);
             }
         }

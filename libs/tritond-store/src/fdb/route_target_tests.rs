@@ -34,12 +34,8 @@ fn nat_gateway_route_target_must_belong_to_requested_vpc_scope() {
     FdbStore::validate_nat_gateway_route_target(&nat, tenant_id, project_id, vpc_id)
         .expect("matching NAT gateway scope should be accepted");
 
-    let err = FdbStore::validate_nat_gateway_route_target(
-        &nat,
-        tenant_id,
-        project_id,
-        Uuid::new_v4(),
-    )
-    .expect_err("cross-VPC NAT gateway target should be rejected");
+    let err =
+        FdbStore::validate_nat_gateway_route_target(&nat, tenant_id, project_id, Uuid::new_v4())
+            .expect_err("cross-VPC NAT gateway target should be rejected");
     assert!(matches!(err, StoreError::Conflict(_)));
 }

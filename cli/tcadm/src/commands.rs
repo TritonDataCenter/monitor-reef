@@ -592,6 +592,38 @@ pub async fn tenant_delete(
     Ok(())
 }
 
+/// Retrofit a storage workspace binding onto an existing tenant.
+pub async fn tenant_init_storage(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    tenant_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let tenant = client
+        .init_silo_tenant_storage()
+        .silo_id(silo_id)
+        .tenant_id(tenant_id)
+        .send()
+        .await
+        .context("init tenant storage binding")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&tenant)?);
+    } else {
+        println!("Initialised storage binding for tenant {tenant_id}");
+        if let Some(workspace_id) = tenant.storage_workspace_id {
+            println!("  workspace: t-{}", workspace_id.simple());
+        }
+        if let Some(cluster_id) = tenant.storage_cluster_id {
+            println!("  cluster:   {cluster_id}");
+        }
+    }
+    Ok(())
+}
+
 /// List the projects in a silo.
 pub async fn tenant_project_list(
     endpoint_override: Option<String>,
@@ -699,9 +731,6 @@ fn print_instance(i: &tritond_client::types::Instance) {
     println!("  created:     {}", i.created_at);
     println!("  updated:     {}", i.updated_at);
 }
-
-
-
 
 /// Set (or replace) a project's quota.
 #[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
@@ -817,7 +846,6 @@ pub async fn tenant_project_delete(
     println!("Deleted project {project_id} from silo {tenant_id}");
     Ok(())
 }
-
 
 /// Resolve `--public-key` / `--public-key-file` into the openssh
 /// string the API edge expects. Used by every per-scope ssh-key

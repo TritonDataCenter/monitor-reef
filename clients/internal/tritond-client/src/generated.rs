@@ -30893,6 +30893,11 @@ impl Client {
         builder::DeleteSiloTenant::new(self)
     }
 
+    #[doc = "Retrofit a storage workspace binding onto an existing tenant\n\nFor tenants created before `storage.default_s3_cluster_id` was registered (those rows carry `storage_workspace_id = None`), this endpoint mints the mantad workspace and writes both binding columns. Idempotent on the mantad side (keyed by `tenant_uuid`), so a retried call after a partial failure resolves the existing workspace and commits the Tenant row.\n\nFailure modes:\n\n* 412 `NoDefaultStorageCluster` — `storage.default_s3_cluster_id` not set; operator must register a cluster first. * 409 `Conflict` — tenant already has a binding. Operators must drop the existing binding explicitly before rebinding (no silent re-bind to avoid orphaning the previous workspace). * 503 `StorageClusterUnreachable` — the default cluster's last health probe failed; refresh with `tcadm storage health <id>` and retry. * 404 — tenant does not exist or belongs to another silo.\n\nSends a `POST` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/init-storage`\n\n```ignore\nlet response = client.init_silo_tenant_storage()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
+    pub fn init_silo_tenant_storage(&self) -> builder::InitSiloTenantStorage<'_> {
+        builder::InitSiloTenantStorage::new(self)
+    }
+
     #[doc = "RFD 00007 `GET /v1/ssh-keys?scope=public[&silo=&tenant=&project=]`\n\nSends a `GET` request to `/v1/ssh-keys`\n\nArguments:\n- `project`: Restrict to a single project.\n- `scope`\n- `silo`: Restrict to a single silo (fleet-admin only).\n- `tenant`: Restrict to a single tenant.\n```ignore\nlet response = client.list_ssh_keys_v1()\n    .project(project)\n    .scope(scope)\n    .silo(silo)\n    .tenant(tenant)\n    .send()\n    .await;\n```"]
     pub fn list_ssh_keys_v1(&self) -> builder::ListSshKeysV1<'_> {
         builder::ListSshKeysV1::new(self)
@@ -40704,6 +40709,93 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::init_silo_tenant_storage`]\n\n[`Client::init_silo_tenant_storage`]: super::Client::init_silo_tenant_storage"]
+    #[derive(Debug, Clone)]
+    pub struct InitSiloTenantStorage<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        tenant_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> InitSiloTenantStorage<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/init-storage`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Tenant>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                tenant_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/silos/{}/tenants/{}/init-storage",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&tenant_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "init_silo_tenant_storage",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

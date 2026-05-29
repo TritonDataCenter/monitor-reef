@@ -25,10 +25,7 @@ use tritond_cn_platform::smartos::Sysinfo;
 const REGISTER_TIMEOUT: Duration = Duration::from_secs(3600);
 
 #[derive(Debug, Parser)]
-#[command(
-    version,
-    about = "Triton Cloud per-CN provisioning agent"
-)]
+#[command(version, about = "Triton Cloud per-CN provisioning agent")]
 struct Cli {
     /// Tritond URL, e.g. `http://10.199.199.10:8080`.
     #[arg(long, env = "TRITONAGENT_ENDPOINT")]

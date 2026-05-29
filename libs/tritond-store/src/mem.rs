@@ -880,6 +880,27 @@ impl Store for MemStore {
             .ok_or(StoreError::NotFound)
     }
 
+    async fn set_tenant_storage_binding(
+        &self,
+        tenant_id: Uuid,
+        storage_workspace_id: Uuid,
+        storage_cluster_id: Uuid,
+    ) -> Result<Tenant, StoreError> {
+        let mut guard = self.inner.write().await;
+        let tenant = guard
+            .tenants_by_id
+            .get_mut(&tenant_id)
+            .ok_or(StoreError::NotFound)?;
+        if tenant.storage_workspace_id.is_some() || tenant.storage_cluster_id.is_some() {
+            return Err(StoreError::Conflict(format!(
+                "tenant {tenant_id} already has a storage binding"
+            )));
+        }
+        tenant.storage_workspace_id = Some(storage_workspace_id);
+        tenant.storage_cluster_id = Some(storage_cluster_id);
+        Ok(tenant.clone())
+    }
+
     async fn list_tenants_in_silo(&self, silo_id: Uuid) -> Result<Vec<Tenant>, StoreError> {
         let guard = self.inner.read().await;
         if !guard.silos_by_id.contains_key(&silo_id) {

@@ -4869,6 +4869,55 @@
         }
       }
     },
+    "/v1/silos/{silo_id}/tenants/{tenant_id}/init-storage": {
+      "post": {
+        "tags": [
+          "silos",
+          "tenants"
+        ],
+        "summary": "Retrofit a storage workspace binding onto an existing tenant.",
+        "description": "For tenants created before `storage.default_s3_cluster_id` was registered (those rows carry `storage_workspace_id = None`), this endpoint mints the mantad workspace and writes both binding columns. Idempotent on the mantad side (keyed by `tenant_uuid`), so a retried call after a partial failure resolves the existing workspace and commits the Tenant row.\n\nFailure modes:\n\n* 412 `NoDefaultStorageCluster` — `storage.default_s3_cluster_id` not set; operator must register a cluster first. * 409 `Conflict` — tenant already has a binding. Operators must drop the existing binding explicitly before rebinding (no silent re-bind to avoid orphaning the previous workspace). * 503 `StorageClusterUnreachable` — the default cluster's last health probe failed; refresh with `tcadm storage health <id>` and retry. * 404 — tenant does not exist or belongs to another silo.",
+        "operationId": "init_silo_tenant_storage",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenant"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/ssh-keys": {
       "get": {
         "tags": [

@@ -538,6 +538,19 @@ enum TenantCommand {
     },
     /// Delete a tenant by id.
     Delete { silo_id: Uuid, tenant_id: Uuid },
+    /// Retrofit a storage workspace binding onto an existing tenant.
+    ///
+    /// For tenants created before `storage.default_s3_cluster_id`
+    /// was registered. Idempotent on the mantad side (keyed by
+    /// tenant_uuid), so safe to retry. Refuses to rebind a tenant
+    /// that already has a binding (409); use the cluster-level
+    /// admin tooling if you need to swap clusters.
+    InitStorage {
+        silo_id: Uuid,
+        tenant_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
     /// Manage projects inside a tenant.
     Project {
         #[command(subcommand)]
@@ -851,7 +864,6 @@ enum TenantProjectImageCommand {
     },
 }
 
-
 #[derive(Subcommand)]
 enum TenantProjectQuotaCommand {
     /// Set (or replace) the project's quota.
@@ -879,7 +891,6 @@ enum TenantProjectQuotaCommand {
     /// Remove the project's quota (project becomes unlimited).
     Delete { tenant_id: Uuid, project_id: Uuid },
 }
-
 
 #[derive(Subcommand)]
 enum TenantIdpCommand {
@@ -2521,6 +2532,14 @@ async fn main() -> Result<()> {
             }
             TenantCommand::Delete { silo_id, tenant_id } => {
                 commands::tenant_delete(cli.endpoint, cli.api_key, silo_id, tenant_id).await
+            }
+            TenantCommand::InitStorage {
+                silo_id,
+                tenant_id,
+                json,
+            } => {
+                commands::tenant_init_storage(cli.endpoint, cli.api_key, silo_id, tenant_id, json)
+                    .await
             }
             TenantCommand::Project { command } => match command {
                 TenantProjectCommand::List { tenant_id, json } => {

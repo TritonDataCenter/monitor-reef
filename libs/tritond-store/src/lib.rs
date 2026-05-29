@@ -404,6 +404,31 @@ pub trait Store: Send + Sync + 'static {
     /// when no such tenant exists.
     async fn get_tenant(&self, tenant_id: Uuid) -> Result<Tenant, StoreError>;
 
+    /// Set the storage workspace binding on an existing tenant row.
+    ///
+    /// Used by the `tcadm tenant init-storage` retrofit flow for
+    /// tenants created before a default S3 cluster was registered
+    /// (those rows carry `storage_workspace_id = None` /
+    /// `storage_cluster_id = None`). The handler validates that
+    /// the binding is currently unset, mints the mantad workspace
+    /// (idempotent on `tenant_uuid`), and then calls this method
+    /// to write both columns atomically.
+    ///
+    /// Returns [`StoreError::NotFound`] if the tenant doesn't
+    /// exist; [`StoreError::Conflict`] if the tenant already has
+    /// a binding (operators must drop the existing one explicitly
+    /// — silent rebinds would orphan the previous workspace).
+    /// `storage_workspace_id` and `storage_cluster_id` must both
+    /// be `Some`; passing `None` is rejected as `Invalid` since
+    /// the only legitimate "no binding" state is one set at
+    /// create time.
+    async fn set_tenant_storage_binding(
+        &self,
+        tenant_id: Uuid,
+        storage_workspace_id: Uuid,
+        storage_cluster_id: Uuid,
+    ) -> Result<Tenant, StoreError>;
+
     /// List every tenant owned by a silo. Returns an empty Vec
     /// (not NotFound) when the silo exists but has no tenants;
     /// returns NotFound when the silo itself doesn't exist.

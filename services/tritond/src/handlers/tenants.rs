@@ -548,6 +548,211 @@ pub(crate) async fn delete_silo_tenant(
     Ok(HttpResponseDeleted())
 }
 
+/// Retrofit a workspace binding onto an existing tenant. Used to
+/// rescue tenants created before any `storage.default_s3_cluster_id`
+/// was registered.
+///
+/// The flow mirrors `create_silo_tenant` minus the row insert:
+///   1. Authn/authz as `TenantCreate` in the silo (same right used
+///      to create a tenant — binding init is part of provisioning).
+///   2. Cross-silo defence: ensure the addressed tenant lives in
+///      the silo named on the URL; otherwise 404.
+///   3. Read the default cluster id from settings; 412 if unset.
+///   4. Pre-flight the cluster's last health probe; 503 on
+///      Unreachable.
+///   5. Call `mantad.create_workspace` with the existing
+///      `tenant_id` as the idempotency key — if a prior attempt
+///      partially succeeded the existing workspace is returned.
+///   6. `set_tenant_storage_binding` writes both columns; the
+///      store-level Conflict check refuses to overwrite a binding
+///      already in place (409).
+pub(crate) async fn init_silo_tenant_storage(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<SiloTenantPath>,
+) -> Result<HttpResponseOk<Tenant>, HttpError> {
+    let ctx = rqctx.context();
+    let SiloTenantPath { silo_id, tenant_id } = path.into_inner();
+    let principal = authenticate_and_authorize_in_silo(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::TenantCreate,
+        silo_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+
+    // Cross-silo defence: a tenant in silo B reached via silo A's
+    // URL must look "missing" not "forbidden".
+    let tenant = ctx
+        .store
+        .get_tenant(tenant_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if tenant.silo_id != silo_id {
+        return Err(HttpError::for_not_found(
+            Some("NotFound".to_string()),
+            format!("tenant {tenant_id} not found in silo {silo_id}"),
+        ));
+    }
+    if tenant.storage_workspace_id.is_some() || tenant.storage_cluster_id.is_some() {
+        return Err(HttpError::for_client_error(
+            Some("Conflict".to_string()),
+            ClientErrorStatusCode::CONFLICT,
+            format!(
+                "tenant {tenant_id} already has a storage binding; drop the existing binding \
+                 before rebinding"
+            ),
+        ));
+    }
+
+    let settings = ctx
+        .store
+        .get_settings()
+        .await
+        .map_err(store_error_to_http)?;
+    let cluster_id = settings.storage_default_s3_cluster_id.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("NoDefaultStorageCluster".to_string()),
+            ClientErrorStatusCode::PRECONDITION_FAILED,
+            "no default S3 cluster is configured; set storage.default_s3_cluster_id via `tcadm \
+             config set` first"
+                .to_string(),
+        )
+    })?;
+
+    let (cluster, client) = match crate::storage::client_for(&ctx.store, cluster_id).await {
+        Ok(pair) => pair,
+        Err(http_err) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::TenantCreate,
+                    request_id,
+                    Some(format!("Tenant::\"{tenant_id}\"")),
+                    AuditOutcome::ServerError {
+                        message: format!(
+                            "fleet default storage cluster {cluster_id} unresolvable: {http_err}"
+                        ),
+                    },
+                    serde_json::json!({
+                        "silo_id": silo_id,
+                        "tenant_id": tenant_id,
+                        "default_s3_cluster_id": cluster_id,
+                        "stage": "init_storage.client_for",
+                    }),
+                )
+                .await;
+            return Err(http_err);
+        }
+    };
+
+    if cluster.status == tritond_store::StorageClusterStatus::Unreachable {
+        let msg = format!(
+            "fleet default storage cluster {} ({}) last health probe was Unreachable; refresh \
+             with `tcadm storage health {}` and retry",
+            cluster.name, cluster.id, cluster.id
+        );
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::TenantCreate,
+                request_id,
+                Some(format!("Tenant::\"{tenant_id}\"")),
+                AuditOutcome::ServerError {
+                    message: msg.clone(),
+                },
+                serde_json::json!({
+                    "silo_id": silo_id,
+                    "tenant_id": tenant_id,
+                    "default_s3_cluster_id": cluster.id,
+                    "cluster_status": "unreachable",
+                    "stage": "init_storage.preflight",
+                }),
+            )
+            .await;
+        return Err(HttpError::for_unavail(
+            Some("StorageClusterUnreachable".to_string()),
+            msg,
+        ));
+    }
+
+    let workspace_name = format!("t-{}", tenant_id.simple());
+    let mantad_req = mantad_client::types::CreateWorkspaceRequest {
+        name: workspace_name,
+        description: Some(tenant.name.clone()),
+        quota_bytes: Some(settings.storage_default_workspace_quota_bytes),
+        quota_objects: None,
+        tenant_uuid: Some(tenant_id),
+    };
+    if let Err(e) = client.create_workspace(&mantad_req).await {
+        let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::TenantCreate,
+                request_id,
+                Some(format!("Tenant::\"{tenant_id}\"")),
+                audit_outcome,
+                serde_json::json!({
+                    "silo_id": silo_id,
+                    "tenant_id": tenant_id,
+                    "default_s3_cluster_id": cluster.id,
+                    "stage": "init_storage.mantad.create_workspace",
+                }),
+            )
+            .await;
+        return Err(http_err);
+    }
+
+    match ctx
+        .store
+        .set_tenant_storage_binding(tenant_id, tenant_id, cluster.id)
+        .await
+    {
+        Ok(updated) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::TenantCreate,
+                    request_id,
+                    Some(format!("Tenant::\"{}\"", updated.id)),
+                    AuditOutcome::Success {
+                        resource: Some(format!("Tenant::\"{}\"", updated.id)),
+                    },
+                    serde_json::json!({
+                        "silo_id": silo_id,
+                        "tenant_id": updated.id,
+                        "storage_cluster_id": updated.storage_cluster_id,
+                        "storage_workspace_id": updated.storage_workspace_id,
+                        "stage": "init_storage.complete",
+                    }),
+                )
+                .await;
+            Ok(HttpResponseOk(updated))
+        }
+        Err(e) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::TenantCreate,
+                    request_id,
+                    Some(format!("Tenant::\"{tenant_id}\"")),
+                    store_error_to_audit_outcome(&e),
+                    serde_json::json!({
+                        "silo_id": silo_id,
+                        "tenant_id": tenant_id,
+                        "default_s3_cluster_id": cluster.id,
+                        "stage": "init_storage.store.set_tenant_storage_binding",
+                    }),
+                )
+                .await;
+            Err(store_error_to_http(e))
+        }
+    }
+}
+
 pub(crate) async fn list_tenant_projects(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantPath>,
