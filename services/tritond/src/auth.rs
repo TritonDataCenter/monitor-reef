@@ -480,6 +480,10 @@ pub enum Action {
     /// Batch of DHCP request activity observed by the kmod, forwarded
     /// by a bound agent. Refreshes the lease record's renewal clock.
     DhcpLeaseActivityReport,
+    /// Publish the calling bound CN's nic_tag inventory. The row is
+    /// keyed by the key's `bound_cn`, never by request body, so a CN
+    /// can only ever write its own inventory.
+    NicTagInventoryReport,
     /// Anonymous self-registration of a compute node. Gated by
     /// the per-source-IP rate limiter, not by Cedar credentials —
     /// the agent has no key at this point in its lifecycle.
@@ -712,6 +716,7 @@ impl Action {
             Action::AgentConfig => "agent_config",
             Action::NetworkRealizationReport => "network_realization_report",
             Action::DhcpLeaseActivityReport => "dhcp_lease_activity_report",
+            Action::NicTagInventoryReport => "nic_tag_inventory_report",
             Action::AgentRegister => "agent_register",
             Action::AgentRegisterStatus => "agent_register_status",
             Action::CnList => "cn_list",
@@ -1249,6 +1254,7 @@ fn scope_allows_action(scope: ApiKeyScope, action: Action) -> bool {
                 | Action::AgentConfig
                 | Action::NetworkRealizationReport
                 | Action::DhcpLeaseActivityReport
+                | Action::NicTagInventoryReport
         ),
         _ => false,
     }
@@ -1369,6 +1375,7 @@ fn is_read_action(action: Action) -> bool {
         | Action::AgentConfig
         | Action::NetworkRealizationReport
         | Action::DhcpLeaseActivityReport
+        | Action::NicTagInventoryReport
         // Agent registration is anonymous (no key), but if a key
         // is somehow attached the scope check should reject it
         // outright — these aren't read actions, they create a CN

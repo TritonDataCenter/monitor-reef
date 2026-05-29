@@ -128,7 +128,6 @@ async fn register_creates_pending_with_claim_code() {
             sysinfo: fixture_sysinfo(server_uuid, "cn-a"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
-            nic_tags: vec![],
         })
         .send()
         .await
@@ -162,7 +161,6 @@ async fn approve_by_code_then_status_returns_api_key_once() {
             sysinfo: fixture_sysinfo(server_uuid, "cn-a"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
-            nic_tags: vec![],
         })
         .send()
         .await
@@ -240,7 +238,6 @@ async fn auto_approve_window_promotes_registration() {
             sysinfo: fixture_sysinfo(server_uuid, "cn-bulk"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
-            nic_tags: vec![],
         })
         .send()
         .await
@@ -370,7 +367,6 @@ async fn disabled_record_re_registers_back_to_pending() {
             sysinfo: fixture_sysinfo(server_uuid, "cn-x"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
-            nic_tags: vec![],
         })
         .send()
         .await
@@ -395,7 +391,6 @@ async fn disabled_record_re_registers_back_to_pending() {
             sysinfo: fixture_sysinfo(server_uuid, "cn-x"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
-            nic_tags: vec![],
         })
         .send()
         .await
@@ -464,7 +459,6 @@ async fn list_cns_filters_by_state() {
             sysinfo: fixture_sysinfo(p_uuid, "p"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
-            nic_tags: vec![],
         })
         .send()
         .await
@@ -478,7 +472,6 @@ async fn list_cns_filters_by_state() {
             sysinfo: fixture_sysinfo(a_uuid, "a"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
-            nic_tags: vec![],
         })
         .send()
         .await
@@ -542,7 +535,6 @@ async fn root_can_set_cn_role_label() {
             sysinfo: fixture_sysinfo(server_uuid, "edge-a"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
-            nic_tags: vec![],
         })
         .send()
         .await
@@ -598,7 +590,6 @@ async fn bound_api_key_rejects_claim_for_other_cn() {
             sysinfo: fixture_sysinfo(cn_a, "cn-a"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
-            nic_tags: vec![],
         })
         .send()
         .await
@@ -676,7 +667,6 @@ async fn register_and_approve(test: &TestServer, cn_uuid: Uuid, hostname: &str) 
             sysinfo: fixture_sysinfo(cn_uuid, hostname),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
-            nic_tags: vec![],
         })
         .send()
         .await
@@ -841,6 +831,168 @@ async fn unbound_agent_key_cannot_heartbeat_or_status() {
         .await
         .unwrap_err();
     assert_eq!(err.status().unwrap().as_u16(), 403);
+
+    test.close().await;
+}
+
+/// Fetch the published nic_tag inventory for a single CN via the
+/// operator aggregate endpoint, or `None` if the CN has never
+/// published.
+async fn published_inventory_for(
+    session: &Client,
+    cn: Uuid,
+) -> Option<tritond_client::types::CnNicTagInventory> {
+    session
+        .list_system_cn_nic_tags_v1()
+        .send()
+        .await
+        .unwrap()
+        .into_inner()
+        .items
+        .into_iter()
+        .find(|inv| inv.cn == cn)
+}
+
+/// The nic_tag inventory publish is authenticated to the bound CN: an
+/// unauthenticated caller — and an unbound (operator-minted) Agent key
+/// — are both rejected, while the correctly-bound CN can publish its
+/// own. Regression for the C-5 blocker: the inventory is a floating-IP
+/// placement input, so it must never be settable anonymously.
+#[tokio::test]
+async fn nic_tag_inventory_publish_requires_bound_cn() {
+    use tritond_client::types::{
+        ApiKeyScope, NewApiKey, NewNicTag, NicTagInventoryReport, RegisterNicTagProvision,
+    };
+    let test = TestServer::start().await;
+    let session = root_session(&test).await;
+
+    // Operator registers the fleet-wide `external` nic_tag so a
+    // reported name resolves.
+    session
+        .create_system_nic_tag_v1()
+        .body(NewNicTag {
+            name: "external".to_string(),
+            description: None,
+            mtu: 1500,
+        })
+        .send()
+        .await
+        .expect("create external nic_tag");
+
+    let report = || NicTagInventoryReport {
+        nic_tags: vec![RegisterNicTagProvision {
+            name: "external".to_string(),
+            physical_nic: "igb2".to_string(),
+            vlan_id: 0,
+            mtu: 1500,
+        }],
+    };
+
+    // Anonymous: rejected (the action is not in the public-actions
+    // list), and nothing is published.
+    let anon = test.anonymous_client();
+    let err = anon
+        .agent_report_nic_tags()
+        .body(report())
+        .send()
+        .await
+        .unwrap_err();
+    assert_eq!(err.status().unwrap().as_u16(), 403);
+
+    // Unbound (operator-minted) Agent key: rejected — there is no CN
+    // to attribute the write to.
+    let unbound = session
+        .create_api_key()
+        .body(NewApiKey {
+            description: "unbound-agent".to_string(),
+            scope: ApiKeyScope::Agent,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner()
+        .secret;
+    let err = test
+        .bearer_client(&unbound)
+        .agent_report_nic_tags()
+        .body(report())
+        .send()
+        .await
+        .unwrap_err();
+    assert_eq!(err.status().unwrap().as_u16(), 403);
+
+    let cn_a = Uuid::new_v4();
+    assert!(
+        published_inventory_for(&session, cn_a).await.is_none(),
+        "no inventory should exist before any authenticated publish",
+    );
+
+    // Correctly-bound CN: publishes its own inventory.
+    let key_a = register_and_approve(&test, cn_a, "cn-a").await;
+    test.bearer_client(&key_a)
+        .agent_report_nic_tags()
+        .body(report())
+        .send()
+        .await
+        .expect("a bound CN can publish its own inventory");
+    let inv = published_inventory_for(&session, cn_a)
+        .await
+        .expect("CN-A inventory must be published");
+    assert_eq!(inv.cn, cn_a);
+    assert_eq!(inv.provides.len(), 1);
+    assert_eq!(inv.provides[0].physical_nic, "igb2");
+
+    test.close().await;
+}
+
+/// A CN authenticated as CN-A can never write CN-B's inventory: the
+/// row is keyed by the credential's bound CN, not the request body, so
+/// the body carries no CN to spoof. Publishing as CN-A leaves CN-B's
+/// row untouched.
+#[tokio::test]
+async fn bound_cn_cannot_write_another_cns_inventory() {
+    use tritond_client::types::{NewNicTag, NicTagInventoryReport, RegisterNicTagProvision};
+    let test = TestServer::start().await;
+    let session = root_session(&test).await;
+
+    session
+        .create_system_nic_tag_v1()
+        .body(NewNicTag {
+            name: "external".to_string(),
+            description: None,
+            mtu: 1500,
+        })
+        .send()
+        .await
+        .expect("create external nic_tag");
+
+    let cn_a = Uuid::new_v4();
+    let cn_b = Uuid::new_v4();
+    let key_a = register_and_approve(&test, cn_a, "cn-a").await;
+    let _key_b = register_and_approve(&test, cn_b, "cn-b").await;
+
+    // CN-A publishes. The endpoint takes no CN in the body, so CN-A
+    // has no way to name CN-B.
+    test.bearer_client(&key_a)
+        .agent_report_nic_tags()
+        .body(NicTagInventoryReport {
+            nic_tags: vec![RegisterNicTagProvision {
+                name: "external".to_string(),
+                physical_nic: "igb2".to_string(),
+                vlan_id: 0,
+                mtu: 1500,
+            }],
+        })
+        .send()
+        .await
+        .expect("CN-A publishes its own inventory");
+
+    // CN-A's row is set; CN-B's row is still absent.
+    assert!(published_inventory_for(&session, cn_a).await.is_some());
+    assert!(
+        published_inventory_for(&session, cn_b).await.is_none(),
+        "publishing as CN-A must not create or touch CN-B's inventory",
+    );
 
     test.close().await;
 }

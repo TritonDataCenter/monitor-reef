@@ -89,6 +89,11 @@ pub struct AgentConfig {
     /// each job and rolled into the tritond-side audit event so
     /// concurrent agents can be told apart.
     pub agent_id: String,
+    /// Local nic_tags this CN provides, enumerated from `nictagadm` /
+    /// sysinfo at startup. Published to tritond once on the
+    /// authenticated `/v1/agent/nic-tags` endpoint at the top of
+    /// [`run`] (keyed by the authenticated CN). Empty = no-op.
+    pub nic_tags: Vec<tritond_client::types::RegisterNicTagProvision>,
     /// Sleep between empty-queue polls.
     pub poll_interval: Duration,
     /// Proteus kernel device node. The real backend opens this on
@@ -267,6 +272,29 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
         spawn_heartbeater = cfg.spawn_heartbeater,
         "tritonagent starting",
     );
+
+    // Publish this CN's nic_tag inventory on the authenticated endpoint
+    // (keyed server-side by the bound CN, never by request body). Best
+    // effort: a failure here means floating-IP placement onto this CN
+    // is fail-closed until the next publish, but must not block the
+    // job loop. Gated on the heartbeater flag so integration tests that
+    // don't want control-plane chatter stay quiet.
+    if cfg.spawn_heartbeater {
+        let report = tritond_client::types::NicTagInventoryReport {
+            nic_tags: cfg.nic_tags.clone(),
+        };
+        match client.agent_report_nic_tags().body(report).send().await {
+            Ok(_) => info!(
+                count = cfg.nic_tags.len(),
+                "published CN nic_tag inventory",
+            ),
+            Err(e) => warn!(
+                error = %e,
+                "failed to publish CN nic_tag inventory; floating-IP placement \
+                 onto this CN stays fail-closed until the next publish",
+            ),
+        }
+    }
 
     // Shared reservoir handle: one [`ReservoirTool`] serializes all
     // `/dev/vmmctl` access (it's opened `O_EXCL`) across the startup

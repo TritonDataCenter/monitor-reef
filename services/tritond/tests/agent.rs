@@ -162,7 +162,6 @@ async fn register_and_approve_with_sysinfo(
             sysinfo,
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
-            nic_tags: vec![],
         })
         .send()
         .await

@@ -615,13 +615,13 @@ pub(crate) async fn agent_register(
         }
     }
 
-    // Publish the CN's nic_tag inventory. The write is attributed to
-    // the registering CN (single-writer per `cn-nic-tags/<cn>`) and is
-    // fail-closed: a reported name that resolves to no registered
-    // nic_tag is skipped, never invented (D10f). Skipped entirely when
-    // the agent reports no tags so an older agent (which omits the
-    // field) never clobbers a previously-published inventory.
-    publish_register_nic_tags(ctx, effective.server_uuid, &req.nic_tags, now).await?;
+    // The CN's nic_tag inventory is published *separately*, on the
+    // authenticated `POST /v1/agent/nic-tags` endpoint, once the agent
+    // holds its bound credential. The inventory is a placement input
+    // (floating-IP attach fail-closes on it), so it must be keyed by
+    // the authenticated CN, never by `server_uuid` on this anonymous
+    // path — an attacker could otherwise overwrite any Approved CN's
+    // inventory and subvert the placement gate.
 
     ctx.audit
         .record_mutation(
@@ -655,28 +655,40 @@ pub(crate) async fn agent_register(
     }))
 }
 
-/// Resolve the nic_tag names a CN reported at registration against the
-/// fleet-wide nic_tag registry and publish the CN's inventory row.
+/// Publish the calling bound CN's nic_tag inventory.
 ///
-/// Fail-closed: a reported `name` that resolves to no registered
-/// [`tritond_store::NicTag`] is skipped (logged), never invented —
-/// downstream FIP placement validation (C-3) treats an absent tag as
-/// "this CN does not provide it" rather than trusting an unverifiable
-/// claim (D10f). The write is attributed to `cn` (single-writer per
-/// `cn-nic-tags/<cn>`), matching the registering CN's identity.
-///
-/// Reported with no tags is a no-op: an older agent omits the field
-/// (`reported == []`) and must not clobber a previously-published
-/// inventory.
-async fn publish_register_nic_tags(
-    ctx: &ApiContext,
-    cn: Uuid,
-    reported: &[RegisterNicTagProvision],
-    now: chrono::DateTime<chrono::Utc>,
-) -> Result<(), HttpError> {
-    resolve_and_publish_nic_tags(ctx.store.as_ref(), cn, reported, now)
+/// The inventory row is keyed by [`require_bound_cn`] — the CN identity
+/// proven by the per-CN API key minted at approval — never by anything
+/// in the request body. A caller authenticated as CN-A therefore can
+/// only ever write CN-A's inventory; an unauthenticated (or unbound)
+/// caller is rejected outright. This is the authenticated counterpart
+/// to the (former) anonymous register-path publish: the inventory is a
+/// floating-IP placement input, so the write must be authenticated to
+/// the publishing CN.
+pub(crate) async fn agent_report_nic_tags(
+    rqctx: RequestContext<ApiContext>,
+    body: TypedBody<tritond_api::NicTagInventoryReport>,
+) -> Result<HttpResponseOk<()>, HttpError> {
+    let ctx = rqctx.context();
+    let principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::NicTagInventoryReport,
+    )
+    .await?;
+    // The row key is the credential's bound CN, not the request body:
+    // a bound key can only ever publish its own CN's inventory.
+    let cn = require_bound_cn(&principal)?;
+    let report = body.into_inner();
+    let now = chrono::Utc::now();
+    resolve_and_publish_nic_tags(ctx.store.as_ref(), cn, &report.nic_tags, now)
         .await
-        .map_err(store_error_to_http)
+        .map_err(store_error_to_http)?;
+    // State-sample traffic, not an operator mutation — not audited,
+    // matching `agent_report_network_realization`.
+    Ok(HttpResponseOk(()))
 }
 
 /// Resolve reported nic_tag names against the registry and publish the

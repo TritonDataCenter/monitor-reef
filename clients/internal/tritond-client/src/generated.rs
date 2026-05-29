@@ -9657,6 +9657,43 @@ pub mod types {
         }
     }
 
+    #[doc = "Request body for `POST /v1/agent/nic-tags`. The bound CN agent publishes the nic_tags it provides; tritond keys the resulting [`tritond_store::CnNicTagInventory`] by the *authenticated* CN (the key's `bound_cn`), never by a value in this body, so a CN can only ever publish its own inventory. An empty list is a no-op (an older agent that never calls this endpoint leaves any existing inventory untouched)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v1/agent/nic-tags`. The bound CN agent publishes the nic_tags it provides; tritond keys the resulting [`tritond_store::CnNicTagInventory`] by the *authenticated* CN (the key's `bound_cn`), never by a value in this body, so a CN can only ever publish its own inventory. An empty list is a no-op (an older agent that never calls this endpoint leaves any existing inventory untouched).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"nic_tags\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"nic_tags\": {"]
+    #[doc = "      \"description\": \"Local nic_tags this CN provides, named the way SmartOS knows them. tritond resolves each `name` to a registered nic_tag id (fail-closed — an unresolved name is skipped, never invented).\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/RegisterNicTagProvision\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NicTagInventoryReport {
+        #[doc = "Local nic_tags this CN provides, named the way SmartOS knows them. tritond resolves each `name` to a registered nic_tag id (fail-closed — an unresolved name is skipped, never invented)."]
+        pub nic_tags: ::std::vec::Vec<RegisterNicTagProvision>,
+    }
+
+    impl NicTagInventoryReport {
+        pub fn builder() -> builder::NicTagInventoryReport {
+            Default::default()
+        }
+    }
+
     #[doc = "One nic_tag a CN's hardware provides, with the physical link, VLAN, and MTU it lands on. Published by `tritonagent` from sysinfo / nictagadm; read by placement and the FIP allocator."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -11546,14 +11583,6 @@ pub mod types {
     #[doc = "    \"hostname\": {"]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
-    #[doc = "    \"nic_tags\": {"]
-    #[doc = "      \"description\": \"Local nic_tags this CN provides, named the way SmartOS knows them. tritond resolves each `name` to a registered nic_tag id and publishes the CN's [`tritond_store::CnNicTagInventory`] in the register transaction (single-writer, attributed to this CN). Additive: an older agent omits the field entirely.\","]
-    #[doc = "      \"default\": [],"]
-    #[doc = "      \"type\": \"array\","]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"$ref\": \"#/components/schemas/RegisterNicTagProvision\""]
-    #[doc = "      }"]
-    #[doc = "    },"]
     #[doc = "    \"server_uuid\": {"]
     #[doc = "      \"description\": \"SmartOS server UUID, read from `/usr/bin/sysinfo`. Identity for the entire registration record.\","]
     #[doc = "      \"type\": \"string\","]
@@ -11580,9 +11609,6 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub console_tls_spki_sha256_hex: ::std::option::Option<::std::string::String>,
         pub hostname: ::std::string::String,
-        #[doc = "Local nic_tags this CN provides, named the way SmartOS knows them. tritond resolves each `name` to a registered nic_tag id and publishes the CN's [`tritond_store::CnNicTagInventory`] in the register transaction (single-writer, attributed to this CN). Additive: an older agent omits the field entirely."]
-        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
-        pub nic_tags: ::std::vec::Vec<RegisterNicTagProvision>,
         #[doc = "SmartOS server UUID, read from `/usr/bin/sysinfo`. Identity for the entire registration record."]
         pub server_uuid: ::uuid::Uuid,
         #[doc = "Raw `/usr/bin/sysinfo` JSON. Opaque to tritond; surfaced via `tcadm cn show` for operator inspection."]
@@ -25703,6 +25729,54 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct NicTagInventoryReport {
+            nic_tags: ::std::result::Result<
+                ::std::vec::Vec<super::RegisterNicTagProvision>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for NicTagInventoryReport {
+            fn default() -> Self {
+                Self {
+                    nic_tags: Err("no value supplied for nic_tags".to_string()),
+                }
+            }
+        }
+
+        impl NicTagInventoryReport {
+            pub fn nic_tags<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::RegisterNicTagProvision>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.nic_tags = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for nic_tags: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NicTagInventoryReport> for super::NicTagInventoryReport {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NicTagInventoryReport,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    nic_tags: value.nic_tags?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NicTagInventoryReport> for NicTagInventoryReport {
+            fn from(value: super::NicTagInventoryReport) -> Self {
+                Self {
+                    nic_tags: Ok(value.nic_tags),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct NicTagProvision {
             mtu: ::std::result::Result<u32, ::std::string::String>,
             nic_tag: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
@@ -27680,10 +27754,6 @@ pub mod types {
                 ::std::string::String,
             >,
             hostname: ::std::result::Result<::std::string::String, ::std::string::String>,
-            nic_tags: ::std::result::Result<
-                ::std::vec::Vec<super::RegisterNicTagProvision>,
-                ::std::string::String,
-            >,
             server_uuid: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             sysinfo: ::std::result::Result<::serde_json::Value, ::std::string::String>,
         }
@@ -27695,7 +27765,6 @@ pub mod types {
                     console_listen_port: Ok(Default::default()),
                     console_tls_spki_sha256_hex: Ok(Default::default()),
                     hostname: Err("no value supplied for hostname".to_string()),
-                    nic_tags: Ok(Default::default()),
                     server_uuid: Err("no value supplied for server_uuid".to_string()),
                     sysinfo: Err("no value supplied for sysinfo".to_string()),
                 }
@@ -27743,16 +27812,6 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for hostname: {e}"));
                 self
             }
-            pub fn nic_tags<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::vec::Vec<super::RegisterNicTagProvision>>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.nic_tags = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for nic_tags: {e}"));
-                self
-            }
             pub fn server_uuid<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::uuid::Uuid>,
@@ -27785,7 +27844,6 @@ pub mod types {
                     console_listen_port: value.console_listen_port?,
                     console_tls_spki_sha256_hex: value.console_tls_spki_sha256_hex?,
                     hostname: value.hostname?,
-                    nic_tags: value.nic_tags?,
                     server_uuid: value.server_uuid?,
                     sysinfo: value.sysinfo?,
                 })
@@ -27799,7 +27857,6 @@ pub mod types {
                     console_listen_port: Ok(value.console_listen_port),
                     console_tls_spki_sha256_hex: Ok(value.console_tls_spki_sha256_hex),
                     hostname: Ok(value.hostname),
-                    nic_tags: Ok(value.nic_tags),
                     server_uuid: Ok(value.server_uuid),
                     sysinfo: Ok(value.sysinfo),
                 }
@@ -32989,6 +33046,11 @@ impl Client {
         builder::AgentReportNetworkRealization::new(self)
     }
 
+    #[doc = "Publish the calling CN's nic_tag inventory. Auth: requires a\n\nCN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. The inventory is keyed by the *authenticated* CN (the key's `bound_cn`), so a caller can only ever write its own row — the inventory is a placement input (floating-IP attach fail-closes on it), so it must not be settable by `server_uuid` on the anonymous register path. State-sample traffic; always `200 OK`. An empty list is a no-op.\n\nSends a `POST` request to `/v1/agent/nic-tags`\n\n```ignore\nlet response = client.agent_report_nic_tags()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn agent_report_nic_tags(&self) -> builder::AgentReportNicTags<'_> {
+        builder::AgentReportNicTags::new(self)
+    }
+
     #[doc = "Resolve one in-VPC peer (`vni`, `ip`) -> guest MAC + host\n\nunderlay. The bound CN agent calls this on every v2p cache miss; tritond walks the NIC table, finds the NIC that owns the IP, looks up its host CN, and returns the CN's underlay address. Returns 404 when no realized NIC owns the IP. See `PROTEUS_PLAN.md` §11.7.1.\n\nSends a `GET` request to `/v1/agent/peer`\n\nArguments:\n- `ip`: Peer IP as a string. v4 and v6 both accepted; the resolver parses and dispatches by family.\n- `vni`: VNI of the target VPC. Required so the lookup is bounded to one tenant's address space (peers are NOT globally unique).\n```ignore\nlet response = client.agent_peer_resolve()\n    .ip(ip)\n    .vni(vni)\n    .send()\n    .await;\n```"]
     pub fn agent_peer_resolve(&self) -> builder::AgentPeerResolve<'_> {
         builder::AgentPeerResolve::new(self)
@@ -35264,6 +35326,88 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "agent_report_network_realization",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::agent_report_nic_tags`]\n\n[`Client::agent_report_nic_tags`]: super::Client::agent_report_nic_tags"]
+    #[derive(Debug, Clone)]
+    pub struct AgentReportNicTags<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::NicTagInventoryReport, String>,
+    }
+
+    impl<'a> AgentReportNicTags<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NicTagInventoryReport>,
+            <V as std::convert::TryInto<types::NicTagInventoryReport>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `NicTagInventoryReport` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::NicTagInventoryReport,
+                ) -> types::builder::NicTagInventoryReport,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/agent/nic-tags`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::NicTagInventoryReport::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/agent/nic-tags", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "agent_report_nic_tags",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

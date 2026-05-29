@@ -4412,9 +4412,13 @@ impl Store for FdbStore {
                         keys::floating_ip_in_project_prefix(instance.project_id);
                     let (fip_begin, fip_end) = prefix_range(&fip_prefix);
                     let fip_prefix_len = fip_prefix.len();
+                    // `WantAll`: must see every FIP in the project or we
+                    // could leave one with a dangling attached_to /
+                    // hosted_cn pointing at the deleted instance.
                     let fip_opt = RangeOption {
                         begin: KeySelector::first_greater_or_equal(fip_begin),
                         end: KeySelector::first_greater_or_equal(fip_end),
+                        mode: StreamingMode::WantAll,
                         ..RangeOption::default()
                     };
                     let fip_kvs = tr.get_range(&fip_opt, 1, false).await?;
@@ -4699,9 +4703,13 @@ impl Store for FdbStore {
                         crate::types::FloatingIpSource::Family(family) => {
                             let address = match family {
                                 AddressFamily::V4 => {
+                                    // `WantAll`: the allocated-address set
+                                    // must reflect the whole index or we
+                                    // could hand out an already-taken IP.
                                     let opt = RangeOption {
                                         begin: KeySelector::first_greater_or_equal(v4_begin),
                                         end: KeySelector::first_greater_or_equal(v4_end),
+                                        mode: StreamingMode::WantAll,
                                         ..RangeOption::default()
                                     };
                                     let kvs = tr.get_range(&opt, 1, false).await?;
@@ -4727,9 +4735,13 @@ impl Store for FdbStore {
                                     }
                                 }
                                 AddressFamily::V6 => {
+                                    // `WantAll`: the allocated-address set
+                                    // must reflect the whole index or we
+                                    // could hand out an already-taken IP.
                                     let opt = RangeOption {
                                         begin: KeySelector::first_greater_or_equal(v6_begin),
                                         end: KeySelector::first_greater_or_equal(v6_end),
+                                        mode: StreamingMode::WantAll,
                                         ..RangeOption::default()
                                     };
                                     let kvs = tr.get_range(&opt, 1, false).await?;
@@ -5210,9 +5222,13 @@ impl Store for FdbStore {
                     };
                     // Collect peer external-subnet ids, then load each
                     // record (the index value carries no nic_tag).
+                    // `WantAll` drains the whole index in one shot: an
+                    // in-use check that saw only the first batch could
+                    // delete a tag a later subnet still references.
                     let opt = RangeOption {
                         begin: KeySelector::first_greater_or_equal(ext_begin),
                         end: KeySelector::first_greater_or_equal(ext_end),
+                        mode: StreamingMode::WantAll,
                         ..RangeOption::default()
                     };
                     let index = tr.get_range(&opt, 1, false).await?;
@@ -8681,9 +8697,12 @@ async fn alloc_external_in_subnet_txn(
             };
             let prefix = keys::floating_ip_alloc_v4_prefix().to_vec();
             let (begin, end) = prefix_range(&prefix);
+            // `WantAll`: the allocated-address set must reflect the
+            // whole global index or we could hand out a taken IP.
             let opt = RangeOption {
                 begin: KeySelector::first_greater_or_equal(begin),
                 end: KeySelector::first_greater_or_equal(end),
+                mode: StreamingMode::WantAll,
                 ..RangeOption::default()
             };
             let kvs = tr.get_range(&opt, 1, false).await?;
@@ -8716,9 +8735,12 @@ async fn alloc_external_in_subnet_txn(
             };
             let prefix = keys::floating_ip_alloc_v6_prefix().to_vec();
             let (begin, end) = prefix_range(&prefix);
+            // `WantAll`: the allocated-address set must reflect the
+            // whole global index or we could hand out a taken IP.
             let opt = RangeOption {
                 begin: KeySelector::first_greater_or_equal(begin),
                 end: KeySelector::first_greater_or_equal(end),
+                mode: StreamingMode::WantAll,
                 ..RangeOption::default()
             };
             let kvs = tr.get_range(&opt, 1, false).await?;

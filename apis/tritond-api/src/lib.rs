@@ -917,6 +917,21 @@ pub struct RegisterNicTagProvision {
     pub mtu: u32,
 }
 
+/// Request body for `POST /v1/agent/nic-tags`. The bound CN agent
+/// publishes the nic_tags it provides; tritond keys the resulting
+/// [`tritond_store::CnNicTagInventory`] by the *authenticated* CN
+/// (the key's `bound_cn`), never by a value in this body, so a CN can
+/// only ever publish its own inventory. An empty list is a no-op (an
+/// older agent that never calls this endpoint leaves any existing
+/// inventory untouched).
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct NicTagInventoryReport {
+    /// Local nic_tags this CN provides, named the way SmartOS knows
+    /// them. tritond resolves each `name` to a registered nic_tag id
+    /// (fail-closed — an unresolved name is skipped, never invented).
+    pub nic_tags: Vec<RegisterNicTagProvision>,
+}
+
 /// Request body for `POST /v1/agent/register`. Anonymous endpoint
 /// (no auth header required); the agent has no credentials yet at
 /// this point in its lifecycle.
@@ -945,13 +960,6 @@ pub struct RegisterCnRequest {
     /// stream. `None` iff `console_listen_port` is `None`.
     #[serde(default)]
     pub console_tls_spki_sha256_hex: Option<String>,
-    /// Local nic_tags this CN provides, named the way SmartOS knows
-    /// them. tritond resolves each `name` to a registered nic_tag id
-    /// and publishes the CN's [`tritond_store::CnNicTagInventory`] in
-    /// the register transaction (single-writer, attributed to this CN).
-    /// Additive: an older agent omits the field entirely.
-    #[serde(default)]
-    pub nic_tags: Vec<RegisterNicTagProvision>,
 }
 
 /// Response body for `POST /v1/agent/register`.
@@ -2456,6 +2464,24 @@ pub trait TritondApi {
     async fn agent_report_dhcp_lease_activity(
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<DhcpLeaseActivityReport>,
+    ) -> Result<HttpResponseOk<()>, HttpError>;
+
+    /// Publish the calling CN's nic_tag inventory. Auth: requires a
+    /// CN-bound API key with [`tritond_store::ApiKeyScope::Agent`].
+    /// The inventory is keyed by the *authenticated* CN (the key's
+    /// `bound_cn`), so a caller can only ever write its own row — the
+    /// inventory is a placement input (floating-IP attach fail-closes
+    /// on it), so it must not be settable by `server_uuid` on the
+    /// anonymous register path. State-sample traffic; always `200 OK`.
+    /// An empty list is a no-op.
+    #[endpoint {
+        method = POST,
+        path = "/v1/agent/nic-tags",
+        tags = ["agent"],
+    }]
+    async fn agent_report_nic_tags(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<NicTagInventoryReport>,
     ) -> Result<HttpResponseOk<()>, HttpError>;
 
     /// Self-register a compute node. Anonymous endpoint (no API

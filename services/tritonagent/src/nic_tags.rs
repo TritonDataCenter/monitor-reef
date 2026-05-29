@@ -4,8 +4,8 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! Enumerate the CN's local nic_tags so they can be published in the
-//! registration request.
+//! Enumerate the CN's local nic_tags so they can be published on the
+//! authenticated `/v1/agent/nic-tags` endpoint after registration.
 //!
 //! tritond owns the fleet-wide nic_tag *registry* (name -> id); the
 //! agent reports, by NAME, which tags this CN's hardware provides plus
@@ -36,12 +36,12 @@ const DEFAULT_MTU: u32 = 1500;
 /// physical egress, so they can never carry external traffic.
 const SKIP_TYPES: &[&str] = &["etherstub", "overlay_rule"];
 
-/// Enumerate the CN's local nic_tags for the registration request.
+/// Enumerate the CN's local nic_tags for the post-registration publish.
 ///
 /// Best-effort: a failure to run `nictagadm` (or a non-illumos build)
-/// yields an empty list rather than failing registration. An empty
-/// list is a no-op server-side — it does not clobber a previously
-/// published inventory.
+/// yields an empty list rather than failing startup. An empty list is
+/// a no-op server-side — it does not clobber a previously published
+/// inventory.
 pub fn enumerate(sysinfo: &Sysinfo) -> Vec<RegisterNicTagProvision> {
     let raw = match run_nictagadm_list() {
         Some(out) => out,

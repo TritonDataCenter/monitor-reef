@@ -235,6 +235,12 @@ async fn main() -> Result<()> {
     .await
     .context("register or resume against tritond")?;
 
+    // Enumerate the CN's local nic_tags by NAME so tritond can resolve
+    // them against the fleet-wide registry. Published from `run` on the
+    // authenticated `/v1/agent/nic-tags` endpoint (keyed by the
+    // authenticated CN), not on the anonymous register path.
+    let nic_tags = tritonagent::nic_tags::enumerate(&sysinfo);
+
     let cfg = AgentConfig {
         endpoint: cli.endpoint,
         api_key: outcome.api_key,
@@ -242,6 +248,7 @@ async fn main() -> Result<()> {
         // bound-key check pins each per-CN key to a specific CN
         // identity, and that identity is the SmartOS server_uuid.
         agent_id: server_uuid.to_string(),
+        nic_tags,
         poll_interval: Duration::from_secs(cli.poll_interval_secs),
         proteus_dev: PathBuf::from(cli.proteus_dev),
         edge_root: PathBuf::from(cli.edge_root),

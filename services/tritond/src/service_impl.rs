@@ -1256,6 +1256,13 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::agents::agent_report_dhcp_lease_activity(rqctx, body).await
     }
 
+    async fn agent_report_nic_tags(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<tritond_api::NicTagInventoryReport>,
+    ) -> Result<HttpResponseOk<()>, HttpError> {
+        crate::handlers::agents::agent_report_nic_tags(rqctx, body).await
+    }
+
     // ----- CN registration / approval (slice C) -----
 
     async fn agent_register(

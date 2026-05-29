@@ -68,11 +68,15 @@ pub async fn fence_check(ctx: &SagaContext) -> Result<(), ActionError> {
 /// failure would land as `500` and we'd lose the existing
 /// `duplicate-name → 409` invariant.
 pub fn store_err_to_action_err(e: StoreError) -> ActionError {
-    // StoreError is `#[non_exhaustive]`; the wildcard arm catches
-    // every variant outside the well-known set so a future store
-    // error doesn't break the build.
+    // The wildcard arm catches every variant outside the well-known
+    // set; we tag the ones whose HTTP status the handler must
+    // preserve and let the rest fall through to a 500.
     let kind = match &e {
         StoreError::Conflict(_) => "conflict",
+        // A FIP attach onto a CN that does not advertise the required
+        // nic_tag is a placement conflict, not a server fault: surface
+        // it as 409 rather than letting the wildcard map it to 500.
+        StoreError::NicTagNotProvided { .. } => "conflict",
         StoreError::NotFound => "not_found",
         StoreError::Backend(_) => "store_backend",
         _ => "store_other",

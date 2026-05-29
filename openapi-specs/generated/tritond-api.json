@@ -633,6 +633,48 @@
         }
       }
     },
+    "/v1/agent/nic-tags": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Publish the calling CN's nic_tag inventory. Auth: requires a",
+        "description": "CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. The inventory is keyed by the *authenticated* CN (the key's `bound_cn`), so a caller can only ever write its own row — the inventory is a placement input (floating-IP attach fail-closes on it), so it must not be settable by `server_uuid` on the anonymous register path. State-sample traffic; always `200 OK`. An empty list is a no-op.",
+        "operationId": "agent_report_nic_tags",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NicTagInventoryReport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Null",
+                  "type": "string",
+                  "enum": [
+                    null
+                  ]
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/agent/peer": {
       "get": {
         "tags": [
@@ -15681,6 +15723,22 @@
           "updated_at"
         ]
       },
+      "NicTagInventoryReport": {
+        "description": "Request body for `POST /v1/agent/nic-tags`. The bound CN agent publishes the nic_tags it provides; tritond keys the resulting [`tritond_store::CnNicTagInventory`] by the *authenticated* CN (the key's `bound_cn`), never by a value in this body, so a CN can only ever publish its own inventory. An empty list is a no-op (an older agent that never calls this endpoint leaves any existing inventory untouched).",
+        "type": "object",
+        "properties": {
+          "nic_tags": {
+            "description": "Local nic_tags this CN provides, named the way SmartOS knows them. tritond resolves each `name` to a registered nic_tag id (fail-closed — an unresolved name is skipped, never invented).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RegisterNicTagProvision"
+            }
+          }
+        },
+        "required": [
+          "nic_tags"
+        ]
+      },
       "NicTagProvision": {
         "description": "One nic_tag a CN's hardware provides, with the physical link, VLAN, and MTU it lands on. Published by `tritonagent` from sysinfo / nictagadm; read by placement and the FIP allocator.",
         "type": "object",
@@ -16719,14 +16777,6 @@
           },
           "hostname": {
             "type": "string"
-          },
-          "nic_tags": {
-            "description": "Local nic_tags this CN provides, named the way SmartOS knows them. tritond resolves each `name` to a registered nic_tag id and publishes the CN's [`tritond_store::CnNicTagInventory`] in the register transaction (single-writer, attributed to this CN). Additive: an older agent omits the field entirely.",
-            "default": [],
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RegisterNicTagProvision"
-            }
           },
           "server_uuid": {
             "description": "SmartOS server UUID, read from `/usr/bin/sysinfo`. Identity for the entire registration record.",
