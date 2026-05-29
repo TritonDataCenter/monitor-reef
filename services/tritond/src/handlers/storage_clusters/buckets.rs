@@ -91,12 +91,12 @@ pub(crate) async fn list_storage_cluster_buckets(
         Action::StorageBucketList,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let id = path.into_inner().id;
     let with_stats = query.into_inner().stats.unwrap_or(false);
     let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
     let buckets = client
-        .list_buckets(with_stats)
+        .list_buckets(with_stats, scope.workspace_name())
         .await
         .map_err(crate::storage::mantad_error_to_http)?;
     Ok(HttpResponseOk(
@@ -120,11 +120,11 @@ pub(crate) async fn get_storage_cluster_bucket(
         Action::StorageBucketGet,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
     let b = client
-        .get_bucket(&p.bucket)
+        .get_bucket(&p.bucket, scope.workspace_name())
         .await
         .map_err(crate::storage::mantad_error_to_http)?;
     Ok(HttpResponseOk(crate::storage::bucket_from(b)))
@@ -144,7 +144,7 @@ pub(crate) async fn create_storage_cluster_bucket(
         Action::StorageBucketCreate,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let id = path.into_inner().id;
     let req = body.into_inner();
@@ -154,7 +154,10 @@ pub(crate) async fn create_storage_cluster_bucket(
     });
     let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
     let mantad_req = crate::storage::create_bucket_request_to(req);
-    match client.create_bucket(&mantad_req).await {
+    match client
+        .create_bucket(&mantad_req, scope.workspace_name())
+        .await
+    {
         Ok(b) => {
             let view = crate::storage::bucket_from(b);
             ctx.audit
@@ -201,11 +204,14 @@ pub(crate) async fn delete_storage_cluster_bucket(
         Action::StorageBucketDelete,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
-    match client.delete_bucket(&p.bucket).await {
+    match client
+        .delete_bucket(&p.bucket, scope.workspace_name())
+        .await
+    {
         Ok(()) => {
             ctx.audit
                 .record_mutation(
