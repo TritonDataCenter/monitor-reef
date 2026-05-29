@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"syscall"
 	"time"
 
 	auth "github.com/TritonDataCenter/monitor-reef/clients/external/cloudapi-client/golang/authentication"
@@ -208,10 +209,10 @@ func firstNonEmpty(values ...string) string {
 func getKeyMaterialContents(keyMaterial string) ([]byte, error) {
 	keyBytes, err := os.ReadFile(keyMaterial)
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
+		if !errors.Is(err, os.ErrNotExist) && !isNameTooLong(err) {
 			return nil, fmt.Errorf("cloudapi: read key material from %s: %w", keyMaterial, err)
 		}
-		// Not a file path — treat as inline PEM content.
+		// Not a file path (absent or path too long) — treat as inline PEM content.
 		keyBytes = []byte(keyMaterial)
 	}
 
@@ -225,4 +226,11 @@ func getKeyMaterialContents(keyMaterial string) ([]byte, error) {
 	}
 
 	return keyBytes, nil
+}
+
+// isNameTooLong reports whether err is an ENAMETOOLONG path error, which means
+// the value passed to os.ReadFile was inline PEM content rather than a file path.
+func isNameTooLong(err error) bool {
+	var pathErr *os.PathError
+	return errors.As(err, &pathErr) && errors.Is(pathErr.Err, syscall.ENAMETOOLONG)
 }

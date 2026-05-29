@@ -97,9 +97,17 @@ async fn main() -> Result<()> {
         .join("/");
 
     // Fetch the control-plane IP from the relay-info endpoint.
+    // On Illumos there is no system CA bundle where rustls looks, so skip
+    // native cert loading for plain-HTTP dev URLs.
     let info_url = format!("{http_base}/v1/k8s/relay/info/{}", args.cluster);
     info!("fetching relay info from {info_url}");
-    let relay_info: RelayInfo = reqwest::get(&info_url)
+    let http_client = reqwest::ClientBuilder::new()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .context("build HTTP client")?;
+    let relay_info: RelayInfo = http_client
+        .get(&info_url)
+        .send()
         .await
         .with_context(|| format!("GET {info_url}"))?
         .error_for_status()
