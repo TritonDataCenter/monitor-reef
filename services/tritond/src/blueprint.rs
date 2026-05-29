@@ -998,4 +998,42 @@ mod imds_tests {
             .id;
         assert_ne!(id_a, id_b);
     }
+
+    fn fip_with(network_id: Option<Uuid>, hosted_cn: Option<Uuid>) -> FloatingIp {
+        let now = chrono::Utc::now();
+        FloatingIp {
+            id: Uuid::from_u128(0x0200),
+            tenant_id: Uuid::from_u128(0x0101),
+            project_id: Uuid::from_u128(0x0102),
+            name: "fip".into(),
+            description: String::new(),
+            address: "203.0.113.7".parse().unwrap(),
+            attached_to: None,
+            network_id,
+            external_nic_tag: network_id,
+            hosted_cn,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn floating_ip_intent_ignores_c2_fields() {
+        // The C-2 fields (network_id / external_nic_tag / hosted_cn) are
+        // tritond/agent/UI-only and must NOT change the proteus wire
+        // shape: the intent built from a FIP carrying them must be
+        // byte-identical to the intent from a FIP without them.
+        let bare = floating_ip_intent(&fip_with(None, None));
+        let stamped = floating_ip_intent(&fip_with(
+            Some(Uuid::from_u128(0xaaaa)),
+            Some(Uuid::from_u128(0xbbbb)),
+        ));
+        assert_eq!(bare, stamped, "C-2 fields must not affect the intent");
+        let bare_bytes = postcard::to_allocvec(&bare).unwrap();
+        let stamped_bytes = postcard::to_allocvec(&stamped).unwrap();
+        assert_eq!(
+            bare_bytes, stamped_bytes,
+            "floating_ip_intent postcard bytes must be unchanged by C-2"
+        );
+    }
 }

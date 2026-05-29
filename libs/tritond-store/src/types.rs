@@ -3176,6 +3176,23 @@ pub struct FloatingIp {
     /// instance-delete cascade.
     #[serde(default)]
     pub attached_to: Option<FloatingIpAttachment>,
+    /// External Subnet this address was allocated from, when the FIP
+    /// was created via the pool/network path (C-3). `None` for legacy
+    /// `family`-allocated records. Drives `external_nic_tag`.
+    #[serde(default)]
+    pub network_id: Option<Uuid>,
+    /// External nic_tag the dataplane egresses/ingresses this FIP on.
+    /// Derived read-only from `network_id`'s subnet `nic_tag` at create
+    /// time — never client-set, so a FIP can never carry a nic_tag
+    /// inconsistent with its subnet (invariant 17).
+    #[serde(default)]
+    pub external_nic_tag: Option<Uuid>,
+    /// CN currently hosting this FIP's 1:1 NAT termination. Stamped on
+    /// `attach` from the target instance's `host_cn_uuid`, cleared on
+    /// `detach` and by the instance-delete cascade. Pins the dataplane
+    /// claim/release jobs to a concrete CN.
+    #[serde(default)]
+    pub hosted_cn: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

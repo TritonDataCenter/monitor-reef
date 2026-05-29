@@ -4446,6 +4446,7 @@ impl Store for FdbStore {
                             continue;
                         }
                         fip.attached_to = None;
+                        fip.hosted_cn = None;
                         fip.updated_at = now;
                         if let Ok(value) = serde_json::to_vec(&fip) {
                             tr.set(&fk, &value);
@@ -4737,6 +4738,9 @@ impl Store for FdbStore {
                         description: req.description.unwrap_or_default(),
                         address,
                         attached_to: None,
+                        network_id: None,
+                        external_nic_tag: None,
+                        hosted_cn: None,
                         created_at: now,
                         updated_at: now,
                     };
@@ -4890,6 +4894,7 @@ impl Store for FdbStore {
             Attached(Box<FloatingIp>),
             FipMissing,
             NicMissingOrWrongParent,
+            NoHostCn(Uuid),
         }
         let outcome: Result<Out, FdbBindingError> = self
             .db
@@ -4916,11 +4921,26 @@ impl Store for FdbStore {
                     if nic.tenant_id != fip.tenant_id || nic.project_id != fip.project_id {
                         return Ok(Out::NicMissingOrWrongParent);
                     }
+                    // The dataplane claim job is pinned to the hosting
+                    // CN; refuse to attach to an unplaced instance so we
+                    // never enqueue an unpinned job (invariant 9).
+                    let inst_key = keys::instance_by_id_key(nic.instance_id);
+                    let host_cn_uuid = match tr.get(&inst_key, false).await? {
+                        Some(b) => match serde_json::from_slice::<Instance>(&b) {
+                            Ok(inst) => match inst.host_cn_uuid {
+                                Some(cn) => cn,
+                                None => return Ok(Out::NoHostCn(nic.instance_id)),
+                            },
+                            Err(_) => return Ok(Out::NicMissingOrWrongParent),
+                        },
+                        None => return Ok(Out::NicMissingOrWrongParent),
+                    };
                     fip.attached_to = Some(FloatingIpAttachment {
                         instance_id: nic.instance_id,
                         nic_id: target_nic_id,
                         attached_at: Utc::now(),
                     });
+                    fip.hosted_cn = Some(host_cn_uuid);
                     fip.updated_at = Utc::now();
                     let value = match serde_json::to_vec(&fip) {
                         Ok(v) => v,
@@ -4935,6 +4955,9 @@ impl Store for FdbStore {
         match outcome {
             Ok(Out::Attached(fip)) => Ok(*fip),
             Ok(Out::FipMissing) | Ok(Out::NicMissingOrWrongParent) => Err(StoreError::NotFound),
+            Ok(Out::NoHostCn(instance_id)) => Err(StoreError::Conflict(format!(
+                "instance {instance_id} has no host CN yet; cannot attach floating ip"
+            ))),
             Err(e) => Err(e.into()),
         }
     }
@@ -4960,6 +4983,7 @@ impl Store for FdbStore {
                         Err(_) => return Ok(Out::Vanished),
                     };
                     fip.attached_to = None;
+                    fip.hosted_cn = None;
                     fip.updated_at = Utc::now();
                     let value = match serde_json::to_vec(&fip) {
                         Ok(v) => v,

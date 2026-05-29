@@ -328,6 +328,9 @@ mod tests {
                 nic_id: uuid(0x0301),
                 attached_at: now,
             }),
+            network_id: None,
+            external_nic_tag: None,
+            hosted_cn: None,
             created_at: now,
             updated_at: now,
         }

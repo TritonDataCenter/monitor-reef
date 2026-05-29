@@ -2856,6 +2856,7 @@ impl Store for MemStore {
         for fip_id in fip_ids {
             if let Some(fip) = guard.floating_ips_by_id.get_mut(&fip_id) {
                 fip.attached_to = None;
+                fip.hosted_cn = None;
                 fip.updated_at = now;
             }
         }
@@ -3010,6 +3011,9 @@ impl Store for MemStore {
             description: req.description.unwrap_or_default(),
             address,
             attached_to: None,
+            network_id: None,
+            external_nic_tag: None,
+            hosted_cn: None,
             created_at: now,
             updated_at: now,
         };
@@ -3110,6 +3114,21 @@ impl Store for MemStore {
             return Err(StoreError::NotFound);
         }
         let nic_instance_id = nic.instance_id;
+        // The dataplane claim job is pinned to the hosting CN. Refuse
+        // to attach to an unplaced instance: enqueuing a job with
+        // target_cn=None lets the unbound stub provisioner grab it
+        // (`targeting_matches(None, _) == true`). Stamp hosted_cn so
+        // C-4 can pin the FipClaim (invariant 9).
+        let host_cn_uuid = guard
+            .instances_by_id
+            .get(&nic_instance_id)
+            .ok_or(StoreError::NotFound)?
+            .host_cn_uuid
+            .ok_or_else(|| {
+                StoreError::Conflict(format!(
+                    "instance {nic_instance_id} has no host CN yet; cannot attach floating ip"
+                ))
+            })?;
         let new_attachment = FloatingIpAttachment {
             instance_id: nic_instance_id,
             nic_id: target_nic_id,
@@ -3120,6 +3139,7 @@ impl Store for MemStore {
             .get_mut(&fip_id)
             .ok_or(StoreError::NotFound)?;
         fip.attached_to = Some(new_attachment);
+        fip.hosted_cn = Some(host_cn_uuid);
         fip.updated_at = Utc::now();
         Ok(fip.clone())
     }
@@ -3131,6 +3151,7 @@ impl Store for MemStore {
             .get_mut(&fip_id)
             .ok_or(StoreError::NotFound)?;
         fip.attached_to = None;
+        fip.hosted_cn = None;
         fip.updated_at = Utc::now();
         Ok(fip.clone())
     }
@@ -9310,8 +9331,12 @@ mod tests {
         let store = MemStore::new();
         let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
-        // Two instances, two NICs.
-        let InstanceCreateResult { nics: nics_a, .. } = store
+        // Two instances, two NICs. Attach requires a placed host CN.
+        let InstanceCreateResult {
+            instance: inst_a,
+            nics: nics_a,
+            ..
+        } = store
             .create_instance(
                 tenant_id,
                 project_id,
@@ -9319,12 +9344,26 @@ mod tests {
             )
             .await
             .unwrap();
-        let InstanceCreateResult { nics: nics_b, .. } = store
+        let InstanceCreateResult {
+            instance: inst_b,
+            nics: nics_b,
+            ..
+        } = store
             .create_instance(
                 tenant_id,
                 project_id,
                 instance_req("b", image_id, subnet_id, ssh_key_id),
             )
+            .await
+            .unwrap();
+        let cn_a = Uuid::new_v4();
+        let cn_b = Uuid::new_v4();
+        store
+            .set_instance_host_cn(inst_a.id, Some(cn_a))
+            .await
+            .unwrap();
+        store
+            .set_instance_host_cn(inst_b.id, Some(cn_b))
             .await
             .unwrap();
         let fip = store
@@ -9338,6 +9377,7 @@ mod tests {
             .unwrap();
         let attach = attached_a.attached_to.as_ref().expect("should be attached");
         assert_eq!(attach.nic_id, nics_a[0].id);
+        assert_eq!(attached_a.hosted_cn, Some(cn_a), "attach stamps hosted_cn");
 
         // Re-attach (no detach) — replace semantics.
         let attached_b = store
@@ -9350,6 +9390,11 @@ mod tests {
             .expect("should still be attached");
         assert_eq!(attach.nic_id, nics_b[0].id);
         assert_eq!(attach.instance_id, nics_b[0].instance_id);
+        assert_eq!(
+            attached_b.hosted_cn,
+            Some(cn_b),
+            "re-attach restamps hosted_cn to the new instance's CN"
+        );
     }
 
     #[tokio::test]
@@ -9357,12 +9402,16 @@ mod tests {
         let store = MemStore::new();
         let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
-        let InstanceCreateResult { nics, .. } = store
+        let InstanceCreateResult { instance, nics, .. } = store
             .create_instance(
                 tenant_id,
                 project_id,
                 instance_req("a", image_id, subnet_id, ssh_key_id),
             )
+            .await
+            .unwrap();
+        store
+            .set_instance_host_cn(instance.id, Some(Uuid::new_v4()))
             .await
             .unwrap();
         let fip = store
@@ -9395,11 +9444,16 @@ mod tests {
             )
             .await
             .unwrap();
+        store
+            .set_instance_host_cn(instance.id, Some(Uuid::new_v4()))
+            .await
+            .unwrap();
         let fip = store
             .create_floating_ip(tenant_id, project_id, fip_req("p", AddressFamily::V4))
             .await
             .unwrap();
-        store.attach_floating_ip(fip.id, nics[0].id).await.unwrap();
+        let attached = store.attach_floating_ip(fip.id, nics[0].id).await.unwrap();
+        assert!(attached.hosted_cn.is_some(), "attach stamps hosted_cn");
         let original_address = fip.address;
 
         // Delete the instance (after Stopped).
@@ -9416,8 +9470,59 @@ mod tests {
         // FloatingIp still exists, just detached.
         let after = store.get_floating_ip(fip.id).await.unwrap();
         assert!(after.attached_to.is_none(), "should auto-detach");
+        assert!(
+            after.hosted_cn.is_none(),
+            "instance-delete cascade clears hosted_cn"
+        );
         assert_eq!(after.address, original_address, "address preserved");
         assert_eq!(after.project_id, project_id, "project ownership preserved");
+    }
+
+    #[tokio::test]
+    async fn attach_floating_ip_to_unplaced_instance_conflicts() {
+        let store = MemStore::new();
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        // Instance is never placed on a CN (host_cn_uuid stays None).
+        let InstanceCreateResult { nics, .. } = store
+            .create_instance(
+                tenant_id,
+                project_id,
+                instance_req("a", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        let fip = store
+            .create_floating_ip(tenant_id, project_id, fip_req("p", AddressFamily::V4))
+            .await
+            .unwrap();
+
+        // Attaching to an unplaced instance must 409 (never enqueue an
+        // unpinned claim job the stub provisioner could grab).
+        let err = store
+            .attach_floating_ip(fip.id, nics[0].id)
+            .await
+            .expect_err("attach to unplaced instance must conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+
+        // The FIP must remain unattached/un-hosted after the rejection.
+        let after = store.get_floating_ip(fip.id).await.unwrap();
+        assert!(after.attached_to.is_none());
+        assert!(after.hosted_cn.is_none());
+
+        // Place the instance, then attach succeeds and stamps hosted_cn.
+        let cn = Uuid::new_v4();
+        let instance_id = nics[0].instance_id;
+        store
+            .set_instance_host_cn(instance_id, Some(cn))
+            .await
+            .unwrap();
+        let attached = store.attach_floating_ip(fip.id, nics[0].id).await.unwrap();
+        assert_eq!(attached.hosted_cn, Some(cn));
+
+        // Detach clears hosted_cn.
+        let detached = store.detach_floating_ip(fip.id).await.unwrap();
+        assert!(detached.hosted_cn.is_none(), "detach clears hosted_cn");
     }
 
     #[tokio::test]
