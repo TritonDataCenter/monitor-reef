@@ -690,6 +690,21 @@ async fn drive_job(
     // call. A runtime "unsupported" surprise here would be
     // strictly worse.
     match &job.kind {
+        JobKind::ApplyPortBlueprint { nic_id, .. } => {
+            // Re-apply a single running port's blueprint at its current
+            // (bumped) generation. The port already exists and is
+            // started from provision, so apply only -- no zone or port
+            // re-create. tritond owns the blueprint and the generation;
+            // the agent fetches the recomputed bytes and applies them.
+            let proteus = open_proteus_lifecycle(&cfg.proteus_dev)?;
+            let port_blueprint = client
+                .fetch_port_blueprint(*nic_id)
+                .await
+                .with_context(|| format!("fetch port blueprint to re-apply for nic {nic_id}"))?;
+            proteus
+                .apply_blueprint(&port_blueprint)
+                .with_context(|| format!("re-apply Proteus blueprint for nic {nic_id}"))?;
+        }
         JobKind::Provision { instance_id } => {
             // The instance must still exist — a concurrent operator
             // delete races to None.
@@ -1083,6 +1098,12 @@ trait ProteusLifecycle: Send + Sync {
         link_name: &str,
     ) -> Result<proteus::ProteusPortStatus>;
 
+    /// Re-apply a port's blueprint in place: no create, no start.
+    /// Pushes a recomputed blueprint to an already-running port (e.g. a
+    /// FIP attach on a running VM). The kmod no-ops a re-apply at the
+    /// same generation, so the caller must bump the generation first.
+    fn apply_blueprint(&self, blueprint: &PortBlueprint) -> Result<()>;
+
     fn cleanup_port(&self, port_id: PortId) -> Result<()>;
 }
 
@@ -1096,6 +1117,10 @@ where
         _link_name: &str,
     ) -> Result<proteus::ProteusPortStatus> {
         proteus::ProteusClient::ensure_started(self, blueprint, None)
+    }
+
+    fn apply_blueprint(&self, blueprint: &PortBlueprint) -> Result<()> {
+        proteus::ProteusClient::apply_blueprint(self, blueprint)
     }
 
     fn cleanup_port(&self, port_id: PortId) -> Result<()> {
@@ -1147,6 +1172,10 @@ impl ProteusLifecycle for KernelProteusLifecycle {
         self.inner.assert_generation_applied(blueprint)?;
         self.inner.start_port(blueprint.port_id)?;
         self.inner.dump_status(blueprint.port_id)
+    }
+
+    fn apply_blueprint(&self, blueprint: &PortBlueprint) -> Result<()> {
+        self.inner.apply_blueprint(blueprint)
     }
 
     fn cleanup_port(&self, port_id: PortId) -> Result<()> {

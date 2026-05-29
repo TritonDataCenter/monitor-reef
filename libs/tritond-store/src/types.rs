@@ -2120,6 +2120,15 @@ pub enum JobKind {
     /// slice promotes this to a Deleting → Deleted lifecycle
     /// gated on agent ack.
     Delete { instance_id: Uuid },
+    /// Re-apply a single running port's compiled blueprint at its
+    /// current (bumped) generation. Unlike `Provision`, the port
+    /// already exists and is started, so the agent applies only -- no
+    /// zone or port re-create. tritond owns the blueprint and the
+    /// monotonic generation (`Store::get_port_generation`); the agent
+    /// fetches and applies, never invents. Enqueued for every
+    /// blueprint-affecting mutation on a running VM (FIP attach/detach,
+    /// firewall, routes).
+    ApplyPortBlueprint { instance_id: Uuid, nic_id: Uuid },
     /// Apply or update a firehyve/fhrun edge instance on the
     /// target CN. The manifest is JSON bytes rendered by tritond
     /// from the EdgeCluster's desired state; the agent persists it
@@ -2252,7 +2261,8 @@ impl JobKind {
             | JobKind::Stop { instance_id }
             | JobKind::Restart { instance_id }
             | JobKind::Delete { instance_id } => Some(*instance_id),
-            JobKind::MigrateZfsSend { instance_id, .. }
+            JobKind::ApplyPortBlueprint { instance_id, .. }
+            | JobKind::MigrateZfsSend { instance_id, .. }
             | JobKind::MigrateVmmStream { instance_id, .. }
             | JobKind::ProteusActivate { instance_id, .. }
             | JobKind::ProteusDeactivate { instance_id, .. }
@@ -2274,6 +2284,7 @@ impl JobKind {
             | JobKind::Stop { .. }
             | JobKind::Restart { .. }
             | JobKind::Delete { .. }
+            | JobKind::ApplyPortBlueprint { .. }
             | JobKind::MigrateZfsSend { .. }
             | JobKind::MigrateVmmStream { .. }
             | JobKind::ProteusActivate { .. }

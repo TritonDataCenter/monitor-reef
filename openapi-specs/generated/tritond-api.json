@@ -12624,6 +12624,31 @@
             ]
           },
           {
+            "description": "Re-apply a single running port's compiled blueprint at its current (bumped) generation. Unlike `Provision`, the port already exists and is started, so the agent applies only -- no zone or port re-create. tritond owns the blueprint and the monotonic generation (`Store::get_port_generation`); the agent fetches and applies, never invents. Enqueued for every blueprint-affecting mutation on a running VM (FIP attach/detach, firewall, routes).",
+            "type": "object",
+            "properties": {
+              "instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "apply_port_blueprint"
+                ]
+              },
+              "nic_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "instance_id",
+              "kind",
+              "nic_id"
+            ]
+          },
+          {
             "description": "Apply or update a firehyve/fhrun edge instance on the target CN. The manifest is JSON bytes rendered by tritond from the EdgeCluster's desired state; the agent persists it to the host runtime path, asks fhrun/firehyve to converge, and reports realization for the carried EdgeCluster generation.",
             "type": "object",
             "properties": {

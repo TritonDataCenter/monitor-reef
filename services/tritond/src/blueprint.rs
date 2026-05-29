@@ -43,8 +43,6 @@ use crate::error::{not_found, store_error_to_http};
 use crate::imds_config::{ImdsListenerConfig, pseudo_src_for_port};
 use crate::realized_meta::build_instance_realized_view;
 
-const INITIAL_PROTEUS_PORT_GENERATION: u64 = 1;
-
 /// A concurrent delete after the job was claimed surfaces as
 /// `instance: None` instead of 404; the agent then reports
 /// `JobOutcome::Failed { reason: "instance gone" }`.
@@ -362,7 +360,15 @@ pub(crate) async fn build_port_blueprint(
         None => false,
     };
 
-    let generation = INITIAL_PROTEUS_PORT_GENERATION;
+    // Per-port monotonic generation. A never-bumped port reads 1
+    // (the historical provision baseline); a blueprint-affecting
+    // mutation bumps it via `Store::bump_port_generation` so a
+    // running-VM re-apply lands at a strictly-greater generation
+    // instead of being swallowed as a same-generation no-op.
+    let generation = store
+        .get_port_generation(port_id)
+        .await
+        .map_err(store_error_to_http)?;
     let intent = TritondPortIntentV1 {
         silo_id: tenant.silo_id,
         tenant_id: nic.tenant_id,
