@@ -1810,6 +1810,16 @@ impl Store for FdbStore {
                         description: req.description.unwrap_or_default(),
                         ipv4_block: req.ipv4_block,
                         ipv6_block: req.ipv6_block,
+                        // Tenant VPC subnets are always internal overlay
+                        // networks; External subnets use the operator
+                        // `create_external_subnet` path, not this one.
+                        kind: crate::types::NetworkKind::Internal,
+                        nic_tag: None,
+                        vlan_id: None,
+                        provision_start_ipv4: None,
+                        provision_end_ipv4: None,
+                        provision_start_ipv6: None,
+                        provision_end_ipv6: None,
                         created_at: Utc::now(),
                     };
                     let value = match serde_json::to_vec(&candidate) {

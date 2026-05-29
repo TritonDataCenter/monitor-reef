@@ -206,6 +206,23 @@ fn store_error_to_http(err: StoreError) -> HttpError {
             ClientErrorStatusCode::BAD_REQUEST,
             format!("scan exceeded {cap} rows without completing; {hint}"),
         ),
+        // Network / IPAM errors never originate from the storage-cluster
+        // handlers; reaching one here is a programming error -> 500.
+        StoreError::PoolExhausted(msg) => {
+            HttpError::for_internal_error(format!("unexpected pool-exhausted: {msg}"))
+        }
+        StoreError::SubnetNotExternal(id) => {
+            HttpError::for_internal_error(format!("unexpected subnet-not-external: {id}"))
+        }
+        StoreError::SubnetCidrOverlap(msg) => {
+            HttpError::for_internal_error(format!("unexpected subnet-cidr-overlap: {msg}"))
+        }
+        StoreError::NicTagInUse(id) => {
+            HttpError::for_internal_error(format!("unexpected nic-tag-in-use: {id}"))
+        }
+        StoreError::NicTagNotProvided { cn, nic_tag } => HttpError::for_internal_error(format!(
+            "unexpected nic-tag-not-provided: cn {cn} tag {nic_tag}"
+        )),
     }
 }
 

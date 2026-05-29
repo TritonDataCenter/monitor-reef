@@ -140,6 +140,33 @@ pub enum StoreError {
         /// narrow the scan ("set --project= or --since=").
         hint: String,
     },
+
+    /// An external network / pool ran out of allocatable addresses
+    /// (its provision range is fully taken in the shared public-IP
+    /// index).
+    #[error("external address pool exhausted: {0}")]
+    PoolExhausted(String),
+
+    /// An operation required a subnet to be `NetworkKind::External`
+    /// (e.g. allocating a floating IP from it) but it was not.
+    #[error("subnet {0} is not an external network")]
+    SubnetNotExternal(Uuid),
+
+    /// A new external subnet's CIDR overlaps an existing external
+    /// subnet. Rejected so the single global allocation index can
+    /// never hand the same address to two subnets / tenants.
+    #[error("external subnet CIDR overlaps existing: {0}")]
+    SubnetCidrOverlap(String),
+
+    /// A nic_tag could not be deleted because subnets still reference
+    /// it.
+    #[error("nic tag {0} is still in use")]
+    NicTagInUse(Uuid),
+
+    /// The hosting CN does not advertise the nic_tag a floating-IP
+    /// attach requires (its `CnNicTagInventory` lacks the tag).
+    #[error("CN {cn} does not provide nic_tag {nic_tag}")]
+    NicTagNotProvided { cn: Uuid, nic_tag: Uuid },
 }
 
 /// Maximum rows returned by a bounded-scan list operation per

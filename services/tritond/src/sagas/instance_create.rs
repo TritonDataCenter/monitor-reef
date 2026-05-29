@@ -532,6 +532,14 @@ fn store_err_to_action_err(e: tritond_store::StoreError) -> ActionError {
         // on bounded sets by uuid). Surfaces as `backend` for the
         // unreachable case; a debugger will spot it in the saga log.
         tritond_store::StoreError::ScanLimitExceeded { .. } => "backend",
+        // Network / IPAM errors don't arise from instance_create (it
+        // allocates internal NIC IPs, never external space); tag
+        // `backend` for the unreachable case, like the variants above.
+        tritond_store::StoreError::PoolExhausted(_)
+        | tritond_store::StoreError::SubnetNotExternal(_)
+        | tritond_store::StoreError::SubnetCidrOverlap(_)
+        | tritond_store::StoreError::NicTagInUse(_)
+        | tritond_store::StoreError::NicTagNotProvided { .. } => "backend",
     };
     let payload = serde_json::json!({
         "kind": "store_error",

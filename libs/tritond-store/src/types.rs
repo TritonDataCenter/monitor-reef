@@ -361,6 +361,34 @@ pub struct Subnet {
     /// IPv6 CIDR in the same VPC.
     #[schemars(with = "Option<String>")]
     pub ipv6_block: Option<Ipv6Network>,
+    /// What kind of network this subnet is. `External` subnets carry a
+    /// FlatL2 nic_tag + VLAN and are the source of public / floating
+    /// IPs; `Internal` / `Fabric` are VPC overlay subnets. Defaults to
+    /// `Internal` for wire back-compat with pre-C-1 subnet rows.
+    #[serde(default)]
+    pub kind: NetworkKind,
+    /// FK to the [`NicTag`] this subnet's traffic egresses on. Set for
+    /// `External` subnets; `None` for overlay subnets.
+    #[serde(default)]
+    pub nic_tag: Option<Uuid>,
+    /// 802.1Q VLAN id for an `External` subnet's nic_tag link
+    /// (`None` = untagged). The agent's `EnsureExternalLink` creates the
+    /// matching VLAN-tagged VNIC on the nic_tag's physical link.
+    #[serde(default)]
+    pub vlan_id: Option<u16>,
+    /// Lowest IPv4 the allocator may hand out (inclusive); `None` falls
+    /// back to the block's first usable host. Scopes a pool to a
+    /// sub-range of a larger upstream block.
+    #[serde(default)]
+    pub provision_start_ipv4: Option<Ipv4Addr>,
+    /// Highest IPv4 the allocator may hand out (inclusive); `None` falls
+    /// back to the block's last usable host.
+    #[serde(default)]
+    pub provision_end_ipv4: Option<Ipv4Addr>,
+    #[serde(default)]
+    pub provision_start_ipv6: Option<Ipv6Addr>,
+    #[serde(default)]
+    pub provision_end_ipv6: Option<Ipv6Addr>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -379,6 +407,98 @@ pub struct NewSubnet {
     #[serde(default)]
     #[schemars(with = "Option<String>")]
     pub ipv6_block: Option<Ipv6Network>,
+}
+
+/// Network kind. `External` is FlatL2 public space (floating-IP and
+/// NAT-gateway source); `Internal` / `Fabric` are VPC overlay subnets.
+/// An unrecognized wire value decodes to `Unknown`, which the external
+/// dataplane path treats as "not external" (fail closed) rather than
+/// silently behaving as `Internal`.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum NetworkKind {
+    #[default]
+    Internal,
+    External,
+    Fabric,
+    #[serde(other)]
+    Unknown,
+}
+
+/// A named L2 segment a CN can attach VNICs to (e.g. `external`,
+/// `internal`, `sdc_underlay`). External subnets reference one by id;
+/// per-CN provisioning lives in [`CnNicTagInventory`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NicTag {
+    pub id: Uuid,
+    pub name: String,
+    pub description: String,
+    /// Effective MTU of the tag's link; a subnet's MTU must not exceed
+    /// this.
+    pub mtu: u32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Request body for registering a nic_tag.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewNicTag {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub mtu: u32,
+}
+
+/// One nic_tag a CN's hardware provides, with the physical link, VLAN,
+/// and MTU it lands on. Published by `tritonagent` from sysinfo /
+/// nictagadm; read by placement and the FIP allocator.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NicTagProvision {
+    pub nic_tag: Uuid,
+    pub physical_nic: String,
+    pub vlan_id: u16,
+    pub mtu: u32,
+}
+
+/// The per-CN list of nic_tags this CN provides. Single-writer: only
+/// the owning CN's agent writes its row (`cn-nic-tags/<cn>`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CnNicTagInventory {
+    pub cn: Uuid,
+    pub provides: Vec<NicTagProvision>,
+    pub published_at: DateTime<Utc>,
+}
+
+/// An ordered list of external networks (subnets) the allocator walks
+/// in order when handing out public addresses. Carried from NAPI; v1
+/// defaults allocation to a single network.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NetworkPool {
+    pub id: Uuid,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Ordered external-subnet ids; allocation walks them in order.
+    pub networks: Vec<Uuid>,
+    /// Silos allowed to allocate from this pool; empty = all silos.
+    #[serde(default)]
+    pub owner_silos: Vec<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Request body for creating a network pool.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewNetworkPool {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub networks: Vec<Uuid>,
+    #[serde(default)]
+    pub owner_silos: Vec<Uuid>,
 }
 
 /// Named set of routes inside a VPC. Every VPC has one auto-created

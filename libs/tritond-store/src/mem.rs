@@ -1073,6 +1073,16 @@ impl Store for MemStore {
             description: req.description.unwrap_or_default(),
             ipv4_block: req.ipv4_block,
             ipv6_block: req.ipv6_block,
+            // Tenant VPC subnets are always internal overlay networks;
+            // External subnets are created via the operator path
+            // (`create_external_subnet`), not this tenant API.
+            kind: crate::types::NetworkKind::Internal,
+            nic_tag: None,
+            vlan_id: None,
+            provision_start_ipv4: None,
+            provision_end_ipv4: None,
+            provision_start_ipv6: None,
+            provision_end_ipv6: None,
             created_at: Utc::now(),
         };
         guard.subnet_id_by_vpc_name.insert(name_key, subnet.id);

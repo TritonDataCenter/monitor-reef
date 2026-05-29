@@ -64,6 +64,32 @@ pub(crate) fn store_error_to_http(err: StoreError) -> HttpError {
             ClientErrorStatusCode::BAD_REQUEST,
             format!("scan exceeded {cap} rows without completing; {hint}"),
         ),
+        // network / IPAM errors (RFD 00008): all operator-facing 4xx.
+        StoreError::PoolExhausted(detail) => HttpError::for_client_error(
+            Some("PoolExhausted".to_string()),
+            ClientErrorStatusCode::CONFLICT,
+            format!("external address pool exhausted: {detail}"),
+        ),
+        StoreError::SubnetNotExternal(id) => HttpError::for_client_error(
+            Some("SubnetNotExternal".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            format!("subnet {id} is not an external network"),
+        ),
+        StoreError::SubnetCidrOverlap(detail) => HttpError::for_client_error(
+            Some("SubnetCidrOverlap".to_string()),
+            ClientErrorStatusCode::CONFLICT,
+            format!("external subnet CIDR overlaps existing: {detail}"),
+        ),
+        StoreError::NicTagInUse(id) => HttpError::for_client_error(
+            Some("NicTagInUse".to_string()),
+            ClientErrorStatusCode::CONFLICT,
+            format!("nic tag {id} is still in use"),
+        ),
+        StoreError::NicTagNotProvided { cn, nic_tag } => HttpError::for_client_error(
+            Some("NicTagNotProvided".to_string()),
+            ClientErrorStatusCode::CONFLICT,
+            format!("CN {cn} does not provide nic_tag {nic_tag}"),
+        ),
     }
 }
 
@@ -99,6 +125,26 @@ pub(crate) fn store_error_to_audit_outcome(err: &StoreError) -> AuditOutcome {
         StoreError::ScanLimitExceeded { cap, hint } => AuditOutcome::ClientError {
             code: 400,
             message: format!("scan exceeded {cap} rows: {hint}"),
+        },
+        StoreError::PoolExhausted(msg) => AuditOutcome::ClientError {
+            code: 409,
+            message: format!("external address pool exhausted: {msg}"),
+        },
+        StoreError::SubnetNotExternal(id) => AuditOutcome::ClientError {
+            code: 400,
+            message: format!("subnet {id} is not an external network"),
+        },
+        StoreError::SubnetCidrOverlap(msg) => AuditOutcome::ClientError {
+            code: 409,
+            message: format!("external subnet CIDR overlaps existing: {msg}"),
+        },
+        StoreError::NicTagInUse(id) => AuditOutcome::ClientError {
+            code: 409,
+            message: format!("nic tag {id} is still in use"),
+        },
+        StoreError::NicTagNotProvided { cn, nic_tag } => AuditOutcome::ClientError {
+            code: 409,
+            message: format!("CN {cn} does not provide nic_tag {nic_tag}"),
         },
     }
 }
