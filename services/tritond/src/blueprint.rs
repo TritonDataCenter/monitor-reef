@@ -380,7 +380,13 @@ pub(crate) async fn build_port_blueprint(
     // every in-VPC subnet permit still wins (P-2). FIPs not attached to
     // this port keep `external_nic_tag = None` (a pure NAT rewrite).
     let mut floating_ip_intents = Vec::with_capacity(floating_ips.len());
-    let mut external_attachment_id: Option<Uuid> = None;
+    // Track the external attachment per address family: a v4
+    // CN-terminated FIP needs a `0.0.0.0/0 -> External` default
+    // route, a v6 one needs `::/0 -> External`. A dual-stack port
+    // with FIPs of both families gets both, so the P-3 overlay
+    // external branch has an egress target for each family.
+    let mut external_attachment_v4: Option<Uuid> = None;
+    let mut external_attachment_v6: Option<Uuid> = None;
     for fip in &floating_ips {
         let attached_here = fip
             .attached_to
@@ -392,8 +398,13 @@ pub(crate) async fn build_port_blueprint(
                 // The attachment id correlates the route back to the
                 // control-plane FIP; reuse the FIP id (the store has no
                 // separate attachment id, and the proteus binding keys
-                // on the FIP id too).
-                external_attachment_id.get_or_insert(fip.id);
+                // on the FIP id too). Bucket by the FIP's address family
+                // so the synthesized default route matches it.
+                if fip.address.is_ipv6() {
+                    external_attachment_v6.get_or_insert(fip.id);
+                } else {
+                    external_attachment_v4.get_or_insert(fip.id);
+                }
             }
             name
         } else {
@@ -409,8 +420,19 @@ pub(crate) async fn build_port_blueprint(
         subnet.ipv4_block.map(|c| c.to_string()),
         !peers.is_empty(),
     )?;
-    if let Some(attachment_id) = external_attachment_id {
-        routes.push(external_default_route(subnet.route_table_id, attachment_id));
+    if let Some(attachment_id) = external_attachment_v4 {
+        routes.push(external_default_route(
+            subnet.route_table_id,
+            attachment_id,
+            ExternalRouteFamily::V4,
+        ));
+    }
+    if let Some(attachment_id) = external_attachment_v6 {
+        routes.push(external_default_route(
+            subnet.route_table_id,
+            attachment_id,
+            ExternalRouteFamily::V6,
+        ));
     }
 
     let intent = TritondPortIntentV1 {
@@ -643,17 +665,43 @@ fn derive_local_subnet_seed(route_table_id: Uuid) -> [u8; 32] {
     out
 }
 
-/// Synthesize the `0.0.0.0/0 -> External` default route for a port that
-/// hosts a CN-terminated FIP (C-4a). Stable synthetic id derived from
-/// the route table so re-emission is idempotent. The proteus router
-/// maps `External` to a non-drop catch-all at the lowest priority, so
-/// any in-VPC subnet permit still wins (P-2); the actual egress is
-/// driven by the overlay's destination-based external branch (P-3).
-fn external_default_route(route_table_id: Uuid, attachment_id: Uuid) -> RouteIntentV1 {
+/// Address family of a synthesized FIP-external default route. Drives
+/// both the destination CIDR (`0.0.0.0/0` vs `::/0`) and the synthetic
+/// id seed so a dual-stack port's two default routes don't collide on
+/// the same id.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ExternalRouteFamily {
+    V4,
+    V6,
+}
+
+/// Synthesize the family-appropriate `<default> -> External` route for a
+/// port that hosts a CN-terminated FIP (C-4a): `0.0.0.0/0` for a v4 FIP,
+/// `::/0` for a v6 FIP. Stable synthetic id derived from the route table
+/// + family so re-emission is idempotent and the two families coexist.
+/// The proteus router maps `External` to a non-drop catch-all at the
+/// lowest priority, so any in-VPC subnet permit still wins (P-2); the
+/// actual egress is driven by the overlay's destination-based external
+/// branch (P-3).
+fn external_default_route(
+    route_table_id: Uuid,
+    attachment_id: Uuid,
+    family: ExternalRouteFamily,
+) -> RouteIntentV1 {
     let synthetic_id = Uuid::new_v5(
         &Uuid::NAMESPACE_OID,
-        &derive_external_route_seed(route_table_id),
+        &derive_external_route_seed(route_table_id, family),
     );
+    let (destination, description) = match family {
+        ExternalRouteFamily::V4 => (
+            "0.0.0.0/0".to_string(),
+            "Synthesized: 0.0.0.0/0 -> External (CN-terminated FIP egress)".to_string(),
+        ),
+        ExternalRouteFamily::V6 => (
+            "::/0".to_string(),
+            "Synthesized: ::/0 -> External (CN-terminated FIP egress)".to_string(),
+        ),
+    };
     RouteIntentV1 {
         id: synthetic_id,
         tenant_id: Uuid::nil(),
@@ -661,16 +709,24 @@ fn external_default_route(route_table_id: Uuid, attachment_id: Uuid) -> RouteInt
         vpc_id: Uuid::nil(),
         route_table_id,
         name: "fip-external".to_string(),
-        description: "Synthesized: 0.0.0.0/0 -> External (CN-terminated FIP egress)".to_string(),
-        destination: "0.0.0.0/0".to_string(),
+        description,
+        destination,
         target: RouteTargetIntentV1::External { attachment_id },
     }
 }
 
-fn derive_external_route_seed(route_table_id: Uuid) -> [u8; 32] {
+fn derive_external_route_seed(route_table_id: Uuid, family: ExternalRouteFamily) -> [u8; 32] {
     let mut out = [0u8; 32];
     out[..16].copy_from_slice(route_table_id.as_bytes());
-    out[16..].copy_from_slice(b"fip-external\0\0\0\0");
+    // Distinct 16-byte suffix per family so the v4 and v6 default
+    // routes get distinct stable ids on a dual-stack port. The v4
+    // suffix is unchanged from the single-family era so existing v4
+    // routes keep their id.
+    let suffix: &[u8; 16] = match family {
+        ExternalRouteFamily::V4 => b"fip-external\0\0\0\0",
+        ExternalRouteFamily::V6 => b"fip-external-v6\0",
+    };
+    out[16..].copy_from_slice(suffix);
     out
 }
 
@@ -1149,5 +1205,29 @@ mod imds_tests {
         assert_eq!(with_tag.external_nic_tag.as_deref(), Some("external0"));
         let without = floating_ip_intent(&fip_with(None, None), None);
         assert_eq!(without.external_nic_tag, None);
+    }
+
+    #[test]
+    fn external_default_route_emits_family_appropriate_destination() {
+        let rt = Uuid::from_u128(0xc0ffee);
+        let att = Uuid::from_u128(0xfeed);
+        let v4 = external_default_route(rt, att, ExternalRouteFamily::V4);
+        let v6 = external_default_route(rt, att, ExternalRouteFamily::V6);
+        assert_eq!(v4.destination, "0.0.0.0/0");
+        assert_eq!(v6.destination, "::/0");
+        assert!(matches!(
+            v4.target,
+            RouteTargetIntentV1::External { attachment_id } if attachment_id == att
+        ));
+        assert!(matches!(
+            v6.target,
+            RouteTargetIntentV1::External { attachment_id } if attachment_id == att
+        ));
+        // The two families must get distinct stable ids so a dual-stack
+        // port's v4 + v6 default routes coexist instead of colliding.
+        assert_ne!(v4.id, v6.id, "v4 and v6 default routes must have distinct ids");
+        // Re-emission is idempotent per family.
+        let v4_again = external_default_route(rt, att, ExternalRouteFamily::V4);
+        assert_eq!(v4.id, v4_again.id, "v4 default-route id must be stable");
     }
 }

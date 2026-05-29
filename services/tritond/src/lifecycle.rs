@@ -530,6 +530,26 @@ pub(crate) async fn drive_lifecycle_for_complete(
     if matches!(job.kind, JobKind::Delete { .. }) {
         return;
     }
+    // Dataplane jobs (FIP realize/withdraw, running-VM blueprint
+    // re-apply) run *against* a VM that is already in its steady
+    // lifecycle state — they must never mutate it. A FipClaim /
+    // FipRelease / ApplyPortBlueprint failure (kmod unreachable,
+    // EnsureExternalLink/ipadm error, flaky external link) is a
+    // dataplane problem, not a VM-health problem; driving the
+    // healthy hosting VM to Failed on such a failure would let
+    // anyone who can make a victim's FIP/blueprint job fail force
+    // that running VM into Failed. The catch-all Failed arm below
+    // would otherwise match these kinds (Running is in its
+    // accepted-from set), so guard them out explicitly here. Listed
+    // by kind (rather than allow-listing the lifecycle kinds) so a
+    // future new instance-lifecycle JobKind still defaults to
+    // driving and migration/edge handling is unchanged.
+    if matches!(
+        job.kind,
+        JobKind::FipClaim { .. } | JobKind::FipRelease { .. } | JobKind::ApplyPortBlueprint { .. }
+    ) {
+        return;
+    }
     let (expected_from, target): (&[LifecycleStateKind], LifecycleState) =
         match (&job.kind, outcome) {
             (JobKind::Provision { .. }, JobOutcome::Completed) => {
@@ -574,5 +594,215 @@ pub(crate) async fn drive_lifecycle_for_complete(
             error = %e,
             "lifecycle CAS failed at job complete",
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use tritond_store::{
+        JobStatus, MemStore, NewImage, NewInstance, NewProject, NewSilo, NewSshKey, NewSubnet,
+        NewVpc, ProvisioningJob,
+    };
+
+    /// Create a single instance and drive it to `Running`. Returns
+    /// `(store, instance_id, nic_id)`.
+    async fn running_instance() -> (MemStore, Uuid, Uuid) {
+        let store = MemStore::new();
+        let silo = store
+            .create_silo(NewSilo {
+                name: "s".into(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let tenant_id = silo.default_tenant_id;
+        let project = store
+            .create_project(
+                tenant_id,
+                NewProject {
+                    name: "p".into(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        let vpc = store
+            .create_vpc(
+                tenant_id,
+                project.id,
+                NewVpc {
+                    name: "v".into(),
+                    description: None,
+                    ipv4_block: Some("10.0.0.0/16".parse().unwrap()),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        let subnet = store
+            .create_subnet(
+                tenant_id,
+                project.id,
+                vpc.id,
+                NewSubnet {
+                    name: "primary".into(),
+                    description: None,
+                    ipv4_block: Some("10.0.1.0/24".parse().unwrap()),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        let image = store
+            .create_image_silo(
+                silo.id,
+                NewImage {
+                    name: "img".into(),
+                    description: None,
+                    os: "linux".into(),
+                    version: "1".into(),
+                    size_bytes: 1_000_000,
+                    sha256: "a".repeat(64),
+                    source_url: Some("mantafs://i".into()),
+                    id: None,
+                    compatibility: None,
+                },
+            )
+            .await
+            .unwrap();
+        let ssh = store
+            .create_ssh_key_silo(
+                silo.id,
+                NewSshKey {
+                    name: "k".into(),
+                    description: None,
+                    public_key: "ssh-ed25519 AAAA".into(),
+                },
+                "SHA256:fixture".into(),
+            )
+            .await
+            .unwrap();
+        let created = store
+            .create_instance(
+                tenant_id,
+                project.id,
+                NewInstance {
+                    name: "web".into(),
+                    description: None,
+                    image_id: image.id,
+                    primary_subnet_id: subnet.id,
+                    ssh_key_ids: vec![ssh.id],
+                    cpu: 1,
+                    memory_bytes: 1024 * 1024 * 1024,
+                    mac: None,
+                    extra_nics: Vec::new(),
+                },
+            )
+            .await
+            .unwrap();
+        let instance_id = created.instance.id;
+        store
+            .transition_instance_lifecycle(
+                instance_id,
+                &[LifecycleStateKind::Pending],
+                LifecycleState::Running,
+            )
+            .await
+            .unwrap();
+        (store, instance_id, created.nics[0].id)
+    }
+
+    fn failed_job(kind: JobKind) -> ProvisioningJob {
+        ProvisioningJob {
+            id: Uuid::new_v4(),
+            kind,
+            status: JobStatus::Failed {
+                reason: "kmod unreachable".into(),
+            },
+            seq: 1,
+            created_at: Utc::now(),
+            claimed_at: Some(Utc::now()),
+            claimed_by: Some("agent".into()),
+            completed_at: Some(Utc::now()),
+            target_cn_uuid: None,
+        }
+    }
+
+    async fn lifecycle_kind(store: &MemStore, instance_id: Uuid) -> LifecycleStateKind {
+        store.get_instance(instance_id).await.unwrap().lifecycle.kind()
+    }
+
+    /// CTF regression: a victim's FipClaim failing (kmod unreachable,
+    /// flaky external link) must NOT drive the healthy hosting VM to
+    /// Failed. The dataplane guard must short-circuit before any CAS.
+    #[tokio::test]
+    async fn failed_fip_claim_leaves_running_instance_unchanged() {
+        let (store, instance_id, nic_id) = running_instance().await;
+        let job = failed_job(JobKind::FipClaim {
+            floating_ip_id: Uuid::new_v4(),
+            nic_id,
+            instance_id,
+            fip_addr: "192.0.2.10".into(),
+            external_nic_tag: Some("external".into()),
+            generation: 2,
+        });
+        let outcome = JobOutcome::Failed {
+            reason: "kmod unreachable".into(),
+        };
+        drive_lifecycle_for_complete(&store, &job, &outcome).await;
+        assert_eq!(
+            lifecycle_kind(&store, instance_id).await,
+            LifecycleStateKind::Running,
+            "a failed FipClaim must not fail the hosting VM",
+        );
+    }
+
+    /// Same guard for the running-VM blueprint re-apply job: an
+    /// ApplyPortBlueprint failure is a dataplane problem, not VM health.
+    #[tokio::test]
+    async fn failed_apply_port_blueprint_leaves_running_instance_unchanged() {
+        let (store, instance_id, nic_id) = running_instance().await;
+        let job = failed_job(JobKind::ApplyPortBlueprint { instance_id, nic_id });
+        let outcome = JobOutcome::Failed {
+            reason: "ipadm error".into(),
+        };
+        drive_lifecycle_for_complete(&store, &job, &outcome).await;
+        assert_eq!(
+            lifecycle_kind(&store, instance_id).await,
+            LifecycleStateKind::Running,
+            "a failed ApplyPortBlueprint must not fail the hosting VM",
+        );
+    }
+
+    /// Instance-lifecycle failures still transition to Failed: the
+    /// guard must not have broadened to swallow Provision/Start/Stop.
+    #[tokio::test]
+    async fn failed_instance_lifecycle_jobs_still_transition_to_failed() {
+        for kind in [
+            JobKind::Provision { instance_id: Uuid::nil() },
+            JobKind::Start { instance_id: Uuid::nil() },
+            JobKind::Stop { instance_id: Uuid::nil() },
+        ] {
+            let (store, instance_id, _nic_id) = running_instance().await;
+            // Rebind the kind onto this fixture's instance id.
+            let kind = match kind {
+                JobKind::Provision { .. } => JobKind::Provision { instance_id },
+                JobKind::Start { .. } => JobKind::Start { instance_id },
+                JobKind::Stop { .. } => JobKind::Stop { instance_id },
+                other => other,
+            };
+            let job = failed_job(kind);
+            let outcome = JobOutcome::Failed {
+                reason: "agent failure".into(),
+            };
+            drive_lifecycle_for_complete(&store, &job, &outcome).await;
+            assert_eq!(
+                lifecycle_kind(&store, instance_id).await,
+                LifecycleStateKind::Failed,
+                "a failed instance-lifecycle job must still fail the VM",
+            );
+        }
     }
 }
