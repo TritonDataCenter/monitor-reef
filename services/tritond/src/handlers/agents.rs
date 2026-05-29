@@ -36,7 +36,8 @@ use tritond_api::{
     LegacyVmListQuery, LegacyVmPath, LogTailQuery, LoginRequest, MetricsRangeQuery,
     NetworkRealizationRequest, NewApiKey, NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest,
     ProvisioningBlueprint, RefreshRequest, RegisterCnRequest, RegisterCnResponse,
-    RegisterStatusQuery, RegisterStatusResponse, SetCnRoleRequest, SetConfigRequest, SiloPath,
+    RegisterNicTagProvision, RegisterStatusQuery, RegisterStatusResponse, SetCnRoleRequest,
+    SetConfigRequest, SiloPath,
     SiloTenantPath, SshKeyPath, StorageClusterAccessKeyPath, StorageClusterBucketPath,
     StorageClusterNodePath, StorageClusterPath, StorageClusterUserPath,
     StorageClusterUserPolicyPath, TenantIdpPath, TenantPath, TenantProjectFloatingIpPath,
@@ -63,8 +64,8 @@ use tritond_auth::{
     TokenKind, generate_api_key, mint_access, mint_refresh, verify, verify_password,
 };
 use tritond_store::{
-    AUTO_APPROVE_WINDOW_MAX, ApiKey, CnState, ConfigError, ConfigKey, IdpConfig, Store, StoreError,
-    normalize_claim_code,
+    AUTO_APPROVE_WINDOW_MAX, ApiKey, CnNicTagInventory, CnState, ConfigError, ConfigKey, IdpConfig,
+    NicTagProvision, Store, StoreError, normalize_claim_code,
 };
 use uuid::Uuid;
 
@@ -614,6 +615,14 @@ pub(crate) async fn agent_register(
         }
     }
 
+    // Publish the CN's nic_tag inventory. The write is attributed to
+    // the registering CN (single-writer per `cn-nic-tags/<cn>`) and is
+    // fail-closed: a reported name that resolves to no registered
+    // nic_tag is skipped, never invented (D10f). Skipped entirely when
+    // the agent reports no tags so an older agent (which omits the
+    // field) never clobbers a previously-published inventory.
+    publish_register_nic_tags(ctx, effective.server_uuid, &req.nic_tags, now).await?;
+
     ctx.audit
         .record_mutation(
             &principal,
@@ -644,6 +653,78 @@ pub(crate) async fn agent_register(
         claim_code_expires_at: effective.claim_code_expires_at,
         poll_token: effective.poll_token,
     }))
+}
+
+/// Resolve the nic_tag names a CN reported at registration against the
+/// fleet-wide nic_tag registry and publish the CN's inventory row.
+///
+/// Fail-closed: a reported `name` that resolves to no registered
+/// [`tritond_store::NicTag`] is skipped (logged), never invented —
+/// downstream FIP placement validation (C-3) treats an absent tag as
+/// "this CN does not provide it" rather than trusting an unverifiable
+/// claim (D10f). The write is attributed to `cn` (single-writer per
+/// `cn-nic-tags/<cn>`), matching the registering CN's identity.
+///
+/// Reported with no tags is a no-op: an older agent omits the field
+/// (`reported == []`) and must not clobber a previously-published
+/// inventory.
+async fn publish_register_nic_tags(
+    ctx: &ApiContext,
+    cn: Uuid,
+    reported: &[RegisterNicTagProvision],
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<(), HttpError> {
+    resolve_and_publish_nic_tags(ctx.store.as_ref(), cn, reported, now)
+        .await
+        .map_err(store_error_to_http)
+}
+
+/// Resolve reported nic_tag names against the registry and publish the
+/// CN's inventory. Split out from the handler so it is unit-testable
+/// against a `MemStore` without a Dropshot request context.
+async fn resolve_and_publish_nic_tags(
+    store: &dyn Store,
+    cn: Uuid,
+    reported: &[RegisterNicTagProvision],
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<(), StoreError> {
+    if reported.is_empty() {
+        return Ok(());
+    }
+
+    // Build a name -> id map once; the registry is small and fleet-wide.
+    let registry = store.list_nic_tags().await?;
+    let by_name: std::collections::HashMap<&str, Uuid> =
+        registry.iter().map(|t| (t.name.as_str(), t.id)).collect();
+
+    let provides: Vec<NicTagProvision> = reported
+        .iter()
+        .filter_map(|r| match by_name.get(r.name.as_str()) {
+            Some(&nic_tag) => Some(NicTagProvision {
+                nic_tag,
+                physical_nic: r.physical_nic.clone(),
+                vlan_id: r.vlan_id,
+                mtu: r.mtu,
+            }),
+            None => {
+                tracing::warn!(
+                    cn = %cn,
+                    nic_tag_name = %r.name,
+                    "CN reported a nic_tag that resolves to no registered NicTag; \
+                     skipping (fail-closed, not invented)",
+                );
+                None
+            }
+        })
+        .collect();
+
+    store
+        .publish_cn_nic_tags(CnNicTagInventory {
+            cn,
+            provides,
+            published_at: now,
+        })
+        .await
 }
 
 pub(crate) async fn agent_register_status(
@@ -730,5 +811,119 @@ pub(crate) async fn agent_register_status(
             }));
         }
         tokio::time::sleep(poll_interval).await;
+    }
+}
+
+#[cfg(test)]
+mod nic_tag_publish_tests {
+    use super::*;
+    use tritond_store::{MemStore, NewNicTag};
+
+    fn reported(name: &str, link: &str) -> RegisterNicTagProvision {
+        RegisterNicTagProvision {
+            name: name.to_string(),
+            physical_nic: link.to_string(),
+            vlan_id: 0,
+            mtu: 1500,
+        }
+    }
+
+    #[tokio::test]
+    async fn resolves_known_names_and_publishes() {
+        let store = MemStore::new();
+        let external = store
+            .create_nic_tag(NewNicTag {
+                name: "external".to_string(),
+                description: None,
+                mtu: 1500,
+            })
+            .await
+            .expect("create external nic_tag");
+        let cn = Uuid::new_v4();
+        let now = chrono::Utc::now();
+
+        resolve_and_publish_nic_tags(
+            &store,
+            cn,
+            &[reported("external", "igb2")],
+            now,
+        )
+        .await
+        .expect("publish");
+
+        let inv = store
+            .get_cn_nic_tags(cn)
+            .await
+            .expect("get inventory")
+            .expect("inventory present");
+        assert_eq!(inv.cn, cn);
+        assert_eq!(inv.provides.len(), 1);
+        assert_eq!(inv.provides[0].nic_tag, external.id);
+        assert_eq!(inv.provides[0].physical_nic, "igb2");
+    }
+
+    #[tokio::test]
+    async fn skips_unresolved_names_fail_closed() {
+        let store = MemStore::new();
+        store
+            .create_nic_tag(NewNicTag {
+                name: "external".to_string(),
+                description: None,
+                mtu: 1500,
+            })
+            .await
+            .expect("create external nic_tag");
+        let cn = Uuid::new_v4();
+        let now = chrono::Utc::now();
+
+        // "bogus" resolves to nothing and must be dropped, never invented.
+        resolve_and_publish_nic_tags(
+            &store,
+            cn,
+            &[reported("external", "igb2"), reported("bogus", "igb9")],
+            now,
+        )
+        .await
+        .expect("publish");
+
+        let inv = store
+            .get_cn_nic_tags(cn)
+            .await
+            .expect("get inventory")
+            .expect("inventory present");
+        assert_eq!(inv.provides.len(), 1);
+        assert_eq!(inv.provides[0].physical_nic, "igb2");
+    }
+
+    #[tokio::test]
+    async fn empty_report_is_noop_does_not_clobber() {
+        let store = MemStore::new();
+        let external = store
+            .create_nic_tag(NewNicTag {
+                name: "external".to_string(),
+                description: None,
+                mtu: 1500,
+            })
+            .await
+            .expect("create external nic_tag");
+        let cn = Uuid::new_v4();
+        let now = chrono::Utc::now();
+
+        // Seed an inventory, then a (older-agent) empty report must not
+        // overwrite it.
+        resolve_and_publish_nic_tags(&store, cn, &[reported("external", "igb2")], now)
+            .await
+            .expect("seed publish");
+        resolve_and_publish_nic_tags(&store, cn, &[], now)
+            .await
+            .expect("empty publish");
+
+        let inv = store
+            .get_cn_nic_tags(cn)
+            .await
+            .expect("get inventory")
+            .expect("inventory still present");
+        assert_eq!(inv.provides.len(), 1);
+        assert_eq!(inv.provides[0].nic_tag, external.id);
     }
 }

@@ -25,6 +25,7 @@ pub mod imds_ratelimit;
 pub mod log_tailer;
 pub mod metrics;
 pub mod migrate;
+pub mod nic_tags;
 pub mod platform;
 pub mod proteus;
 pub mod registration;

@@ -174,11 +174,18 @@ pub async fn register_or_resume(
         .to_string();
     let admin_ip = sysinfo.admin_ip();
 
+    // Enumerate the CN's local nic_tags by NAME so tritond can resolve
+    // them against the fleet-wide registry and publish this CN's
+    // inventory (single-writer). Best-effort: an empty list is a
+    // server-side no-op.
+    let nic_tags = crate::nic_tags::enumerate(sysinfo);
+
     let register_req = RegisterCnRequest {
         admin_ip,
         console_listen_port: Some(console_listen_port),
         console_tls_spki_sha256_hex: Some(console_tls_spki_sha256_hex),
         hostname: hostname.clone(),
+        nic_tags,
         server_uuid,
         sysinfo: sysinfo.raw.clone(),
     };

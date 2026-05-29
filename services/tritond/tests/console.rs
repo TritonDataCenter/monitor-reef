@@ -166,6 +166,7 @@ async fn register_and_approve_cn(
             sysinfo: fixture_sysinfo(server_uuid, "cn-console"),
             console_listen_port: Some(console_port),
             console_tls_spki_sha256_hex: Some(spki_hex.to_string()),
+            nic_tags: vec![],
         })
         .send()
         .await
@@ -442,6 +443,7 @@ async fn legacy_console_rejects_when_cn_has_no_console_listener() {
             sysinfo: fixture_sysinfo(server_uuid, "cn-nolistener"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
+            nic_tags: vec![],
         })
         .send()
         .await

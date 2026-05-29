@@ -10940,6 +10940,9 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub console_tls_spki_sha256_hex: ::std::option::Option<::std::string::String>,
         pub hostname: ::std::string::String,
+        #[doc = "Local nic_tags this CN provides, named the way SmartOS knows them. tritond resolves each `name` to a registered nic_tag id and publishes the CN's [`tritond_store::CnNicTagInventory`] in the register transaction (single-writer, attributed to this CN). Additive: an older agent omits the field entirely."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub nic_tags: ::std::vec::Vec<RegisterNicTagProvision>,
         #[doc = "SmartOS server UUID, read from `/usr/bin/sysinfo`. Identity for the entire registration record."]
         pub server_uuid: ::uuid::Uuid,
         #[doc = "Raw `/usr/bin/sysinfo` JSON. Opaque to tritond; surfaced via `tcadm cn show` for operator inspection."]
@@ -10948,6 +10951,27 @@ pub mod types {
 
     impl RegisterCnRequest {
         pub fn builder() -> builder::RegisterCnRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "One nic_tag the registering CN reports it provides, named the way SmartOS knows it (`nictagadm` / sysinfo). tritond resolves `name` against the fleet-wide nic_tag registry to build the CN's [`tritond_store::CnNicTagInventory`]; an unresolved name is skipped (fail-closed — tritond never invents a tag id)."]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct RegisterNicTagProvision {
+        #[doc = "Effective MTU of the link the tag lands on."]
+        pub mtu: u32,
+        #[doc = "nic_tag name as reported by the CN (e.g. `external`, `admin`)."]
+        pub name: ::std::string::String,
+        #[doc = "Physical link the tag lands on (`nictagadm` `link`)."]
+        pub physical_nic: ::std::string::String,
+        #[doc = "VLAN id the tag uses (`0` for untagged)."]
+        pub vlan_id: u16,
+    }
+
+    impl RegisterNicTagProvision {
+        pub fn builder() -> builder::RegisterNicTagProvision {
             Default::default()
         }
     }
@@ -25896,6 +25920,10 @@ pub mod types {
                 ::std::string::String,
             >,
             hostname: ::std::result::Result<::std::string::String, ::std::string::String>,
+            nic_tags: ::std::result::Result<
+                ::std::vec::Vec<super::RegisterNicTagProvision>,
+                ::std::string::String,
+            >,
             server_uuid: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             sysinfo: ::std::result::Result<::serde_json::Value, ::std::string::String>,
         }
@@ -25907,6 +25935,7 @@ pub mod types {
                     console_listen_port: Ok(Default::default()),
                     console_tls_spki_sha256_hex: Ok(Default::default()),
                     hostname: Err("no value supplied for hostname".to_string()),
+                    nic_tags: Ok(Default::default()),
                     server_uuid: Err("no value supplied for server_uuid".to_string()),
                     sysinfo: Err("no value supplied for sysinfo".to_string()),
                 }
@@ -25954,6 +25983,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for hostname: {e}"));
                 self
             }
+            pub fn nic_tags<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::RegisterNicTagProvision>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.nic_tags = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for nic_tags: {e}"));
+                self
+            }
             pub fn server_uuid<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::uuid::Uuid>,
@@ -25986,6 +26025,7 @@ pub mod types {
                     console_listen_port: value.console_listen_port?,
                     console_tls_spki_sha256_hex: value.console_tls_spki_sha256_hex?,
                     hostname: value.hostname?,
+                    nic_tags: value.nic_tags?,
                     server_uuid: value.server_uuid?,
                     sysinfo: value.sysinfo?,
                 })
@@ -25999,8 +26039,96 @@ pub mod types {
                     console_listen_port: Ok(value.console_listen_port),
                     console_tls_spki_sha256_hex: Ok(value.console_tls_spki_sha256_hex),
                     hostname: Ok(value.hostname),
+                    nic_tags: Ok(value.nic_tags),
                     server_uuid: Ok(value.server_uuid),
                     sysinfo: Ok(value.sysinfo),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct RegisterNicTagProvision {
+            mtu: ::std::result::Result<u32, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            physical_nic: ::std::result::Result<::std::string::String, ::std::string::String>,
+            vlan_id: ::std::result::Result<u16, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for RegisterNicTagProvision {
+            fn default() -> Self {
+                Self {
+                    mtu: Err("no value supplied for mtu".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    physical_nic: Err("no value supplied for physical_nic".to_string()),
+                    vlan_id: Err("no value supplied for vlan_id".to_string()),
+                }
+            }
+        }
+
+        impl RegisterNicTagProvision {
+            pub fn mtu<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.mtu = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for mtu: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn physical_nic<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.physical_nic = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for physical_nic: {e}"));
+                self
+            }
+            pub fn vlan_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u16>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.vlan_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for vlan_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<RegisterNicTagProvision> for super::RegisterNicTagProvision {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: RegisterNicTagProvision,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    mtu: value.mtu?,
+                    name: value.name?,
+                    physical_nic: value.physical_nic?,
+                    vlan_id: value.vlan_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::RegisterNicTagProvision> for RegisterNicTagProvision {
+            fn from(value: super::RegisterNicTagProvision) -> Self {
+                Self {
+                    mtu: Ok(value.mtu),
+                    name: Ok(value.name),
+                    physical_nic: Ok(value.physical_nic),
+                    vlan_id: Ok(value.vlan_id),
                 }
             }
         }

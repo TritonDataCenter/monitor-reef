@@ -128,6 +128,7 @@ async fn register_creates_pending_with_claim_code() {
             sysinfo: fixture_sysinfo(server_uuid, "cn-a"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
+            nic_tags: vec![],
         })
         .send()
         .await
@@ -161,6 +162,7 @@ async fn approve_by_code_then_status_returns_api_key_once() {
             sysinfo: fixture_sysinfo(server_uuid, "cn-a"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
+            nic_tags: vec![],
         })
         .send()
         .await
@@ -238,6 +240,7 @@ async fn auto_approve_window_promotes_registration() {
             sysinfo: fixture_sysinfo(server_uuid, "cn-bulk"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
+            nic_tags: vec![],
         })
         .send()
         .await
@@ -367,6 +370,7 @@ async fn disabled_record_re_registers_back_to_pending() {
             sysinfo: fixture_sysinfo(server_uuid, "cn-x"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
+            nic_tags: vec![],
         })
         .send()
         .await
@@ -391,6 +395,7 @@ async fn disabled_record_re_registers_back_to_pending() {
             sysinfo: fixture_sysinfo(server_uuid, "cn-x"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
+            nic_tags: vec![],
         })
         .send()
         .await
@@ -459,6 +464,7 @@ async fn list_cns_filters_by_state() {
             sysinfo: fixture_sysinfo(p_uuid, "p"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
+            nic_tags: vec![],
         })
         .send()
         .await
@@ -472,6 +478,7 @@ async fn list_cns_filters_by_state() {
             sysinfo: fixture_sysinfo(a_uuid, "a"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
+            nic_tags: vec![],
         })
         .send()
         .await
@@ -535,6 +542,7 @@ async fn root_can_set_cn_role_label() {
             sysinfo: fixture_sysinfo(server_uuid, "edge-a"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
+            nic_tags: vec![],
         })
         .send()
         .await
@@ -590,6 +598,7 @@ async fn bound_api_key_rejects_claim_for_other_cn() {
             sysinfo: fixture_sysinfo(cn_a, "cn-a"),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
+            nic_tags: vec![],
         })
         .send()
         .await
@@ -667,6 +676,7 @@ async fn register_and_approve(test: &TestServer, cn_uuid: Uuid, hostname: &str) 
             sysinfo: fixture_sysinfo(cn_uuid, hostname),
             console_listen_port: None,
             console_tls_spki_sha256_hex: None,
+            nic_tags: vec![],
         })
         .send()
         .await

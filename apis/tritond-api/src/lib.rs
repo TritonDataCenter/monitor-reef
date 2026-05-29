@@ -899,6 +899,23 @@ pub struct ListOperationsQuery {
 // CN registration / approval (slice C)
 // ---------------------------------------------------------------------
 
+/// One nic_tag the registering CN reports it provides, named the way
+/// SmartOS knows it (`nictagadm` / sysinfo). tritond resolves `name`
+/// against the fleet-wide nic_tag registry to build the CN's
+/// [`tritond_store::CnNicTagInventory`]; an unresolved name is skipped
+/// (fail-closed — tritond never invents a tag id).
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct RegisterNicTagProvision {
+    /// nic_tag name as reported by the CN (e.g. `external`, `admin`).
+    pub name: String,
+    /// Physical link the tag lands on (`nictagadm` `link`).
+    pub physical_nic: String,
+    /// VLAN id the tag uses (`0` for untagged).
+    pub vlan_id: u16,
+    /// Effective MTU of the link the tag lands on.
+    pub mtu: u32,
+}
+
 /// Request body for `POST /v1/agent/register`. Anonymous endpoint
 /// (no auth header required); the agent has no credentials yet at
 /// this point in its lifecycle.
@@ -927,6 +944,13 @@ pub struct RegisterCnRequest {
     /// stream. `None` iff `console_listen_port` is `None`.
     #[serde(default)]
     pub console_tls_spki_sha256_hex: Option<String>,
+    /// Local nic_tags this CN provides, named the way SmartOS knows
+    /// them. tritond resolves each `name` to a registered nic_tag id
+    /// and publishes the CN's [`tritond_store::CnNicTagInventory`] in
+    /// the register transaction (single-writer, attributed to this CN).
+    /// Additive: an older agent omits the field entirely.
+    #[serde(default)]
+    pub nic_tags: Vec<RegisterNicTagProvision>,
 }
 
 /// Response body for `POST /v1/agent/register`.
