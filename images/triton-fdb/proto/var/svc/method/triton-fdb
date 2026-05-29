@@ -38,6 +38,33 @@ FDB_LOG=/data/state/fdb/log
 FDB_BIN=/opt/fdb/bin
 FDB_LIB=/opt/fdb/lib
 
+# Delegated dataset handling, mirroring the long-standing manatee pattern
+# (manta-manatee/boot/setup.sh): with delegate_dataset:true the zone owns
+# `zones/<zone>/data`; reference it by its canonical name, set ZFS
+# properties on it, and put state on it. We additionally pin its mountpoint
+# to /data (its default is /zones/<uuid>/data) so fdbserver's --datadir
+# lands on the dedicated, reprovision-safe dataset instead of the small zone
+# root. This runs BEFORE we touch /data; a fresh provision has an empty
+# /data on the root fs, so mounting the dataset over it is clean.
+#
+# NOTE: a zone provisioned before this fix wrote its data to the root fs
+# /data; that data is intentionally NOT migrated here — such zones must be
+# reprovisioned (their FDB state is reconstructed on the dataset fresh).
+DELEGATED_DS="zones/$(/usr/bin/zonename)/data"
+if zfs list -H -o name "$DELEGATED_DS" >/dev/null 2>&1; then
+    # lz4 is a cheap, near-universal win on ZFS (manatee runs it in prod).
+    zfs set compression=lz4 "$DELEGATED_DS" 2>/dev/null || true
+    CUR_MP=$(zfs get -H -o value mountpoint "$DELEGATED_DS" 2>/dev/null || echo "")
+    if [ "$CUR_MP" != "/data" ]; then
+        echo "triton-fdb: setting $DELEGATED_DS mountpoint=/data (was $CUR_MP)" >&2
+        zfs set mountpoint=/data "$DELEGATED_DS" \
+            || echo "triton-fdb: WARNING could not set mountpoint on $DELEGATED_DS" >&2
+    fi
+    zfs mount "$DELEGATED_DS" 2>/dev/null || true
+else
+    echo "triton-fdb: WARNING no delegated dataset $DELEGATED_DS (delegate_dataset:true?); /data is on the zone root" >&2
+fi
+
 mkdir -p "$FDB_ETC" "$FDB_DATA" "$FDB_LOG"
 
 NEEDS_BOOTSTRAP=0
@@ -74,6 +101,37 @@ CLUSTER_FILE="$FDB_ETC/fdb.cluster"
 
 export LD_LIBRARY_PATH="$FDB_LIB"
 
+# Size fdbserver memory from available RAM: target ~4 GiB per proc, capped
+# at 85% of the *effective* RAM (the smaller of this zone's physical-memory
+# cap and the host physmem), floored at 512 MiB so tiny hosts still start.
+# cache/storage are sized as fractions of the budget (the page cache is the
+# dominant consumer for the ssd engine), leaving headroom under the ceiling.
+HOST_MIB=$(kstat -p unix:0:system_pages:pagestotal 2>/dev/null \
+    | awk '{ printf "%d", $2 * 4096 / 1048576 }' || true)
+ZONE_MIB=$(prctl -n zone.max-physical-memory -i zone "$(/usr/bin/zonename)" 2>/dev/null \
+    | awk '$1 == "privileged" {
+        v = $2; n = v; sub(/[A-Za-z]+$/, "", n); u = v; sub(/^[0-9.]+/, "", u);
+        f = 1;
+        if (u == "K" || u == "KB") f = 1 / 1024;
+        else if (u == "M" || u == "MB") f = 1;
+        else if (u == "G" || u == "GB") f = 1024;
+        else if (u == "T" || u == "TB") f = 1048576;
+        else if (u == "E" || u == "EB") f = 1099511627776;
+        else if (u == "" || u == "B") f = 1 / 1048576;
+        printf "%d", n * f; exit }' || true)
+
+EFF_MIB=${HOST_MIB:-2048}
+[ "$EFF_MIB" -gt 0 ] 2>/dev/null || EFF_MIB=2048
+if [ -n "${ZONE_MIB:-}" ] && [ "$ZONE_MIB" -gt 0 ] 2>/dev/null && [ "$ZONE_MIB" -lt "$EFF_MIB" ]; then
+    EFF_MIB=$ZONE_MIB
+fi
+FDB_MEM_MIB=$(( EFF_MIB * 85 / 100 ))
+if [ "$FDB_MEM_MIB" -gt 4096 ]; then FDB_MEM_MIB=4096; fi
+if [ "$FDB_MEM_MIB" -lt 512 ];  then FDB_MEM_MIB=512;  fi
+FDB_CACHE_MIB=$(( FDB_MEM_MIB / 2 ))
+FDB_STORAGE_MIB=$(( FDB_MEM_MIB / 4 ))
+echo "triton-fdb: memory budget ${FDB_MEM_MIB}MiB (cache ${FDB_CACHE_MIB}MiB, storage ${FDB_STORAGE_MIB}MiB); effective RAM ${EFF_MIB}MiB" >&2
+
 # Background fdbserver under SMF's contract.
 "$FDB_BIN/fdbserver" \
     --cluster-file "$CLUSTER_FILE" \
@@ -81,9 +139,9 @@ export LD_LIBRARY_PATH="$FDB_LIB"
     --logdir  "$FDB_LOG" \
     --listen-address "${PUBLIC_IP}:4500" \
     --public-address "${PUBLIC_IP}:4500" \
-    --memory 400MiB \
-    --storage-memory 256MiB \
-    --cache-memory 64MiB \
+    --memory "${FDB_MEM_MIB}MiB" \
+    --storage-memory "${FDB_STORAGE_MIB}MiB" \
+    --cache-memory "${FDB_CACHE_MIB}MiB" \
     >>"$FDB_LOG/server.out" 2>&1 &
 
 FDBSERVER_PID=$!

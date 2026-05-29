@@ -17,18 +17,29 @@ imgadm image bundle (`<stamp>.json` + `<stamp>.zfs.gz`).
   under `/var/svc/manifest/` because joyent-minimal disables the
   manifest-import service after first boot. Import is driven by
   the `user-script` customer_metadata entry below.
-- `/var/svc/method/triton-fdb` — start method script. Does
-  first-boot init (reads `triton:fdb_*` mdata, writes
-  `/etc/fdb/{public_ip,fdb.cluster}`, creates
-  `/data/state/fdb/{data,log}`), backgrounds fdbserver, and on
-  fresh provision spawns a one-shot subshell that waits for the
-  server to be reachable and then issues `fdbcli configure new
-  single ssd` to initialise the database. Marks `/data/version`
-  after configure succeeds; the next boot is a normal attach.
+- `/var/svc/method/triton-fdb` — start method script. On every boot it
+  first ensures the delegated dataset (`zones/<zone>/data`, `zoned=on`) is
+  mounted at `/data` (its default mountpoint is `/zones/<uuid>/data`, which
+  would silently put state on the zone root). Then first-boot init (reads
+  `triton:fdb_*` mdata, writes `/etc/fdb/{public_ip,fdb.cluster}`, creates
+  `/data/state/fdb/{data,log}`), sizes fdbserver memory from available RAM
+  (target ~4 GiB/proc, capped at 85% of the smaller of the zone cap and the
+  host physmem, floored at 512 MiB), backgrounds fdbserver, and on fresh
+  provision spawns a one-shot subshell that waits for the server to be
+  reachable and then issues `fdbcli configure new single ssd` to initialise
+  the database. Marks `/data/version` after configure succeeds; the next
+  boot is a normal attach.
 
 State lives entirely on the delegated dataset under `/data/state/fdb/`,
 which makes the image reprovision-safe: `vmadm reprovision <uuid>
-<new-image-uuid>` swaps the code without touching the DB.
+<new-image-uuid>` swaps the code without touching the DB. The build also
+appends an FDB env block to `/etc/profile` so an interactive root login has
+`fdbcli` on `PATH` with `LD_LIBRARY_PATH=/opt/fdb/lib` and
+`FDB_CLUSTER_FILE=/etc/fdb/fdb.cluster` set.
+
+Zones provisioned **before** the delegated-dataset-mount fix wrote state to
+the zone root `/data`; they must be reprovisioned (their state is rebuilt
+fresh on the dataset, not migrated).
 
 ## How `tcadm setup` provisions a zone from this image
 

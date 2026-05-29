@@ -137,6 +137,24 @@ chmod 0755 "$WORK_ROOT/opt/fdb/bin/fdbserver"
 chmod 0755 "$WORK_ROOT/opt/fdb/bin/fdbcli"
 chmod 0644 "$WORK_ROOT/opt/triton/fdb/smf/triton-fdb.xml"
 
+# Operator convenience: an interactive root login in the fdb zone should
+# find fdbcli on PATH with the env it needs (LD_LIBRARY_PATH for the fdb
+# libs, FDB_CLUSTER_FILE so `fdbcli` connects with no flags). The base
+# minimal-64-lts /etc/profile does NOT source /etc/profile.d, so append an
+# idempotent block straight to /etc/profile.
+PROFILE="$WORK_ROOT/etc/profile"
+if ! grep -q 'triton-fdb env' "$PROFILE" 2>/dev/null; then
+    cat >> "$PROFILE" <<'PROFILE_EOF'
+
+# --- triton-fdb env (added by image build) ---
+LD_LIBRARY_PATH=/opt/fdb/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}; export LD_LIBRARY_PATH
+FDB_CLUSTER_FILE=/etc/fdb/fdb.cluster; export FDB_CLUSTER_FILE
+case ":$PATH:" in *:/opt/fdb/bin:*) ;; *) PATH="$PATH:/opt/fdb/bin"; export PATH ;; esac
+# --- end triton-fdb env ---
+PROFILE_EOF
+    echo "==> appended triton-fdb env block to /etc/profile"
+fi
+
 # 4. Snapshot the modified clone.
 echo "==> snapshotting $WORK_DS@final"
 zfs snapshot "$WORK_DS@final"
