@@ -82,7 +82,7 @@ pub(crate) async fn list_storage_cluster_access_keys(
     path: Path<StorageClusterUserPath>,
 ) -> Result<HttpResponseOk<Vec<StorageAccessKey>>, HttpError> {
     let ctx = rqctx.context();
-    authenticate_and_authorize(
+    let principal = authenticate_and_authorize(
         &rqctx,
         &ctx.auth,
         &ctx.audit,
@@ -90,6 +90,7 @@ pub(crate) async fn list_storage_cluster_access_keys(
         Action::StorageAccessKeyList,
     )
     .await?;
+    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
     let keys = client
@@ -116,6 +117,7 @@ pub(crate) async fn create_storage_cluster_access_key(
         Action::StorageAccessKeyCreate,
     )
     .await?;
+    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
     let payload = serde_json::json!({ "user": p.user });
@@ -173,6 +175,7 @@ pub(crate) async fn delete_storage_cluster_access_key(
         Action::StorageAccessKeyDelete,
     )
     .await?;
+    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;

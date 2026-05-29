@@ -83,7 +83,7 @@ pub(crate) async fn list_storage_cluster_buckets(
     query: Query<tritond_api::StorageBucketListQuery>,
 ) -> Result<HttpResponseOk<Vec<StorageBucket>>, HttpError> {
     let ctx = rqctx.context();
-    authenticate_and_authorize(
+    let principal = authenticate_and_authorize(
         &rqctx,
         &ctx.auth,
         &ctx.audit,
@@ -91,6 +91,7 @@ pub(crate) async fn list_storage_cluster_buckets(
         Action::StorageBucketList,
     )
     .await?;
+    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let id = path.into_inner().id;
     let with_stats = query.into_inner().stats.unwrap_or(false);
     let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
@@ -111,7 +112,7 @@ pub(crate) async fn get_storage_cluster_bucket(
     path: Path<StorageClusterBucketPath>,
 ) -> Result<HttpResponseOk<StorageBucket>, HttpError> {
     let ctx = rqctx.context();
-    authenticate_and_authorize(
+    let principal = authenticate_and_authorize(
         &rqctx,
         &ctx.auth,
         &ctx.audit,
@@ -119,6 +120,7 @@ pub(crate) async fn get_storage_cluster_bucket(
         Action::StorageBucketGet,
     )
     .await?;
+    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
     let b = client
@@ -242,7 +244,7 @@ pub(crate) async fn list_storage_cluster_objects(
     query: Query<tritond_api::StorageObjectsQuery>,
 ) -> Result<HttpResponseOk<StorageObjectsPage>, HttpError> {
     let ctx = rqctx.context();
-    authenticate_and_authorize(
+    let principal = authenticate_and_authorize(
         &rqctx,
         &ctx.auth,
         &ctx.audit,
@@ -250,6 +252,7 @@ pub(crate) async fn list_storage_cluster_objects(
         Action::StorageObjectList,
     )
     .await?;
+    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let p = path.into_inner();
     let q = crate::storage::objects_query_to(query.into_inner());
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;

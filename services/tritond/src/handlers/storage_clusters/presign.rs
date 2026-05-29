@@ -165,6 +165,7 @@ pub(crate) async fn presign_storage_cluster_object_put(
         Action::StorageObjectPresignPut,
     )
     .await?;
+    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let id = path.into_inner().id;
     let req = body.into_inner();
@@ -205,7 +206,7 @@ pub(crate) async fn presign_storage_cluster_object_get(
     // Reads still get audited via authenticate_and_authorize
     // (Allow event), but we don't emit a record_mutation —
     // the GET URL doesn't change cluster state.
-    authenticate_and_authorize(
+    let principal = authenticate_and_authorize(
         &rqctx,
         &ctx.auth,
         &ctx.audit,
@@ -213,6 +214,7 @@ pub(crate) async fn presign_storage_cluster_object_get(
         Action::StorageObjectPresignGet,
     )
     .await?;
+    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let id = path.into_inner().id;
     let req = body.into_inner();
     let resp = crate::storage::mint_presigned_url(

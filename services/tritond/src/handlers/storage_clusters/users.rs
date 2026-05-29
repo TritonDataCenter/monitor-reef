@@ -82,7 +82,7 @@ pub(crate) async fn list_storage_cluster_users(
     path: Path<StorageClusterPath>,
 ) -> Result<HttpResponseOk<Vec<StorageUser>>, HttpError> {
     let ctx = rqctx.context();
-    authenticate_and_authorize(
+    let principal = authenticate_and_authorize(
         &rqctx,
         &ctx.auth,
         &ctx.audit,
@@ -90,6 +90,7 @@ pub(crate) async fn list_storage_cluster_users(
         Action::StorageUserList,
     )
     .await?;
+    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let id = path.into_inner().id;
     let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
     let users = client
@@ -115,6 +116,7 @@ pub(crate) async fn create_storage_cluster_user(
         Action::StorageUserCreate,
     )
     .await?;
+    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let id = path.into_inner().id;
     let req = body.into_inner();
@@ -160,7 +162,7 @@ pub(crate) async fn get_storage_cluster_user(
     path: Path<StorageClusterUserPath>,
 ) -> Result<HttpResponseOk<StorageUser>, HttpError> {
     let ctx = rqctx.context();
-    authenticate_and_authorize(
+    let principal = authenticate_and_authorize(
         &rqctx,
         &ctx.auth,
         &ctx.audit,
@@ -168,6 +170,7 @@ pub(crate) async fn get_storage_cluster_user(
         Action::StorageUserGet,
     )
     .await?;
+    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
     let u = client
@@ -190,6 +193,7 @@ pub(crate) async fn delete_storage_cluster_user(
         Action::StorageUserDelete,
     )
     .await?;
+    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
