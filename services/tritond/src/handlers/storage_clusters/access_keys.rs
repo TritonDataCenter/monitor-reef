@@ -90,11 +90,11 @@ pub(crate) async fn list_storage_cluster_access_keys(
         Action::StorageAccessKeyList,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
     let keys = client
-        .list_access_keys(&p.user)
+        .list_access_keys(&p.user, scope.workspace_name())
         .await
         .map_err(crate::storage::mantad_error_to_http)?;
     Ok(HttpResponseOk(
@@ -117,12 +117,15 @@ pub(crate) async fn create_storage_cluster_access_key(
         Action::StorageAccessKeyCreate,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
     let payload = serde_json::json!({ "user": p.user });
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
-    match client.create_access_key(&p.user).await {
+    match client
+        .create_access_key(&p.user, scope.workspace_name())
+        .await
+    {
         Ok(k) => {
             let view = crate::storage::access_key_from(k);
             // Audit captures only the AKID — the cleartext
@@ -175,11 +178,14 @@ pub(crate) async fn delete_storage_cluster_access_key(
         Action::StorageAccessKeyDelete,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
-    match client.delete_access_key(&p.access_key_id).await {
+    match client
+        .delete_access_key(&p.access_key_id, scope.workspace_name())
+        .await
+    {
         Ok(()) => {
             ctx.audit
                 .record_mutation(

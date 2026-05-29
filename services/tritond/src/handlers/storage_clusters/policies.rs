@@ -90,11 +90,11 @@ pub(crate) async fn list_storage_cluster_user_policies(
         Action::StorageUserPolicyList,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
     let policies = client
-        .list_user_policies(&p.user)
+        .list_user_policies(&p.user, scope.workspace_name())
         .await
         .map_err(crate::storage::mantad_error_to_http)?;
     Ok(HttpResponseOk(policies))
@@ -113,11 +113,11 @@ pub(crate) async fn get_storage_cluster_user_policy(
         Action::StorageUserPolicyGet,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
     let doc = client
-        .get_user_policy(&p.user, &p.policy)
+        .get_user_policy(&p.user, &p.policy, scope.workspace_name())
         .await
         .map_err(crate::storage::mantad_error_to_http)?;
     Ok(HttpResponseOk(doc))
@@ -137,13 +137,16 @@ pub(crate) async fn put_storage_cluster_user_policy(
         Action::StorageUserPolicyPut,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
     let doc = body.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
     let resource = format!("StorageUserPolicy::\"{}/{}\"", p.user, p.policy);
-    match client.put_user_policy(&p.user, &p.policy, &doc).await {
+    match client
+        .put_user_policy(&p.user, &p.policy, &doc, scope.workspace_name())
+        .await
+    {
         Ok(()) => {
             ctx.audit
                 .record_mutation(
@@ -189,12 +192,15 @@ pub(crate) async fn delete_storage_cluster_user_policy(
         Action::StorageUserPolicyDelete,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
     let resource = format!("StorageUserPolicy::\"{}/{}\"", p.user, p.policy);
-    match client.delete_user_policy(&p.user, &p.policy).await {
+    match client
+        .delete_user_policy(&p.user, &p.policy, scope.workspace_name())
+        .await
+    {
         Ok(()) => {
             ctx.audit
                 .record_mutation(

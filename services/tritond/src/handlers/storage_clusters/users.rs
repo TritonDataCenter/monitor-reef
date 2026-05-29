@@ -90,11 +90,11 @@ pub(crate) async fn list_storage_cluster_users(
         Action::StorageUserList,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let id = path.into_inner().id;
     let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
     let users = client
-        .list_users()
+        .list_users(scope.workspace_name())
         .await
         .map_err(crate::storage::mantad_error_to_http)?;
     Ok(HttpResponseOk(
@@ -116,14 +116,17 @@ pub(crate) async fn create_storage_cluster_user(
         Action::StorageUserCreate,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let id = path.into_inner().id;
     let req = body.into_inner();
     let payload = serde_json::json!({ "name": req.name });
     let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
     let mantad_req = crate::storage::create_user_request_to(req);
-    match client.create_user(&mantad_req).await {
+    match client
+        .create_user(&mantad_req, scope.workspace_name())
+        .await
+    {
         Ok(u) => {
             let view = crate::storage::user_from(u);
             ctx.audit
@@ -170,11 +173,11 @@ pub(crate) async fn get_storage_cluster_user(
         Action::StorageUserGet,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
     let u = client
-        .get_user(&p.user)
+        .get_user(&p.user, scope.workspace_name())
         .await
         .map_err(crate::storage::mantad_error_to_http)?;
     Ok(HttpResponseOk(crate::storage::user_from(u)))
@@ -193,11 +196,11 @@ pub(crate) async fn delete_storage_cluster_user(
         Action::StorageUserDelete,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
-    match client.delete_user(&p.user).await {
+    match client.delete_user(&p.user, scope.workspace_name()).await {
         Ok(()) => {
             ctx.audit
                 .record_mutation(
