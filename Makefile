@@ -48,6 +48,7 @@ endif
 .PHONY: dev-setup workspace-test integration-test
 .PHONY: list coverage arch-lint doc-lint
 .PHONY: image image-clean image-rebuild image-buildimage images-list
+.PHONY: deploy-relay-agent deploy-triton-api smf-install-relay-agent smf-install-triton-api
 .PHONY: go-test go-build go-vet go-coverage
 .PHONY: go-test-integration
 .PHONY: clients-generate clients-check
@@ -267,6 +268,48 @@ dev-setup: | $(CARGO_EXEC) ## Set up development environment
 	@echo "  - Create API: make api-new API=my-api"
 	@echo "  - Create service: make service-new SERVICE=my-service API=my-api"
 	@echo "  - Generate specs: make openapi-generate"
+
+# Dev deployment targets
+# Hosts match SSH config aliases in ~/.ssh/config.
+# Override at call time: make deploy-relay-agent RELAY_HOST=my-host
+RELAY_HOST     ?= relay-host
+TRITON_API_HOST ?= triton-api-host
+
+# Use RELEASE=1 for a release build; default is debug.
+ifeq ($(RELEASE),1)
+_DEPLOY_CARGO_FLAGS = --release
+_DEPLOY_PROFILE     = release
+else
+_DEPLOY_CARGO_FLAGS =
+_DEPLOY_PROFILE     = debug
+endif
+
+smf-install-relay-agent: ## One-time SMF setup for triton-relay-agent on relay-host
+	scp services/triton-relay-agent/smf/triton-relay-agent.xml \
+	    $(RELAY_HOST):~/triton-relay-agent.xml
+	ssh $(RELAY_HOST) "svccfg import ~/triton-relay-agent.xml"
+	@echo "SMF service installed. Use 'make deploy-relay-agent' to build and push the binary."
+
+smf-install-triton-api: ## One-time SMF setup for triton-api-server on triton-api-host
+	scp services/triton-api-server/smf/triton-api-server-dev.xml \
+	    $(TRITON_API_HOST):~/triton-api-server-dev.xml
+	ssh $(TRITON_API_HOST) "pkill -x triton-api-server 2>/dev/null || true; sleep 1; \
+	    svccfg import ~/triton-api-server-dev.xml"
+	@echo "SMF service installed. Use 'make deploy-triton-api' to build and push the binary."
+
+deploy-relay-agent: | $(CARGO_EXEC) ## Build + push triton-relay-agent to relay-host and restart
+	$(CARGO) build -p triton-relay-agent $(_DEPLOY_CARGO_FLAGS)
+	scp target/$(_DEPLOY_PROFILE)/triton-relay-agent $(RELAY_HOST):~/triton-relay-agent.new
+	ssh $(RELAY_HOST) "mv ~/triton-relay-agent.new ~/triton-relay-agent && \
+	    svcadm restart triton/application/triton-relay-agent && \
+	    svcs triton/application/triton-relay-agent"
+
+deploy-triton-api: | $(CARGO_EXEC) ## Build + push triton-api-server to triton-api-host and restart
+	$(CARGO) build -p triton-api-server $(_DEPLOY_CARGO_FLAGS)
+	scp target/$(_DEPLOY_PROFILE)/triton-api-server $(TRITON_API_HOST):~/triton-api-server.new
+	ssh $(TRITON_API_HOST) "mv ~/triton-api-server.new ~/triton-api-server && \
+	    svcadm restart triton/application/triton-api && \
+	    svcs triton/application/triton-api"
 
 # Quick commands for common workflows
 dev: service-build service-test ## Build and test specific service (usage: make dev SERVICE=my-service)
