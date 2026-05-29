@@ -108,15 +108,30 @@ Bucket A continued to exist (the mismatched delete in the next
 step also returned 404 and left the row intact; a subsequent
 correctly-scoped DELETE returned 204).
 
+## Tritond root smoke (21:31 UTC)
+
+A follow-up run with the smoke leg enabled exercised the rebuilt
+tritond binary directly. Token + cluster id were derived on-box
+from `/root/.config/tcadm/config.json` + `tcadm storage cluster
+list --json` so no credentials crossed the ssh boundary:
+
+```
+==> tritond root smoke: http://192.168.1.182:8080 cluster=5e4e29a6-692a-4499-aa65-ee29909f156c
+PASS: tritond root create bucket returns 201
+PASS: tritond root create lands in mantad with empty workspace (no scope leak)
+PASS: tritond root delete bucket
+```
+
+The second case is load-bearing: it proves
+`WorkspaceScope::Unscoped` (root operator) → `workspace_name()
+== None` → mantad-client sends no `?workspace=` → mantad stores
+the bucket with `workspace=""`, exactly as the admin-direct
+path. No accidental scope leak through the rebuilt tritond.
+
+**21/21 cases pass.**
+
 ## Out of scope / followups
 
-* **Tritond root smoke leg** — the script supports a tritond-rooted
-  bucket op (set `TRITOND_URL`, `TRITOND_BEARER`, `TRITOND_CLUSTER_ID`),
-  but the deployed tritond's bootstrap root token + registered cluster
-  ID aren't surfaced through the deploy script today. The mantad-side
-  wire verify proves the new code path; tritond's unit + integration
-  suites (32/32 binaries on the laptop) already prove the rebuilt
-  binary keeps the cluster-wide-view path working.
 * **Tenant-principal end-to-end** — the gate triggers off
   `Principal::Operator { tenant_id: Some(...) }`. Minting a tenant
   API key + authenticating the curl call as that principal requires
