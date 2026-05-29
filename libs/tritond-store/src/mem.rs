@@ -113,6 +113,10 @@ fn nat_gateway_realization_rows(guard: &Inner, record: &NatGatewayRecord) -> Vec
 #[derive(Default)]
 struct Inner {
     silos_by_id: HashMap<Uuid, Silo>,
+    /// Per-port (NIC id) monotonic proteus-blueprint generation.
+    /// Absent => generation 1 (the value a first provision stamps).
+    /// See [`Store::bump_port_generation`].
+    port_generations: HashMap<Uuid, u64>,
     silo_id_by_name: HashMap<String, Uuid>,
     users_by_id: HashMap<Uuid, User>,
     user_id_by_username: HashMap<String, Uuid>,
@@ -2882,6 +2886,22 @@ impl Store for MemStore {
             .get(&nic_id)
             .cloned()
             .ok_or(StoreError::NotFound)
+    }
+
+    async fn get_port_generation(&self, port_id: Uuid) -> Result<u64, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard.port_generations.get(&port_id).copied().unwrap_or(1))
+    }
+
+    async fn bump_port_generation(&self, port_id: Uuid) -> Result<u64, StoreError> {
+        let mut guard = self.inner.write().await;
+        // Absent => start at the provision baseline of 1, then bump to
+        // 2 on the first mutation so the re-apply is strictly greater.
+        let entry = guard.port_generations.entry(port_id).or_insert(1);
+        *entry = entry.checked_add(1).ok_or_else(|| {
+            StoreError::Backend("port generation overflow (operationally unreachable)".to_string())
+        })?;
+        Ok(*entry)
     }
 
     async fn list_nics_for_instance(&self, instance_id: Uuid) -> Result<Vec<Nic>, StoreError> {
@@ -10727,6 +10747,25 @@ mod tests {
         assert!(!snap.placement.reserved);
         assert!(!snap.placement.cordoned);
         assert!(snap.placement.pinned_silo_uuid.is_none());
+    }
+
+    #[tokio::test]
+    async fn port_generation_defaults_to_one_and_bumps_monotonically() {
+        let store = MemStore::new();
+        let port = uuid::Uuid::new_v4();
+        // A never-bumped port reports the provision baseline of 1, so a
+        // freshly-provisioned port's blueprint generation is unchanged.
+        assert_eq!(store.get_port_generation(port).await.unwrap(), 1);
+        // The first bump is strictly greater than the baseline, so the
+        // agent's re-apply at the new generation is NOT swallowed as a
+        // same-generation no-op (the C-0 invariant the dataplane needs).
+        assert_eq!(store.bump_port_generation(port).await.unwrap(), 2);
+        assert_eq!(store.get_port_generation(port).await.unwrap(), 2);
+        assert_eq!(store.bump_port_generation(port).await.unwrap(), 3);
+        assert_eq!(store.get_port_generation(port).await.unwrap(), 3);
+        // Generations are per-port: a different port is independent.
+        let other = uuid::Uuid::new_v4();
+        assert_eq!(store.get_port_generation(other).await.unwrap(), 1);
     }
 
     #[tokio::test]

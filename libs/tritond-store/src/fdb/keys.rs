@@ -449,6 +449,14 @@ pub(super) fn nic_by_id_key(id: Uuid) -> Vec<u8> {
     format!("nic/by_id/{id}").into_bytes()
 }
 
+/// Per-port monotonic proteus-blueprint generation counter. Bumped on
+/// every blueprint-affecting mutation so a running VM's port can be
+/// re-applied at a strictly-greater generation (the kmod no-ops a
+/// re-apply at the same generation). `port_id` is the NIC id.
+pub(super) fn port_generation_key(port_id: Uuid) -> Vec<u8> {
+    format!("port-gen/{port_id}").into_bytes()
+}
+
 pub(super) fn nic_in_subnet_key(subnet_id: Uuid, nic_id: Uuid) -> Vec<u8> {
     format!("nic/in_subnet/{subnet_id}/{nic_id}").into_bytes()
 }

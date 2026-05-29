@@ -1121,6 +1121,24 @@ pub trait Store: Send + Sync + 'static {
     async fn detach_floating_ip(&self, fip_id: Uuid) -> Result<FloatingIp, StoreError>;
 
     // ------------------------------------------------------------------
+    // Per-port proteus-blueprint generation
+    // ------------------------------------------------------------------
+
+    /// Current proteus-blueprint generation for a port (the NIC id).
+    /// Returns 1 for a port that has never been bumped, matching the
+    /// generation a first provision stamps. Read by
+    /// `build_port_blueprint` so a re-applied blueprint carries a
+    /// generation the kmod will actually accept.
+    async fn get_port_generation(&self, port_id: Uuid) -> Result<u64, StoreError>;
+
+    /// Atomically bump a port's proteus-blueprint generation and
+    /// return the new value (strictly greater than the prior one).
+    /// Callers invoke this for every blueprint-affecting mutation
+    /// (FIP attach/detach, firewall, routes) before enqueuing an
+    /// `ApplyPortBlueprint` job so the agent's re-apply is not
+    /// swallowed as a same-generation no-op.
+    async fn bump_port_generation(&self, port_id: Uuid) -> Result<u64, StoreError>;
+
     // Provisioning jobs (FIFO queue consumed by an agent)
     // ------------------------------------------------------------------
 

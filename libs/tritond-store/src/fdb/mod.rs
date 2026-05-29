@@ -4966,6 +4966,44 @@ impl Store for FdbStore {
         }
     }
 
+    async fn get_port_generation(&self, port_id: Uuid) -> Result<u64, StoreError> {
+        let key = keys::port_generation_key(port_id);
+        let outcome: Result<u64, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                async move {
+                    // Absent => 1, the baseline a first provision stamps.
+                    Ok(match tr.get(&key, false).await? {
+                        Some(bytes) => parse_seq(&bytes).unwrap_or(1),
+                        None => 1,
+                    })
+                }
+            })
+            .await;
+        outcome.map_err(StoreError::from)
+    }
+
+    async fn bump_port_generation(&self, port_id: Uuid) -> Result<u64, StoreError> {
+        let key = keys::port_generation_key(port_id);
+        let outcome: Result<u64, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                async move {
+                    let current = match tr.get(&key, false).await? {
+                        Some(bytes) => parse_seq(&bytes).unwrap_or(1),
+                        None => 1,
+                    };
+                    let next = current.saturating_add(1);
+                    tr.set(&key, &next.to_be_bytes());
+                    Ok(next)
+                }
+            })
+            .await;
+        outcome.map_err(StoreError::from)
+    }
+
     async fn enqueue_job(&self, req: NewJob) -> Result<ProvisioningJob, StoreError> {
         let counter_key = keys::job_seq_counter_key().to_vec();
         let job_id = Uuid::new_v4();
