@@ -3190,6 +3190,19 @@ impl Store for MemStore {
             .collect())
     }
 
+    async fn list_floating_ips_hosted_on_cn(
+        &self,
+        cn: Uuid,
+    ) -> Result<Vec<FloatingIp>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .floating_ips_by_id
+            .values()
+            .filter(|f| f.hosted_cn == Some(cn))
+            .cloned()
+            .collect())
+    }
+
     async fn delete_floating_ip(&self, fip_id: Uuid) -> Result<(), StoreError> {
         let mut guard = self.inner.write().await;
         // Snapshot the fields we need before the mutating remove

@@ -15,6 +15,7 @@ pub mod console_creds;
 pub mod credentials;
 pub mod dhcp_events;
 pub mod edge;
+pub mod fip_net;
 pub mod images;
 pub mod imds;
 pub mod imds_arp;
@@ -813,6 +814,13 @@ async fn drive_job(
                 return Err(err).context("create VM after Proteus port realization");
             }
         }
+        JobKind::Start { instance_id } => {
+            // Power on an existing stopped zone. The zone and its
+            // Proteus ports already exist and persist across a power
+            // cycle (same reason Restart re-realizes nothing), so we
+            // only boot it — no port realization, no vmadm create.
+            vmadm::start_zone(*instance_id).await?;
+        }
         JobKind::Stop { instance_id } => {
             vmadm::stop_zone(*instance_id).await?;
         }
@@ -1050,36 +1058,195 @@ async fn drive_job(
                 "proteus-deactivate: dispatcher pending — completing stub",
             );
         }
-        // FIP dataplane realization. C-4a introduces the saga → job
-        // lifecycle (enqueue pinned + await terminal); the real agent
-        // handler (apply recomputed blueprint, EnsureExternalLink,
-        // ipadm /32 alias, gratuitous-ARP burst) lands in C-4b. Until
-        // then the arms log + complete so the saga's await terminates
-        // and the lock/generation serialization can be exercised
-        // end-to-end without a live kmod.
+        // FIP dataplane realization (C-4b). The saga (C-4a) enqueues a
+        // pinned FipClaim/FipRelease and awaits terminal; these arms do
+        // the host-side work, ordered so the inbound classifier is the
+        // last thing turned on (claim) and the first thing turned off
+        // (release).
         JobKind::FipClaim {
             floating_ip_id,
             nic_id,
-            instance_id,
+            fip_addr,
+            external_nic_tag,
             ..
         } => {
-            info!(
-                %floating_ip_id, %nic_id, %instance_id,
-                "fip-claim: dispatcher pending — completing stub (C-4b)",
-            );
+            let proteus = open_proteus_lifecycle(&cfg.proteus_dev)?;
+            realize_fip_claim(
+                client,
+                proteus.as_ref(),
+                &HostFipNet,
+                *floating_ip_id,
+                *nic_id,
+                fip_addr,
+                external_nic_tag.as_deref(),
+            )
+            .await?;
         }
         JobKind::FipRelease {
             floating_ip_id,
-            hosted_cn,
+            fip_addr,
+            external_nic_tag,
             ..
         } => {
-            info!(
-                %floating_ip_id, %hosted_cn,
-                "fip-release: dispatcher pending — completing stub (C-4b)",
-            );
+            let proteus = open_proteus_lifecycle(&cfg.proteus_dev)?;
+            realize_fip_release(
+                proteus.as_ref(),
+                &HostFipNet,
+                *floating_ip_id,
+                fip_addr,
+                external_nic_tag.as_deref(),
+            )?;
         }
     }
 
+    Ok(())
+}
+
+/// Parse a FIP address string carried on a job into an `IpAddr`,
+/// turning a malformed value into an `anyhow` error so the job fails
+/// loudly rather than mis-plumbing the host.
+fn parse_fip_addr(fip_addr: &str, floating_ip_id: Uuid) -> Result<std::net::IpAddr> {
+    fip_addr
+        .parse()
+        .with_context(|| format!("parse FIP address {fip_addr:?} for floating ip {floating_ip_id}"))
+}
+
+/// Host-OS networking effects for a FIP claim/release: the ipadm
+/// `<fip>/32` alias and the gratuitous-ARP burst. Abstracted behind a
+/// trait so the claim/release ordering is unit-testable without
+/// shelling out to `ipadm` / `arp` (which are illumos-only and need a
+/// real external link). The production impl ([`HostFipNet`]) delegates
+/// to [`fip_net`] + [`imds_arp`].
+trait FipHostNet {
+    /// Add the `<fip>/32` alias on `link`. Fail-stop (the saga retries).
+    fn create_alias(&self, link: &str, fip: std::net::IpAddr) -> Result<()>;
+    /// Gratuitous-ARP burst (best-effort).
+    fn announce(&self, fip: std::net::IpAddr);
+    /// Drop the static ARP entry (best-effort).
+    fn drop_arp(&self, fip: std::net::IpAddr);
+    /// Remove the `<fip>/32` alias from `link` (best-effort, idempotent).
+    fn delete_alias(&self, link: &str, fip: std::net::IpAddr);
+}
+
+/// Production [`FipHostNet`]: the real ipadm / arp shell-outs
+/// (illumos-gated, no-ops elsewhere).
+struct HostFipNet;
+
+impl FipHostNet for HostFipNet {
+    fn create_alias(&self, link: &str, fip: std::net::IpAddr) -> Result<()> {
+        fip_net::create_addr(link, fip)
+    }
+    fn announce(&self, fip: std::net::IpAddr) {
+        imds_arp::send_garp(fip);
+    }
+    fn drop_arp(&self, fip: std::net::IpAddr) {
+        imds_arp::del(fip);
+    }
+    fn delete_alias(&self, link: &str, fip: std::net::IpAddr) {
+        fip_net::delete_addr(link, fip);
+    }
+}
+
+/// Realize a `FipClaim`: land the recomputed blueprint (SetSrc/SetDst
+/// rules + the `hosted_fips` delta, owned by the kmod ApplyBlueprint
+/// handler), ensure the external link, add the `<fip>/32` ipadm alias,
+/// then fire the gratuitous-ARP burst. Ordered so the inbound
+/// classifier (installed by the blueprint delta) is live before the
+/// alias starts answering ARP, and the GARP that re-points upstream is
+/// dead last. Each step before the GARP is fail-stop so the saga can
+/// retry; the GARP is best-effort.
+async fn realize_fip_claim<S, P, H>(
+    source: &S,
+    proteus: &P,
+    host_net: &H,
+    floating_ip_id: Uuid,
+    nic_id: Uuid,
+    fip_addr: &str,
+    external_nic_tag: Option<&str>,
+) -> Result<()>
+where
+    S: PortBlueprintSource + Sync,
+    P: ProteusLifecycle + ?Sized,
+    H: FipHostNet + ?Sized,
+{
+    let fip = parse_fip_addr(fip_addr, floating_ip_id)?;
+    let Some(link_name) = external_nic_tag else {
+        // A claim with no external link is a control-plane bug: the
+        // attach saga only enqueues FipClaim for a CN-terminated FIP,
+        // which always carries its resolved external nic_tag name.
+        anyhow::bail!(
+            "FipClaim for floating ip {floating_ip_id} carries no external_nic_tag; \
+             refusing to claim a FIP with no external link"
+        );
+    };
+
+    // 1. Apply the recomputed port blueprint at its bumped generation.
+    //    tritond owns the bytes; the agent fetches + applies. This is
+    //    what installs the FIP's NAT SetSrc/SetDst and (via the kmod
+    //    ApplyBlueprint delta, P-5) the inbound hosted_fips entry.
+    let port_blueprint = source
+        .fetch_port_blueprint(nic_id)
+        .await
+        .with_context(|| format!("fetch port blueprint to claim FIP on nic {nic_id}"))?;
+    proteus
+        .apply_blueprint(&port_blueprint)
+        .with_context(|| format!("apply Proteus blueprint to claim FIP on nic {nic_id}"))?;
+
+    // 2. Ensure the external siphon link exists (idempotent).
+    proteus
+        .ensure_external_link(link_name)
+        .with_context(|| format!("ensure external link {link_name} for FIP {fip}"))?;
+
+    // 3. Add the host /32 alias so the stack answers solicited ARP.
+    host_net.create_alias(link_name, fip)?;
+
+    // 4. Gratuitous-ARP burst so upstream re-points to this CN
+    //    (best-effort; the alias already answers solicited ARP).
+    host_net.announce(fip);
+
+    info!(%floating_ip_id, %nic_id, %fip, link_name, "fip-claim: realized");
+    Ok(())
+}
+
+/// Realize a `FipRelease`: reverse of the claim, and ordered so the
+/// inbound classifier stops delivering to the guest FIRST. Invalidate
+/// the `hosted_fips` entry, drop the static ARP entry, remove the
+/// ipadm alias. The withdraw of the SetSrc/SetDst NAT rules is driven
+/// by tritond pushing a recomputed (FIP-less) blueprint on the
+/// surviving port via the C-0 ApplyPortBlueprint path; if the port is
+/// already gone (instance deleted), the kmod drops the port state with
+/// it, so there is nothing more to apply here. All steps are
+/// idempotent best-effort except the classifier invalidate, which is
+/// fail-stop so a release that cannot reach the kmod is retried rather
+/// than silently leaving a stale inbound entry.
+fn realize_fip_release<P, H>(
+    proteus: &P,
+    host_net: &H,
+    floating_ip_id: Uuid,
+    fip_addr: &str,
+    external_nic_tag: Option<&str>,
+) -> Result<()>
+where
+    P: ProteusLifecycle + ?Sized,
+    H: FipHostNet + ?Sized,
+{
+    let fip = parse_fip_addr(fip_addr, floating_ip_id)?;
+
+    // 1. Stop inbound delivery first (fail-stop). Idempotent at the
+    //    kmod: a release for a FIP that was never installed no-ops.
+    proteus
+        .invalidate_fip_entry(fip)
+        .with_context(|| format!("invalidate hosted FIP {fip} on release"))?;
+
+    // 2. Drop the static ARP entry (best-effort).
+    host_net.drop_arp(fip);
+
+    // 3. Remove the host /32 alias (best-effort, idempotent).
+    if let Some(link_name) = external_nic_tag {
+        host_net.delete_alias(link_name, fip);
+    }
+
+    info!(%floating_ip_id, %fip, "fip-release: realized");
     Ok(())
 }
 
@@ -1162,6 +1329,16 @@ trait ProteusLifecycle: Send + Sync {
     fn apply_blueprint(&self, blueprint: &PortBlueprint) -> Result<()>;
 
     fn cleanup_port(&self, port_id: PortId) -> Result<()>;
+
+    /// Idempotently register the per-CN external datalink the inbound
+    /// FIP siphon attaches to (C-4b `FipClaim`). The implementation
+    /// resolves `link_name` to a dladm `linkid` before issuing the
+    /// ioctl.
+    fn ensure_external_link(&self, link_name: &str) -> Result<()>;
+
+    /// Invalidate one hosted-FIP entry by address (C-4b `FipRelease`,
+    /// step 1). Idempotent at the kmod.
+    fn invalidate_fip_entry(&self, fip_addr: std::net::IpAddr) -> Result<()>;
 }
 
 impl<T> ProteusLifecycle for proteus::ProteusClient<T>
@@ -1182,6 +1359,37 @@ where
 
     fn cleanup_port(&self, port_id: PortId) -> Result<()> {
         proteus::ProteusClient::cleanup_port(self, port_id)
+    }
+
+    fn ensure_external_link(&self, link_name: &str) -> Result<()> {
+        let linkid = resolve_external_linkid(link_name)?;
+        proteus::ProteusClient::ensure_external_link_with_id(self, linkid, link_name)
+    }
+
+    fn invalidate_fip_entry(&self, fip_addr: std::net::IpAddr) -> Result<()> {
+        proteus::ProteusClient::invalidate_hosted_fip(self, fip_addr)
+    }
+}
+
+/// Resolve an existing external NIC's dladm `linkid` by name. The
+/// external link physically pre-exists on the CN (an operator
+/// nic_tag), so we look it up — never create it. illumos-only; on any
+/// other platform the kernel transport is unavailable anyway, so this
+/// errors (matching [`open_proteus_lifecycle`]).
+fn resolve_external_linkid(link_name: &str) -> Result<u32> {
+    #[cfg(target_os = "illumos")]
+    {
+        use proteus_ioctl::dladm::DladmHandle;
+        let dladm = DladmHandle::open()
+            .with_context(|| "open libdladm to resolve external FIP link; tritonagent must run as root")?;
+        dladm
+            .name2info(link_name)
+            .with_context(|| format!("resolve dladm linkid for external FIP link {link_name}"))
+    }
+    #[cfg(not(target_os = "illumos"))]
+    {
+        let _ = link_name;
+        bail!("external FIP link resolution is only available on illumos")
     }
 }
 
@@ -1237,6 +1445,15 @@ impl ProteusLifecycle for KernelProteusLifecycle {
 
     fn cleanup_port(&self, port_id: PortId) -> Result<()> {
         self.inner.cleanup_port(port_id)
+    }
+
+    fn ensure_external_link(&self, link_name: &str) -> Result<()> {
+        let linkid = resolve_external_linkid(link_name)?;
+        self.inner.ensure_external_link_with_id(linkid, link_name)
+    }
+
+    fn invalidate_fip_entry(&self, fip_addr: std::net::IpAddr) -> Result<()> {
+        self.inner.invalidate_hosted_fip(fip_addr)
     }
 }
 
@@ -1730,5 +1947,266 @@ mod tests {
                 .as_deref()
                 .is_some_and(|message| message.contains(&edge_instance_id.to_string()))
         );
+    }
+
+    // -----------------------------------------------------------------
+    // C-4b: FIP claim / release handler ordering + error-stop.
+    //
+    // The kmod ioctl handlers for EnsureExternalLink / InvalidateFipEntry
+    // are P-5 (not built), and the host shell-outs (ipadm / GARP) only
+    // run on illumos, so the handler is exercised against a recording
+    // mock that captures the call sequence — no live kmod, no SmartOS.
+    // -----------------------------------------------------------------
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    enum ProteusOp {
+        Apply { port: Uuid, generation: u64 },
+        EnsureExternalLink(String),
+        InvalidateFip(std::net::IpAddr),
+    }
+
+    /// Records the host-OS networking effects (ipadm alias + GARP)
+    /// without shelling out, so the claim/release ordering is testable
+    /// off-illumos and without a real external link.
+    #[derive(Default)]
+    struct RecordingFipHostNet {
+        created: Mutex<Vec<(String, std::net::IpAddr)>>,
+        announced: Mutex<Vec<std::net::IpAddr>>,
+        dropped_arp: Mutex<Vec<std::net::IpAddr>>,
+        deleted: Mutex<Vec<(String, std::net::IpAddr)>>,
+    }
+
+    impl FipHostNet for RecordingFipHostNet {
+        fn create_alias(&self, link: &str, fip: std::net::IpAddr) -> Result<()> {
+            self.created.lock().unwrap().push((link.to_string(), fip));
+            Ok(())
+        }
+        fn announce(&self, fip: std::net::IpAddr) {
+            self.announced.lock().unwrap().push(fip);
+        }
+        fn drop_arp(&self, fip: std::net::IpAddr) {
+            self.dropped_arp.lock().unwrap().push(fip);
+        }
+        fn delete_alias(&self, link: &str, fip: std::net::IpAddr) {
+            self.deleted.lock().unwrap().push((link.to_string(), fip));
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingProteusLifecycle {
+        ops: Mutex<Vec<ProteusOp>>,
+        /// When set, the named op fails so the handler's fail-stop
+        /// ordering can be asserted.
+        fail_on_apply: bool,
+        fail_on_invalidate: bool,
+    }
+
+    impl RecordingProteusLifecycle {
+        fn ops(&self) -> Vec<ProteusOp> {
+            self.ops.lock().unwrap().clone()
+        }
+    }
+
+    impl ProteusLifecycle for RecordingProteusLifecycle {
+        fn ensure_started(
+            &self,
+            _blueprint: &PortBlueprint,
+            _link_name: &str,
+        ) -> Result<proteus::ProteusPortStatus> {
+            unreachable!("FIP handler never creates a port")
+        }
+
+        fn apply_blueprint(&self, blueprint: &PortBlueprint) -> Result<()> {
+            self.ops.lock().unwrap().push(ProteusOp::Apply {
+                port: blueprint.port_id.0,
+                generation: blueprint.generation.0,
+            });
+            if self.fail_on_apply {
+                anyhow::bail!("simulated apply failure");
+            }
+            Ok(())
+        }
+
+        fn cleanup_port(&self, _port_id: PortId) -> Result<()> {
+            unreachable!("FIP handler never deletes a port")
+        }
+
+        fn ensure_external_link(&self, link_name: &str) -> Result<()> {
+            self.ops
+                .lock()
+                .unwrap()
+                .push(ProteusOp::EnsureExternalLink(link_name.to_string()));
+            Ok(())
+        }
+
+        fn invalidate_fip_entry(&self, fip_addr: std::net::IpAddr) -> Result<()> {
+            self.ops
+                .lock()
+                .unwrap()
+                .push(ProteusOp::InvalidateFip(fip_addr));
+            if self.fail_on_invalidate {
+                anyhow::bail!("simulated invalidate failure");
+            }
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn fip_claim_applies_blueprint_then_ensures_external_link() {
+        let nic_id = Uuid::new_v4();
+        let fip_id = Uuid::new_v4();
+        let port = sample_port_blueprint(nic_id, 7);
+        let source = StaticPortBlueprintSource {
+            by_port: HashMap::from([(nic_id, port)]),
+        };
+        let proteus = RecordingProteusLifecycle::default();
+        let host_net = RecordingFipHostNet::default();
+
+        realize_fip_claim(
+            &source,
+            &proteus,
+            &host_net,
+            fip_id,
+            nic_id,
+            "192.0.2.10",
+            Some("external0"),
+        )
+        .await
+        .expect("claim succeeds");
+
+        // Blueprint apply (at the bumped generation) must precede the
+        // external-link ensure: the inbound classifier delta lands
+        // before the alias starts answering ARP.
+        assert_eq!(
+            proteus.ops(),
+            vec![
+                ProteusOp::Apply {
+                    port: nic_id,
+                    generation: 7,
+                },
+                ProteusOp::EnsureExternalLink("external0".to_string()),
+            ]
+        );
+        // Then the /32 alias is added and the GARP burst fires.
+        let fip: std::net::IpAddr = "192.0.2.10".parse().unwrap();
+        assert_eq!(
+            *host_net.created.lock().unwrap(),
+            vec![("external0".to_string(), fip)]
+        );
+        assert_eq!(*host_net.announced.lock().unwrap(), vec![fip]);
+    }
+
+    #[tokio::test]
+    async fn fip_claim_without_external_nic_tag_is_rejected() {
+        let nic_id = Uuid::new_v4();
+        let source = StaticPortBlueprintSource {
+            by_port: HashMap::new(),
+        };
+        let proteus = RecordingProteusLifecycle::default();
+        let host_net = RecordingFipHostNet::default();
+        let err = realize_fip_claim(
+            &source,
+            &proteus,
+            &host_net,
+            Uuid::new_v4(),
+            nic_id,
+            "192.0.2.10",
+            None,
+        )
+        .await
+        .expect_err("a CN-terminated claim must carry an external link");
+        assert!(err.to_string().contains("no external link"));
+        // Nothing touched the dataplane.
+        assert!(proteus.ops().is_empty());
+        assert!(host_net.created.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn fip_claim_apply_failure_stops_before_external_link() {
+        let nic_id = Uuid::new_v4();
+        let port = sample_port_blueprint(nic_id, 3);
+        let source = StaticPortBlueprintSource {
+            by_port: HashMap::from([(nic_id, port)]),
+        };
+        let proteus = RecordingProteusLifecycle {
+            fail_on_apply: true,
+            ..Default::default()
+        };
+        let host_net = RecordingFipHostNet::default();
+        realize_fip_claim(
+            &source,
+            &proteus,
+            &host_net,
+            Uuid::new_v4(),
+            nic_id,
+            "192.0.2.10",
+            Some("external0"),
+        )
+        .await
+        .expect_err("apply failure fails the claim");
+        // The external link must NOT be ensured if the blueprint apply
+        // failed: the saga retries from a clean state.
+        assert_eq!(
+            proteus.ops(),
+            vec![ProteusOp::Apply {
+                port: nic_id,
+                generation: 3,
+            }]
+        );
+        // And no host alias was created.
+        assert!(host_net.created.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn fip_release_invalidates_classifier_first() {
+        let proteus = RecordingProteusLifecycle::default();
+        let host_net = RecordingFipHostNet::default();
+        realize_fip_release(
+            &proteus,
+            &host_net,
+            Uuid::new_v4(),
+            "192.0.2.10",
+            Some("external0"),
+        )
+        .expect("release succeeds");
+        // The classifier invalidate is step 1 (fail-stop) so inbound
+        // delivery stops before the host teardown.
+        let fip: std::net::IpAddr = "192.0.2.10".parse().unwrap();
+        assert_eq!(proteus.ops(), vec![ProteusOp::InvalidateFip(fip)]);
+        // Then the ARP entry and the alias are torn down.
+        assert_eq!(*host_net.dropped_arp.lock().unwrap(), vec![fip]);
+        assert_eq!(
+            *host_net.deleted.lock().unwrap(),
+            vec![("external0".to_string(), fip)]
+        );
+    }
+
+    #[test]
+    fn fip_release_invalidate_failure_is_fatal() {
+        let proteus = RecordingProteusLifecycle {
+            fail_on_invalidate: true,
+            ..Default::default()
+        };
+        let host_net = RecordingFipHostNet::default();
+        realize_fip_release(
+            &proteus,
+            &host_net,
+            Uuid::new_v4(),
+            "192.0.2.10",
+            Some("external0"),
+        )
+        .expect_err("a classifier invalidate that cannot reach the kmod must fail the release");
+        // Fail-stop: the host teardown must not run after a failed
+        // invalidate.
+        assert!(host_net.deleted.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn fip_release_rejects_malformed_address() {
+        let proteus = RecordingProteusLifecycle::default();
+        let host_net = RecordingFipHostNet::default();
+        realize_fip_release(&proteus, &host_net, Uuid::new_v4(), "not-an-ip", Some("external0"))
+            .expect_err("malformed FIP address must fail loudly");
+        assert!(proteus.ops().is_empty());
     }
 }

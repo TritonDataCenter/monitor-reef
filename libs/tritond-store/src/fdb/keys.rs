@@ -557,6 +557,10 @@ pub(super) fn floating_ip_by_id_key(id: Uuid) -> Vec<u8> {
     format!("floating_ip/by_id/{id}").into_bytes()
 }
 
+pub(super) fn floating_ip_by_id_prefix() -> &'static [u8] {
+    b"floating_ip/by_id/"
+}
+
 pub(super) fn floating_ip_by_project_name_key(project_id: Uuid, name: &str) -> Vec<u8> {
     format!("floating_ip/by_project/{project_id}/{name}").into_bytes()
 }

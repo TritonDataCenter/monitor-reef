@@ -4939,6 +4939,39 @@ impl Store for FdbStore {
         Ok(out)
     }
 
+    async fn list_floating_ips_hosted_on_cn(
+        &self,
+        cn: Uuid,
+    ) -> Result<Vec<FloatingIp>, StoreError> {
+        // No per-CN secondary index (the reconcile path runs at CN
+        // (re-)register, not on the hot path), so scan the primary
+        // `floating_ip/by_id/` keyspace and filter on `hosted_cn`.
+        // `WantAll`: we must observe every hosted FIP or the reconcile
+        // would silently skip re-claiming one after a crashed agent.
+        let prefix = keys::floating_ip_by_id_prefix();
+        let (begin, end) = prefix_range(prefix);
+
+        let fips: Result<Vec<FloatingIp>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
+            let opt = RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                mode: StreamingMode::WantAll,
+                ..RangeOption::default()
+            };
+            let kvs = tr.get_range(&opt, 1, false).await?;
+            let mut out = Vec::new();
+            for kv in kvs.iter() {
+                if let Ok(fip) = serde_json::from_slice::<FloatingIp>(kv.value())
+                    && fip.hosted_cn == Some(cn)
+                {
+                    out.push(fip);
+                }
+            }
+            Ok(out)
+        });
+        fips.map_err(StoreError::from)
+    }
+
     async fn delete_floating_ip(&self, fip_id: Uuid) -> Result<(), StoreError> {
         let by_id_key = keys::floating_ip_by_id_key(fip_id);
 

@@ -78,6 +78,21 @@ struct DeleteSnapshot {
     /// Every FIP currently attached to a NIC on this instance.
     /// Stored as `(fip_id, nic_id)` pairs so the undo can re-bind.
     attached_fips: Vec<(Uuid, Uuid)>,
+    /// FIPs that were also *hosted* on a CN (CN-terminated 1:1 NAT) at
+    /// snapshot time. Each needs a dataplane withdraw (FipRelease)
+    /// pinned to its hosting CN so the instance delete does not leak an
+    /// ipadm `<fip>/32` alias + a stale `hosted_fips` entry (invariant
+    /// 14). A detached / un-hosted FIP never lands here.
+    hosted_fips: Vec<HostedFipWithdraw>,
+}
+
+/// One hosted FIP to withdraw during instance delete (invariant 14).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HostedFipWithdraw {
+    fip_id: Uuid,
+    hosted_cn: Uuid,
+    fip_addr: String,
+    external_nic_tag: Option<String>,
 }
 
 type LocalCtx = Ctx;
@@ -206,17 +221,42 @@ async fn snapshot_attachments(ctx: LocalCtx) -> Result<DeleteSnapshot, ActionErr
                 .list_floating_ips_in_project(params.project_id)
                 .await
                 .map_err(store_err_to_action_err)?;
-            let attached = project_fips
-                .into_iter()
-                .filter_map(|f| {
+            let instance_fips: Vec<&FloatingIp> = project_fips
+                .iter()
+                .filter(|f| {
                     f.attached_to
                         .as_ref()
-                        .filter(|a| a.instance_id == params.instance_id)
-                        .map(|a| (f.id, a.nic_id))
+                        .is_some_and(|a| a.instance_id == params.instance_id)
                 })
                 .collect();
+            let attached = instance_fips
+                .iter()
+                .filter_map(|f| f.attached_to.as_ref().map(|a| (f.id, a.nic_id)))
+                .collect();
+            // Capture the hosted (CN-terminated) FIPs separately so the
+            // detach step can withdraw the dataplane on the hosting CN
+            // (invariant 14). Resolve the external nic_tag name here so
+            // the FipRelease job is complete after the binding clears.
+            let mut hosted_fips = Vec::new();
+            for f in &instance_fips {
+                if let Some(hosted_cn) = f.hosted_cn {
+                    let external_nic_tag = match f.external_nic_tag {
+                        Some(tag_id) => {
+                            store.get_nic_tag(tag_id).await.ok().map(|t| t.name)
+                        }
+                        None => None,
+                    };
+                    hosted_fips.push(HostedFipWithdraw {
+                        fip_id: f.id,
+                        hosted_cn,
+                        fip_addr: f.address.to_string(),
+                        external_nic_tag,
+                    });
+                }
+            }
             Ok(DeleteSnapshot {
                 attached_fips: attached,
+                hosted_fips,
             })
         },
     )
@@ -232,6 +272,26 @@ async fn detach_fips(ctx: LocalCtx) -> Result<(), ActionError> {
             fence_check(user_ctx).await?;
             let store = user_ctx.store().clone();
             let snap: DeleteSnapshot = ctx.lookup("snapshot")?;
+            // Invariant 14: withdraw each hosted (CN-terminated) FIP's
+            // dataplane on its hosting CN BEFORE clearing the binding
+            // (release-before-detach), so the instance delete does not
+            // leak an ipadm alias + stale hosted_fips entry. Pinned to
+            // the hosting CN. A detached / un-hosted FIP enqueues
+            // nothing (it never reached `hosted_fips`).
+            for hosted in &snap.hosted_fips {
+                store
+                    .enqueue_job(NewJob {
+                        kind: JobKind::FipRelease {
+                            floating_ip_id: hosted.fip_id,
+                            fip_addr: hosted.fip_addr.clone(),
+                            external_nic_tag: hosted.external_nic_tag.clone(),
+                            hosted_cn: hosted.hosted_cn,
+                        },
+                        target_cn_uuid: Some(hosted.hosted_cn),
+                    })
+                    .await
+                    .map_err(store_err_to_action_err)?;
+            }
             for (fip_id, _nic_id) in &snap.attached_fips {
                 // detach is idempotent — no-op when already
                 // detached, returns the record either way.

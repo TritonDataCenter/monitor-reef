@@ -11,12 +11,16 @@
 //! deterministic so the job loop can create/apply/start ports before
 //! `vmadm create`, and pause/delete them during cleanup.
 
+use std::net::IpAddr;
+
 use anyhow::{Context, Result, anyhow, bail};
 use proteus_api::blueprint::{BlueprintApplyStatus, PortBlueprint, PortSummary};
 use proteus_api::dump::GenerationStatus;
 use proteus_api::error::ProteusError;
 use proteus_api::ids::PortId;
-use proteus_api::requests::CreatePortRequest;
+use proteus_api::peer::PeerAddrFamily;
+use proteus_api::requests::{CreatePortRequest, EnsureExternalLinkRequest};
+use proteus_api::floating_ip::InvalidateFipEntryRequest;
 use proteus_ioctl::{Client, Error as IoctlError, Transport};
 
 /// Build the SmartOS datalink name for a Proteus port.
@@ -169,6 +173,53 @@ impl<T: Transport> ProteusClient<T> {
         self.delete_port(port_id)
     }
 
+    /// Idempotently register the per-CN external datalink the inbound
+    /// FIP siphon attaches to (C-4b). `linkid` is resolved by the
+    /// caller via libdladm; `link_name` is carried for diagnostics.
+    /// Named `_with_id` to distinguish it from the agent's
+    /// `ProteusLifecycle::ensure_external_link` trait method (which
+    /// resolves the linkid first and delegates here).
+    pub fn ensure_external_link_with_id(&self, linkid: u32, link_name: &str) -> Result<()> {
+        self.client
+            .ensure_external_link(&EnsureExternalLinkRequest {
+                linkid,
+                link_name: link_name.to_string(),
+            })
+            .with_context(|| format!("ensure Proteus external link {link_name} (linkid {linkid})"))
+    }
+
+    /// Invalidate one hosted-FIP entry by address (C-4b `FipRelease`,
+    /// step 1). Idempotent: a missing entry is a no-op at the kmod, so
+    /// withdrawing a FIP that was never installed (or already removed)
+    /// succeeds. Called BEFORE the alias/blueprint teardown so the
+    /// inbound classifier stops delivering to the guest first.
+    pub fn invalidate_hosted_fip(&self, addr: IpAddr) -> Result<()> {
+        let (family, addr) = fip_addr_to_wire(addr);
+        self.client
+            .invalidate_fip_entry(&InvalidateFipEntryRequest { family, addr })
+            .map(|_ack| ())
+            .with_context(|| "invalidate Proteus hosted-FIP entry")
+    }
+}
+
+/// Encode a FIP address into the proteus wire `(family, [u8; 16])`
+/// shape used by `AddFipEntryRequest` / `InvalidateFipEntryRequest`. v4
+/// occupies the first 4 bytes (rest zero); v6 fills all 16.
+fn fip_addr_to_wire(addr: IpAddr) -> (PeerAddrFamily, [u8; 16]) {
+    let mut bytes = [0u8; 16];
+    match addr {
+        IpAddr::V4(v4) => {
+            bytes[..4].copy_from_slice(&v4.octets());
+            (PeerAddrFamily::V4, bytes)
+        }
+        IpAddr::V6(v6) => {
+            bytes.copy_from_slice(&v6.octets());
+            (PeerAddrFamily::V6, bytes)
+        }
+    }
+}
+
+impl<T: Transport> ProteusClient<T> {
     fn generation_status(&self, port_id: PortId) -> Result<GenerationStatus> {
         self.client
             .generation_status(port_id)

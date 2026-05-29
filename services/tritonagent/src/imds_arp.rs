@@ -80,3 +80,64 @@ pub fn del(pseudo_src: IpAddr) {
     let ip = pseudo_src.to_string();
     let _ = Command::new("arp").args(["-d", &ip]).output();
 }
+
+/// Number of gratuitous-ARP probes fired on a FIP claim, and the
+/// spacing between them. Three over a second is the conventional
+/// burst: enough that an upstream switch/router refreshes its
+/// ARP/forwarding table for the FIP's new owning CN even if one frame
+/// is lost, without flooding.
+const GARP_BURST: u32 = 3;
+const GARP_INTERVAL_MS: u64 = 500;
+
+/// Fire a gratuitous-ARP burst for a freshly-claimed FIP so the
+/// upstream L2 re-points the FIP address at this CN's external NIC
+/// (C-4b `FipClaim`, final step). Best-effort: a GARP failure is
+/// logged, never fatal — the ipadm `<fip>/32` alias already answers
+/// solicited ARP, so the burst only accelerates convergence after a
+/// cross-CN move. illumos-gated; a no-op elsewhere.
+///
+/// Implemented as a temporary `arp -s` (publish) on the FIP address
+/// followed by `arp -d`: illumos has no first-class "send gratuitous
+/// ARP" CLI, but publishing then withdrawing the entry makes the
+/// kernel emit an ARP announcement for the address on the link. The
+/// permanent answer continues to come from the ipadm alias.
+pub fn send_garp(fip: IpAddr) {
+    if cfg!(not(target_os = "illumos")) {
+        return;
+    }
+    let ip = fip.to_string();
+    for probe in 0..GARP_BURST {
+        // `arp -s <fip> <our-mac> pub` publishes a proxy entry; the
+        // kernel announces it on the link. We immediately withdraw it
+        // so the ipadm /32 alias remains the sole authority. The MAC
+        // is irrelevant to the announcement's effect (the switch keys
+        // on the source MAC of the frame, which is the external NIC's
+        // own MAC); we reuse a stable placeholder.
+        let pub_out = Command::new("arp")
+            .args(["-s", &ip, INTERNAL_PORT_MAC, "pub"])
+            .output();
+        match pub_out {
+            Ok(out) if out.status.success() => {
+                tracing::info!(fip = %ip, probe, "fip: gratuitous ARP announced");
+            }
+            Ok(out) => {
+                tracing::warn!(
+                    fip = %ip,
+                    probe,
+                    status = ?out.status,
+                    stderr = %String::from_utf8_lossy(&out.stderr).trim(),
+                    "fip: gratuitous arp -s pub failed (best-effort)"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(fip = %ip, probe, error = %e, "fip: arp could not run");
+            }
+        }
+        // Withdraw the published proxy entry so the ipadm alias stays
+        // authoritative for solicited ARP.
+        let _ = Command::new("arp").args(["-d", &ip]).output();
+        if probe + 1 < GARP_BURST {
+            std::thread::sleep(std::time::Duration::from_millis(GARP_INTERVAL_MS));
+        }
+    }
+}

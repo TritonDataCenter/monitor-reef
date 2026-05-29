@@ -1718,6 +1718,33 @@ pub(crate) async fn delete_floating_ip_v1(
     .await?;
     let request_id = parse_request_id(&rqctx);
 
+    // Invariant 15: a FIP that is still hosted on a CN at delete time
+    // (an orphan: `attached_to` cleared by a partial detach but
+    // `hosted_cn` left set) would leak its ipadm `<fip>/32` alias and a
+    // stale `hosted_fips` entry on that CN. Enqueue a FipRelease pinned
+    // to the hosting CN so the dataplane is withdrawn. The store still
+    // gates delete on `attached_to` (detach-first), so this only fires
+    // for the orphaned-hosted case; a cleanly-detached FIP has
+    // `hosted_cn = None` and enqueues nothing.
+    if let Some(hosted_cn) = fip.hosted_cn {
+        let external_nic_tag = resolve_external_nic_tag_name(&*ctx.store, &fip).await;
+        if let Err(e) = ctx
+            .store
+            .enqueue_job(NewJob {
+                kind: JobKind::FipRelease {
+                    floating_ip_id,
+                    fip_addr: fip.address.to_string(),
+                    external_nic_tag,
+                    hosted_cn,
+                },
+                target_cn_uuid: Some(hosted_cn),
+            })
+            .await
+        {
+            return Err(store_error_to_http(e));
+        }
+    }
+
     match ctx.store.delete_floating_ip(floating_ip_id).await {
         Ok(()) => {
             ctx.audit

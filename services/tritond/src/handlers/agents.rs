@@ -686,9 +686,61 @@ pub(crate) async fn agent_report_nic_tags(
     resolve_and_publish_nic_tags(ctx.store.as_ref(), cn, &report.nic_tags, now)
         .await
         .map_err(store_error_to_http)?;
+    // Reconcile hook (C-4b invariant 13): this is the authenticated,
+    // CN-bound (re-)registration point, so re-drive a FipClaim for
+    // every FIP this CN is supposed to host. An InProgress claim
+    // stranded by a crashed agent becomes re-claimable; the re-claim is
+    // idempotent at the kmod via the generation fence. Best-effort: a
+    // reconcile failure must not fail the nic-tag publish (the next
+    // re-register retries).
+    if let Err(e) = reconcile_hosted_fips(ctx.store.as_ref(), cn).await {
+        tracing::warn!(
+            cn = %cn,
+            error = %e,
+            "fip reconcile on register failed (best-effort); will retry on next register",
+        );
+    }
     // State-sample traffic, not an operator mutation — not audited,
     // matching `agent_report_network_realization`.
     Ok(HttpResponseOk(()))
+}
+
+/// Enqueue a `FipClaim` for every FIP hosted on `cn` (C-4b invariant
+/// 13). Split out from the handler so it is unit-testable against a
+/// `MemStore`. Skips a hosted FIP that has lost its `attached_to`
+/// binding (an orphaned hosted_cn the FipRelease cascade will clean up)
+/// rather than enqueue a claim with no port to recompute.
+async fn reconcile_hosted_fips(store: &dyn Store, cn: Uuid) -> Result<usize, StoreError> {
+    let hosted = store.list_floating_ips_hosted_on_cn(cn).await?;
+    let mut enqueued = 0usize;
+    for fip in &hosted {
+        let Some(attachment) = fip.attached_to.as_ref() else {
+            // Hosted but unattached: nothing to recompute. The
+            // delete/instance-delete cascade enqueues the FipRelease;
+            // re-claiming here would have no port.
+            continue;
+        };
+        let external_nic_tag = resolve_external_nic_tag_name(store, fip).await;
+        // Bump the port generation so the re-applied blueprint lands at
+        // a strictly-greater generation and is not swallowed as a
+        // same-generation no-op.
+        let generation = store.bump_port_generation(attachment.nic_id).await?;
+        store
+            .enqueue_job(NewJob {
+                kind: JobKind::FipClaim {
+                    floating_ip_id: fip.id,
+                    nic_id: attachment.nic_id,
+                    instance_id: attachment.instance_id,
+                    fip_addr: fip.address.to_string(),
+                    external_nic_tag,
+                    generation,
+                },
+                target_cn_uuid: Some(cn),
+            })
+            .await?;
+        enqueued += 1;
+    }
+    Ok(enqueued)
 }
 
 /// Resolve reported nic_tag names against the registry and publish the
@@ -937,5 +989,216 @@ mod nic_tag_publish_tests {
             .expect("inventory still present");
         assert_eq!(inv.provides.len(), 1);
         assert_eq!(inv.provides[0].nic_tag, external.id);
+    }
+}
+
+#[cfg(test)]
+mod reconcile_hosted_fips_tests {
+    use super::*;
+    use std::net::Ipv4Addr;
+    use tritond_store::{
+        MemStore, NewExternalSubnet, NewFloatingIp, NewImage, NewInstance, NewNicTag, NewProject,
+        NewSilo, NewSshKey, NewSubnet, NewVpc,
+    };
+
+    /// Build an instance with a NIC on a host CN plus a network-allocated
+    /// FIP, attach the FIP (stamping `hosted_cn`), and return
+    /// `(store, fip_id, nic_id, instance_id, host_cn)`.
+    async fn hosted_fip_fixture() -> (MemStore, Uuid, Uuid, Uuid, Uuid) {
+        let store = MemStore::new();
+        let silo = store
+            .create_silo(NewSilo {
+                name: "s".into(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let tenant_id = silo.default_tenant_id;
+        let project = store
+            .create_project(
+                tenant_id,
+                NewProject {
+                    name: "p".into(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        let project_id = project.id;
+        let vpc = store
+            .create_vpc(
+                tenant_id,
+                project_id,
+                NewVpc {
+                    name: "v".into(),
+                    description: None,
+                    ipv4_block: Some("10.0.0.0/16".parse().unwrap()),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        let subnet = store
+            .create_subnet(
+                tenant_id,
+                project_id,
+                vpc.id,
+                NewSubnet {
+                    name: "primary".into(),
+                    description: None,
+                    ipv4_block: Some("10.0.1.0/24".parse().unwrap()),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        let image = store
+            .create_image_silo(
+                silo.id,
+                NewImage {
+                    name: "img".into(),
+                    description: None,
+                    os: "linux".into(),
+                    version: "1".into(),
+                    size_bytes: 1_000_000,
+                    sha256: "a".repeat(64),
+                    source_url: Some("mantafs://i".into()),
+                    id: None,
+                    compatibility: None,
+                },
+            )
+            .await
+            .unwrap();
+        let ssh = store
+            .create_ssh_key_silo(
+                silo.id,
+                NewSshKey {
+                    name: "k".into(),
+                    description: None,
+                    public_key: "ssh-ed25519 AAAA".into(),
+                },
+                "SHA256:fixture".into(),
+            )
+            .await
+            .unwrap();
+        let created = store
+            .create_instance(
+                tenant_id,
+                project_id,
+                NewInstance {
+                    name: "web".into(),
+                    description: None,
+                    image_id: image.id,
+                    primary_subnet_id: subnet.id,
+                    ssh_key_ids: vec![ssh.id],
+                    cpu: 1,
+                    memory_bytes: 1024 * 1024 * 1024,
+                    mac: None,
+                    extra_nics: Vec::new(),
+                },
+            )
+            .await
+            .unwrap();
+        let host_cn = Uuid::new_v4();
+        store
+            .set_instance_host_cn(created.instance.id, Some(host_cn))
+            .await
+            .unwrap();
+        let tag = store
+            .create_nic_tag(NewNicTag {
+                name: "external".into(),
+                description: None,
+                mtu: 1500,
+            })
+            .await
+            .unwrap();
+        let ext = store
+            .create_external_subnet(NewExternalSubnet {
+                name: "pub".into(),
+                description: None,
+                ipv4_block: Some("192.0.2.0/24".parse().unwrap()),
+                ipv6_block: None,
+                nic_tag: tag.id,
+                vlan_id: Some(100),
+                provision_start_ipv4: Some(Ipv4Addr::new(192, 0, 2, 10)),
+                provision_end_ipv4: Some(Ipv4Addr::new(192, 0, 2, 12)),
+                provision_start_ipv6: None,
+                provision_end_ipv6: None,
+                owner_silos: Vec::new(),
+            })
+            .await
+            .unwrap();
+        let fip = store
+            .create_floating_ip(
+                tenant_id,
+                project_id,
+                NewFloatingIp {
+                    name: "fip".into(),
+                    description: None,
+                    family: None,
+                    network_id: Some(ext.id),
+                    pool_id: None,
+                },
+            )
+            .await
+            .unwrap();
+        let nic_id = created.nics[0].id;
+        let attached = store.attach_floating_ip(fip.id, nic_id).await.unwrap();
+        assert_eq!(attached.hosted_cn, Some(host_cn));
+        (store, fip.id, nic_id, created.instance.id, host_cn)
+    }
+
+    #[tokio::test]
+    async fn reconcile_enqueues_fip_claim_for_each_hosted_fip() {
+        let (store, fip_id, nic_id, instance_id, host_cn) = hosted_fip_fixture().await;
+
+        let enqueued = reconcile_hosted_fips(&store, host_cn).await.unwrap();
+        assert_eq!(enqueued, 1, "one hosted FIP -> one FipClaim");
+
+        // Exactly one FipClaim, pinned to the host CN, carrying the
+        // attached instance + nic at a bumped generation.
+        let jobs = store.list_recent_jobs(50).await.unwrap();
+        let claims: Vec<_> = jobs
+            .iter()
+            .filter(|j| matches!(j.kind, JobKind::FipClaim { .. }))
+            .collect();
+        assert_eq!(claims.len(), 1);
+        match &claims[0].kind {
+            JobKind::FipClaim {
+                floating_ip_id,
+                nic_id: claimed_nic,
+                instance_id: claimed_instance,
+                generation,
+                ..
+            } => {
+                assert_eq!(*floating_ip_id, fip_id);
+                assert_eq!(*claimed_nic, nic_id);
+                assert_eq!(*claimed_instance, instance_id);
+                // bump_port_generation moved 1 -> 2.
+                assert_eq!(*generation, 2);
+            }
+            other => panic!("expected FipClaim, got {other:?}"),
+        }
+        assert_eq!(claims[0].target_cn_uuid, Some(host_cn));
+    }
+
+    #[tokio::test]
+    async fn reconcile_for_other_cn_enqueues_nothing() {
+        let (store, _fip_id, _nic_id, _instance_id, _host_cn) = hosted_fip_fixture().await;
+        let other_cn = Uuid::new_v4();
+        let enqueued = reconcile_hosted_fips(&store, other_cn).await.unwrap();
+        assert_eq!(enqueued, 0, "no FIP hosted on the other CN");
+    }
+
+    #[tokio::test]
+    async fn reconcile_after_detach_enqueues_nothing() {
+        // Detach clears hosted_cn, so a subsequently-registering CN has
+        // no hosted FIP to re-claim. (Closes the "detached FIP enqueues
+        // nothing" half of the reconcile contract via the public API,
+        // without an internal test-only mutation hook.)
+        let (store, fip_id, _nic_id, _instance_id, host_cn) = hosted_fip_fixture().await;
+        store.detach_floating_ip(fip_id).await.unwrap();
+        let enqueued = reconcile_hosted_fips(&store, host_cn).await.unwrap();
+        assert_eq!(enqueued, 0, "detached FIP is no longer hosted; nothing to reconcile");
     }
 }

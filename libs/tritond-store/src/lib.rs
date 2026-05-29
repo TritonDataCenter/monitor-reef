@@ -1125,6 +1125,18 @@ pub trait Store: Send + Sync + 'static {
         project_id: Uuid,
     ) -> Result<Vec<FloatingIp>, StoreError>;
 
+    /// List every FloatingIp whose dataplane termination is currently
+    /// hosted on `cn` (`hosted_cn == Some(cn)`). Used by the
+    /// agent-register reconcile hook (C-4b invariant 13): on an
+    /// authenticated CN (re-)registration tritond enqueues a FipClaim
+    /// for each of these so an InProgress claim from a crashed agent
+    /// becomes re-claimable. The idempotent re-claim is a no-op at the
+    /// kmod via the generation fence.
+    async fn list_floating_ips_hosted_on_cn(
+        &self,
+        cn: Uuid,
+    ) -> Result<Vec<FloatingIp>, StoreError>;
+
     /// Release a FloatingIp back to its pool. Returns
     /// [`StoreError::Conflict`] if the IP is currently attached
     /// (operator must detach first); a future force-delete path
