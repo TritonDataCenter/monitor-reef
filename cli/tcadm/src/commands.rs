@@ -592,6 +592,40 @@ pub async fn tenant_delete(
     Ok(())
 }
 
+/// Mint a tenant-bound operator user.
+pub async fn tenant_create_user(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    tenant_id: Uuid,
+    username: String,
+    password: String,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let user = client
+        .create_silo_tenant_user()
+        .silo_id(silo_id)
+        .tenant_id(tenant_id)
+        .body(tritond_client::types::NewSiloTenantUser { username, password })
+        .send()
+        .await
+        .context("create tenant user")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&user)?);
+    } else {
+        println!("Created user {} in tenant {tenant_id}", user.id);
+        println!("  username: {}", user.username);
+        if let Some(tid) = user.tenant_id {
+            println!("  tenant:   {tid}");
+        }
+        println!("  created:  {}", user.created_at);
+    }
+    Ok(())
+}
+
 /// Retrofit a storage workspace binding onto an existing tenant.
 pub async fn tenant_init_storage(
     endpoint_override: Option<String>,

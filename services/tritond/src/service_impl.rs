@@ -301,6 +301,14 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::tenants::init_silo_tenant_storage(rqctx, path).await
     }
 
+    async fn create_silo_tenant_user(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantPath>,
+        body: TypedBody<tritond_api::types::NewSiloTenantUser>,
+    ) -> Result<HttpResponseCreated<tritond_api::types::UserView>, HttpError> {
+        crate::handlers::tenants::create_silo_tenant_user(rqctx, path, body).await
+    }
+
     async fn list_tenant_projects(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantPath>,

@@ -8579,6 +8579,47 @@ pub mod types {
         }
     }
 
+    #[doc = "Request body for `POST /v1/silos/{silo_id}/tenants/{tenant_id}/users` — operator-driven creation of a tenant-bound operator account.\n\nUsed to mint test/non-federated tenant principals for end-to-end verification of the forwarder workspace gate. Federated users continue to land via the JIT-on-OIDC-login path; this endpoint is the cluster-wide equivalent for environments that don't yet have an external IdP wired up."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v1/silos/{silo_id}/tenants/{tenant_id}/users` — operator-driven creation of a tenant-bound operator account.\\n\\nUsed to mint test/non-federated tenant principals for end-to-end verification of the forwarder workspace gate. Federated users continue to land via the JIT-on-OIDC-login path; this endpoint is the cluster-wide equivalent for environments that don't yet have an external IdP wired up.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"password\","]
+    #[doc = "    \"username\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"password\": {"]
+    #[doc = "      \"description\": \"Plaintext password. Tritond hashes it server-side before persisting; the plaintext never reaches the store layer. The response does NOT include the hash.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"username\": {"]
+    #[doc = "      \"description\": \"Operator username (must be unique across the cluster).\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewSiloTenantUser {
+        #[doc = "Plaintext password. Tritond hashes it server-side before persisting; the plaintext never reaches the store layer. The response does NOT include the hash."]
+        pub password: ::std::string::String,
+        #[doc = "Operator username (must be unique across the cluster)."]
+        pub username: ::std::string::String,
+    }
+
+    impl NewSiloTenantUser {
+        pub fn builder() -> builder::NewSiloTenantUser {
+            Default::default()
+        }
+    }
+
     #[doc = "Request body for registering a new SSH key in any scope's catalog. The owning scope (Public / Silo / Tenant / Project / User) is inferred from the URL path the request hit, *not* from the body. The server assigns `id`, `fingerprint`, and `created_at`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -14369,6 +14410,14 @@ pub mod types {
     #[doc = "    \"is_root\": {"]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
+    #[doc = "    \"tenant_id\": {"]
+    #[doc = "      \"description\": \"Owning tenant when this user is tenant-scoped (federated users or operator-minted tenant accounts). `None` for cluster-wide operators (root, fleet-admins without a tenant). Surfaced so `tcadm whoami` can show the tenant binding and so operator tooling can distinguish cluster vs tenant principals.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
     #[doc = "    \"username\": {"]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    }"]
@@ -14386,6 +14435,9 @@ pub mod types {
         pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
         pub id: ::uuid::Uuid,
         pub is_root: bool,
+        #[doc = "Owning tenant when this user is tenant-scoped (federated users or operator-minted tenant accounts). `None` for cluster-wide operators (root, fleet-admins without a tenant). Surfaced so `tcadm whoami` can show the tenant binding and so operator tooling can distinguish cluster vs tenant principals."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub tenant_id: ::std::option::Option<::uuid::Uuid>,
         pub username: ::std::string::String,
     }
 
@@ -23038,6 +23090,65 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct NewSiloTenantUser {
+            password: ::std::result::Result<::std::string::String, ::std::string::String>,
+            username: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewSiloTenantUser {
+            fn default() -> Self {
+                Self {
+                    password: Err("no value supplied for password".to_string()),
+                    username: Err("no value supplied for username".to_string()),
+                }
+            }
+        }
+
+        impl NewSiloTenantUser {
+            pub fn password<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.password = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for password: {e}"));
+                self
+            }
+            pub fn username<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.username = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for username: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewSiloTenantUser> for super::NewSiloTenantUser {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewSiloTenantUser,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    password: value.password?,
+                    username: value.username?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewSiloTenantUser> for NewSiloTenantUser {
+            fn from(value: super::NewSiloTenantUser) -> Self {
+                Self {
+                    password: Ok(value.password),
+                    username: Ok(value.username),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct NewSshKey {
             description: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -29989,6 +30100,8 @@ pub mod types {
             >,
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             is_root: ::std::result::Result<bool, ::std::string::String>,
+            tenant_id:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             username: ::std::result::Result<::std::string::String, ::std::string::String>,
         }
 
@@ -29999,6 +30112,7 @@ pub mod types {
                     created_at: Err("no value supplied for created_at".to_string()),
                     id: Err("no value supplied for id".to_string()),
                     is_root: Err("no value supplied for is_root".to_string()),
+                    tenant_id: Ok(Default::default()),
                     username: Err("no value supplied for username".to_string()),
                 }
             }
@@ -30045,6 +30159,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for is_root: {e}"));
                 self
             }
+            pub fn tenant_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tenant_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tenant_id: {e}"));
+                self
+            }
             pub fn username<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::string::String>,
@@ -30067,6 +30191,7 @@ pub mod types {
                     created_at: value.created_at?,
                     id: value.id?,
                     is_root: value.is_root?,
+                    tenant_id: value.tenant_id?,
                     username: value.username?,
                 })
             }
@@ -30079,6 +30204,7 @@ pub mod types {
                     created_at: Ok(value.created_at),
                     id: Ok(value.id),
                     is_root: Ok(value.is_root),
+                    tenant_id: Ok(value.tenant_id),
                     username: Ok(value.username),
                 }
             }
@@ -30896,6 +31022,11 @@ impl Client {
     #[doc = "Retrofit a storage workspace binding onto an existing tenant\n\nFor tenants created before `storage.default_s3_cluster_id` was registered (those rows carry `storage_workspace_id = None`), this endpoint mints the mantad workspace and writes both binding columns. Idempotent on the mantad side (keyed by `tenant_uuid`), so a retried call after a partial failure resolves the existing workspace and commits the Tenant row.\n\nFailure modes:\n\n* 412 `NoDefaultStorageCluster` — `storage.default_s3_cluster_id` not set; operator must register a cluster first. * 409 `Conflict` — tenant already has a binding. Operators must drop the existing binding explicitly before rebinding (no silent re-bind to avoid orphaning the previous workspace). * 503 `StorageClusterUnreachable` — the default cluster's last health probe failed; refresh with `tcadm storage health <id>` and retry. * 404 — tenant does not exist or belongs to another silo.\n\nSends a `POST` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/init-storage`\n\n```ignore\nlet response = client.init_silo_tenant_storage()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
     pub fn init_silo_tenant_storage(&self) -> builder::InitSiloTenantStorage<'_> {
         builder::InitSiloTenantStorage::new(self)
+    }
+
+    #[doc = "Create a tenant-bound operator account\n\nUsed to mint test / non-federated tenant principals so the forwarder workspace gate can be exercised end-to-end without requiring an external OIDC IdP. The created user lands with `is_root: false`, `tenant_id: Some(<path tenant>)`, empty `capabilities` (no `/v1/system/` access), and a bcrypt-hashed password.\n\nFederated users continue to land via the JIT-on-OIDC-login path; this endpoint is for environments without an IdP and for verification tooling.\n\nReturns 409 if `username` is already in use; 404 if the tenant doesn't exist or belongs to another silo.\n\nSends a `POST` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/users`\n\n```ignore\nlet response = client.create_silo_tenant_user()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_silo_tenant_user(&self) -> builder::CreateSiloTenantUser<'_> {
+        builder::CreateSiloTenantUser::new(self)
     }
 
     #[doc = "RFD 00007 `GET /v1/ssh-keys?scope=public[&silo=&tenant=&project=]`\n\nSends a `GET` request to `/v1/ssh-keys`\n\nArguments:\n- `project`: Restrict to a single project.\n- `scope`\n- `silo`: Restrict to a single silo (fleet-admin only).\n- `tenant`: Restrict to a single tenant.\n```ignore\nlet response = client.list_ssh_keys_v1()\n    .project(project)\n    .scope(scope)\n    .silo(silo)\n    .tenant(tenant)\n    .send()\n    .await;\n```"]
@@ -40796,6 +40927,122 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_silo_tenant_user`]\n\n[`Client::create_silo_tenant_user`]: super::Client::create_silo_tenant_user"]
+    #[derive(Debug, Clone)]
+    pub struct CreateSiloTenantUser<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        tenant_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewSiloTenantUser, String>,
+    }
+
+    impl<'a> CreateSiloTenantUser<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewSiloTenantUser>,
+            <V as std::convert::TryInto<types::NewSiloTenantUser>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewSiloTenantUser` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::NewSiloTenantUser,
+                ) -> types::builder::NewSiloTenantUser,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/users`"]
+        pub async fn send(self) -> Result<ResponseValue<types::UserView>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                tenant_id,
+                body,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewSiloTenantUser::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/silos/{}/tenants/{}/users",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&tenant_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_silo_tenant_user",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

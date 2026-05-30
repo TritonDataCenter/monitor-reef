@@ -551,6 +551,23 @@ enum TenantCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Mint a tenant-bound operator user.
+    ///
+    /// Lands a User with `tenant_id` set to the tenant on the URL,
+    /// `is_root: false`, empty capability set, and a bcrypt-hashed
+    /// password. Use for test / non-federated tenant principals
+    /// when no external IdP is available (or for verification
+    /// tooling).
+    CreateUser {
+        silo_id: Uuid,
+        tenant_id: Uuid,
+        #[arg(long)]
+        username: String,
+        #[arg(long)]
+        password: String,
+        #[arg(long)]
+        json: bool,
+    },
     /// Manage projects inside a tenant.
     Project {
         #[command(subcommand)]
@@ -2540,6 +2557,24 @@ async fn main() -> Result<()> {
             } => {
                 commands::tenant_init_storage(cli.endpoint, cli.api_key, silo_id, tenant_id, json)
                     .await
+            }
+            TenantCommand::CreateUser {
+                silo_id,
+                tenant_id,
+                username,
+                password,
+                json,
+            } => {
+                commands::tenant_create_user(
+                    cli.endpoint,
+                    cli.api_key,
+                    silo_id,
+                    tenant_id,
+                    username,
+                    password,
+                    json,
+                )
+                .await
             }
             TenantCommand::Project { command } => match command {
                 TenantProjectCommand::List { tenant_id, json } => {

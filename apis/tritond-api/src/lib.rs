@@ -35,9 +35,9 @@ use crate::types::{
     IdpConfigView, Image, ImdsBindingWire, Instance, JobKind, JobOutcome, LegacyVm,
     ManagedIdentity, NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation,
     NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewNatGateway, NewProject, NewQuota,
-    NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc,
-    Nic, Project, ProvisioningJob, Quota, RealizationStatus, RealizerId, Route, RouteTable, Silo,
-    SshKey, StorageClusterView, Subnet, Tenant, Vpc,
+    NewRoute, NewRouteTable, NewSilo, NewSiloTenantUser, NewSshKey, NewStorageCluster, NewSubnet,
+    NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, RealizationStatus, RealizerId, Route,
+    RouteTable, Silo, SshKey, StorageClusterView, Subnet, Tenant, UserView, Vpc,
 };
 
 /// Liveness response.
@@ -2678,6 +2678,32 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloTenantPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// Create a tenant-bound operator account.
+    ///
+    /// Used to mint test / non-federated tenant principals so the
+    /// forwarder workspace gate can be exercised end-to-end without
+    /// requiring an external OIDC IdP. The created user lands with
+    /// `is_root: false`, `tenant_id: Some(<path tenant>)`, empty
+    /// `capabilities` (no `/v1/system/` access), and a bcrypt-hashed
+    /// password.
+    ///
+    /// Federated users continue to land via the JIT-on-OIDC-login
+    /// path; this endpoint is for environments without an IdP and
+    /// for verification tooling.
+    ///
+    /// Returns 409 if `username` is already in use; 404 if the
+    /// tenant doesn't exist or belongs to another silo.
+    #[endpoint {
+        method = POST,
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}/users",
+        tags = ["silos", "tenants"],
+    }]
+    async fn create_silo_tenant_user(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantPath>,
+        body: TypedBody<NewSiloTenantUser>,
+    ) -> Result<HttpResponseCreated<UserView>, HttpError>;
 
     /// Retrofit a storage workspace binding onto an existing tenant.
     ///

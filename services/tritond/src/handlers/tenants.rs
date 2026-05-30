@@ -548,6 +548,111 @@ pub(crate) async fn delete_silo_tenant(
     Ok(HttpResponseDeleted())
 }
 
+/// Create a tenant-bound operator account.
+///
+/// Operator-driven user creation: lands a User with
+/// `tenant_id: Some(tenant_id)`, `is_root: false`, empty
+/// capability set, and a bcrypt-hashed password. The plaintext
+/// password is taken from the request body, hashed via
+/// `tritond_auth::hash_password`, and never persisted in cleartext.
+///
+/// Used to mint test / non-federated tenant principals for
+/// end-to-end forwarder verification. Federated users continue to
+/// land via JIT-on-OIDC-login.
+pub(crate) async fn create_silo_tenant_user(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<SiloTenantPath>,
+    body: TypedBody<tritond_api::types::NewSiloTenantUser>,
+) -> Result<HttpResponseCreated<tritond_api::types::UserView>, HttpError> {
+    let ctx = rqctx.context();
+    let SiloTenantPath { silo_id, tenant_id } = path.into_inner();
+    let principal = authenticate_and_authorize_in_silo(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::TenantCreate,
+        silo_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+    let req = body.into_inner();
+
+    // Cross-silo defence: tenant must live in the silo on the URL.
+    let tenant = ctx
+        .store
+        .get_tenant(tenant_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if tenant.silo_id != silo_id {
+        return Err(HttpError::for_not_found(
+            Some("NotFound".to_string()),
+            format!("tenant {tenant_id} not found in silo {silo_id}"),
+        ));
+    }
+
+    // Hash the password before it reaches the store. We deliberately
+    // drop the plaintext as soon as the hash is computed so the
+    // audit payload below can't accidentally capture it.
+    let password = tritond_auth::RedactedString::new(req.password);
+    let password_hash = tritond_auth::hash_password(&password)
+        .await
+        .map_err(|e| HttpError::for_internal_error(format!("hash password: {e}")))?;
+    let username = req.username.clone();
+    let user = tritond_store::User {
+        id: uuid::Uuid::new_v4(),
+        username: req.username,
+        password_hash,
+        is_root: false,
+        fleet_admin: false,
+        created_at: chrono::Utc::now(),
+        tenant_id: Some(tenant_id),
+        federation: None,
+        capabilities: Default::default(),
+    };
+
+    match ctx.store.create_user(user).await {
+        Ok(created) => {
+            let view: tritond_api::types::UserView = created.into();
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::TenantCreate,
+                    request_id,
+                    Some(format!("User::\"{}\"", view.id)),
+                    AuditOutcome::Success {
+                        resource: Some(format!("User::\"{}\"", view.id)),
+                    },
+                    serde_json::json!({
+                        "silo_id": silo_id,
+                        "tenant_id": tenant_id,
+                        "username": view.username,
+                    }),
+                )
+                .await;
+            Ok(HttpResponseCreated(view))
+        }
+        Err(e) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::TenantCreate,
+                    request_id,
+                    None,
+                    store_error_to_audit_outcome(&e),
+                    serde_json::json!({
+                        "silo_id": silo_id,
+                        "tenant_id": tenant_id,
+                        "username": username,
+                        "stage": "store.create_user",
+                    }),
+                )
+                .await;
+            Err(store_error_to_http(e))
+        }
+    }
+}
+
 /// Retrofit a workspace binding onto an existing tenant. Used to
 /// rescue tenants created before any `storage.default_s3_cluster_id`
 /// was registered.

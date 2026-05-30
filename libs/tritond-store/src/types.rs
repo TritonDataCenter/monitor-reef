@@ -284,6 +284,24 @@ pub struct NewTenant {
     pub description: Option<String>,
 }
 
+/// Request body for `POST /v1/silos/{silo_id}/tenants/{tenant_id}/users`
+/// — operator-driven creation of a tenant-bound operator account.
+///
+/// Used to mint test/non-federated tenant principals for end-to-end
+/// verification of the forwarder workspace gate. Federated users
+/// continue to land via the JIT-on-OIDC-login path; this endpoint
+/// is the cluster-wide equivalent for environments that don't yet
+/// have an external IdP wired up.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewSiloTenantUser {
+    /// Operator username (must be unique across the cluster).
+    pub username: String,
+    /// Plaintext password. Tritond hashes it server-side before
+    /// persisting; the plaintext never reaches the store layer.
+    /// The response does NOT include the hash.
+    pub password: String,
+}
+
 /// Reserved-VNI ceiling. Values below this are off-limits for tenant
 /// VPCs; the dataplane keeps `[0, 4096)` for system VNIs (boundary
 /// services, transit, future internal traffic). 4096 matches Oxide's
@@ -1075,6 +1093,13 @@ pub struct UserView {
     /// regardless of the set.
     #[serde(default)]
     pub capabilities: BTreeSet<Capability>,
+    /// Owning tenant when this user is tenant-scoped (federated users
+    /// or operator-minted tenant accounts). `None` for cluster-wide
+    /// operators (root, fleet-admins without a tenant). Surfaced so
+    /// `tcadm whoami` can show the tenant binding and so operator
+    /// tooling can distinguish cluster vs tenant principals.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tenant_id: Option<Uuid>,
 }
 
 impl From<User> for UserView {
@@ -1085,6 +1110,7 @@ impl From<User> for UserView {
             is_root: user.is_root,
             created_at: user.created_at,
             capabilities: user.capabilities,
+            tenant_id: user.tenant_id,
         }
     }
 }

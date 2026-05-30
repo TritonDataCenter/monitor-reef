@@ -4918,6 +4918,65 @@
         }
       }
     },
+    "/v1/silos/{silo_id}/tenants/{tenant_id}/users": {
+      "post": {
+        "tags": [
+          "silos",
+          "tenants"
+        ],
+        "summary": "Create a tenant-bound operator account.",
+        "description": "Used to mint test / non-federated tenant principals so the forwarder workspace gate can be exercised end-to-end without requiring an external OIDC IdP. The created user lands with `is_root: false`, `tenant_id: Some(<path tenant>)`, empty `capabilities` (no `/v1/system/` access), and a bcrypt-hashed password.\n\nFederated users continue to land via the JIT-on-OIDC-login path; this endpoint is for environments without an IdP and for verification tooling.\n\nReturns 409 if `username` is already in use; 404 if the tenant doesn't exist or belongs to another silo.",
+        "operationId": "create_silo_tenant_user",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSiloTenantUser"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/ssh-keys": {
       "get": {
         "tags": [
@@ -14741,6 +14800,24 @@
           "name"
         ]
       },
+      "NewSiloTenantUser": {
+        "description": "Request body for `POST /v1/silos/{silo_id}/tenants/{tenant_id}/users` — operator-driven creation of a tenant-bound operator account.\n\nUsed to mint test/non-federated tenant principals for end-to-end verification of the forwarder workspace gate. Federated users continue to land via the JIT-on-OIDC-login path; this endpoint is the cluster-wide equivalent for environments that don't yet have an external IdP wired up.",
+        "type": "object",
+        "properties": {
+          "password": {
+            "description": "Plaintext password. Tritond hashes it server-side before persisting; the plaintext never reaches the store layer. The response does NOT include the hash.",
+            "type": "string"
+          },
+          "username": {
+            "description": "Operator username (must be unique across the cluster).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password",
+          "username"
+        ]
+      },
       "NewSshKey": {
         "description": "Request body for registering a new SSH key in any scope's catalog. The owning scope (Public / Silo / Tenant / Project / User) is inferred from the URL path the request hit, *not* from the body. The server assigns `id`, `fingerprint`, and `created_at`.",
         "type": "object",
@@ -17838,6 +17915,12 @@
           },
           "is_root": {
             "type": "boolean"
+          },
+          "tenant_id": {
+            "nullable": true,
+            "description": "Owning tenant when this user is tenant-scoped (federated users or operator-minted tenant accounts). `None` for cluster-wide operators (root, fleet-admins without a tenant). Surfaced so `tcadm whoami` can show the tenant binding and so operator tooling can distinguish cluster vs tenant principals.",
+            "type": "string",
+            "format": "uuid"
           },
           "username": {
             "type": "string"
