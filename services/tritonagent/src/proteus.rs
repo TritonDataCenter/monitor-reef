@@ -184,6 +184,15 @@ impl<T: Transport> ProteusClient<T> {
             .ensure_external_link(&EnsureExternalLinkRequest {
                 linkid,
                 link_name: link_name.to_string(),
+                // source_mac / gateway_mac default to all-zero here.
+                // Zeros are SAFE: opte_tx_to_external_link fails closed
+                // on an all-zero MAC (it drops rather than emit a frame
+                // with a bogus L2 src/dst). The REAL source_mac (the
+                // external NIC's own MAC) and gateway_mac (the upstream
+                // router MAC from neighbor discovery) must be resolved
+                // control-plane-side and seeded at M5 (a C-4b/M5
+                // followup) before the outbound ExternalTx path emits.
+                ..Default::default()
             })
             .with_context(|| format!("ensure Proteus external link {link_name} (linkid {linkid})"))
     }
