@@ -1360,6 +1360,37 @@ impl Store for FdbStore {
         serde_json::from_slice(&bytes).map_err(de_err("tenant"))
     }
 
+    async fn clear_tenant_storage_binding(&self, tenant_id: Uuid) -> Result<Tenant, StoreError> {
+        let by_id_key = keys::tenant_by_id_key(tenant_id);
+        let outcome: Result<Tenant, FdbBindingError> = fdb_txn!(self.db, [by_id_key], |tr| {
+            let raw = tr.get(&by_id_key, false).await?;
+            let bytes =
+                raw.ok_or_else(|| FdbBindingError::CustomError(Box::new(StoreError::NotFound)))?;
+            let mut tenant: Tenant = serde_json::from_slice(&bytes).map_err(|e| {
+                FdbBindingError::CustomError(Box::new(StoreError::Backend(format!(
+                    "tenant deserialize: {e}"
+                ))))
+            })?;
+            if tenant.storage_workspace_id.is_none() && tenant.storage_cluster_id.is_none() {
+                return Err(FdbBindingError::CustomError(Box::new(
+                    StoreError::Conflict(format!(
+                        "tenant {tenant_id} has no storage binding to clear"
+                    )),
+                )));
+            }
+            tenant.storage_workspace_id = None;
+            tenant.storage_cluster_id = None;
+            let value = serde_json::to_vec(&tenant).map_err(|e| {
+                FdbBindingError::CustomError(Box::new(StoreError::Backend(format!(
+                    "tenant serialize: {e}"
+                ))))
+            })?;
+            tr.set(&by_id_key, &value);
+            Ok(tenant)
+        });
+        outcome.map_err(StoreError::from)
+    }
+
     async fn set_tenant_storage_binding(
         &self,
         tenant_id: Uuid,

@@ -31024,6 +31024,11 @@ impl Client {
         builder::InitSiloTenantStorage::new(self)
     }
 
+    #[doc = "Drop the storage workspace binding from a tenant\n\nCounterpart to `init_silo_tenant_storage`. Archives the mantad workspace (refused if it still has buckets) and clears both binding columns on the Tenant row. Required before rebinding a tenant to a different cluster.\n\nFailure modes:\n\n* 412 `TenantStorageUnbound` — tenant has no binding to drop (operators see a distinct outcome from \"dropped just now\"). * 409 `Conflict` — mantad refused to delete the workspace because it still contains buckets. Drain first and retry. * 503 `StorageClusterUnreachable` — the cluster the tenant was bound to is down. * 404 — tenant does not exist or belongs to another silo.\n\nSends a `DELETE` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage`\n\n```ignore\nlet response = client.drop_silo_tenant_storage()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
+    pub fn drop_silo_tenant_storage(&self) -> builder::DropSiloTenantStorage<'_> {
+        builder::DropSiloTenantStorage::new(self)
+    }
+
     #[doc = "Create a tenant-bound operator account\n\nUsed to mint test / non-federated tenant principals so the forwarder workspace gate can be exercised end-to-end without requiring an external OIDC IdP. The created user lands with `is_root: false`, `tenant_id: Some(<path tenant>)`, empty `capabilities` (no `/v1/system/` access), and a bcrypt-hashed password.\n\nFederated users continue to land via the JIT-on-OIDC-login path; this endpoint is for environments without an IdP and for verification tooling.\n\nReturns 409 if `username` is already in use; 404 if the tenant doesn't exist or belongs to another silo.\n\nSends a `POST` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/users`\n\n```ignore\nlet response = client.create_silo_tenant_user()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_silo_tenant_user(&self) -> builder::CreateSiloTenantUser<'_> {
         builder::CreateSiloTenantUser::new(self)
@@ -40920,6 +40925,93 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "init_silo_tenant_storage",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::drop_silo_tenant_storage`]\n\n[`Client::drop_silo_tenant_storage`]: super::Client::drop_silo_tenant_storage"]
+    #[derive(Debug, Clone)]
+    pub struct DropSiloTenantStorage<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        tenant_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DropSiloTenantStorage<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Tenant>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                tenant_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/silos/{}/tenants/{}/storage",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&tenant_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "drop_silo_tenant_storage",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

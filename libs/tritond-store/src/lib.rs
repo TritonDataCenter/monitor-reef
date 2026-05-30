@@ -429,6 +429,21 @@ pub trait Store: Send + Sync + 'static {
         storage_cluster_id: Uuid,
     ) -> Result<Tenant, StoreError>;
 
+    /// Clear the storage workspace binding on an existing tenant row.
+    ///
+    /// Counterpart to [`Store::set_tenant_storage_binding`]. Used by
+    /// the `tcadm tenant drop-storage` flow after the mantad
+    /// workspace has been archived. Both binding columns return to
+    /// `None`; the tenant becomes unbound and the forwarder layer
+    /// will 412 on any S3 op until a fresh `init-storage` runs.
+    ///
+    /// Returns [`StoreError::NotFound`] if the tenant doesn't
+    /// exist; [`StoreError::Conflict`] if the tenant has no binding
+    /// to clear (idempotency is the handler's job — the store
+    /// refuses to write a no-op so operators see "already cleared"
+    /// as a distinct outcome from "cleared just now").
+    async fn clear_tenant_storage_binding(&self, tenant_id: Uuid) -> Result<Tenant, StoreError>;
+
     /// List every tenant owned by a silo. Returns an empty Vec
     /// (not NotFound) when the silo exists but has no tenants;
     /// returns NotFound when the silo itself doesn't exist.

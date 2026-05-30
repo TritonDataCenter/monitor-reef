@@ -2679,6 +2679,32 @@ pub trait TritondApi {
         path: Path<SiloTenantPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
+    /// Drop the storage workspace binding from a tenant.
+    ///
+    /// Counterpart to `init_silo_tenant_storage`. Archives the
+    /// mantad workspace (refused if it still has buckets) and
+    /// clears both binding columns on the Tenant row. Required
+    /// before rebinding a tenant to a different cluster.
+    ///
+    /// Failure modes:
+    ///
+    /// * 412 `TenantStorageUnbound` — tenant has no binding to drop
+    ///   (operators see a distinct outcome from "dropped just now").
+    /// * 409 `Conflict` — mantad refused to delete the workspace
+    ///   because it still contains buckets. Drain first and retry.
+    /// * 503 `StorageClusterUnreachable` — the cluster the tenant
+    ///   was bound to is down.
+    /// * 404 — tenant does not exist or belongs to another silo.
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}/storage",
+        tags = ["silos", "tenants"],
+    }]
+    async fn drop_silo_tenant_storage(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantPath>,
+    ) -> Result<HttpResponseOk<Tenant>, HttpError>;
+
     /// Create a tenant-bound operator account.
     ///
     /// Used to mint test / non-federated tenant principals so the

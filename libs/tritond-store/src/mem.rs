@@ -901,6 +901,22 @@ impl Store for MemStore {
         Ok(tenant.clone())
     }
 
+    async fn clear_tenant_storage_binding(&self, tenant_id: Uuid) -> Result<Tenant, StoreError> {
+        let mut guard = self.inner.write().await;
+        let tenant = guard
+            .tenants_by_id
+            .get_mut(&tenant_id)
+            .ok_or(StoreError::NotFound)?;
+        if tenant.storage_workspace_id.is_none() && tenant.storage_cluster_id.is_none() {
+            return Err(StoreError::Conflict(format!(
+                "tenant {tenant_id} has no storage binding to clear"
+            )));
+        }
+        tenant.storage_workspace_id = None;
+        tenant.storage_cluster_id = None;
+        Ok(tenant.clone())
+    }
+
     async fn list_tenants_in_silo(&self, silo_id: Uuid) -> Result<Vec<Tenant>, StoreError> {
         let guard = self.inner.read().await;
         if !guard.silos_by_id.contains_key(&silo_id) {

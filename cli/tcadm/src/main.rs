@@ -551,6 +551,18 @@ enum TenantCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Drop the storage workspace binding from a tenant.
+    ///
+    /// Counterpart to `init-storage`. Archives the mantad
+    /// workspace (refused if it still has buckets) and clears
+    /// both binding columns. Use this before rebinding a tenant
+    /// to a different cluster, or when retiring a cluster.
+    DropStorage {
+        silo_id: Uuid,
+        tenant_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
     /// Mint a tenant-bound operator user.
     ///
     /// Lands a User with `tenant_id` set to the tenant on the URL,
@@ -2556,6 +2568,14 @@ async fn main() -> Result<()> {
                 json,
             } => {
                 commands::tenant_init_storage(cli.endpoint, cli.api_key, silo_id, tenant_id, json)
+                    .await
+            }
+            TenantCommand::DropStorage {
+                silo_id,
+                tenant_id,
+                json,
+            } => {
+                commands::tenant_drop_storage(cli.endpoint, cli.api_key, silo_id, tenant_id, json)
                     .await
             }
             TenantCommand::CreateUser {

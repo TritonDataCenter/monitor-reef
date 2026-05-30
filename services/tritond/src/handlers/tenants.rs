@@ -548,6 +548,177 @@ pub(crate) async fn delete_silo_tenant(
     Ok(HttpResponseDeleted())
 }
 
+/// Drop the storage workspace binding from a tenant.
+///
+/// Flow:
+///   1. Authn/authz as TenantCreate in silo (same right that lets
+///      the operator init the binding; symmetric).
+///   2. Cross-silo defence + 412 if the tenant has no binding.
+///   3. Resolve the bound cluster + build a mantad client.
+///   4. Pre-flight the cluster's last health probe; 503 if
+///      Unreachable.
+///   5. mantad.delete_workspace — 409 propagates if the
+///      workspace still has buckets.
+///   6. clear_tenant_storage_binding — write None/None on the
+///      tenant row.
+pub(crate) async fn drop_silo_tenant_storage(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<SiloTenantPath>,
+) -> Result<HttpResponseOk<Tenant>, HttpError> {
+    let ctx = rqctx.context();
+    let SiloTenantPath { silo_id, tenant_id } = path.into_inner();
+    let principal = authenticate_and_authorize_in_silo(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::TenantCreate,
+        silo_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+
+    let tenant = ctx
+        .store
+        .get_tenant(tenant_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if tenant.silo_id != silo_id {
+        return Err(HttpError::for_not_found(
+            Some("NotFound".to_string()),
+            format!("tenant {tenant_id} not found in silo {silo_id}"),
+        ));
+    }
+    let (workspace_uuid, cluster_id) =
+        match (tenant.storage_workspace_id, tenant.storage_cluster_id) {
+            (Some(w), Some(c)) => (w, c),
+            _ => {
+                return Err(HttpError::for_client_error(
+                    Some("TenantStorageUnbound".to_string()),
+                    ClientErrorStatusCode::PRECONDITION_FAILED,
+                    format!("tenant {tenant_id} has no storage binding to drop"),
+                ));
+            }
+        };
+
+    let (cluster, client) = match crate::storage::client_for(&ctx.store, cluster_id).await {
+        Ok(pair) => pair,
+        Err(http_err) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::TenantCreate,
+                    request_id,
+                    Some(format!("Tenant::\"{tenant_id}\"")),
+                    AuditOutcome::ServerError {
+                        message: format!("storage cluster {cluster_id} unresolvable: {http_err}"),
+                    },
+                    serde_json::json!({
+                        "silo_id": silo_id,
+                        "tenant_id": tenant_id,
+                        "storage_cluster_id": cluster_id,
+                        "stage": "drop_storage.client_for",
+                    }),
+                )
+                .await;
+            return Err(http_err);
+        }
+    };
+
+    if cluster.status == tritond_store::StorageClusterStatus::Unreachable {
+        let msg = format!(
+            "storage cluster {} ({}) last health probe was Unreachable; refresh with `tcadm \
+             storage health {}` and retry",
+            cluster.name, cluster.id, cluster.id
+        );
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::TenantCreate,
+                request_id,
+                Some(format!("Tenant::\"{tenant_id}\"")),
+                AuditOutcome::ServerError {
+                    message: msg.clone(),
+                },
+                serde_json::json!({
+                    "silo_id": silo_id,
+                    "tenant_id": tenant_id,
+                    "storage_cluster_id": cluster.id,
+                    "cluster_status": "unreachable",
+                    "stage": "drop_storage.preflight",
+                }),
+            )
+            .await;
+        return Err(HttpError::for_unavail(
+            Some("StorageClusterUnreachable".to_string()),
+            msg,
+        ));
+    }
+
+    let workspace_name = format!("t-{}", workspace_uuid.simple());
+    if let Err(e) = client.delete_workspace(&workspace_name).await {
+        let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::TenantCreate,
+                request_id,
+                Some(format!("Tenant::\"{tenant_id}\"")),
+                audit_outcome,
+                serde_json::json!({
+                    "silo_id": silo_id,
+                    "tenant_id": tenant_id,
+                    "storage_cluster_id": cluster.id,
+                    "workspace_name": workspace_name,
+                    "stage": "drop_storage.mantad.delete_workspace",
+                }),
+            )
+            .await;
+        return Err(http_err);
+    }
+
+    match ctx.store.clear_tenant_storage_binding(tenant_id).await {
+        Ok(updated) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::TenantCreate,
+                    request_id,
+                    Some(format!("Tenant::\"{}\"", updated.id)),
+                    AuditOutcome::Success {
+                        resource: Some(format!("Tenant::\"{}\"", updated.id)),
+                    },
+                    serde_json::json!({
+                        "silo_id": silo_id,
+                        "tenant_id": updated.id,
+                        "former_storage_cluster_id": cluster_id,
+                        "former_storage_workspace_id": workspace_uuid,
+                        "stage": "drop_storage.complete",
+                    }),
+                )
+                .await;
+            Ok(HttpResponseOk(updated))
+        }
+        Err(e) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::TenantCreate,
+                    request_id,
+                    Some(format!("Tenant::\"{tenant_id}\"")),
+                    store_error_to_audit_outcome(&e),
+                    serde_json::json!({
+                        "silo_id": silo_id,
+                        "tenant_id": tenant_id,
+                        "stage": "drop_storage.store.clear_tenant_storage_binding",
+                    }),
+                )
+                .await;
+            Err(store_error_to_http(e))
+        }
+    }
+}
+
 /// Create a tenant-bound operator account.
 ///
 /// Operator-driven user creation: lands a User with

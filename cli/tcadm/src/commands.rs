@@ -626,6 +626,33 @@ pub async fn tenant_create_user(
     Ok(())
 }
 
+/// Drop the storage workspace binding from a tenant.
+pub async fn tenant_drop_storage(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    tenant_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let tenant = client
+        .drop_silo_tenant_storage()
+        .silo_id(silo_id)
+        .tenant_id(tenant_id)
+        .send()
+        .await
+        .context("drop tenant storage binding")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&tenant)?);
+    } else {
+        println!("Dropped storage binding for tenant {tenant_id}");
+        println!("  (workspace archived on mantad; tenant row is now unbound)");
+    }
+    Ok(())
+}
+
 /// Retrofit a storage workspace binding onto an existing tenant.
 pub async fn tenant_init_storage(
     endpoint_override: Option<String>,
