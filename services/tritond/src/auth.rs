@@ -216,6 +216,38 @@ permit(
 ) when {
     principal has fleet_admin && principal.fleet_admin == true
 };
+
+@id("tenant-member-allows-storage-data-plane")
+permit(
+    principal,
+    action in [
+        Action::"storage_bucket_list",
+        Action::"storage_bucket_get",
+        Action::"storage_bucket_create",
+        Action::"storage_bucket_delete",
+        Action::"storage_user_list",
+        Action::"storage_user_get",
+        Action::"storage_user_create",
+        Action::"storage_user_delete",
+        Action::"storage_access_key_list",
+        Action::"storage_access_key_create",
+        Action::"storage_access_key_delete",
+        Action::"storage_user_policy_list",
+        Action::"storage_user_policy_get",
+        Action::"storage_user_policy_put",
+        Action::"storage_user_policy_delete",
+        Action::"storage_object_list",
+        Action::"storage_object_presign_get",
+        Action::"storage_object_presign_put",
+        Action::"storage_object_multipart_init",
+        Action::"storage_object_multipart_parts",
+        Action::"storage_object_multipart_complete",
+        Action::"storage_object_multipart_abort"
+    ],
+    resource
+) when {
+    principal has tenant_id
+};
 "#;
 
 /// Result of authenticating an inbound request.
