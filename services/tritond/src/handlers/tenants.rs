@@ -430,6 +430,66 @@ pub(crate) async fn get_silo_tenant(
     Ok(HttpResponseOk(tenant))
 }
 
+/// Archive a tenant's bound mantad workspace. Shared by
+/// `delete_silo_tenant` (tenant row about to be dropped) and
+/// `drop_silo_tenant_storage` (binding being cleared but tenant row
+/// retained).
+///
+/// Steps:
+///   1. Resolve the cluster + build a mantad client.
+///   2. Pre-flight the cluster's last health probe; 503 if
+///      `Unreachable`.
+///   3. `mantad.delete_workspace(t-{workspace_uuid_simple})`.
+///      A 404 is treated as benign success — the workspace was
+///      already archived out-of-band (prior partial-retry, manual
+///      cleanup) and the post-condition we care about ("workspace
+///      is gone") still holds.
+///
+/// Audit is the caller's responsibility. On failure the returned
+/// tuple carries the http error, a matching audit outcome, and a
+/// `stage` tag the caller stamps into its audit payload so the
+/// failure point is recoverable from the audit chain.
+async fn archive_tenant_workspace(
+    store: &Arc<dyn Store>,
+    cluster_id: Uuid,
+    workspace_uuid: Uuid,
+) -> Result<(), (HttpError, AuditOutcome, &'static str)> {
+    let (cluster, client) = match crate::storage::client_for(store, cluster_id).await {
+        Ok(pair) => pair,
+        Err(http_err) => {
+            let msg = format!("storage cluster {cluster_id} unresolvable: {http_err}");
+            return Err((
+                http_err,
+                AuditOutcome::ServerError { message: msg },
+                "archive.client_for",
+            ));
+        }
+    };
+
+    if cluster.status == tritond_store::StorageClusterStatus::Unreachable {
+        let msg = format!(
+            "storage cluster {} ({}) last health probe was Unreachable; refresh with `tcadm \
+             storage health {}` and retry",
+            cluster.name, cluster.id, cluster.id
+        );
+        return Err((
+            HttpError::for_unavail(Some("StorageClusterUnreachable".to_string()), msg.clone()),
+            AuditOutcome::ServerError { message: msg },
+            "archive.preflight",
+        ));
+    }
+
+    let workspace_name = format!("t-{}", workspace_uuid.simple());
+    match client.delete_workspace(&workspace_name).await {
+        Ok(()) => Ok(()),
+        Err(mantad_client::MantadClientError::Status { status: 404, .. }) => Ok(()),
+        Err(e) => {
+            let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+            Err((http_err, audit_outcome, "archive.mantad.delete_workspace"))
+        }
+    }
+}
+
 pub(crate) async fn delete_silo_tenant(
     rqctx: RequestContext<ApiContext>,
     path: Path<SiloTenantPath>,
@@ -457,67 +517,32 @@ pub(crate) async fn delete_silo_tenant(
     }
 
     // Archive the mantad workspace first. The Tenant row drops
-    // only after the workspace is gone (or was never there) so
-    // a 409 from mantad ("non-empty workspace") preserves the
-    // tenant for retry. Mirrors the create-side ordering: state
-    // on mantad leads, tritond's row follows.
+    // only after the workspace is gone (or was never there) so a
+    // 409 from mantad ("non-empty workspace") preserves the tenant
+    // for retry. Mirrors the create-side ordering: state on mantad
+    // leads, tritond's row follows.
     if let (Some(workspace_uuid), Some(cluster_id)) =
         (tenant.storage_workspace_id, tenant.storage_cluster_id)
+        && let Err((http_err, outcome, stage)) =
+            archive_tenant_workspace(&ctx.store, cluster_id, workspace_uuid).await
     {
-        let (_, client) = match crate::storage::client_for(&ctx.store, cluster_id).await {
-            Ok(pair) => pair,
-            Err(http_err) => {
-                ctx.audit
-                    .record_mutation(
-                        &principal,
-                        Action::TenantDelete,
-                        request_id,
-                        None,
-                        AuditOutcome::ServerError {
-                            message: format!(
-                                "bound storage cluster {cluster_id} unresolvable: {http_err}"
-                            ),
-                        },
-                        serde_json::json!({
-                            "silo_id": silo_id,
-                            "tenant_id": tenant_id,
-                            "storage_cluster_id": cluster_id,
-                            "stage": "storage.client_for",
-                        }),
-                    )
-                    .await;
-                return Err(http_err);
-            }
-        };
-        let workspace_name = format!("t-{}", workspace_uuid.simple());
-        match client.delete_workspace(&workspace_name).await {
-            Ok(()) => {}
-            // Workspace already archived on mantad (manual cleanup
-            // or earlier partial-retry success): proceed to drop
-            // the Tenant row. Anything else (including 409 for a
-            // non-empty workspace) surfaces unchanged.
-            Err(mantad_client::MantadClientError::Status { status: 404, .. }) => {}
-            Err(e) => {
-                let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
-                ctx.audit
-                    .record_mutation(
-                        &principal,
-                        Action::TenantDelete,
-                        request_id,
-                        None,
-                        audit_outcome,
-                        serde_json::json!({
-                            "silo_id": silo_id,
-                            "tenant_id": tenant_id,
-                            "storage_cluster_id": cluster_id,
-                            "storage_workspace_id": workspace_uuid,
-                            "stage": "mantad.delete_workspace",
-                        }),
-                    )
-                    .await;
-                return Err(http_err);
-            }
-        }
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::TenantDelete,
+                request_id,
+                None,
+                outcome,
+                serde_json::json!({
+                    "silo_id": silo_id,
+                    "tenant_id": tenant_id,
+                    "storage_cluster_id": cluster_id,
+                    "storage_workspace_id": workspace_uuid,
+                    "stage": stage,
+                }),
+            )
+            .await;
+        return Err(http_err);
     }
 
     // TODO: today's `Store::delete_tenant` is permissive — it
@@ -554,12 +579,13 @@ pub(crate) async fn delete_silo_tenant(
 ///   1. Authn/authz as TenantCreate in silo (same right that lets
 ///      the operator init the binding; symmetric).
 ///   2. Cross-silo defence + 412 if the tenant has no binding.
-///   3. Resolve the bound cluster + build a mantad client.
-///   4. Pre-flight the cluster's last health probe; 503 if
-///      Unreachable.
-///   5. mantad.delete_workspace — 409 propagates if the
-///      workspace still has buckets.
-///   6. clear_tenant_storage_binding — write None/None on the
+///   3. `archive_tenant_workspace` — shared helper that resolves
+///      the cluster, pre-flights its health probe (503 if
+///      Unreachable), and calls `mantad.delete_workspace`. 409
+///      from mantad ("non-empty workspace") propagates so the
+///      caller has to drain buckets before retrying. 404 is
+///      tolerated (workspace already archived out-of-band).
+///   4. `clear_tenant_storage_binding` — write None/None on the
 ///      tenant row.
 pub(crate) async fn drop_silo_tenant_storage(
     rqctx: RequestContext<ApiContext>,
@@ -601,76 +627,23 @@ pub(crate) async fn drop_silo_tenant_storage(
             }
         };
 
-    let (cluster, client) = match crate::storage::client_for(&ctx.store, cluster_id).await {
-        Ok(pair) => pair,
-        Err(http_err) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::TenantCreate,
-                    request_id,
-                    Some(format!("Tenant::\"{tenant_id}\"")),
-                    AuditOutcome::ServerError {
-                        message: format!("storage cluster {cluster_id} unresolvable: {http_err}"),
-                    },
-                    serde_json::json!({
-                        "silo_id": silo_id,
-                        "tenant_id": tenant_id,
-                        "storage_cluster_id": cluster_id,
-                        "stage": "drop_storage.client_for",
-                    }),
-                )
-                .await;
-            return Err(http_err);
-        }
-    };
-
-    if cluster.status == tritond_store::StorageClusterStatus::Unreachable {
-        let msg = format!(
-            "storage cluster {} ({}) last health probe was Unreachable; refresh with `tcadm \
-             storage health {}` and retry",
-            cluster.name, cluster.id, cluster.id
-        );
-        ctx.audit
-            .record_mutation(
-                &principal,
-                Action::TenantCreate,
-                request_id,
-                Some(format!("Tenant::\"{tenant_id}\"")),
-                AuditOutcome::ServerError {
-                    message: msg.clone(),
-                },
-                serde_json::json!({
-                    "silo_id": silo_id,
-                    "tenant_id": tenant_id,
-                    "storage_cluster_id": cluster.id,
-                    "cluster_status": "unreachable",
-                    "stage": "drop_storage.preflight",
-                }),
-            )
-            .await;
-        return Err(HttpError::for_unavail(
-            Some("StorageClusterUnreachable".to_string()),
-            msg,
-        ));
-    }
-
     let workspace_name = format!("t-{}", workspace_uuid.simple());
-    if let Err(e) = client.delete_workspace(&workspace_name).await {
-        let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+    if let Err((http_err, outcome, stage)) =
+        archive_tenant_workspace(&ctx.store, cluster_id, workspace_uuid).await
+    {
         ctx.audit
             .record_mutation(
                 &principal,
                 Action::TenantCreate,
                 request_id,
                 Some(format!("Tenant::\"{tenant_id}\"")),
-                audit_outcome,
+                outcome,
                 serde_json::json!({
                     "silo_id": silo_id,
                     "tenant_id": tenant_id,
-                    "storage_cluster_id": cluster.id,
+                    "storage_cluster_id": cluster_id,
                     "workspace_name": workspace_name,
-                    "stage": "drop_storage.mantad.delete_workspace",
+                    "stage": stage,
                 }),
             )
             .await;
