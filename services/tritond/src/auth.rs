@@ -217,6 +217,16 @@ permit(
     principal has fleet_admin && principal.fleet_admin == true
 };
 
+@id("storage-admin-allows-cross-tenant-view")
+permit(
+    principal,
+    action == Action::"workspace_list_across_tenants",
+    resource
+) when {
+    principal has capabilities &&
+    principal.capabilities.contains("storage-admin")
+};
+
 @id("tenant-member-allows-storage-data-plane")
 permit(
     principal,
@@ -353,6 +363,26 @@ impl Principal {
                     RestrictedExpression::new_string(tenant_id.to_string()),
                 );
             }
+        }
+        // Surface the per-user capability set to Cedar so policy
+        // rules can permit actions on `principal.capabilities.contains(...)`.
+        // Strings match the `Capability` enum's serde kebab-case
+        // serialisation ("storage-admin", "system-read", ...).
+        if let Principal::Operator { capabilities, .. } = self {
+            let caps: Vec<RestrictedExpression> = capabilities
+                .iter()
+                .map(|cap| {
+                    let s = serde_json::to_value(cap)
+                        .ok()
+                        .and_then(|v| v.as_str().map(str::to_string))
+                        .unwrap_or_default();
+                    RestrictedExpression::new_string(s)
+                })
+                .collect();
+            attrs.insert(
+                "capabilities".to_string(),
+                RestrictedExpression::new_set(caps),
+            );
         }
         Entity::new(uid, attrs, HashSet::new()).context("constructing principal entity")
     }
