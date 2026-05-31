@@ -478,6 +478,20 @@ pub(crate) fn objects_query_to(q: tritond_api::StorageObjectsQuery) -> mantad_cl
 /// Mint a SigV4 query-string-authenticated URL the browser can hand
 /// directly to mantad's S3 data plane.
 ///
+/// `workspace` chooses which credential signs the URL:
+///   * `Some(name)` — fetches the per-workspace presigner credential
+///     from mantad via the in-process [`PresignerCache`] (Phase 2 of
+///     the data-plane workspace gate). The resulting URL
+///     authenticates on mantad as `CallerContext::Iam { workspace,
+///     .. }`, so the gate fires and a malicious caller cannot
+///     rewrite the URL to point at another workspace's bucket
+///     without breaking the signature *and* failing the gate.
+///   * `None` — falls back to the cluster-level root presigner
+///     (`cluster.presigner_access_key_id` / `..._secret`). The
+///     resulting URL authenticates as root on mantad and bypasses
+///     the workspace gate. Used for operator / fleet-admin tooling
+///     (e.g. unscoped presigns by a fleet operator).
+///
 /// Returns:
 ///
 /// * `404` when the cluster id is unknown.
@@ -493,7 +507,9 @@ pub(crate) fn objects_query_to(q: tritond_api::StorageObjectsQuery) -> mantad_cl
 /// follow-up) the multipart per-part URL minter.
 pub async fn mint_presigned_url(
     store: &Arc<dyn Store>,
+    presigner_cache: &crate::presigner_cache::SharedPresignerCache,
     cluster_id: Uuid,
+    workspace: Option<&str>,
     method: &str,
     bucket: &str,
     key: &str,
@@ -525,17 +541,35 @@ pub async fn mint_presigned_url(
             ),
         )
     })?;
-    let access_key_id = cluster
-        .presigner_access_key_id
-        .as_deref()
-        .ok_or_else(|| presigner_unconfigured(cluster.id))?;
-    let secret_access_key = cluster
-        .presigner_secret_access_key
-        .as_deref()
-        .ok_or_else(|| presigner_unconfigured(cluster.id))?;
+
+    // Per-workspace path (preferred): the caller is bound to a
+    // workspace, so sign with a workspace-scoped key. Cluster fallback
+    // (Unscoped / root) only when `workspace` is None.
+    let (access_key_id, secret_access_key) = if let Some(ws) = workspace {
+        let (_cluster, client) = client_for(store, cluster_id).await?;
+        let creds = presigner_cache
+            .get_or_fetch(cluster_id, ws, &client)
+            .await
+            .map_err(|e| {
+                let (http_err, _audit) = mantad_error_to_http_audit(e);
+                http_err
+            })?;
+        (creds.access_key_id, creds.secret_access_key)
+    } else {
+        let ak = cluster
+            .presigner_access_key_id
+            .clone()
+            .ok_or_else(|| presigner_unconfigured(cluster.id))?;
+        let sk = cluster
+            .presigner_secret_access_key
+            .clone()
+            .ok_or_else(|| presigner_unconfigured(cluster.id))?;
+        (ak, sk)
+    };
+
     let url = sigv4::presign_url(sigv4::PresignRequest {
-        access_key_id,
-        secret_access_key,
+        access_key_id: &access_key_id,
+        secret_access_key: &secret_access_key,
         region: &cluster.default_region,
         endpoint: s3_endpoint,
         method,

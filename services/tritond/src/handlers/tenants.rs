@@ -650,6 +650,13 @@ pub(crate) async fn drop_silo_tenant_storage(
         return Err(http_err);
     }
 
+    // Workspace is gone on mantad; the per-workspace presigner system
+    // user cascaded with it. Evict the in-process presigner cache so
+    // the next sign request after a re-bind goes through a fresh
+    // fetch, and a stale cache entry can never sign a URL for a
+    // workspace that no longer exists.
+    ctx.presigner_cache.evict(cluster_id, &workspace_name).await;
+
     match ctx.store.clear_tenant_storage_binding(tenant_id).await {
         Ok(updated) => {
             ctx.audit

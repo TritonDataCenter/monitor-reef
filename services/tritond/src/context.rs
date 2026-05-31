@@ -122,6 +122,11 @@ pub struct ApiContext {
     /// `GET /v1/agent/peer-invalidations` long-poll. Per-CN filtering
     /// lands when the resolver-served-log does.
     pub peer_invalidations: Arc<crate::peer_invalidations::Ring>,
+    /// Per-workspace presigner credential cache (Phase 2 of the S3
+    /// data-plane workspace gate). See
+    /// [`crate::presigner_cache::PresignerCache`] for the threat
+    /// model and TTL.
+    pub presigner_cache: crate::presigner_cache::SharedPresignerCache,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -214,6 +219,7 @@ impl ApiContext {
             saga,
             saga_wait_for_agent: true,
             peer_invalidations: Arc::new(crate::peer_invalidations::Ring::new()),
+            presigner_cache: Arc::new(crate::presigner_cache::PresignerCache::new()),
         }
     }
 
