@@ -227,6 +227,15 @@ def main() -> int:
         "--cleanup-tenant",
         help="Cleanup an orphan tenant id from a prior failed run, then exit.",
     )
+    ap.add_argument(
+        "--skip-n4w7-workaround",
+        action="store_true",
+        help="Skip the explicit presigner-system user DELETE before "
+             "drop-storage. Use on a build where bd monitor-reef-n4w7 "
+             "is fixed (archive_tenant_workspace cascades the "
+             "presigner user itself); proves drop-storage handles "
+             "the full cascade end-to-end.",
+    )
     args = ap.parse_args()
     fails = 0
     host = args.mantad_host
@@ -290,16 +299,20 @@ def main() -> int:
 
     # Workaround for bd monitor-reef-n4w7: explicitly delete the
     # presigner-system user so the workspace is empty by mantad's
-    # standards. Once n4w7 is fixed (cascade on the mantad side, or
-    # explicit delete-user on the tritond side), this DELETE call
-    # can be removed and drop-storage alone will exercise the
-    # cache eviction path.
-    s, body = delete_presigner_user(host, admin_token, cluster_id, workspace)
-    if s not in (200, 204):
-        print(f"  FAIL pre-drop delete presigner-{workspace[:16]}... -> {s}: {body[:200]}")
-        cleanup_orphan_tenant(host, admin_token, cluster_id, silo_id, tenant_id)
-        return fails + 1
-    print(f"  pre-drop workaround: deleted presigner-{workspace[:16]}... (n4w7 workaround)")
+    # standards. Skipped with --skip-n4w7-workaround on a build
+    # where archive_tenant_workspace cascades the presigner user
+    # itself; that path proves drop-storage handles the full
+    # cascade end-to-end without external help.
+    if args.skip_n4w7_workaround:
+        print("  skipping n4w7 workaround (--skip-n4w7-workaround): "
+              "drop-storage must cascade the presigner-system user itself")
+    else:
+        s, body = delete_presigner_user(host, admin_token, cluster_id, workspace)
+        if s not in (200, 204):
+            print(f"  FAIL pre-drop delete presigner-{workspace[:16]}... -> {s}: {body[:200]}")
+            cleanup_orphan_tenant(host, admin_token, cluster_id, silo_id, tenant_id)
+            return fails + 1
+        print(f"  pre-drop workaround: deleted presigner-{workspace[:16]}... (n4w7 workaround)")
 
     # Drop the storage binding. With the presigner gone, mantad's
     # delete_workspace succeeds; tritond's handler then calls

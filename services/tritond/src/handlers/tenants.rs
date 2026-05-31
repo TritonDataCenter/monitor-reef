@@ -439,7 +439,16 @@ pub(crate) async fn get_silo_tenant(
 ///   1. Resolve the cluster + build a mantad client.
 ///   2. Pre-flight the cluster's last health probe; 503 if
 ///      `Unreachable`.
-///   3. `mantad.delete_workspace(t-{workspace_uuid_simple})`.
+///   3. Delete the Phase 2 `presigner-{workspace}` IAM user.
+///      Mantad's `delete_workspace` refuses to archive a workspace
+///      that still has IAM users; the presigner-system user that
+///      Phase 2 minted on workspace creation counts. We delete it
+///      explicitly here so the cascade is symmetric: tritond
+///      provisioned it on init, tritond tears it down on archive.
+///      404 is tolerated — the user may already be gone if a
+///      prior partial-retry got this far, or if an operator
+///      cleaned up manually.
+///   4. `mantad.delete_workspace(t-{workspace_uuid_simple})`.
 ///      A 404 is treated as benign success — the workspace was
 ///      already archived out-of-band (prior partial-retry, manual
 ///      cleanup) and the post-condition we care about ("workspace
@@ -480,6 +489,19 @@ async fn archive_tenant_workspace(
     }
 
     let workspace_name = format!("t-{}", workspace_uuid.simple());
+    let presigner_user = format!("presigner-{workspace_name}");
+    match client
+        .delete_user(&presigner_user, Some(&workspace_name))
+        .await
+    {
+        Ok(()) => {}
+        Err(mantad_client::MantadClientError::Status { status: 404, .. }) => {}
+        Err(e) => {
+            let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+            return Err((http_err, audit_outcome, "archive.mantad.delete_presigner_user"));
+        }
+    }
+
     match client.delete_workspace(&workspace_name).await {
         Ok(()) => Ok(()),
         Err(mantad_client::MantadClientError::Status { status: 404, .. }) => Ok(()),
