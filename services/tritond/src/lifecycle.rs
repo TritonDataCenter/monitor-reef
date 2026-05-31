@@ -746,6 +746,7 @@ mod tests {
             instance_id,
             fip_addr: "192.0.2.10".into(),
             external_nic_tag: Some("external".into()),
+            vlan_id: Some(2003),
             generation: 2,
         });
         let outcome = JobOutcome::Failed {

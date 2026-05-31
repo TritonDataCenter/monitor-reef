@@ -102,6 +102,19 @@ async fn resolve_external_nic_tag_name(
     store.get_nic_tag(tag_id).await.ok().map(|t| t.name)
 }
 
+/// Resolve a FIP's VLAN from its external subnet (`network_id`). The
+/// nic_tag is the physical-link identity; the VLAN lives on the network
+/// (legacy SDC model), so the agent stamps it on the per-(link,vlan)
+/// `fipN` vnic. `None` for a legacy FIP with no `network_id`, an
+/// untagged external subnet, or a subnet that no longer resolves.
+pub(crate) async fn resolve_external_subnet_vlan(
+    store: &dyn tritond_store::Store,
+    fip: &FloatingIp,
+) -> Option<u16> {
+    let net_id = fip.network_id?;
+    store.get_subnet(net_id).await.ok().and_then(|s| s.vlan_id)
+}
+
 // ===============================================================
 // floating-ip-allocate
 // ===============================================================
@@ -366,6 +379,7 @@ async fn enqueue_claim(ctx: Ctx) -> Result<ProvisioningJob, ActionError> {
                 .await
                 .map_err(store_err_to_action_err)?;
             let external_nic_tag = resolve_external_nic_tag_name(&*store, &fip).await;
+            let vlan_id = resolve_external_subnet_vlan(&*store, &fip).await;
             let instance_id = params
                 .target_instance_id
                 .unwrap_or(fip.attached_to.as_ref().map_or(host_cn, |a| a.instance_id));
@@ -377,6 +391,7 @@ async fn enqueue_claim(ctx: Ctx) -> Result<ProvisioningJob, ActionError> {
                         instance_id,
                         fip_addr: fip.address.to_string(),
                         external_nic_tag,
+                        vlan_id,
                         generation,
                     },
                     target_cn_uuid: Some(host_cn),
@@ -409,12 +424,14 @@ async fn enqueue_claim_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
         return Ok(());
     };
     let external_nic_tag = resolve_external_nic_tag_name(&*store, &fip).await;
+    let vlan_id = resolve_external_subnet_vlan(&*store, &fip).await;
     if let Err(e) = store
         .enqueue_job(NewJob {
             kind: JobKind::FipRelease {
                 floating_ip_id: params.fip_id,
                 fip_addr: fip.address.to_string(),
                 external_nic_tag,
+                vlan_id,
                 hosted_cn: host_cn,
             },
             target_cn_uuid: Some(host_cn),
@@ -552,9 +569,12 @@ async fn release_detach(ctx: Ctx) -> Result<Option<ProvisioningJob>, ActionError
                     .map(|f| f.address.to_string())
                     .map_err(store_err_to_action_err)?,
             };
-            let external_nic_tag = match store.get_floating_ip(params.fip_id).await {
-                Ok(f) => resolve_external_nic_tag_name(&*store, &f).await,
-                Err(_) => None,
+            let (external_nic_tag, vlan_id) = match store.get_floating_ip(params.fip_id).await {
+                Ok(f) => (
+                    resolve_external_nic_tag_name(&*store, &f).await,
+                    resolve_external_subnet_vlan(&*store, &f).await,
+                ),
+                Err(_) => (None, None),
             };
             let job = store
                 .enqueue_job(NewJob {
@@ -562,6 +582,7 @@ async fn release_detach(ctx: Ctx) -> Result<Option<ProvisioningJob>, ActionError
                         floating_ip_id: params.fip_id,
                         fip_addr,
                         external_nic_tag,
+                        vlan_id,
                         hosted_cn: host_cn,
                     },
                     target_cn_uuid: Some(host_cn),

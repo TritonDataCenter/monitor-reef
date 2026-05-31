@@ -721,6 +721,7 @@ async fn reconcile_hosted_fips(store: &dyn Store, cn: Uuid) -> Result<usize, Sto
             continue;
         };
         let external_nic_tag = resolve_external_nic_tag_name(store, fip).await;
+        let vlan_id = crate::sagas::floating_ip::resolve_external_subnet_vlan(store, fip).await;
         // Bump the port generation so the re-applied blueprint lands at
         // a strictly-greater generation and is not swallowed as a
         // same-generation no-op.
@@ -733,6 +734,7 @@ async fn reconcile_hosted_fips(store: &dyn Store, cn: Uuid) -> Result<usize, Sto
                     instance_id: attachment.instance_id,
                     fip_addr: fip.address.to_string(),
                     external_nic_tag,
+                    vlan_id,
                     generation,
                 },
                 target_cn_uuid: Some(cn),

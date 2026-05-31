@@ -2321,6 +2321,12 @@ pub enum JobKind {
         instance_id: Uuid,
         fip_addr: String,
         external_nic_tag: Option<String>,
+        /// VLAN of the FIP's external subnet. The nic_tag is the
+        /// physical-link identity (resolved to a link on the CN); the
+        /// VLAN lives on the network (legacy SDC model). The agent
+        /// creates/reuses the per-(link,vlan) `fipN` vnic over the
+        /// nic_tag's link. `None` = untagged.
+        vlan_id: Option<u16>,
         generation: u64,
     },
     /// Withdraw a CN-terminated floating IP from a CN. Enqueued by the
@@ -2336,6 +2342,9 @@ pub enum JobKind {
         floating_ip_id: Uuid,
         fip_addr: String,
         external_nic_tag: Option<String>,
+        /// VLAN of the FIP's external subnet, so the agent finds the
+        /// same `fipN` vnic the alias was added to on claim.
+        vlan_id: Option<u16>,
         hosted_cn: Uuid,
     },
     /// Apply or update a firehyve/fhrun edge instance on the
@@ -2703,6 +2712,7 @@ mod job_kind_tests {
             instance_id,
             fip_addr: "192.0.2.10".to_string(),
             external_nic_tag: Some("external".to_string()),
+            vlan_id: Some(2003),
             generation: 4,
         };
         assert_eq!(kind.instance_id(), Some(instance_id));
@@ -2728,6 +2738,7 @@ mod job_kind_tests {
             floating_ip_id,
             fip_addr: "192.0.2.10".to_string(),
             external_nic_tag: None,
+            vlan_id: None,
             hosted_cn,
         };
         assert_eq!(kind.instance_id(), None);

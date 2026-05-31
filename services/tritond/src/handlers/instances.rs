@@ -1728,6 +1728,8 @@ pub(crate) async fn delete_floating_ip_v1(
     // `hosted_cn = None` and enqueues nothing.
     if let Some(hosted_cn) = fip.hosted_cn {
         let external_nic_tag = resolve_external_nic_tag_name(&*ctx.store, &fip).await;
+        let vlan_id =
+            crate::sagas::floating_ip::resolve_external_subnet_vlan(&*ctx.store, &fip).await;
         if let Err(e) = ctx
             .store
             .enqueue_job(NewJob {
@@ -1735,6 +1737,7 @@ pub(crate) async fn delete_floating_ip_v1(
                     floating_ip_id,
                     fip_addr: fip.address.to_string(),
                     external_nic_tag,
+                    vlan_id,
                     hosted_cn,
                 },
                 target_cn_uuid: Some(hosted_cn),

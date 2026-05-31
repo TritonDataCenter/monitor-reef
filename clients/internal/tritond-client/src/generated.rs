@@ -4936,6 +4936,15 @@ pub mod types {
     #[doc = "        \"nic_id\": {"]
     #[doc = "          \"type\": \"string\","]
     #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"vlan_id\": {"]
+    #[doc = "          \"description\": \"VLAN of the FIP's external subnet. The nic_tag is the physical-link identity (resolved to a link on the CN); the VLAN lives on the network (legacy SDC model). The agent creates/reuses the per-(link,vlan) `fipN` vnic over the nic_tag's link. `None` = untagged.\","]
+    #[doc = "          \"type\": ["]
+    #[doc = "            \"integer\","]
+    #[doc = "            \"null\""]
+    #[doc = "          ],"]
+    #[doc = "          \"format\": \"uint16\","]
+    #[doc = "          \"minimum\": 0.0"]
     #[doc = "        }"]
     #[doc = "      }"]
     #[doc = "    },"]
@@ -4971,6 +4980,15 @@ pub mod types {
     #[doc = "          \"enum\": ["]
     #[doc = "            \"fip_release\""]
     #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"vlan_id\": {"]
+    #[doc = "          \"description\": \"VLAN of the FIP's external subnet, so the agent finds the same `fipN` vnic the alias was added to on claim.\","]
+    #[doc = "          \"type\": ["]
+    #[doc = "            \"integer\","]
+    #[doc = "            \"null\""]
+    #[doc = "          ],"]
+    #[doc = "          \"format\": \"uint16\","]
+    #[doc = "          \"minimum\": 0.0"]
     #[doc = "        }"]
     #[doc = "      }"]
     #[doc = "    },"]
@@ -5284,6 +5302,9 @@ pub mod types {
             generation: u64,
             instance_id: ::uuid::Uuid,
             nic_id: ::uuid::Uuid,
+            #[doc = "VLAN of the FIP's external subnet. The nic_tag is the physical-link identity (resolved to a link on the CN); the VLAN lives on the network (legacy SDC model). The agent creates/reuses the per-(link,vlan) `fipN` vnic over the nic_tag's link. `None` = untagged."]
+            #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+            vlan_id: ::std::option::Option<u16>,
         },
         #[doc = "Withdraw a CN-terminated floating IP from a CN. Enqueued by the attach saga's undo, the detach saga, the FIP-delete-while-hosted path, and the instance-delete cascade — always pinned to the CN that was hosting the termination. The agent invalidates the `hosted_fips` entry, removes the ipadm alias, and (for a surviving port) re-applies the withdrawn blueprint. Carries no `instance_id`: by release time the attachment / instance may already be gone, so `target_id()` falls back to `floating_ip_id`."]
         #[serde(rename = "fip_release")]
@@ -5293,6 +5314,9 @@ pub mod types {
             fip_addr: ::std::string::String,
             floating_ip_id: ::uuid::Uuid,
             hosted_cn: ::uuid::Uuid,
+            #[doc = "VLAN of the FIP's external subnet, so the agent finds the same `fipN` vnic the alias was added to on claim."]
+            #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+            vlan_id: ::std::option::Option<u16>,
         },
         #[doc = "Apply or update a firehyve/fhrun edge instance on the target CN. The manifest is JSON bytes rendered by tritond from the EdgeCluster's desired state; the agent persists it to the host runtime path, asks fhrun/firehyve to converge, and reports realization for the carried EdgeCluster generation."]
         #[serde(rename = "edge_apply")]

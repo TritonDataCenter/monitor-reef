@@ -93,6 +93,7 @@ struct HostedFipWithdraw {
     hosted_cn: Uuid,
     fip_addr: String,
     external_nic_tag: Option<String>,
+    vlan_id: Option<u16>,
 }
 
 type LocalCtx = Ctx;
@@ -246,11 +247,21 @@ async fn snapshot_attachments(ctx: LocalCtx) -> Result<DeleteSnapshot, ActionErr
                         }
                         None => None,
                     };
+                    // The VLAN lives on the FIP's external subnet; resolve
+                    // it so the agent finds the same `fipN` vnic to remove
+                    // the alias from on release.
+                    let vlan_id = match f.network_id {
+                        Some(net_id) => {
+                            store.get_subnet(net_id).await.ok().and_then(|s| s.vlan_id)
+                        }
+                        None => None,
+                    };
                     hosted_fips.push(HostedFipWithdraw {
                         fip_id: f.id,
                         hosted_cn,
                         fip_addr: f.address.to_string(),
                         external_nic_tag,
+                        vlan_id,
                     });
                 }
             }
@@ -285,6 +296,7 @@ async fn detach_fips(ctx: LocalCtx) -> Result<(), ActionError> {
                             floating_ip_id: hosted.fip_id,
                             fip_addr: hosted.fip_addr.clone(),
                             external_nic_tag: hosted.external_nic_tag.clone(),
+                            vlan_id: hosted.vlan_id,
                             hosted_cn: hosted.hosted_cn,
                         },
                         target_cn_uuid: Some(hosted.hosted_cn),

@@ -13143,6 +13143,13 @@
               "nic_id": {
                 "type": "string",
                 "format": "uuid"
+              },
+              "vlan_id": {
+                "nullable": true,
+                "description": "VLAN of the FIP's external subnet. The nic_tag is the physical-link identity (resolved to a link on the CN); the VLAN lives on the network (legacy SDC model). The agent creates/reuses the per-(link,vlan) `fipN` vnic over the nic_tag's link. `None` = untagged.",
+                "type": "integer",
+                "format": "uint16",
+                "minimum": 0
               }
             },
             "required": [
@@ -13178,6 +13185,13 @@
                 "enum": [
                   "fip_release"
                 ]
+              },
+              "vlan_id": {
+                "nullable": true,
+                "description": "VLAN of the FIP's external subnet, so the agent finds the same `fipN` vnic the alias was added to on claim.",
+                "type": "integer",
+                "format": "uint16",
+                "minimum": 0
               }
             },
             "required": [
