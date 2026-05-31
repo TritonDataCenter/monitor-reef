@@ -294,7 +294,7 @@ def main() -> int:
             Params={"Bucket": bucket_a, "Key": "phase2/cross-b.txt"},
             ExpiresIn=300,
         )
-        status, body = http_put(cross_b_url, b"cross-tenant attempt B→A")
+        status, body = http_put(cross_b_url, b"cross-tenant attempt B-to-A")
         if "NoSuchBucket" in body or status == 404:
             print(f"  OK   PUT bucket-a via t-B presigner blocked (status={status})")
         else:
