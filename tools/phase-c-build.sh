@@ -113,6 +113,20 @@ cp "$MONITOR_REEF/target/release/tcadm"   "$STAGE/bin/"
 cp "$MANTA_STORAGE/target/release/mantad" "$STAGE/bin/"
 cp "$MANTA_STORAGE/target/release/mantad-adm" "$STAGE/bin/"
 
+# Strip the binaries. illumos release builds carry debug symbols
+# even in --release profile; on the verify box one transfer was
+# burning minutes at the SmartOS GZ's scp throughput because
+# tritond was 60-90MB unstripped. Strip drops them to ~18MB
+# without changing runtime behavior. `|| true` keeps the build
+# going if `strip` isn't on PATH (e.g. freshly imported zone) —
+# the unstripped binaries still work, just over a slower wire.
+note "stripping binaries"
+for b in tritond tcadm mantad mantad-adm; do
+    if [ -f "$STAGE/bin/$b" ]; then
+        strip "$STAGE/bin/$b" 2>/dev/null || true
+    fi
+done
+
 # A starter mantad config the deploy script will patch with the real
 # admin token + FDB cluster path. Kept here so the bundle is
 # self-describing.

@@ -58,6 +58,14 @@ TCADM_BIN_DIR=/opt/triton/bin
 MANTAD_BIN_DIR=/opt/mantad/bin
 MANTAD_ETC_DIR=/opt/mantad/etc
 TOKEN_FILE=$MANTAD_ETC_DIR/admin-token
+# Persistent root SigV4 creds. Without these in the launch env
+# mantad disables SigV4 verification (dev-mode bypass), which
+# silently breaks the data-plane workspace gate at runtime —
+# every caller resolves as Anonymous and the gate skips the
+# workspace check. The file format is one line `<AKID> <SK>`
+# whitespace-separated (matches tools/setup-presigner.sh's
+# `awk '{print $1}' / '{print $2}'` extraction).
+ROOT_CREDS_FILE=$MANTAD_ETC_DIR/root-creds
 MANTAD_LOG=/var/log/mantad.log
 TRITOND_LOG=/var/log/tritond.log
 TRITOND_CONFIG="${TRITOND_CONFIG:-/etc/tritond/config.toml}"
@@ -135,6 +143,30 @@ umask 077
 printf '%s\n' "$ADMIN_TOKEN" > "$TOKEN_FILE"
 chmod 600 "$TOKEN_FILE"
 
+# ---------------------------------------------------------------------
+# 4b. Mantad root SigV4 credentials
+# ---------------------------------------------------------------------
+# Reuse an existing root-creds file if present (idempotent across
+# redeploys — bucket/AK rows on FDB still validate against the old
+# key). Generate fresh creds only on first deploy.
+if [ -f "$ROOT_CREDS_FILE" ]; then
+    note "reusing existing mantad root SigV4 creds at $ROOT_CREDS_FILE"
+    ROOT_AKID="$(awk '{print $1}' "$ROOT_CREDS_FILE")"
+    ROOT_SECRET="$(awk '{print $2}' "$ROOT_CREDS_FILE")"
+    if [ -z "$ROOT_AKID" ] || [ -z "$ROOT_SECRET" ]; then
+        fatal "$ROOT_CREDS_FILE exists but is malformed; expected '<AKID> <SK>' on one line"
+    fi
+else
+    note "generating fresh mantad root SigV4 credentials"
+    # 16 hex chars after the AKIA prefix mirrors AWS's 20-char AKID
+    # shape and keeps the value Roundtrip-stable through anything
+    # that uppercases ascii.
+    ROOT_AKID="AKIA$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n' | tr 'a-z' 'A-Z')"
+    ROOT_SECRET="$(od -An -N20 -tx1 /dev/urandom | tr -d ' \n')"
+    printf '%s %s\n' "$ROOT_AKID" "$ROOT_SECRET" > "$ROOT_CREDS_FILE"
+    chmod 600 "$ROOT_CREDS_FILE"
+fi
+
 if [ ! -f "$FDB_CLUSTER_FILE" ]; then
     fatal "FDB cluster file not found at $FDB_CLUSTER_FILE. Set FDB_CLUSTER_FILE=<path> and rerun."
 fi
@@ -146,8 +178,16 @@ fi
 # ---------------------------------------------------------------------
 # 5. Launch mantad
 # ---------------------------------------------------------------------
-note "launching mantad (--meta-plane=fdb, admin token gated)"
+note "launching mantad (--meta-plane=fdb, admin token gated, SigV4 enabled)"
+# MANTAD_ROOT_ACCESS_KEY_ID + MANTAD_ROOT_SECRET_ACCESS_KEY are
+# what flips mantad out of "dev-mode SigV4 bypass" and makes the
+# data-plane workspace gate load-bearing. Without them mantad
+# resolves every request as Anonymous and the workspace gate
+# (CallerContext::Anonymous -> bucket_visible_to=true) skips —
+# tenants can read each other's buckets.
 MANTAD_ADMIN_TOKEN="$ADMIN_TOKEN" \
+MANTAD_ROOT_ACCESS_KEY_ID="$ROOT_AKID" \
+MANTAD_ROOT_SECRET_ACCESS_KEY="$ROOT_SECRET" \
 MANTAD_META_PLANE=fdb \
 MANTAD_FDB_CLUSTER_FILE="$FDB_CLUSTER_FILE" \
 MANTAD_AUTO_MEMBERSHIP=true \
@@ -217,6 +257,16 @@ next:
       --surface s3 --json
 
   $TCADM_BIN_DIR/tcadm config set storage.default_s3_cluster_id <cluster-id-from-add>
+
+  # Configure the cluster-root presigner credentials (the fallback
+  # path for Unscoped / fleet-admin presigns; per-tenant presigns
+  # fetch their own per-workspace key via the Phase 2 cache).
+  $TCADM_BIN_DIR/tcadm storage cluster set-presigner <cluster-id> \\
+      --access-key-id \$(awk '{print \$1}' $ROOT_CREDS_FILE) \\
+      --secret-access-key-stdin \\
+      --s3-endpoint http://$(hostname):7443 \\
+      < \$(awk '{print \$2}' $ROOT_CREDS_FILE)
+  # (or use tools/setup-presigner.sh <cluster-id> http://<host>:7443)
 
   sh phase-c-verify.sh <silo-id>
 EOF

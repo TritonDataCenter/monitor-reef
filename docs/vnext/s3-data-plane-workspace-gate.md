@@ -336,12 +336,12 @@ Memory entries:
 - **mantad needs explicit `MANTAD_ROOT_ACCESS_KEY_ID` +
   `MANTAD_ROOT_SECRET_ACCESS_KEY`.** Otherwise it runs in dev mode
   with SigV4 verification disabled — any request claims any
-  access key id and the gate is bypassable. The restart script
-  `/tmp/restart-mantad.sh` on the test box generates these on
-  first run and persists them to `/opt/mantad/etc/root-creds`
-  (mode 600). Worth folding into
-  [`tools/phase-c-deploy.sh`](../../tools/phase-c-deploy.sh) as
-  a follow-up.
+  access key id and the gate is bypassable.
+  [`tools/phase-c-deploy.sh`](../../tools/phase-c-deploy.sh) §4b
+  now generates these on first deploy and persists them to
+  `/opt/mantad/etc/root-creds` (mode 600); subsequent deploys
+  reuse the existing file so bucket/AK rows on FDB still validate
+  against the same key across redeploys.
 - **Admin port on mantad is :7101 (internal), not :7443 (S3
   data-plane).** Bearer-auth headers on :7443 are rejected by the
   SigV4 verifier. mantad-adm has `--admin-url` defaulting to the
@@ -350,9 +350,10 @@ Memory entries:
   :7443 for legacy reasons. New admin routes (like Phase 2's
   presigner-provision and Phase 3's repair-workspace) live on
   :7101 only.
-- **`strip` the release mantad binary before scp**. 91 MB
-  unstripped → ~18 MB stripped; the difference matters when the
-  network to the test box is slow.
+- **`strip` the release binaries before scp** — folded into
+  [`tools/phase-c-build.sh`](../../tools/phase-c-build.sh) after
+  the staging copy. 91 MB unstripped → ~18 MB stripped; the
+  difference matters when the network to the test box is slow.
 - **Rollback chain on `192.168.1.182`**:
   `/opt/mantad/bin/mantad` (Phase 3) →
   `mantad.phase2` →
@@ -370,14 +371,20 @@ Memory entries:
 - [`tools/s3-presigner-workspace-verify.py`](../../tools/s3-presigner-workspace-verify.py) — Phase 2 verify script.
 - [`tools/s3-repair-workspace-verify.py`](../../tools/s3-repair-workspace-verify.py) — Phase 3 verify script.
 - [`tests/workspace_gate.rs`](../../../manta-storage/crates/mantas3/s3/tests/workspace_gate.rs) (manta-storage) — Phase 3b in-process integration test.
+- [`evidence/s3-presigner-cache-fallback-verify-20260531.md`](../../evidence/s3-presigner-cache-fallback-verify-20260531.md) — cache eviction + cluster-root fallback live verify.
+- [`tools/s3-presigner-cache-fallback-verify.py`](../../tools/s3-presigner-cache-fallback-verify.py) — verify script for the cache+fallback paths.
 
 ## Followups (out of scope)
 
 - **Push.** Both `surface-s3` branches are local-only per the
   standing "do not push" boundary.
-- **`phase-c-build.sh`** strip step + **`phase-c-deploy.sh`** root-
-  creds env wiring. Both surfaced as gotchas during this session's
-  deploys. One-liner each.
+- **bd `monitor-reef-n4w7`** — `drop_silo_tenant_storage` 409s on
+  the mantad-side cascade gap. The Phase 2 presigner-system user
+  isn't auto-cascaded by `delete_workspace`; the verify in
+  [`evidence/s3-presigner-cache-fallback-verify-20260531.md`](../../evidence/s3-presigner-cache-fallback-verify-20260531.md)
+  works around it. Fix is small (either auto-cascade `*-system`
+  users on mantad, or have tritond explicitly delete the
+  presigner-system user before delete_workspace).
 - **Operator runbook for `mantad-adm bucket repair-workspace`**: a
   procedure for mapping the legacy bucket list to their owning
   workspaces (currently a `mantad-adm bucket list` scan + manual
