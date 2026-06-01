@@ -460,9 +460,15 @@ pub(crate) fn create_bhyve_payload_with_nic_tags(
     let memory_mib = bytes_to_mib(instance.memory_bytes);
     let flexible_disk_size = pick_bhyve_disk_size_mib(&blueprint.disks, image);
     let mut customer_metadata = ssh_customer_metadata(blueprint);
+    let root_pw = root_pw_from_metadata(blueprint);
+    let permit_root_ssh = permit_root_ssh_from_metadata(blueprint);
     customer_metadata.insert(
         "cloud-init:user-data".to_string(),
-        serde_json::Value::String(render_nocloud_user_data(&blueprint.ssh_public_keys)),
+        serde_json::Value::String(render_nocloud_user_data(
+            &blueprint.ssh_public_keys,
+            root_pw.as_deref(),
+            permit_root_ssh,
+        )),
     );
     customer_metadata.insert(
         "cloud-init:meta-data".to_string(),
@@ -718,7 +724,11 @@ fn bytes_to_mib(bytes: u64) -> u64 {
     mib.max(64)
 }
 
-fn render_nocloud_user_data(ssh_keys: &[String]) -> String {
+fn render_nocloud_user_data(
+    ssh_keys: &[String],
+    root_pw: Option<&str>,
+    permit_root_ssh: bool,
+) -> String {
     let mut out = String::from("#cloud-config\ndisable_root: false\n");
     if !ssh_keys.is_empty() {
         out.push_str("ssh_authorized_keys:\n");
@@ -726,6 +736,34 @@ fn render_nocloud_user_data(ssh_keys: &[String]) -> String {
             out.push_str("  - ");
             out.push_str(key);
             out.push('\n');
+        }
+    }
+    // `root_pw` lives in internal_metadata (a SmartOS zone-brand concept
+    // the platform does NOT apply to a bhyve Linux guest), so for a
+    // cloud-init guest we set the root password via `chpasswd`. `type:
+    // text` takes the plaintext as-is (the value is already
+    // operator-visible in instance metadata); `expire: false` skips the
+    // force-change-on-first-login prompt. The password works at the
+    // CONSOLE unconditionally (break-glass).
+    //
+    // Reaching root over SSH with that password is gated behind the
+    // `instance/permit_root_ssh` opt-in: by default Ubuntu's
+    // `prohibit-password` refuses root password SSH, and we leave it
+    // there (use injected SSH keys for the normal path). When the
+    // operator opts in we enable `PasswordAuthentication` (`ssh_pwauth`)
+    // AND drop a `sshd_config.d` snippet flipping `PermitRootLogin` to
+    // `yes`, then reload — both are required, `ssh_pwauth` alone does not
+    // touch `PermitRootLogin`.
+    if let Some(pw) = root_pw {
+        out.push_str(
+            "chpasswd:\n  expire: false\n  users:\n    - name: root\n      type: text\n      password: ",
+        );
+        push_yaml_double_quoted(&mut out, pw);
+        out.push('\n');
+        if permit_root_ssh {
+            out.push_str(
+                "ssh_pwauth: true\nwrite_files:\n  - path: /etc/ssh/sshd_config.d/60-tritonagent-root.conf\n    content: \"PermitRootLogin yes\\n\"\nruncmd:\n  - [ systemctl, restart, ssh ]\n",
+            );
         }
     }
     // Ubuntu 26.04 (cloud-init 26.1) renders but refuses to APPLY the
@@ -737,6 +775,54 @@ fn render_nocloud_user_data(ssh_keys: &[String]) -> String {
     // Widening the apply policy to every `boot` event defeats the gate.
     out.push_str("updates:\n  network:\n    when:\n      - boot\n");
     out
+}
+
+/// Append `s` as a YAML double-quoted scalar, escaping `\` and `"` so an
+/// arbitrary password can't break out of the value (or the document).
+fn push_yaml_double_quoted(out: &mut String, s: &str) {
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            _ => out.push(c),
+        }
+    }
+    out.push('"');
+}
+
+/// The operator-set instance root password, stored as the
+/// `instance/root_pw` provision-metadata entry (`guest_visible=false`).
+/// `None` when unset.
+fn root_pw_from_metadata(blueprint: &ProvisioningBlueprint) -> Option<String> {
+    blueprint
+        .provision_metadata
+        .iter()
+        .find(|e| e.key == "instance/root_pw")
+        .map(|e| render_meta_value_as_string(&e.value))
+}
+
+/// Whether the operator opted this instance into root password SSH via
+/// the `instance/permit_root_ssh` metadata key. Absent (the default)
+/// means false: the root password is console-only break-glass, and SSH
+/// stays at Ubuntu's `prohibit-password`. Accepts a JSON bool `true` or
+/// the strings `true`/`1`/`yes`/`on` (case-insensitive); anything else,
+/// including a missing key, is false (fail-closed to the safer posture).
+fn permit_root_ssh_from_metadata(blueprint: &ProvisioningBlueprint) -> bool {
+    blueprint
+        .provision_metadata
+        .iter()
+        .find(|e| e.key == "instance/permit_root_ssh")
+        .is_some_and(|e| match &e.value {
+            serde_json::Value::Bool(b) => *b,
+            other => matches!(
+                render_meta_value_as_string(other)
+                    .trim()
+                    .to_ascii_lowercase()
+                    .as_str(),
+                "true" | "1" | "yes" | "on"
+            ),
+        })
 }
 
 fn render_nocloud_meta_data(instance_id: Uuid, hostname: &str) -> String {
@@ -796,7 +882,7 @@ mod tests {
     use super::*;
     use chrono::Utc;
     use std::net::Ipv4Addr;
-    use tritond_client::types::{DiskKind, ImageCompatibility, Instance, JobKind};
+    use tritond_client::types::{DiskKind, ImageCompatibility, Instance, JobKind, MetaEntry};
 
     fn fixture_uuid(byte: u8) -> Uuid {
         Uuid::from_bytes([byte; 16])
@@ -1000,6 +1086,91 @@ mod tests {
         assert!(userdata.contains("updates:"), "{userdata}");
         assert!(userdata.contains("network:"), "{userdata}");
         assert!(userdata.contains("- boot"), "{userdata}");
+    }
+
+    #[test]
+    fn user_data_root_pw_console_only_by_default() {
+        // With a root_pw but no opt-in, the password is set (console
+        // break-glass) but root SSH stays at Ubuntu's prohibit-password:
+        // no ssh_pwauth, no PermitRootLogin snippet.
+        let ud = render_nocloud_user_data(&[], Some("p@ss\"w0rd"), false);
+        assert!(ud.contains("chpasswd:"), "{ud}");
+        assert!(ud.contains("name: root"), "{ud}");
+        // Double-quoted, with the embedded quote escaped so it can't
+        // break the YAML.
+        assert!(ud.contains("password: \"p@ss\\\"w0rd\""), "{ud}");
+        assert!(!ud.contains("ssh_pwauth"), "{ud}");
+        assert!(!ud.contains("PermitRootLogin"), "{ud}");
+        assert!(!ud.contains("sshd_config.d"), "{ud}");
+    }
+
+    #[test]
+    fn user_data_permit_root_ssh_opt_in_enables_password_login() {
+        // With the opt-in, both PasswordAuthentication (ssh_pwauth) and
+        // PermitRootLogin yes are emitted (ssh_pwauth alone leaves
+        // PermitRootLogin at prohibit-password).
+        let ud = render_nocloud_user_data(&[], Some("hunter2"), true);
+        assert!(ud.contains("chpasswd:"), "{ud}");
+        assert!(ud.contains("ssh_pwauth: true"), "{ud}");
+        assert!(
+            ud.contains("/etc/ssh/sshd_config.d/60-tritonagent-root.conf"),
+            "{ud}"
+        );
+        assert!(ud.contains("PermitRootLogin yes"), "{ud}");
+        assert!(ud.contains("systemctl, restart, ssh"), "{ud}");
+        // The opt-in is inert without a password (nothing to log in with).
+        let no_pw = render_nocloud_user_data(&[], None, true);
+        assert!(!no_pw.contains("PermitRootLogin"), "{no_pw}");
+        assert!(!no_pw.contains("ssh_pwauth"), "{no_pw}");
+        // Without a root_pw at all, no password machinery is emitted.
+        let none = render_nocloud_user_data(&[], None, false);
+        assert!(!none.contains("chpasswd"), "{none}");
+        assert!(!none.contains("ssh_pwauth"), "{none}");
+        assert!(!none.contains("PermitRootLogin"), "{none}");
+    }
+
+    #[test]
+    fn permit_root_ssh_metadata_parses_truthy_and_fails_closed() {
+        fn bp_with(key: &str, value: serde_json::Value) -> ProvisioningBlueprint {
+            let mut bp = sample_blueprint();
+            bp.provision_metadata.push(MetaEntry {
+                key: key.to_string(),
+                value,
+                guest_visible: true,
+                guest_writable: false,
+                updated_by: "test".to_string(),
+                updated_at: Utc::now(),
+            });
+            bp
+        }
+        // Missing key -> false (the default, fail-closed).
+        assert!(!permit_root_ssh_from_metadata(&sample_blueprint()));
+        // JSON bool true, plus the accepted string spellings.
+        for v in [
+            serde_json::Value::Bool(true),
+            serde_json::json!("true"),
+            serde_json::json!("True"),
+            serde_json::json!("YES"),
+            serde_json::json!("1"),
+            serde_json::json!(" on "),
+        ] {
+            assert!(
+                permit_root_ssh_from_metadata(&bp_with("instance/permit_root_ssh", v.clone())),
+                "{v:?} should be truthy"
+            );
+        }
+        // Anything else fails closed.
+        for v in [
+            serde_json::Value::Bool(false),
+            serde_json::json!("false"),
+            serde_json::json!("nope"),
+            serde_json::json!(0),
+        ] {
+            assert!(
+                !permit_root_ssh_from_metadata(&bp_with("instance/permit_root_ssh", v.clone())),
+                "{v:?} should be falsey"
+            );
+        }
     }
 
     #[test]
