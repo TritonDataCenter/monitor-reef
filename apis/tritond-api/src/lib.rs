@@ -1986,6 +1986,22 @@ pub trait TritondApi {
         body: TypedBody<LoginRequest>,
     ) -> Result<HttpResponseOk<TokenResponse>, HttpError>;
 
+    /// `/v2/auth/login` alias — exists solely so the published
+    /// `admin-backend-illumos.bin` (built pre-`a13a9889` migration)
+    /// can complete the second leg of its login handshake. Same body
+    /// + response shape as `login`. Hidden from OpenAPI so the
+    /// generated client + spec stay clean.
+    #[endpoint {
+        method = POST,
+        path = "/v2/auth/login",
+        tags = ["auth"],
+        unpublished = true,
+    }]
+    async fn login_v2_alias(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<LoginRequest>,
+    ) -> Result<HttpResponseOk<TokenResponse>, HttpError>;
+
     /// Exchange a valid refresh token for a fresh access/refresh pair.
     /// Returns 401 if the refresh token is invalid or expired.
     #[endpoint {

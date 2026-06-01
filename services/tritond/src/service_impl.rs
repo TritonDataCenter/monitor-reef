@@ -102,6 +102,13 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::auth_keys::login(rqctx, body).await
     }
 
+    async fn login_v2_alias(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<LoginRequest>,
+    ) -> Result<HttpResponseOk<TokenResponse>, HttpError> {
+        crate::handlers::auth_keys::login(rqctx, body).await
+    }
+
     async fn refresh(
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<RefreshRequest>,
