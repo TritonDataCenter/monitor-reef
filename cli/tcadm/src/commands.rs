@@ -4116,13 +4116,27 @@ pub async fn floating_ip_attach_v1(
 ) -> Result<()> {
     let session = Session::resolve(endpoint_override, api_key_override).await?;
     let client = session.client()?;
+    // The realized attach is project-scoped: it runs the FipClaim saga (CAS +
+    // pinned claim + await-terminal) so the FIP lands on a CN. The flat
+    // /v1/floating-ips/{id}/attach is store-only and moves no wire state.
+    // Look up the FIP to learn its tenant/project, then drive the realized
+    // route.
+    let fip = client
+        .get_floating_ip_v1()
+        .floating_ip_id(floating_ip_id)
+        .send()
+        .await
+        .context("/v1/floating-ips/{id} lookup")?
+        .into_inner();
     let f = client
-        .attach_floating_ip_v1()
+        .attach_project_floating_ip()
+        .tenant_id(fip.tenant_id)
+        .project_id(fip.project_id)
         .floating_ip_id(floating_ip_id)
         .body(tritond_client::types::AttachFloatingIpRequest { nic_id })
         .send()
         .await
-        .context("/v1/floating-ips/{id}/attach")?
+        .context("/v1/tenants/{t}/projects/{p}/floating-ips/{id}/attach")?
         .into_inner();
     println!(
         "Floating IP {} attached to NIC {} (address {}).",
@@ -4138,12 +4152,23 @@ pub async fn floating_ip_detach_v1(
 ) -> Result<()> {
     let session = Session::resolve(endpoint_override, api_key_override).await?;
     let client = session.client()?;
-    let f = client
-        .detach_floating_ip_v1()
+    // Project-scoped *realized* detach: runs the FipRelease saga so hosted_cn
+    // is cleared on the CN. Look up the FIP for its tenant/project first.
+    let fip = client
+        .get_floating_ip_v1()
         .floating_ip_id(floating_ip_id)
         .send()
         .await
-        .context("/v1/floating-ips/{id}/detach")?
+        .context("/v1/floating-ips/{id} lookup")?
+        .into_inner();
+    let f = client
+        .detach_project_floating_ip()
+        .tenant_id(fip.tenant_id)
+        .project_id(fip.project_id)
+        .floating_ip_id(floating_ip_id)
+        .send()
+        .await
+        .context("/v1/tenants/{t}/projects/{p}/floating-ips/{id}/detach")?
         .into_inner();
     println!("Floating IP {} detached (address {}).", f.id, f.address);
     Ok(())
