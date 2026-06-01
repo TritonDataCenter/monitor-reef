@@ -28,6 +28,21 @@ VPC + NAT/FIP path.
   places where product input is needed.
 - [Gist Summary](./gist.md) - a concise standalone version with diagrams.
 
+## Operator runbooks
+
+Field-tested install / operate notes for the parts that are live today.
+
+- [`operating-tritond.md`](./operating-tritond.md) — tritond bootstrap
+  config + FDB-backed cluster settings.
+- [`admin-webui-install.md`](./admin-webui-install.md) — install the
+  published admin webui binary, expose it, hit the `/v2/auth/login`
+  fix path.
+- [`s3-data-plane-workspace-gate.md`](./s3-data-plane-workspace-gate.md) —
+  Phase D / Phase 2 S3 data-plane workspace isolation walkthrough +
+  verify scripts.
+- [`phase-d-s3-workspace-isolation.md`](./phase-d-s3-workspace-isolation.md) —
+  admin-plane half of the same arc.
+
 ## Component references
 
 These links point at the current workspace sources of truth for each major

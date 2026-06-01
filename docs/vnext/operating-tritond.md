@@ -92,4 +92,9 @@ Same operations, plus an inline editor, on the admin console's
 **Settings** page (Operate → Settings; fleet-admin only). Every set /
 reset is recorded in the audit log.
 
+See [`admin-webui-install.md`](./admin-webui-install.md) for the
+admin console install runbook — including the post-`a13a9889`
+`/v2/auth/login` alias fix that the currently-published binary
+depends on.
+
 [`../design/operator-packaging-v1.md`]: ../design/operator-packaging-v1.md
