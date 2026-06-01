@@ -468,6 +468,16 @@ pub(crate) fn create_bhyve_payload_with_nic_tags(
         "cloud-init:meta-data".to_string(),
         serde_json::Value::String(render_nocloud_meta_data(instance.id, &alias)),
     );
+    // Supply our own network-config so the platform's NoCloud builder
+    // uses it verbatim instead of auto-generating one with the
+    // deprecated `gateway4:` key (which modern netplan rejects).
+    customer_metadata.insert(
+        "cloud-init:network-config".to_string(),
+        serde_json::Value::String(render_nocloud_network_config(
+            &blueprint.nics,
+            &blueprint.subnets,
+        )?),
+    );
     customer_metadata.insert(
         "org.smartos:cloudinit_datasource".to_string(),
         serde_json::Value::String("nocloud".to_string()),
@@ -718,11 +728,67 @@ fn render_nocloud_user_data(ssh_keys: &[String]) -> String {
             out.push('\n');
         }
     }
+    // Ubuntu 26.04 (cloud-init 26.1) renders but refuses to APPLY the
+    // network config on first boot: the NoCloud datasource sets
+    // `previous_iid` in the early Local stage, so the Network stage's
+    // default `boot-new-instance` gate wrongly concludes "not a new
+    // instance", logs "No network config applied", and never brings the
+    // interface up — leaving the static IP unbound (cloud-init #6666).
+    // Widening the apply policy to every `boot` event defeats the gate.
+    out.push_str("updates:\n  network:\n    when:\n      - boot\n");
     out
 }
 
 fn render_nocloud_meta_data(instance_id: Uuid, hostname: &str) -> String {
     format!("instance-id: {instance_id}\nlocal-hostname: {hostname}\n")
+}
+
+/// Build a cloud-init NoCloud `network-config` (netplan v2) for the
+/// guest from its NICs, emitted as the `cloud-init:network-config`
+/// customer_metadata key. The platform's NoCloud seed builder
+/// (`nocloud.js`) passes a caller-supplied `cloud-init:network-config`
+/// through verbatim, overriding its own auto-generated config.
+///
+/// Three deliberate choices, each working around a netplan/cloud-init
+/// behaviour that otherwise leaves the guest with no IPv4 (verified live
+/// on Ubuntu 26.04 / cloud-init 26.1):
+///
+///   * **Match by `driver`, never `macaddress`.** Since netplan 0.106 a
+///     `macaddress` match renders as systemd-networkd
+///     `PermanentMACAddress=`, resolved via ethtool `ETHTOOL_GPERMADDR`.
+///     A bhyve virtio NIC has no permanent MAC (`00:00:00:00:00:00`), so
+///     the `.network` never binds and the static address — though
+///     rendered — is never applied (Launchpad #2022947, WONT FIX).
+///   * **No `set-name`.** Renaming triggers the resolute netplan
+///     "Unable to rename … [busy]" regression (cloud-init #6887). The
+///     guest interface name is irrelevant to the host-side OPTE port,
+///     which keys on MAC.
+///   * **`routes:`, never `gateway4:`.** `gateway4` is deprecated and
+///     rejected by modern netplan.
+///
+/// The companion first-boot apply gate (cloud-init #6666) is handled in
+/// [`render_nocloud_user_data`].
+fn render_nocloud_network_config(nics: &[Nic], subnets: &[Subnet]) -> Result<String> {
+    let mut out = String::from("version: 2\nethernets:\n");
+    for (index, nic) in nics.iter().enumerate() {
+        let iface = format!("net{index}");
+        let (ip_cidr, gateway) = bhyve_ipv4_config(nic, subnets)?;
+        out.push_str(&format!("  {iface}:\n"));
+        out.push_str("    match:\n      driver: virtio_net\n");
+        out.push_str("    dhcp4: false\n    dhcp6: false\n    accept-ra: false\n");
+        out.push_str("    addresses:\n");
+        out.push_str(&format!("      - {ip_cidr}\n"));
+        // The default route + resolvers live on the primary NIC only,
+        // matching the single-`gateways` placement in `build_bhyve_nic_json`.
+        if index == 0 {
+            out.push_str("    routes:\n      - to: default\n");
+            out.push_str(&format!("        via: {gateway}\n"));
+            // TODO: thread resolvers from subnet/VPC config once vNext DNS
+            // lands; a public default keeps the guest usable until then.
+            out.push_str("    nameservers:\n      addresses:\n        - 1.1.1.1\n        - 8.8.8.8\n");
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -905,6 +971,38 @@ mod tests {
     }
 
     #[test]
+    fn bhyve_network_config_binds_static_ipv4_on_modern_netplan() {
+        let bp = sample_bhyve_blueprint();
+        let payload = create_bhyve_payload(&bp).unwrap();
+        let netcfg = payload["customer_metadata"]["cloud-init:network-config"]
+            .as_str()
+            .expect("network-config present");
+        // Match by driver, never macaddress: netplan >=0.106 renders a
+        // macaddress match as `PermanentMACAddress=`, which a virtio NIC
+        // (no ethtool permanent MAC) never satisfies, so the static
+        // address renders but never binds (Launchpad #2022947).
+        assert!(netcfg.contains("driver: virtio_net"), "{netcfg}");
+        assert!(!netcfg.contains("macaddress"), "{netcfg}");
+        // No set-name (cloud-init #6887 rename-busy regression).
+        assert!(!netcfg.contains("set-name"), "{netcfg}");
+        // Default route as a `routes:` entry, never deprecated gateway4/6.
+        assert!(netcfg.contains("- to: default"), "{netcfg}");
+        assert!(netcfg.contains("via: 10.199.199.1"), "{netcfg}");
+        assert!(!netcfg.contains("gateway4"), "{netcfg}");
+        assert!(!netcfg.contains("gateway6"), "{netcfg}");
+        // The static address is what gives the guest its IP.
+        assert!(netcfg.contains("- 10.199.199.77/24"), "{netcfg}");
+
+        // The companion first-boot apply gate (#6666) lives in user-data.
+        let userdata = payload["customer_metadata"]["cloud-init:user-data"]
+            .as_str()
+            .expect("user-data present");
+        assert!(userdata.contains("updates:"), "{userdata}");
+        assert!(userdata.contains("network:"), "{userdata}");
+        assert!(userdata.contains("- boot"), "{userdata}");
+    }
+
+    #[test]
     fn create_bhyve_payload_has_golden_shape() {
         let bp = sample_bhyve_blueprint();
         let instance = bp.instance.as_ref().unwrap();
@@ -939,10 +1037,38 @@ mod tests {
             ],
             "customer_metadata": {
                 "root_authorized_keys": "ssh-ed25519 AAAA test@host",
-                "cloud-init:user-data": "#cloud-config\ndisable_root: false\nssh_authorized_keys:\n  - ssh-ed25519 AAAA test@host\n",
+                "cloud-init:user-data": concat!(
+                    "#cloud-config\n",
+                    "disable_root: false\n",
+                    "ssh_authorized_keys:\n",
+                    "  - ssh-ed25519 AAAA test@host\n",
+                    "updates:\n",
+                    "  network:\n",
+                    "    when:\n",
+                    "      - boot\n",
+                ),
                 "cloud-init:meta-data": format!(
                     "instance-id: {}\nlocal-hostname: smoke-zone\n",
                     instance.id,
+                ),
+                "cloud-init:network-config": concat!(
+                    "version: 2\n",
+                    "ethernets:\n",
+                    "  net0:\n",
+                    "    match:\n",
+                    "      driver: virtio_net\n",
+                    "    dhcp4: false\n",
+                    "    dhcp6: false\n",
+                    "    accept-ra: false\n",
+                    "    addresses:\n",
+                    "      - 10.199.199.77/24\n",
+                    "    routes:\n",
+                    "      - to: default\n",
+                    "        via: 10.199.199.1\n",
+                    "    nameservers:\n",
+                    "      addresses:\n",
+                    "        - 1.1.1.1\n",
+                    "        - 8.8.8.8\n",
                 ),
                 "org.smartos:cloudinit_datasource": "nocloud",
             },
