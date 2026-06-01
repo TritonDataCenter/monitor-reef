@@ -42,6 +42,12 @@ fn version_string() -> &'static str {
 const BACKOFF_INITIAL: Duration = Duration::from_secs(1);
 const BACKOFF_MAX: Duration = Duration::from_secs(30);
 
+/// Maximum time to wait for a new inbound yamux stream before probing the
+/// connection by reconnecting. The underlying WebSocket may appear alive at the
+/// TCP level while the server-side session has been discarded; this timeout
+/// ensures we detect and recover from that state within a bounded window.
+const IDLE_RECONNECT_TIMEOUT: Duration = Duration::from_secs(120);
+
 #[tokio::main]
 async fn main() -> Result<()> {
     if std::env::args().nth(1).as_deref() == Some("version") {
@@ -85,22 +91,35 @@ async fn main() -> Result<()> {
                 info!("connected; waiting for streams");
 
                 loop {
-                    let stream =
-                        std::future::poll_fn(|cx| conn.poll_next_inbound(cx)).await;
-                    match stream {
-                        Some(Ok(stream)) => {
+                    let next = tokio::time::timeout(
+                        IDLE_RECONNECT_TIMEOUT,
+                        std::future::poll_fn(|cx| conn.poll_next_inbound(cx)),
+                    )
+                    .await;
+                    match next {
+                        Ok(Some(Ok(stream))) => {
                             tokio::spawn(async move {
                                 if let Err(e) = handle_stream(stream).await {
                                     warn!("stream handler error: {e}");
                                 }
                             });
                         }
-                        Some(Err(e)) => {
+                        Ok(Some(Err(e))) => {
                             error!("yamux error: {e}");
                             break;
                         }
-                        None => {
+                        Ok(None) => {
                             info!("relay connection closed by server");
+                            break;
+                        }
+                        Err(_elapsed) => {
+                            // No stream activity for IDLE_RECONNECT_TIMEOUT. The
+                            // TCP socket may be alive while the server-side session
+                            // is gone. Reconnect to re-register with the server.
+                            warn!(
+                                timeout_secs = IDLE_RECONNECT_TIMEOUT.as_secs(),
+                                "idle timeout: reconnecting to verify liveness"
+                            );
                             break;
                         }
                     }
