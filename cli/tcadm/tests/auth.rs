@@ -14,6 +14,7 @@
 //! into a tempdir via `TCADM_CONFIG_DIR` so the user's real
 //! `~/.config/tcadm` is never touched.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use assert_cmd::Command;
@@ -50,6 +51,7 @@ impl TestServer {
             created_at: Utc::now(),
             tenant_id: None,
             federation: None,
+            capabilities: BTreeSet::new(),
         };
         store.create_user(user).await.unwrap();
         let jwt_key = JwtKey::generate();
