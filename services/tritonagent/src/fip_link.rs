@@ -221,6 +221,86 @@ pub fn find(_nic_tag: &str, _vlan_id: Option<u16>) -> Result<Option<String>> {
     Ok(None)
 }
 
+/// Resolve the MAC of `link` (the external FIP vnic) via
+/// `dladm show-vnic`, for seeding the kmod's outbound `ExternalTx`
+/// source MAC. illumos prints MAC bytes without leading zeros
+/// (`2:8:20:98:b1:de`), so [`parse_mac`] tolerates 1- or 2-char bytes.
+#[cfg(target_os = "illumos")]
+pub fn link_mac(link: &str) -> Result<[u8; 6]> {
+    use std::process::Command;
+    let out = Command::new("/usr/sbin/dladm")
+        .args(["show-vnic", link, "-o", "macaddress", "-p"])
+        .output()
+        .with_context(|| format!("dladm show-vnic {link} -o macaddress"))?;
+    if !out.status.success() {
+        bail!(
+            "dladm show-vnic {link} macaddress failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    parse_mac(String::from_utf8_lossy(&out.stdout).trim())
+        .ok_or_else(|| anyhow::anyhow!("could not parse MAC for external link {link}"))
+}
+
+#[cfg(not(target_os = "illumos"))]
+pub fn link_mac(_link: &str) -> Result<[u8; 6]> {
+    bail!("link MAC resolution is only available on illumos")
+}
+
+/// Resolve the 802.1Q VLAN id of `link` (the external FIP vnic) via
+/// `dladm show-vnic`, for seeding the kmod's outbound `ExternalTx` tag.
+/// The fastpath tx does not auto-insert the tag, so the kmod stamps it
+/// from this value. Returns `0` (untagged) when dladm reports no VID.
+#[cfg(target_os = "illumos")]
+pub fn link_vlan(link: &str) -> Result<u16> {
+    use std::process::Command;
+    let out = Command::new("/usr/sbin/dladm")
+        .args(["show-vnic", link, "-o", "vid", "-p"])
+        .output()
+        .with_context(|| format!("dladm show-vnic {link} -o vid"))?;
+    if !out.status.success() {
+        bail!(
+            "dladm show-vnic {link} vid failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    let s = s.trim();
+    s.parse::<u16>()
+        .with_context(|| format!("could not parse VID '{s}' for external link {link}"))
+}
+
+#[cfg(not(target_os = "illumos"))]
+pub fn link_vlan(_link: &str) -> Result<u16> {
+    bail!("link VLAN resolution is only available on illumos")
+}
+
+/// Upstream FlatL2 gateway MAC for outbound FIP frames, from the
+/// `TRITONAGENT_EXTERNAL_GATEWAY_MAC` deployment-config env. This is a
+/// per-CN stopgap; the production source is a `gateway_mac` on the
+/// external subnet, threaded through the FipClaim (followup). `None`
+/// when unset / unparseable -> the kmod ExternalTx fails closed.
+pub fn env_gateway_mac() -> Option<[u8; 6]> {
+    parse_mac(std::env::var("TRITONAGENT_EXTERNAL_GATEWAY_MAC").ok()?.trim())
+}
+
+/// Parse a colon-separated MAC (`aa:bb:..` or illumos `a:b:..`) into 6
+/// bytes. Returns `None` on any malformed input.
+fn parse_mac(s: &str) -> Option<[u8; 6]> {
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() != 6 {
+        return None;
+    }
+    let mut out = [0u8; 6];
+    for (i, p) in parts.iter().enumerate() {
+        if p.is_empty() || p.len() > 2 {
+            return None;
+        }
+        out[i] = u8::from_str_radix(p, 16).ok()?;
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -285,5 +365,25 @@ mod tests {
         assert_eq!(find_in_rows(&rows, "aggr0", 999), None);
         // net0 is not a managed fip link even though it matches over/vid.
         assert_eq!(find_in_rows(&rows, "aggr0", 0), None);
+    }
+
+    #[test]
+    fn parses_macs_illumos_and_standard_forms() {
+        // illumos `dladm` omits leading zeros per byte.
+        assert_eq!(
+            parse_mac("2:8:20:98:b1:de"),
+            Some([0x02, 0x08, 0x20, 0x98, 0xb1, 0xde])
+        );
+        // standard zero-padded (e.g. a VRRP VIP gateway MAC).
+        assert_eq!(
+            parse_mac("00:00:5e:00:01:c9"),
+            Some([0x00, 0x00, 0x5e, 0x00, 0x01, 0xc9])
+        );
+        // malformed inputs reject.
+        assert_eq!(parse_mac("2:8:20:98:b1"), None); // 5 bytes
+        assert_eq!(parse_mac("2:8:20:98:b1:de:ff"), None); // 7 bytes
+        assert_eq!(parse_mac("2:8:20:98:b1:zz"), None); // non-hex
+        assert_eq!(parse_mac("2:8:20:98:b1:123"), None); // >2 chars
+        assert_eq!(parse_mac(""), None);
     }
 }

@@ -180,19 +180,34 @@ impl<T: Transport> ProteusClient<T> {
     /// `ProteusLifecycle::ensure_external_link` trait method (which
     /// resolves the linkid first and delegates here).
     pub fn ensure_external_link_with_id(&self, linkid: u32, link_name: &str) -> Result<()> {
+        // Seed the L2 MACs the kmod's `opte_tx_to_external_link` stamps
+        // on outbound FIP frames. Unresolved MACs stay all-zero, which is
+        // SAFE: ExternalTx fails closed on a zero src/dst rather than
+        // emitting a bogus frame.
+        //   - source_mac: the external link's own MAC (resolved locally).
+        //   - gateway_mac: the upstream FlatL2 router MAC, from the
+        //     `TRITONAGENT_EXTERNAL_GATEWAY_MAC` deployment-config env
+        //     (per-CN stopgap; the production source is a `gateway_mac`
+        //     on the external subnet, threaded via the FipClaim).
+        let source_mac = crate::fip_link::link_mac(link_name).unwrap_or_else(|e| {
+            tracing::warn!(link_name, error = %e, "fip: could not resolve external link MAC; outbound ExternalTx stays fail-closed");
+            [0u8; 6]
+        });
+        let gateway_mac = crate::fip_link::env_gateway_mac().unwrap_or([0u8; 6]);
+        // The DLS fastpath tx does not insert the 802.1Q tag (the siphon
+        // sees inbound frames still tagged), so the kmod stamps it from
+        // the link's VID. 0 = untagged link.
+        let vlan_id = crate::fip_link::link_vlan(link_name).unwrap_or_else(|e| {
+            tracing::warn!(link_name, error = %e, "fip: could not resolve external link VLAN; emitting untagged");
+            0
+        });
         self.client
             .ensure_external_link(&EnsureExternalLinkRequest {
                 linkid,
                 link_name: link_name.to_string(),
-                // source_mac / gateway_mac default to all-zero here.
-                // Zeros are SAFE: opte_tx_to_external_link fails closed
-                // on an all-zero MAC (it drops rather than emit a frame
-                // with a bogus L2 src/dst). The REAL source_mac (the
-                // external NIC's own MAC) and gateway_mac (the upstream
-                // router MAC from neighbor discovery) must be resolved
-                // control-plane-side and seeded at M5 (a C-4b/M5
-                // followup) before the outbound ExternalTx path emits.
-                ..Default::default()
+                source_mac,
+                gateway_mac,
+                vlan_id,
             })
             .with_context(|| format!("ensure Proteus external link {link_name} (linkid {linkid})"))
     }

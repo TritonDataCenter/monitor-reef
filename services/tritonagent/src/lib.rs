@@ -1231,10 +1231,19 @@ where
         })?;
     let link_name = realized_link.as_str();
 
-    // 1. Apply the recomputed port blueprint at its bumped generation.
-    //    tritond owns the bytes; the agent fetches + applies. This is
-    //    what installs the FIP's NAT SetSrc/SetDst and (via the kmod
-    //    ApplyBlueprint delta, P-5) the inbound hosted_fips entry.
+    // 1. Ensure the external siphon link exists FIRST (idempotent).
+    //    The kmod's ApplyBlueprint hosted_fips delta is a NO-OP while
+    //    `external_link` is None, so the inbound classifier only
+    //    populates if the link is registered before the apply below.
+    proteus
+        .ensure_external_link(link_name)
+        .with_context(|| format!("ensure external link {link_name} for FIP {fip}"))?;
+
+    // 2. Apply the recomputed port blueprint at its bumped generation.
+    //    tritond owns the bytes; the agent fetches + applies. This
+    //    installs the FIP's NAT SetSrc/SetDst and (via the kmod
+    //    ApplyBlueprint delta, P-5) the inbound hosted_fips entry — now
+    //    landing because the external link exists.
     let port_blueprint = source
         .fetch_port_blueprint(nic_id)
         .await
@@ -1242,11 +1251,6 @@ where
     proteus
         .apply_blueprint(&port_blueprint)
         .with_context(|| format!("apply Proteus blueprint to claim FIP on nic {nic_id}"))?;
-
-    // 2. Ensure the external siphon link exists (idempotent).
-    proteus
-        .ensure_external_link(link_name)
-        .with_context(|| format!("ensure external link {link_name} for FIP {fip}"))?;
 
     // 3. Add the host /32 alias so the stack answers solicited ARP.
     host_net.create_alias(link_name, fip)?;
@@ -2202,18 +2206,18 @@ mod tests {
             *ext_link.realized.lock().unwrap(),
             vec![("external".to_string(), Some(2003))]
         );
-        // Blueprint apply (at the bumped generation) must precede the
-        // external-link ensure: the inbound classifier delta lands
-        // before the alias starts answering ARP. The link is `fip0`,
-        // not the raw nic_tag.
+        // The external link must be ensured BEFORE the blueprint apply:
+        // the kmod's hosted_fips delta no-ops while `external_link` is
+        // None, so the inbound classifier only populates if the link is
+        // registered first. The link is `fip0`, not the raw nic_tag.
         assert_eq!(
             proteus.ops(),
             vec![
+                ProteusOp::EnsureExternalLink("fip0".to_string()),
                 ProteusOp::Apply {
                     port: nic_id,
                     generation: 7,
                 },
-                ProteusOp::EnsureExternalLink("fip0".to_string()),
             ]
         );
         // Then the /32 alias is added on `fip0` and the GARP burst fires.
@@ -2255,7 +2259,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fip_claim_apply_failure_stops_before_external_link() {
+    async fn fip_claim_apply_failure_stops_before_alias() {
         let nic_id = Uuid::new_v4();
         let port = sample_port_blueprint(nic_id, 3);
         let source = StaticPortBlueprintSource {
@@ -2280,16 +2284,21 @@ mod tests {
         )
         .await
         .expect_err("apply failure fails the claim");
-        // The external link must NOT be ensured if the blueprint apply
-        // failed: the saga retries from a clean state.
+        // The external link is ensured first (idempotent; harmless
+        // without a populated classifier), then the apply fails — so a
+        // failed apply must NOT reach the host alias / GARP step. The
+        // saga retries; ensure_external_link is idempotent on re-run.
         assert_eq!(
             proteus.ops(),
-            vec![ProteusOp::Apply {
-                port: nic_id,
-                generation: 3,
-            }]
+            vec![
+                ProteusOp::EnsureExternalLink("fip0".to_string()),
+                ProteusOp::Apply {
+                    port: nic_id,
+                    generation: 3,
+                },
+            ]
         );
-        // And no host alias was created.
+        // And no host alias was created (the failure stopped before it).
         assert!(host_net.created.lock().unwrap().is_empty());
     }
 
