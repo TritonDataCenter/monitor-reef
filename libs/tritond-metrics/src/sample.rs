@@ -50,6 +50,13 @@ pub struct SampleIdentity {
     /// allowed values.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub series: Option<String>,
+    /// Device or pool label for storage samples (e.g. `c1t2d0`, a pool
+    /// name). Kept distinct from `series` so a storage schema can carry
+    /// both a device *and* a sub-metric (device `c1t2d0`, series
+    /// `write_lat`). `None` for non-storage schemas. Cardinality is the
+    /// CN's disk/pool count -- bounded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
 }
 
 /// Single-value datum. Schemas state which variant they emit; storage

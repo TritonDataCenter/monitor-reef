@@ -47,8 +47,28 @@ pub enum MetricsStoreError {
     UnknownSchema(String),
 }
 
+/// Self-description of the live metrics backend, so tritond can answer
+/// "what backend am I actually running, where, and is it up?" without
+/// the caller needing out-of-band knowledge. Reported by the live
+/// `Arc<dyn MetricsStore>`, so it reflects the **effective** backend
+/// (e.g. an in-memory fallback after a failed ClickHouse bootstrap),
+/// not just the configured intent.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct MetricsHealth {
+    /// Backend kind: `memory` or `clickhouse`.
+    pub backend: String,
+    /// Endpoint URL for remote backends; `None` for in-memory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    /// Whether the backend answered a cheap liveness probe.
+    pub reachable: bool,
+    /// Error detail when `reachable` is false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
 /// Storage backend for `Sample`s. Implemented by [`RingBufferStore`]
-/// (in-memory) and (planned) `ClickHouseStore`.
+/// (in-memory) and `ClickHouseStore`.
 #[async_trait::async_trait]
 pub trait MetricsStore: Send + Sync {
     /// Insert a batch of samples. Implementations buffer + batch
@@ -63,6 +83,18 @@ pub trait MetricsStore: Send + Sync {
     /// Most recent sample per `(identity)` pairing for the given
     /// schema. Used by the Prometheus exposition path.
     async fn latest_for_schema(&self, schema: &str) -> Result<Vec<Sample>, MetricsStoreError>;
+
+    /// Describe the live backend + probe its reachability. The default
+    /// covers test mocks; real backends override it. Used by tritond's
+    /// metrics-status endpoint so clients ask tritond, not ClickHouse.
+    async fn health(&self) -> MetricsHealth {
+        MetricsHealth {
+            backend: "unknown".to_string(),
+            endpoint: None,
+            reachable: true,
+            detail: None,
+        }
+    }
 }
 
 /// Range query parameters. Filters narrow which `Sample`s contribute
@@ -73,6 +105,8 @@ pub struct RangeQuery {
     pub instance_id: Option<Uuid>,
     pub tenant_id: Option<Uuid>,
     pub cn_id: Option<Uuid>,
+    /// Device/pool filter for storage schemas (matches `identity.device`).
+    pub device: Option<String>,
     pub since: DateTime<Utc>,
     pub until: DateTime<Utc>,
     pub step: Duration,

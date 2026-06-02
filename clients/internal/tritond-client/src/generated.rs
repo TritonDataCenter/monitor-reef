@@ -6755,6 +6755,122 @@ pub mod types {
         }
     }
 
+    #[doc = "Self-description of the live metrics backend, so tritond can answer \"what backend am I actually running, where, and is it up?\" without the caller needing out-of-band knowledge. Reported by the live `Arc<dyn MetricsStore>`, so it reflects the **effective** backend (e.g. an in-memory fallback after a failed ClickHouse bootstrap), not just the configured intent."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Self-description of the live metrics backend, so tritond can answer \\\"what backend am I actually running, where, and is it up?\\\" without the caller needing out-of-band knowledge. Reported by the live `Arc<dyn MetricsStore>`, so it reflects the **effective** backend (e.g. an in-memory fallback after a failed ClickHouse bootstrap), not just the configured intent.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"backend\","]
+    #[doc = "    \"reachable\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"backend\": {"]
+    #[doc = "      \"description\": \"Backend kind: `memory` or `clickhouse`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"detail\": {"]
+    #[doc = "      \"description\": \"Error detail when `reachable` is false.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"endpoint\": {"]
+    #[doc = "      \"description\": \"Endpoint URL for remote backends; `None` for in-memory.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"reachable\": {"]
+    #[doc = "      \"description\": \"Whether the backend answered a cheap liveness probe.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct MetricsHealth {
+        #[doc = "Backend kind: `memory` or `clickhouse`."]
+        pub backend: ::std::string::String,
+        #[doc = "Error detail when `reachable` is false."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub detail: ::std::option::Option<::std::string::String>,
+        #[doc = "Endpoint URL for remote backends; `None` for in-memory."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub endpoint: ::std::option::Option<::std::string::String>,
+        #[doc = "Whether the backend answered a cheap liveness probe."]
+        pub reachable: bool,
+    }
+
+    impl MetricsHealth {
+        pub fn builder() -> builder::MetricsHealth {
+            Default::default()
+        }
+    }
+
+    #[doc = "Metrics-backend status, so clients ask tritond (the source of truth) where metrics live, what backend is *actually* running, whether it's reachable, and what schemas are queryable -- rather than needing out-of-band knowledge of ClickHouse. Operator surface (SystemRead)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Metrics-backend status, so clients ask tritond (the source of truth) where metrics live, what backend is *actually* running, whether it's reachable, and what schemas are queryable -- rather than needing out-of-band knowledge of ClickHouse. Operator surface (SystemRead).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"configured_backend\","]
+    #[doc = "    \"health\","]
+    #[doc = "    \"schemas\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"configured_backend\": {"]
+    #[doc = "      \"description\": \"The configured backend from cluster settings (`metrics.backend`), for comparison against `health.backend` -- a mismatch means a startup fallback the operator should know about.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"health\": {"]
+    #[doc = "      \"description\": \"The live backend description + reachability probe. `backend` is the *effective* store (e.g. `memory` if a ClickHouse bootstrap failed and tritond fell back), not just the configured intent.\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/MetricsHealth\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"schemas\": {"]
+    #[doc = "      \"description\": \"Schema names tritond can ingest + serve (for query discovery).\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct MetricsStatusResponse {
+        #[doc = "The configured backend from cluster settings (`metrics.backend`), for comparison against `health.backend` -- a mismatch means a startup fallback the operator should know about."]
+        pub configured_backend: ::std::string::String,
+        #[doc = "The live backend description + reachability probe. `backend` is the *effective* store (e.g. `memory` if a ClickHouse bootstrap failed and tritond fell back), not just the configured intent."]
+        pub health: MetricsHealth,
+        #[doc = "Schema names tritond can ingest + serve (for query discovery)."]
+        pub schemas: ::std::vec::Vec<::std::string::String>,
+    }
+
+    impl MetricsStatusResponse {
+        pub fn builder() -> builder::MetricsStatusResponse {
+            Default::default()
+        }
+    }
+
     #[doc = "Request body for `POST .../instances/{instance_id}/migrate`.\n\nLM-5 ships `action=begin` only; the other actions (estimate, pause, switch, abort, rollback, finalize) return 501 until LM-6 / LM-8 wire the sub-sagas. The wire shape is fixed now so clients don't have to bump on each LM-* slice."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -22190,6 +22306,175 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct MetricsHealth {
+            backend: ::std::result::Result<::std::string::String, ::std::string::String>,
+            detail: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            endpoint: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            reachable: ::std::result::Result<bool, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for MetricsHealth {
+            fn default() -> Self {
+                Self {
+                    backend: Err("no value supplied for backend".to_string()),
+                    detail: Ok(Default::default()),
+                    endpoint: Ok(Default::default()),
+                    reachable: Err("no value supplied for reachable".to_string()),
+                }
+            }
+        }
+
+        impl MetricsHealth {
+            pub fn backend<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.backend = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for backend: {e}"));
+                self
+            }
+            pub fn detail<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.detail = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for detail: {e}"));
+                self
+            }
+            pub fn endpoint<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.endpoint = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for endpoint: {e}"));
+                self
+            }
+            pub fn reachable<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reachable = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reachable: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<MetricsHealth> for super::MetricsHealth {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MetricsHealth,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    backend: value.backend?,
+                    detail: value.detail?,
+                    endpoint: value.endpoint?,
+                    reachable: value.reachable?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::MetricsHealth> for MetricsHealth {
+            fn from(value: super::MetricsHealth) -> Self {
+                Self {
+                    backend: Ok(value.backend),
+                    detail: Ok(value.detail),
+                    endpoint: Ok(value.endpoint),
+                    reachable: Ok(value.reachable),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct MetricsStatusResponse {
+            configured_backend: ::std::result::Result<::std::string::String, ::std::string::String>,
+            health: ::std::result::Result<super::MetricsHealth, ::std::string::String>,
+            schemas: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for MetricsStatusResponse {
+            fn default() -> Self {
+                Self {
+                    configured_backend: Err("no value supplied for configured_backend".to_string()),
+                    health: Err("no value supplied for health".to_string()),
+                    schemas: Err("no value supplied for schemas".to_string()),
+                }
+            }
+        }
+
+        impl MetricsStatusResponse {
+            pub fn configured_backend<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.configured_backend = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for configured_backend: {e}")
+                });
+                self
+            }
+            pub fn health<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::MetricsHealth>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.health = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for health: {e}"));
+                self
+            }
+            pub fn schemas<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.schemas = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for schemas: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<MetricsStatusResponse> for super::MetricsStatusResponse {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MetricsStatusResponse,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    configured_backend: value.configured_backend?,
+                    health: value.health?,
+                    schemas: value.schemas?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::MetricsStatusResponse> for MetricsStatusResponse {
+            fn from(value: super::MetricsStatusResponse) -> Self {
+                Self {
+                    configured_backend: Ok(value.configured_backend),
+                    health: Ok(value.health),
+                    schemas: Ok(value.schemas),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct MigrateInstanceBody {
             action: ::std::result::Result<super::MigrationAction, ::std::string::String>,
             affinity: ::std::result::Result<
@@ -33553,7 +33838,7 @@ impl Client {
         builder::DrainPreview::new(self)
     }
 
-    #[doc = "Range query for the per-CN metrics dashboard (NodeDetail\n\npage's Metrics tab). Returns one series per CPU mode for the requested CN's global zone -- host services + kernel time not charged to a tenant zone. Mirrors the legacy cmon `/v1/discover` -> per-CN scrape pattern, just typed.\n\nAuth: requires fleet-read access to the CN (same scope as `get_cn`). No tenant filter -- per-CN samples are operator surface.\n\nSends a `GET` request to `/v1/cns/{server_uuid}/metrics`\n\nArguments:\n- `server_uuid`\n- `range`: Short range identifier (e.g. `1h`).\n- `schema`: Schema name. Defaults to `triton.cpu_per_zone`.\n```ignore\nlet response = client.cn_metrics_range()\n    .server_uuid(server_uuid)\n    .range(range)\n    .schema(schema)\n    .send()\n    .await;\n```"]
+    #[doc = "Range query for the per-CN metrics dashboard (NodeDetail\n\npage's Metrics tab). Returns one series per CPU mode for the requested CN's global zone -- host services + kernel time not charged to a tenant zone. Mirrors the legacy cmon `/v1/discover` -> per-CN scrape pattern, just typed.\n\nAuth: requires fleet-read access to the CN (same scope as `get_cn`). No tenant filter -- per-CN samples are operator surface.\n\nSends a `GET` request to `/v1/cns/{server_uuid}/metrics`\n\nArguments:\n- `server_uuid`\n- `device`: Device/pool filter for storage schemas (matches the sample's `device` identity, e.g. a pool name or `c1t2d0`). Ignored by schemas that don't carry a device.\n- `range`: Short range identifier (e.g. `1h`).\n- `schema`: Schema name. Defaults to `triton.cpu_per_zone`.\n```ignore\nlet response = client.cn_metrics_range()\n    .server_uuid(server_uuid)\n    .device(device)\n    .range(range)\n    .schema(schema)\n    .send()\n    .await;\n```"]
     pub fn cn_metrics_range(&self) -> builder::CnMetricsRange<'_> {
         builder::CnMetricsRange::new(self)
     }
@@ -34166,6 +34451,11 @@ impl Client {
         builder::ListSystemInstancesV1::new(self)
     }
 
+    #[doc = "`GET /v1/system/metrics/status`. Metrics backend status: which\n\nstore is live, where it is, whether it's reachable, and the queryable schemas -- so clients ask tritond, not ClickHouse. Capability: `SystemRead`.\n\nSends a `GET` request to `/v1/system/metrics/status`\n\n```ignore\nlet response = client.metrics_status_v1()\n    .send()\n    .await;\n```"]
+    pub fn metrics_status_v1(&self) -> builder::MetricsStatusV1<'_> {
+        builder::MetricsStatusV1::new(self)
+    }
+
     #[doc = "`GET /v1/system/network-pools`. Capability: `SystemRead`\n\nSends a `GET` request to `/v1/system/network-pools`\n\n```ignore\nlet response = client.list_system_network_pools_v1()\n    .send()\n    .await;\n```"]
     pub fn list_system_network_pools_v1(&self) -> builder::ListSystemNetworkPoolsV1<'_> {
         builder::ListSystemNetworkPoolsV1::new(self)
@@ -34311,7 +34601,7 @@ impl Client {
         builder::InstanceLogsTail::new(self)
     }
 
-    #[doc = "Range query for the per-instance metrics chart on the VM\n\ndetail view. Returns one numeric series per distinct `series` identity field encountered in the requested window. Counter datums are emitted as per-bucket deltas; gauges as last-value per bucket.\n\nAuth: requires a tenant-scoped credential with read access to the named instance.\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/metrics`\n\nArguments:\n- `tenant_id`\n- `project_id`\n- `instance_id`\n- `range`: Short range identifier (e.g. `1h`).\n- `schema`: Schema name. Defaults to `triton.cpu_per_zone`.\n```ignore\nlet response = client.instance_metrics_range()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .range(range)\n    .schema(schema)\n    .send()\n    .await;\n```"]
+    #[doc = "Range query for the per-instance metrics chart on the VM\n\ndetail view. Returns one numeric series per distinct `series` identity field encountered in the requested window. Counter datums are emitted as per-bucket deltas; gauges as last-value per bucket.\n\nAuth: requires a tenant-scoped credential with read access to the named instance.\n\nSends a `GET` request to `/v1/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/metrics`\n\nArguments:\n- `tenant_id`\n- `project_id`\n- `instance_id`\n- `device`: Device/pool filter for storage schemas (matches the sample's `device` identity, e.g. a pool name or `c1t2d0`). Ignored by schemas that don't carry a device.\n- `range`: Short range identifier (e.g. `1h`).\n- `schema`: Schema name. Defaults to `triton.cpu_per_zone`.\n```ignore\nlet response = client.instance_metrics_range()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .device(device)\n    .range(range)\n    .schema(schema)\n    .send()\n    .await;\n```"]
     pub fn instance_metrics_range(&self) -> builder::InstanceMetricsRange<'_> {
         builder::InstanceMetricsRange::new(self)
     }
@@ -37483,6 +37773,7 @@ pub mod builder {
     pub struct CnMetricsRange<'a> {
         client: &'a super::Client,
         server_uuid: Result<::uuid::Uuid, String>,
+        device: Result<Option<::std::string::String>, String>,
         range: Result<Option<::std::string::String>, String>,
         schema: Result<Option<::std::string::String>, String>,
     }
@@ -37492,6 +37783,7 @@ pub mod builder {
             Self {
                 client: client,
                 server_uuid: Err("server_uuid was not initialized".to_string()),
+                device: Ok(None),
                 range: Ok(None),
                 schema: Ok(None),
             }
@@ -37504,6 +37796,16 @@ pub mod builder {
             self.server_uuid = value
                 .try_into()
                 .map_err(|_| "conversion to `:: uuid :: Uuid` for server_uuid failed".to_string());
+            self
+        }
+
+        pub fn device<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.device = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for device failed".to_string()
+            });
             self
         }
 
@@ -37534,10 +37836,12 @@ pub mod builder {
             let Self {
                 client,
                 server_uuid,
+                device,
                 range,
                 schema,
             } = self;
             let server_uuid = server_uuid.map_err(Error::InvalidRequest)?;
+            let device = device.map_err(Error::InvalidRequest)?;
             let range = range.map_err(Error::InvalidRequest)?;
             let schema = schema.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -37558,6 +37862,7 @@ pub mod builder {
                     ::reqwest::header::ACCEPT,
                     ::reqwest::header::HeaderValue::from_static("application/json"),
                 )
+                .query(&progenitor_client::QueryParam::new("device", &device))
                 .query(&progenitor_client::QueryParam::new("range", &range))
                 .query(&progenitor_client::QueryParam::new("schema", &schema))
                 .headers(header_map)
@@ -48435,6 +48740,58 @@ pub mod builder {
         }
     }
 
+    #[doc = "Builder for [`Client::metrics_status_v1`]\n\n[`Client::metrics_status_v1`]: super::Client::metrics_status_v1"]
+    #[derive(Debug, Clone)]
+    pub struct MetricsStatusV1<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> MetricsStatusV1<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/system/metrics/status`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::MetricsStatusResponse>, Error<types::Error>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/system/metrics/status", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "metrics_status_v1",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
     #[doc = "Builder for [`Client::list_system_network_pools_v1`]\n\n[`Client::list_system_network_pools_v1`]: super::Client::list_system_network_pools_v1"]
     #[derive(Debug, Clone)]
     pub struct ListSystemNetworkPoolsV1<'a> {
@@ -51017,6 +51374,7 @@ pub mod builder {
         tenant_id: Result<::uuid::Uuid, String>,
         project_id: Result<::uuid::Uuid, String>,
         instance_id: Result<::uuid::Uuid, String>,
+        device: Result<Option<::std::string::String>, String>,
         range: Result<Option<::std::string::String>, String>,
         schema: Result<Option<::std::string::String>, String>,
     }
@@ -51028,6 +51386,7 @@ pub mod builder {
                 tenant_id: Err("tenant_id was not initialized".to_string()),
                 project_id: Err("project_id was not initialized".to_string()),
                 instance_id: Err("instance_id was not initialized".to_string()),
+                device: Ok(None),
                 range: Ok(None),
                 schema: Ok(None),
             }
@@ -51063,6 +51422,16 @@ pub mod builder {
             self
         }
 
+        pub fn device<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.device = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for device failed".to_string()
+            });
+            self
+        }
+
         pub fn range<V>(mut self, value: V) -> Self
         where
             V: std::convert::TryInto<::std::string::String>,
@@ -51092,12 +51461,14 @@ pub mod builder {
                 tenant_id,
                 project_id,
                 instance_id,
+                device,
                 range,
                 schema,
             } = self;
             let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let device = device.map_err(Error::InvalidRequest)?;
             let range = range.map_err(Error::InvalidRequest)?;
             let schema = schema.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -51120,6 +51491,7 @@ pub mod builder {
                     ::reqwest::header::ACCEPT,
                     ::reqwest::header::HeaderValue::from_static("application/json"),
                 )
+                .query(&progenitor_client::QueryParam::new("device", &device))
                 .query(&progenitor_client::QueryParam::new("range", &range))
                 .query(&progenitor_client::QueryParam::new("schema", &schema))
                 .headers(header_map)

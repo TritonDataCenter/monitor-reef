@@ -1050,6 +1050,12 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::cns::get_system_cn_v1(rqctx, path).await
     }
 
+    async fn metrics_status_v1(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<tritond_api::MetricsStatusResponse>, HttpError> {
+        crate::handlers::telemetry::metrics_status_v1(rqctx).await
+    }
+
     async fn get_system_utilization_silos_v1(
         rqctx: RequestContext<Self::Context>,
     ) -> Result<HttpResponseOk<Vec<Silo>>, HttpError> {

@@ -33,8 +33,9 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 use tritond_client::Client;
-use tritond_cn_platform::smartos::KstatTool;
-use tritond_cn_platform::smartos::kstat::{LinkStat, ZoneCpu, ZoneDisk, ZoneMem};
+use tritond_cn_platform::smartos::kstat::{ArcStats, LinkStat, ZoneCpu, ZoneDisk, ZoneMem};
+use tritond_cn_platform::smartos::zfs::PoolIostatLatency;
+use tritond_cn_platform::smartos::{KstatTool, ZfsTool};
 use tritond_metrics::{
     Datum, Sample, SampleBatch, SampleIdentity, schema::cpu_mode, schemas, series,
 };
@@ -214,6 +215,31 @@ async fn tick_once(client: &Client, cn_uuid: Uuid, kstat: &KstatTool) -> anyhow:
         Err(e) => warn!(error = %e, "kstat tcp_estab failed"),
     }
 
+    // --- Storage: ARC effectiveness (per-CN) + per-pool iostat ---
+    // Time-series into ClickHouse so the Storage tab's Performance +
+    // Cache·ARC views render trends without streaming `zpool iostat`
+    // on the read path. Per-disk iostat + busy land in B2 alongside the
+    // diskinfo/SMART device mapping.
+    match kstat.arcstats().await {
+        Ok(arc) => push_arc(&mut samples, cn_uuid, now, &arc),
+        Err(e) => warn!(error = %e, "kstat arcstats failed"),
+    }
+    let zfs = ZfsTool::default();
+    match zfs.list_pools().await {
+        Ok(pools) => {
+            for row in &pools {
+                let Some(pool) = row.get("name").and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                match zfs.pool_iostat_latency(pool).await {
+                    Ok(io) => push_pool_iostat(&mut samples, cn_uuid, now, pool, &io),
+                    Err(e) => warn!(error = %e, pool, "zpool iostat -l failed"),
+                }
+            }
+        }
+        Err(e) => warn!(error = %e, "zpool list failed"),
+    }
+
     if samples.is_empty() {
         return Ok(());
     }
@@ -367,6 +393,79 @@ fn push_net(
     }
 }
 
+/// ARC effectiveness counters (`hits`/`misses`/`l2_*`) +
+/// sizing/composition gauges. Per-CN, no `device`.
+fn push_arc(out: &mut Vec<Sample>, cn_uuid: Uuid, now: DateTime<Utc>, arc: &ArcStats) {
+    for (s, v) in [
+        (series::ARC_HITS, arc.hits),
+        (series::ARC_MISSES, arc.misses),
+        (series::ARC_L2_HITS, arc.l2_hits),
+        (series::ARC_L2_MISSES, arc.l2_misses),
+    ] {
+        out.push(Sample {
+            schema: schemas::ZFS_ARC_PER_CN.into(),
+            identity: ident(cn_uuid, None, s),
+            timestamp: now,
+            datum: Datum::CumulativeU64 { value: v },
+        });
+    }
+    for (s, v) in [
+        (series::ARC_SIZE, arc.size),
+        (series::ARC_TARGET, arc.target),
+        (series::ARC_C_MAX, arc.c_max),
+        (series::ARC_MFU, arc.mfu_size),
+        (series::ARC_MRU, arc.mru_size),
+        (series::ARC_METADATA, arc.metadata_size),
+        (series::ARC_L2_SIZE, arc.l2_size),
+    ] {
+        out.push(Sample {
+            schema: schemas::ZFS_ARC_SIZE_PER_CN.into(),
+            identity: ident(cn_uuid, None, s),
+            timestamp: now,
+            datum: Datum::GaugeU64 { value: v },
+        });
+    }
+}
+
+/// Per-pool iostat: ops/bytes counters + end-to-end latency gauges.
+/// `device` = pool name.
+fn push_pool_iostat(
+    out: &mut Vec<Sample>,
+    cn_uuid: Uuid,
+    now: DateTime<Utc>,
+    pool: &str,
+    io: &PoolIostatLatency,
+) {
+    for (s, v) in [
+        (series::READ_OPS, io.read_ops),
+        (series::WRITE_OPS, io.write_ops),
+        (series::READ_BYTES, io.read_bw),
+        (series::WRITE_BYTES, io.write_bw),
+    ] {
+        if let Some(v) = v {
+            out.push(Sample {
+                schema: schemas::DISK_IOSTAT_PER_CN.into(),
+                identity: ident_device(cn_uuid, pool, s),
+                timestamp: now,
+                datum: Datum::CumulativeU64 { value: v },
+            });
+        }
+    }
+    for (s, v) in [
+        (series::READ_LAT, io.read_lat_ns),
+        (series::WRITE_LAT, io.write_lat_ns),
+    ] {
+        if let Some(v) = v {
+            out.push(Sample {
+                schema: schemas::DISK_LATENCY_PER_CN.into(),
+                identity: ident_device(cn_uuid, pool, s),
+                timestamp: now,
+                datum: Datum::GaugeU64 { value: v },
+            });
+        }
+    }
+}
+
 // ---- small helpers -----------------------------------------------
 
 fn ident(cn_uuid: Uuid, instance_id: Option<Uuid>, mode: &str) -> SampleIdentity {
@@ -376,6 +475,21 @@ fn ident(cn_uuid: Uuid, instance_id: Option<Uuid>, mode: &str) -> SampleIdentity
         project_id: None,
         instance_id,
         series: Some(mode.to_string()),
+        device: None,
+    }
+}
+
+/// Identity for a per-device/per-pool storage sample: no instance, a
+/// `device` label (e.g. `c1t2d0` or a pool name) plus the sub-metric
+/// `series` (e.g. `read_lat`).
+fn ident_device(cn_uuid: Uuid, device: &str, series: &str) -> SampleIdentity {
+    SampleIdentity {
+        cn_id: cn_uuid,
+        tenant_id: None,
+        project_id: None,
+        instance_id: None,
+        series: Some(series.to_string()),
+        device: Some(device.to_string()),
     }
 }
 

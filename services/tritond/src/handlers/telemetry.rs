@@ -32,7 +32,8 @@ use tritond_api::{
     AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, ClaimJobRequest, ClaimJobResponse,
     CnListQuery, CnPath, CompleteJobRequest, ConfigEntry, ConfigKeyPath, HealthResponse, ImagePath,
     InstanceDeleteQuery, InstanceLogsPath, LegacyCnSummary, LegacyVmListQuery, LegacyVmPath,
-    LogTailQuery, LoginRequest, MetricsRangeQuery, NetworkRealizationRequest, NewApiKey,
+    LogTailQuery, LoginRequest, MetricsRangeQuery, MetricsStatusResponse,
+    NetworkRealizationRequest, NewApiKey,
     NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint,
     RefreshRequest, RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery,
     RegisterStatusResponse, SetCnRoleRequest, SetConfigRequest, SiloPath, SiloTenantPath,
@@ -171,6 +172,7 @@ pub(crate) async fn instance_metrics_range(
         instance_id: Some(instance_id),
         tenant_id: None,
         cn_id: None,
+        device: None,
         since,
         until,
         step,
@@ -212,6 +214,7 @@ pub(crate) async fn cn_metrics_range(
         instance_id: None,
         tenant_id: None,
         cn_id: Some(server_uuid),
+        device: q.device.clone(),
         since,
         until,
         step,
@@ -222,6 +225,40 @@ pub(crate) async fn cn_metrics_range(
         .await
         .map_err(metrics_error_to_http)?;
     Ok(HttpResponseOk(result))
+}
+
+/// `GET /v1/system/metrics/status`. Answer "where/what/healthy" about
+/// the metrics backend from tritond itself: the *effective* live store
+/// (+ reachability probe), the configured backend for comparison, and
+/// the queryable schema catalog. Capability: `SystemRead`.
+pub(crate) async fn metrics_status_v1(
+    rqctx: RequestContext<ApiContext>,
+) -> Result<HttpResponseOk<MetricsStatusResponse>, HttpError> {
+    let ctx = rqctx.context();
+    let principal = crate::auth::authenticate_only(&rqctx, &ctx.auth, &ctx.store).await?;
+    crate::auth::require_capability(&principal, tritond_store::Capability::SystemRead)?;
+
+    let health = ctx.metrics.health().await;
+    // Serialize the configured backend to its canonical wire string --
+    // avoids hardcoding enum variants and tolerates `#[non_exhaustive]`.
+    let configured_backend = ctx
+        .store
+        .get_settings()
+        .await
+        .ok()
+        .and_then(|s| serde_json::to_value(s.metrics_backend).ok())
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_else(|| "unknown".to_string());
+    let schemas = tritond_metrics::schema::schemas::ALL
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+    Ok(HttpResponseOk(MetricsStatusResponse {
+        health,
+        configured_backend,
+        schemas,
+    }))
 }
 
 pub(crate) async fn agent_logs_ingest(

@@ -69,6 +69,9 @@ fn write_sample_line<W: Write>(out: &mut W, name: &str, s: &Sample) -> std::fmt:
     if let Some(i) = s.identity.instance_id {
         write!(out, ",instance=\"{i}\"")?;
     }
+    if let Some(dev) = s.identity.device.as_deref() {
+        write!(out, ",device=\"{}\"", escape_label(dev))?;
+    }
     if let Some(series) = s.identity.series.as_deref() {
         write!(out, ",series=\"{}\"", escape_label(series))?;
     }
@@ -128,6 +131,7 @@ mod tests {
                 project_id: None,
                 instance_id: Some(inst),
                 series: Some("user".to_string()),
+                device: None,
             },
             timestamp: ts,
             datum: Datum::CumulativeU64 { value: 12345 },

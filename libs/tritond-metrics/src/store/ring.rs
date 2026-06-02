@@ -18,7 +18,10 @@ use std::time::SystemTime;
 
 use chrono::{DateTime, Duration, Utc};
 
-use super::{MetricsStore, MetricsStoreError, RangeQuery, RangeResult, SeriesPoint, SeriesPoints};
+use super::{
+    MetricsHealth, MetricsStore, MetricsStoreError, RangeQuery, RangeResult, SeriesPoint,
+    SeriesPoints,
+};
 use crate::sample::Sample;
 
 /// Default retention -- enough to cover the V5 dashboard's longest
@@ -38,6 +41,7 @@ struct IdentityKey {
     project_id: Option<uuid::Uuid>,
     instance_id: Option<uuid::Uuid>,
     series: String,
+    device: Option<String>,
 }
 
 impl IdentityKey {
@@ -48,6 +52,7 @@ impl IdentityKey {
             project_id: s.identity.project_id,
             instance_id: s.identity.instance_id,
             series: s.identity.series.clone().unwrap_or_default(),
+            device: s.identity.device.clone(),
         }
     }
 }
@@ -154,6 +159,11 @@ impl MetricsStore for RingBufferStore {
             {
                 continue;
             }
+            if let Some(want) = &q.device
+                && ident.device.as_deref() != Some(want.as_str())
+            {
+                continue;
+            }
             for s in log.iter() {
                 if s.timestamp < q.since || s.timestamp > q.until {
                     continue;
@@ -199,6 +209,15 @@ impl MetricsStore for RingBufferStore {
             }
         }
         Ok(out)
+    }
+
+    async fn health(&self) -> MetricsHealth {
+        MetricsHealth {
+            backend: "memory".to_string(),
+            endpoint: None,
+            reachable: true,
+            detail: None,
+        }
     }
 }
 
@@ -292,6 +311,7 @@ mod tests {
                 project_id: None,
                 instance_id: Some(instance),
                 series: Some(mode.to_string()),
+                device: None,
             },
             timestamp: ts,
             datum: Datum::CumulativeU64 { value: ns },
@@ -325,6 +345,7 @@ mod tests {
             instance_id: Some(inst),
             tenant_id: None,
             cn_id: None,
+            device: None,
             since: t0,
             until: t0 + Duration::seconds(120),
             step: Duration::seconds(30),
@@ -355,6 +376,7 @@ mod tests {
             instance_id: None,
             tenant_id: None,
             cn_id: None,
+            device: None,
             since: now,
             until: now,
             step: Duration::seconds(60),

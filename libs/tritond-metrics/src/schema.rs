@@ -96,6 +96,62 @@ pub mod schemas {
     /// Per-CN established TCP connections (the global zone's
     /// netstack). Same shape; source `tcp:0:tcp:currEstab`.
     pub const SOCKETS_PER_CN: &str = "triton.sockets_per_cn";
+
+    // ── Storage (CN-local ZFS) ──────────────────────────────────────
+    // `device` identity field carries the disk (`c1t2d0`) or pool name;
+    // `series` carries the sub-metric. A schema pins one datum type so
+    // the read path can map it to a single ClickHouse table -- hence
+    // counters and gauges of the same concept (e.g. ARC) split into two
+    // schemas. Source: the disk I/O kstat class + `zfs:0:arcstats`.
+
+    /// Per-disk I/O counters. `device` = disk, `series` = `read_ops` /
+    /// `write_ops` / `read_bytes` / `write_bytes`. Datum `CumulativeU64`.
+    pub const DISK_IOSTAT_PER_CN: &str = "triton.disk_iostat_per_cn";
+    /// Per-disk service latency. `device` = disk, `series` = `read_lat` /
+    /// `write_lat`. Datum `GaugeU64` (nanoseconds; `rlentime/reads`).
+    pub const DISK_LATENCY_PER_CN: &str = "triton.disk_latency_per_cn";
+    /// Per-disk busy fraction. `device` = disk, `series` = `busy`.
+    /// Datum `GaugeF64` (0.0-1.0; `(rtime+wtime)` delta / interval).
+    pub const DISK_BUSY_PER_CN: &str = "triton.disk_busy_per_cn";
+
+    /// ARC effectiveness counters. `series` = `hits` / `misses` /
+    /// `l2_hits` / `l2_misses`. Datum `CumulativeU64`. Source:
+    /// `zfs:0:arcstats:{hits,misses,l2_hits,l2_misses}`.
+    pub const ZFS_ARC_PER_CN: &str = "triton.zfs_arc_per_cn";
+    /// ARC sizing gauges. `series` = `size` / `target` (c) / `c_max` /
+    /// `mfu` / `mru` / `metadata` / `l2_size`. Datum `GaugeU64` (bytes).
+    pub const ZFS_ARC_SIZE_PER_CN: &str = "triton.zfs_arc_size_per_cn";
+
+    /// Per-pool capacity over time. `device` = pool, `series` = `alloc` /
+    /// `free` / `size`. Datum `GaugeU64` (bytes). (Phase B3.)
+    pub const ZPOOL_CAPACITY_PER_CN: &str = "triton.zpool_capacity_per_cn";
+    /// Per-disk SMART temperature. `device` = disk, `series` = `temp_c`.
+    /// Datum `GaugeU64` (degrees C). (Phase B2, with the SMART reader.)
+    pub const DISK_TEMP_PER_CN: &str = "triton.disk_temp_per_cn";
+
+    /// Every schema tritond knows how to ingest + serve, so a client can
+    /// ask tritond "what can I query?" rather than reading source. Keep
+    /// in sync with the consts above.
+    pub const ALL: &[&str] = &[
+        CPU_PER_ZONE,
+        CPU_PER_CN,
+        MEM_PER_ZONE,
+        MEM_PER_CN,
+        DISK_PER_ZONE,
+        DISK_PER_CN,
+        NET_PER_ZONE,
+        NET_PER_CN,
+        LOAD_PER_CN,
+        SOCKETS_PER_ZONE,
+        SOCKETS_PER_CN,
+        DISK_IOSTAT_PER_CN,
+        DISK_LATENCY_PER_CN,
+        DISK_BUSY_PER_CN,
+        ZFS_ARC_PER_CN,
+        ZFS_ARC_SIZE_PER_CN,
+        ZPOOL_CAPACITY_PER_CN,
+        DISK_TEMP_PER_CN,
+    ];
 }
 
 /// Dimension values for the `series` identity field on CPU schemas.
@@ -133,4 +189,32 @@ pub mod series {
     pub const LOAD_15M: &str = "15m";
     // sockets_per_*
     pub const TCP_ESTAB: &str = "tcp_estab";
+    // disk_iostat_per_cn
+    pub const READ_OPS: &str = "read_ops";
+    pub const WRITE_OPS: &str = "write_ops";
+    // (READ_BYTES / WRITE_BYTES reused from disk_per_* above)
+    // disk_latency_per_cn
+    pub const READ_LAT: &str = "read_lat";
+    pub const WRITE_LAT: &str = "write_lat";
+    // disk_busy_per_cn
+    pub const BUSY: &str = "busy";
+    // zfs_arc_per_cn (counters)
+    pub const ARC_HITS: &str = "hits";
+    pub const ARC_MISSES: &str = "misses";
+    pub const ARC_L2_HITS: &str = "l2_hits";
+    pub const ARC_L2_MISSES: &str = "l2_misses";
+    // zfs_arc_size_per_cn (gauges)
+    pub const ARC_SIZE: &str = "size";
+    pub const ARC_TARGET: &str = "target";
+    pub const ARC_C_MAX: &str = "c_max";
+    pub const ARC_MFU: &str = "mfu";
+    pub const ARC_MRU: &str = "mru";
+    pub const ARC_METADATA: &str = "metadata";
+    pub const ARC_L2_SIZE: &str = "l2_size";
+    // zpool_capacity_per_cn
+    pub const ALLOC: &str = "alloc";
+    pub const FREE: &str = "free";
+    pub const SIZE: &str = "size";
+    // disk_temp_per_cn
+    pub const TEMP_C: &str = "temp_c";
 }

@@ -33,5 +33,6 @@ pub mod store;
 pub use sample::{Datum, Sample, SampleBatch, SampleIdentity};
 pub use schema::{SchemaName, cpu_mode, schemas, series};
 pub use store::{
-    MetricsStore, MetricsStoreError, RangeQuery, RangeResult, SeriesPoint, SeriesPoints,
+    MetricsHealth, MetricsStore, MetricsStoreError, RangeQuery, RangeResult, SeriesPoint,
+    SeriesPoints,
 };

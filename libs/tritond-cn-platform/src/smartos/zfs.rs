@@ -158,6 +158,19 @@ pub struct PoolIostatRow {
     pub write_bw: Option<u64>,
 }
 
+/// Pool-aggregate iostat with latency (`zpool iostat -Hp -l <pool>`).
+/// ops/bytes are cumulative-since-boot counters; `*_lat_ns` are
+/// instantaneous `total_wait` (end-to-end) latencies in nanoseconds.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct PoolIostatLatency {
+    pub read_ops: Option<u64>,
+    pub write_ops: Option<u64>,
+    pub read_bw: Option<u64>,
+    pub write_bw: Option<u64>,
+    pub read_lat_ns: Option<u64>,
+    pub write_lat_ns: Option<u64>,
+}
+
 /// Snapshot summary for a pool, capped so per-VM image snapshots can't bloat
 /// the heartbeat status payload.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -251,6 +264,18 @@ impl ZfsTool {
     pub async fn pool_iostat(&self, pool: &str) -> Result<Vec<PoolIostatRow>, ZfsError> {
         let stdout = run_cmd(&self.zpool_bin, &["iostat", "-Hp", "-v", pool]).await?;
         Ok(parse_iostat(&stdout))
+    }
+
+    /// `zpool iostat -Hp -l <pool>` -> pool-aggregate ops/bandwidth +
+    /// end-to-end (`total_wait`) latency. No `-v`, so a single row for
+    /// the whole pool. Used by the metrics emitter to feed per-pool
+    /// IOPS/latency time-series into ClickHouse (the Performance view's
+    /// headline trends). ops/bytes are cumulative-since-boot counters;
+    /// latency is an instantaneous gauge in nanoseconds.
+    pub async fn pool_iostat_latency(&self, pool: &str) -> Result<PoolIostatLatency, ZfsError> {
+        let stdout = run_cmd(&self.zpool_bin, &["iostat", "-Hp", "-l", pool]).await?;
+        parse_pool_iostat_latency(&stdout)
+            .ok_or_else(|| ZfsError::BadOutput(format!("no iostat row for pool {pool}")))
     }
 
     /// Summarize every snapshot in the pool, keeping only the `top_n` largest
@@ -689,6 +714,34 @@ fn parse_iostat(text: &str) -> Vec<PoolIostatRow> {
     rows
 }
 
+/// Parse one-line `zpool iostat -Hp -l <pool>` output. Columns
+/// (tab-separated, `-p` parsable): name, alloc, free, read_ops,
+/// write_ops, read_bw, write_bw, total_wait_read, total_wait_write,
+/// (then disk_wait / syncq / asyncq / scrub / trim columns we ignore).
+/// `total_wait` is the end-to-end latency. Returns `None` if no data
+/// row is present.
+fn parse_pool_iostat_latency(text: &str) -> Option<PoolIostatLatency> {
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() < 7 {
+            continue;
+        }
+        let col = |i: usize| cols.get(i).and_then(|s| s.trim().parse::<u64>().ok());
+        return Some(PoolIostatLatency {
+            read_ops: col(3),
+            write_ops: col(4),
+            read_bw: col(5),
+            write_bw: col(6),
+            read_lat_ns: col(7),
+            write_lat_ns: col(8),
+        });
+    }
+    None
+}
+
 fn summarize_snapshots(
     rows: &[serde_json::Map<String, serde_json::Value>],
     top_n: usize,
@@ -899,6 +952,23 @@ mod tests {
         let rows = parse_iostat("spare-0\t-\t-\t-\t-\t-\t-\n");
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].alloc_bytes, None);
+    }
+
+    #[test]
+    fn parse_pool_iostat_latency_row() {
+        // name alloc free rops wops rbw wbw twait_r twait_w dwait_r dwait_w
+        let text = "tank\t5400000000000\t2600000000000\t4820\t9310\t641728512\t1267650600\t420000\t1800000\t380000\t1600000\n";
+        let r = parse_pool_iostat_latency(text).expect("row");
+        assert_eq!(r.read_ops, Some(4820));
+        assert_eq!(r.write_ops, Some(9310));
+        assert_eq!(r.read_bw, Some(641_728_512));
+        assert_eq!(r.read_lat_ns, Some(420_000));
+        assert_eq!(r.write_lat_ns, Some(1_800_000));
+    }
+
+    #[test]
+    fn parse_pool_iostat_latency_no_row() {
+        assert!(parse_pool_iostat_latency("\n").is_none());
     }
 
     #[test]

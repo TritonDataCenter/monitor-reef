@@ -32,7 +32,7 @@ use chrono::{DateTime, Utc};
 use reqwest::Client as HttpClient;
 
 use super::ring::bucket_samples;
-use super::{MetricsStore, MetricsStoreError, RangeQuery, RangeResult, SeriesPoints};
+use super::{MetricsHealth, MetricsStore, MetricsStoreError, RangeQuery, RangeResult, SeriesPoints};
 use crate::sample::{Datum, Sample, SampleIdentity};
 use crate::schema::SchemaName;
 
@@ -218,6 +218,12 @@ impl MetricsStore for ClickHouseStore {
                 " AND JSONExtractString(fields_json, 'cn_id') = '{cn}'"
             ));
         }
+        if let Some(dev) = &q.device {
+            let dev = sanitize_ident(dev)?;
+            sql.push_str(&format!(
+                " AND JSONExtractString(fields_json, 'device') = '{dev}'"
+            ));
+        }
         sql.push_str(" ORDER BY timestamp ASC FORMAT JSONEachRow");
 
         let body = self.post(sql).await?;
@@ -244,6 +250,7 @@ impl MetricsStore for ClickHouseStore {
                     project_id: None,
                     instance_id: None,
                     series: None,
+                    device: None,
                 });
             let series = ident.series.clone().unwrap_or_default();
             let timestamp = parse_ch_timestamp(&row.ts).unwrap_or_else(Utc::now);
@@ -319,6 +326,21 @@ impl MetricsStore for ClickHouseStore {
         }
         Ok(out)
     }
+
+    async fn health(&self) -> MetricsHealth {
+        // Cheap liveness probe -- `SELECT 1` round-trips without
+        // touching the measurement tables.
+        let (reachable, detail) = match self.post("SELECT 1".to_string()).await {
+            Ok(_) => (true, None),
+            Err(e) => (false, Some(e.to_string())),
+        };
+        MetricsHealth {
+            backend: "clickhouse".to_string(),
+            endpoint: Some(self.base_url.clone()),
+            reachable,
+            detail,
+        }
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -351,18 +373,24 @@ fn schema_table(schema: &str) -> &'static str {
             || x == s::DISK_PER_ZONE
             || x == s::DISK_PER_CN
             || x == s::NET_PER_ZONE
-            || x == s::NET_PER_CN =>
+            || x == s::NET_PER_CN
+            || x == s::DISK_IOSTAT_PER_CN
+            || x == s::ZFS_ARC_PER_CN =>
         {
             "measurements_cumulative_u64"
         }
         x if x == s::MEM_PER_ZONE
             || x == s::MEM_PER_CN
             || x == s::SOCKETS_PER_ZONE
-            || x == s::SOCKETS_PER_CN =>
+            || x == s::SOCKETS_PER_CN
+            || x == s::DISK_LATENCY_PER_CN
+            || x == s::ZFS_ARC_SIZE_PER_CN
+            || x == s::ZPOOL_CAPACITY_PER_CN
+            || x == s::DISK_TEMP_PER_CN =>
         {
             "measurements_gauge_u64"
         }
-        x if x == s::LOAD_PER_CN => "measurements_gauge_f64",
+        x if x == s::LOAD_PER_CN || x == s::DISK_BUSY_PER_CN => "measurements_gauge_f64",
         _ => "measurements_gauge_f64",
     }
 }
@@ -391,6 +419,7 @@ fn timeseries_key(schema: &str, ident: &SampleIdentity) -> u64 {
     ident.project_id.hash(&mut h);
     ident.instance_id.hash(&mut h);
     ident.series.hash(&mut h);
+    ident.device.hash(&mut h);
     h.finish()
 }
 
@@ -472,6 +501,7 @@ mod tests {
             project_id: None,
             instance_id: Some(Uuid::nil()),
             series: Some("user".into()),
+            device: None,
         };
         let a = timeseries_key("triton.cpu_per_zone", &id);
         let b = timeseries_key("triton.cpu_per_zone", &id);

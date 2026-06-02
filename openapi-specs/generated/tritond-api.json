@@ -1555,6 +1555,15 @@
           },
           {
             "in": "query",
+            "name": "device",
+            "description": "Device/pool filter for storage schemas (matches the sample's `device` identity, e.g. a pool name or `c1t2d0`). Ignored by schemas that don't carry a device.",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "range",
             "description": "Short range identifier (e.g. `1h`).",
             "schema": {
@@ -7264,6 +7273,34 @@
         }
       }
     },
+    "/v1/system/metrics/status": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "`GET /v1/system/metrics/status`. Metrics backend status: which",
+        "description": "store is live, where it is, whether it's reachable, and the queryable schemas -- so clients ask tritond, not ClickHouse. Capability: `SystemRead`.",
+        "operationId": "metrics_status_v1",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsStatusResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/system/network-pools": {
       "get": {
         "tags": [
@@ -8635,6 +8672,15 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "device",
+            "description": "Device/pool filter for storage schemas (matches the sample's `device` identity, e.g. a pool name or `c1t2d0`). Ignored by schemas that don't carry a device.",
+            "schema": {
+              "nullable": true,
+              "type": "string"
             }
           },
           {
@@ -14369,6 +14415,64 @@
           "value"
         ]
       },
+      "MetricsHealth": {
+        "description": "Self-description of the live metrics backend, so tritond can answer \"what backend am I actually running, where, and is it up?\" without the caller needing out-of-band knowledge. Reported by the live `Arc<dyn MetricsStore>`, so it reflects the **effective** backend (e.g. an in-memory fallback after a failed ClickHouse bootstrap), not just the configured intent.",
+        "type": "object",
+        "properties": {
+          "backend": {
+            "description": "Backend kind: `memory` or `clickhouse`.",
+            "type": "string"
+          },
+          "detail": {
+            "nullable": true,
+            "description": "Error detail when `reachable` is false.",
+            "type": "string"
+          },
+          "endpoint": {
+            "nullable": true,
+            "description": "Endpoint URL for remote backends; `None` for in-memory.",
+            "type": "string"
+          },
+          "reachable": {
+            "description": "Whether the backend answered a cheap liveness probe.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "backend",
+          "reachable"
+        ]
+      },
+      "MetricsStatusResponse": {
+        "description": "Metrics-backend status, so clients ask tritond (the source of truth) where metrics live, what backend is *actually* running, whether it's reachable, and what schemas are queryable -- rather than needing out-of-band knowledge of ClickHouse. Operator surface (SystemRead).",
+        "type": "object",
+        "properties": {
+          "configured_backend": {
+            "description": "The configured backend from cluster settings (`metrics.backend`), for comparison against `health.backend` -- a mismatch means a startup fallback the operator should know about.",
+            "type": "string"
+          },
+          "health": {
+            "description": "The live backend description + reachability probe. `backend` is the *effective* store (e.g. `memory` if a ClickHouse bootstrap failed and tritond fell back), not just the configured intent.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetricsHealth"
+              }
+            ]
+          },
+          "schemas": {
+            "description": "Schema names tritond can ingest + serve (for query discovery).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "configured_backend",
+          "health",
+          "schemas"
+        ]
+      },
       "MigrateInstanceBody": {
         "description": "Request body for `POST .../instances/{instance_id}/migrate`.\n\nLM-5 ships `action=begin` only; the other actions (estimate, pause, switch, abort, rollback, finalize) return 501 until LM-6 / LM-8 wire the sub-sagas. The wire shape is fixed now so clients don't have to bump on each LM-* slice.",
         "type": "object",
@@ -17793,6 +17897,11 @@
             "description": "CN that produced the sample.",
             "type": "string",
             "format": "uuid"
+          },
+          "device": {
+            "nullable": true,
+            "description": "Device or pool label for storage samples (e.g. `c1t2d0`, a pool name). Kept distinct from `series` so a storage schema can carry both a device *and* a sub-metric (device `c1t2d0`, series `write_lat`). `None` for non-storage schemas. Cardinality is the CN's disk/pool count -- bounded.",
+            "type": "string"
           },
           "instance_id": {
             "nullable": true,

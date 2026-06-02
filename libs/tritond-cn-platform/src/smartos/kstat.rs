@@ -221,6 +221,31 @@ pub struct LoadAvg {
     pub fifteen: f64,
 }
 
+/// ZFS ARC effectiveness + sizing, read from `zfs:0:arcstats`.
+///
+/// `hits`/`misses`/`l2_*` are monotonic counters (the storage layer
+/// derives hit-ratio + miss-rate from per-bucket deltas); the `*_size`
+/// fields are instantaneous byte gauges. Missing stats stay 0 -- field
+/// names vary slightly across illumos vintages (`metadata_size` is
+/// absent on some), and an absent stat should not fail the tick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+pub struct ArcStats {
+    pub hits: u64,
+    pub misses: u64,
+    pub l2_hits: u64,
+    pub l2_misses: u64,
+    /// Current ARC size, bytes.
+    pub size: u64,
+    /// Target size `c`, bytes.
+    pub target: u64,
+    /// Max size `c_max`, bytes.
+    pub c_max: u64,
+    pub mfu_size: u64,
+    pub mru_size: u64,
+    pub metadata_size: u64,
+    pub l2_size: u64,
+}
+
 impl KstatTool {
     /// Read per-zone RSS + swap from `memory_cap:::rss memory_cap:::swap`.
     /// Zones missing either stat are dropped.
@@ -410,6 +435,14 @@ impl KstatTool {
         Ok(out)
     }
 
+    /// Read ZFS ARC effectiveness + sizing from `zfs:0:arcstats`.
+    /// A single `kstat -p zfs:0:arcstats` lists every stat for the
+    /// kstat; we pick the fields the Cache·ARC view needs.
+    pub async fn arcstats(&self) -> Result<ArcStats, KstatError> {
+        let text = self.run_kstat(&["zfs:0:arcstats"]).await?;
+        Ok(parse_arcstats(&text))
+    }
+
     /// Run `kstat -p <selectors...>` and return stdout as text.
     /// Shared by the per-metric readers above.
     async fn run_kstat(&self, selectors: &[&str]) -> Result<String, KstatError> {
@@ -527,6 +560,33 @@ fn parse_zone_cpu(text: &str) -> Vec<ZoneCpu> {
     out
 }
 
+/// Parse `kstat -p zfs:0:arcstats` output into [`ArcStats`]. Unknown /
+/// missing stats stay 0.
+fn parse_arcstats(text: &str) -> ArcStats {
+    let mut a = ArcStats::default();
+    for (module, _instance, name, stat, raw) in parse_kstat_lines(text) {
+        if module != "zfs" || name != "arcstats" {
+            continue;
+        }
+        let Ok(v) = raw.parse::<u64>() else { continue };
+        match stat {
+            "hits" => a.hits = v,
+            "misses" => a.misses = v,
+            "l2_hits" => a.l2_hits = v,
+            "l2_misses" => a.l2_misses = v,
+            "size" => a.size = v,
+            "c" => a.target = v,
+            "c_max" => a.c_max = v,
+            "mfu_size" => a.mfu_size = v,
+            "mru_size" => a.mru_size = v,
+            "metadata_size" => a.metadata_size = v,
+            "l2_size" => a.l2_size = v,
+            _ => {}
+        }
+    }
+    a
+}
+
 /// Locate `selector` in tab-separated kstat output and parse its value.
 fn parse_stat(text: &str, selector: &str, what: &'static str) -> Result<u64, KstatError> {
     for line in text.lines() {
@@ -612,6 +672,33 @@ zones:2:incomplete:nsec_user\t42";
         assert_eq!(vm.user_ns, 5000);
         assert_eq!(vm.system_ns, 900);
         assert_eq!(vm.iowait_ns, 100);
+    }
+
+    #[test]
+    fn parses_arcstats() {
+        let sample = "\
+zfs:0:arcstats:hits\t9876543
+zfs:0:arcstats:misses\t123456
+zfs:0:arcstats:l2_hits\t4000
+zfs:0:arcstats:l2_misses\t6000
+zfs:0:arcstats:size\t103079215104
+zfs:0:arcstats:c\t128849018880
+zfs:0:arcstats:c_max\t137438953472
+zfs:0:arcstats:mfu_size\t64424509440
+zfs:0:arcstats:mru_size\t31138512896
+zfs:0:arcstats:l2_size\t858993459200
+zfs:0:arcstats:other_stat\t42";
+        let a = parse_arcstats(sample);
+        assert_eq!(a.hits, 9_876_543);
+        assert_eq!(a.misses, 123_456);
+        assert_eq!(a.l2_hits, 4_000);
+        assert_eq!(a.size, 103_079_215_104);
+        assert_eq!(a.target, 128_849_018_880);
+        assert_eq!(a.c_max, 137_438_953_472);
+        assert_eq!(a.mfu_size, 64_424_509_440);
+        assert_eq!(a.l2_size, 858_993_459_200);
+        // Absent stat (metadata_size) stays 0.
+        assert_eq!(a.metadata_size, 0);
     }
 
     #[test]

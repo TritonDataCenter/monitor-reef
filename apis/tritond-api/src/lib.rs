@@ -48,6 +48,24 @@ pub struct HealthResponse {
     pub version: String,
 }
 
+/// Metrics-backend status, so clients ask tritond (the source of truth)
+/// where metrics live, what backend is *actually* running, whether it's
+/// reachable, and what schemas are queryable -- rather than needing
+/// out-of-band knowledge of ClickHouse. Operator surface (SystemRead).
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct MetricsStatusResponse {
+    /// The live backend description + reachability probe. `backend` is
+    /// the *effective* store (e.g. `memory` if a ClickHouse bootstrap
+    /// failed and tritond fell back), not just the configured intent.
+    pub health: tritond_metrics::MetricsHealth,
+    /// The configured backend from cluster settings (`metrics.backend`),
+    /// for comparison against `health.backend` -- a mismatch means a
+    /// startup fallback the operator should know about.
+    pub configured_backend: String,
+    /// Schema names tritond can ingest + serve (for query discovery).
+    pub schemas: Vec<String>,
+}
+
 /// Path parameters for endpoints that operate on a single silo.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SiloPath {
@@ -1773,6 +1791,11 @@ pub struct MetricsRangeQuery {
     /// Schema name. Defaults to `triton.cpu_per_zone`.
     #[serde(default)]
     pub schema: Option<String>,
+    /// Device/pool filter for storage schemas (matches the sample's
+    /// `device` identity, e.g. a pool name or `c1t2d0`). Ignored by
+    /// schemas that don't carry a device.
+    #[serde(default)]
+    pub device: Option<String>,
 }
 
 /// Path parameters for `GET /v1/tenants/{tenant_id}/metrics`. Reused
@@ -3980,6 +4003,19 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<crate::v1::SystemCnPath>,
     ) -> Result<HttpResponseOk<CnView>, HttpError>;
+
+    /// `GET /v1/system/metrics/status`. Metrics backend status: which
+    /// store is live, where it is, whether it's reachable, and the
+    /// queryable schemas -- so clients ask tritond, not ClickHouse.
+    /// Capability: `SystemRead`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/system/metrics/status",
+        tags = ["system"],
+    }]
+    async fn metrics_status_v1(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<MetricsStatusResponse>, HttpError>;
 
     /// RFD 00007 `GET /v1/system/utilization/silos`. Per-silo
     /// capacity utilization (placeholder). The path is locked in the
