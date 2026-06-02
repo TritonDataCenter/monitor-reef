@@ -226,6 +226,13 @@ enum Commands {
         #[command(subcommand)]
         command: WorkspaceCommand,
     },
+    /// Manage mantad IAM users (operator-only). Currently exposes the
+    /// inline-policy surface (`tcadm user policy {put,get,delete,list}`);
+    /// the rest of the user CRUD still flows through admin-backend.
+    User {
+        #[command(subcommand)]
+        command: UserCommand,
+    },
     /// View and change cluster-wide tritond settings (fleet-admin
     /// only). The minimum tritond needs to start lives in its
     /// bootstrap config file; everything here lives in FoundationDB
@@ -958,6 +965,60 @@ enum WorkspaceQuotaCommand {
     Get {
         /// Workspace name (e.g. `t-deadbeefdeadbeefdeadbeefdeadbeef`).
         name: String,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum UserCommand {
+    /// Manage IAM inline policies attached to a user.
+    Policy {
+        #[command(subcommand)]
+        command: UserPolicyCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum UserPolicyCommand {
+    /// Attach (or replace) an inline policy on the user. The document
+    /// is sent verbatim to mantad's `PUT /admin/v1/users/{name}/policies/{policy}`;
+    /// the wire shape is a JSON object (typically `{"Version": "...", "Statement": [...]}`).
+    Put {
+        /// User name.
+        user: String,
+        /// Policy name (unique per user).
+        policy: String,
+        /// Policy JSON document. Pass `-` to read from stdin.
+        #[arg(long)]
+        document: String,
+        /// Optional workspace scope (for workspace-scoped users).
+        #[arg(long)]
+        workspace: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a user's inline policy by name.
+    Get {
+        user: String,
+        policy: String,
+        #[arg(long)]
+        workspace: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete a user's inline policy.
+    Delete {
+        user: String,
+        policy: String,
+        #[arg(long)]
+        workspace: Option<String>,
+    },
+    /// List the names of inline policies attached to a user.
+    List {
+        user: String,
+        #[arg(long)]
+        workspace: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -3152,6 +3213,60 @@ async fn main() -> Result<()> {
                 }
                 WorkspaceQuotaCommand::Get { name, json } => {
                     commands::workspace_quota_get(cli.endpoint, cli.api_key, name, json).await
+                }
+            },
+        },
+        Commands::User { command } => match command {
+            UserCommand::Policy { command } => match command {
+                UserPolicyCommand::Put {
+                    user,
+                    policy,
+                    document,
+                    workspace,
+                    json,
+                } => {
+                    commands::user_policy_put(
+                        cli.endpoint,
+                        cli.api_key,
+                        user,
+                        policy,
+                        document,
+                        workspace,
+                        json,
+                    )
+                    .await
+                }
+                UserPolicyCommand::Get {
+                    user,
+                    policy,
+                    workspace,
+                    json,
+                } => {
+                    commands::user_policy_get(
+                        cli.endpoint,
+                        cli.api_key,
+                        user,
+                        policy,
+                        workspace,
+                        json,
+                    )
+                    .await
+                }
+                UserPolicyCommand::Delete {
+                    user,
+                    policy,
+                    workspace,
+                } => {
+                    commands::user_policy_delete(cli.endpoint, cli.api_key, user, policy, workspace)
+                        .await
+                }
+                UserPolicyCommand::List {
+                    user,
+                    workspace,
+                    json,
+                } => {
+                    commands::user_policy_list(cli.endpoint, cli.api_key, user, workspace, json)
+                        .await
                 }
             },
         },

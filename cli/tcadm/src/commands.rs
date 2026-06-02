@@ -947,6 +947,138 @@ pub async fn workspace_quota_get(
     Ok(())
 }
 
+/// Attach (or replace) an inline IAM policy on a mantad user.
+///
+/// `document` is either a literal JSON string or `-` to read the
+/// document from stdin. The body is validated as JSON before it
+/// ships so a typo here surfaces locally rather than as a generic
+/// 400 from mantad.
+pub async fn user_policy_put(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    user: String,
+    policy: String,
+    document: String,
+    workspace: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let raw = if document == "-" {
+        use std::io::Read;
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .context("read policy document from stdin")?;
+        buf
+    } else {
+        document
+    };
+
+    let doc_value: serde_json::Value = serde_json::from_str(raw.trim())
+        .context("policy document is not valid JSON; expected an object like {\"Version\":\"…\",\"Statement\":[…]}")?;
+
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.mantad_client()?;
+    client
+        .put_user_policy(&user, &policy, &doc_value, workspace.as_deref())
+        .await
+        .context("put user policy")?;
+
+    if json_output {
+        println!("{{}}");
+    } else {
+        match workspace.as_deref() {
+            Some(ws) => println!("Put policy {policy} on user {user} (workspace {ws})"),
+            None => println!("Put policy {policy} on user {user}"),
+        }
+    }
+    Ok(())
+}
+
+/// Read a user's inline policy by name.
+pub async fn user_policy_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    user: String,
+    policy: String,
+    workspace: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.mantad_client()?;
+    let doc = client
+        .get_user_policy(&user, &policy, workspace.as_deref())
+        .await
+        .context("get user policy")?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&doc)?);
+    } else {
+        println!("User:   {user}");
+        println!("Policy: {policy}");
+        if let Some(ws) = workspace.as_deref() {
+            println!("Workspace: {ws}");
+        }
+        println!("Document:");
+        println!("{}", serde_json::to_string_pretty(&doc)?);
+    }
+    Ok(())
+}
+
+/// Delete a user's inline policy.
+pub async fn user_policy_delete(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    user: String,
+    policy: String,
+    workspace: Option<String>,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.mantad_client()?;
+    client
+        .delete_user_policy(&user, &policy, workspace.as_deref())
+        .await
+        .context("delete user policy")?;
+
+    match workspace.as_deref() {
+        Some(ws) => println!("Deleted policy {policy} from user {user} (workspace {ws})"),
+        None => println!("Deleted policy {policy} from user {user}"),
+    }
+    Ok(())
+}
+
+/// List the names of inline policies attached to a user.
+pub async fn user_policy_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    user: String,
+    workspace: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.mantad_client()?;
+    let names = client
+        .list_user_policies(&user, workspace.as_deref())
+        .await
+        .context("list user policies")?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&names)?);
+    } else {
+        match workspace.as_deref() {
+            Some(ws) => println!("Inline policies for user {user} (workspace {ws}):"),
+            None => println!("Inline policies for user {user}:"),
+        }
+        if names.is_empty() {
+            println!("  (none)");
+        } else {
+            for name in &names {
+                println!("  {name}");
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Delete a project.
 pub async fn tenant_project_delete(
     endpoint_override: Option<String>,
