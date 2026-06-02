@@ -25,6 +25,7 @@ use std::env;
 
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
+use mantad_client::MantadClient;
 use tritond_client::Client;
 use tritond_client::types::{RefreshRequest, TokenResponse};
 
@@ -98,6 +99,22 @@ impl Session {
     pub fn client(&self) -> Result<Client> {
         let http = build_http_client(self.bearer.as_deref())?;
         Ok(Client::new_with_client(&self.endpoint, http))
+    }
+
+    /// Build a `mantad_client::MantadClient` against the same endpoint
+    /// and bearer token already resolved for tritond. Assumes a single
+    /// control-plane deployment shares one base URL between tritond and
+    /// mantad's `/admin/v1/*` surface (true for the current rollout;
+    /// when the two ever split, route mantad's URL through the
+    /// `[storage]` cluster registration and resolve it here instead).
+    ///
+    /// Errors if no bearer is available (the admin surface refuses
+    /// anonymous calls; `MantadClient::new` rejects an empty token).
+    pub fn mantad_client(&self) -> Result<MantadClient> {
+        let bearer = self.bearer.as_deref().context(
+            "mantad admin surface requires a bearer token; run `tcadm login` or pass --api-key",
+        )?;
+        MantadClient::new(&self.endpoint, bearer).context("build mantad-client")
     }
 }
 

@@ -888,6 +888,65 @@ pub async fn tenant_project_quota_delete(
     Ok(())
 }
 
+/// Set (or replace) a workspace's storage quota. Routes through
+/// mantad-client (not tritond-client) — the admin workspace surface
+/// lives on mantad. After the PUT (204 No Content), the handler
+/// re-GETs the quota to surface live `usage_bytes` plus the new
+/// `limit_bytes` to the operator.
+pub async fn workspace_quota_set(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    name: String,
+    limit_bytes: i64,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.mantad_client()?;
+    client
+        .put_workspace_quota(&name, &mantad_client::types::QuotaRequest { limit_bytes })
+        .await
+        .context("set workspace quota")?;
+
+    // PUT returns 204 — no body to echo. Re-GET to surface the post-state.
+    let quota = client
+        .get_workspace_quota(&name)
+        .await
+        .context("re-read workspace quota after set")?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&quota)?);
+    } else {
+        println!("Set quota on workspace {name}");
+        println!("  usage_bytes: {}", quota.usage_bytes);
+        println!("  limit_bytes: {}", quota.limit_bytes);
+    }
+    Ok(())
+}
+
+/// Read a workspace's live storage quota (usage + configured limit).
+pub async fn workspace_quota_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    name: String,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.mantad_client()?;
+    let quota = client
+        .get_workspace_quota(&name)
+        .await
+        .context("get workspace quota")?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&quota)?);
+    } else {
+        println!("Workspace {name}");
+        println!("  usage_bytes: {}", quota.usage_bytes);
+        println!("  limit_bytes: {}", quota.limit_bytes);
+    }
+    Ok(())
+}
+
 /// Delete a project.
 pub async fn tenant_project_delete(
     endpoint_override: Option<String>,

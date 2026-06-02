@@ -50,6 +50,10 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 triton-channel = { workspace = true }
 tritond-client = { workspace = true }
+# Out-of-workspace path dep: lives in the sibling `manta-storage` repo. Used
+# by `tcadm workspace quota` to talk to mantad's `/admin/v1/workspaces/{name}/quota`
+# surface directly. Kept as a path dep because the two repos co-evolve.
+mantad-client = { path = "../../../manta-storage/crates/mantad-client" }
 uuid = { workspace = true }
 
 [dev-dependencies]

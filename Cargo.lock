@@ -5642,6 +5642,7 @@ dependencies = [
  "dropshot",
  "flate2",
  "hex",
+ "mantad-client",
  "predicates",
  "reqwest 0.13.2",
  "rpassword",

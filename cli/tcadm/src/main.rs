@@ -219,6 +219,13 @@ enum Commands {
         #[command(subcommand)]
         command: StorageCommand,
     },
+    /// Manage individual storage workspaces on mantad (operator-only).
+    /// Today this is just per-workspace quotas; the broader
+    /// buckets / users / policies surface stays on admin-backend.
+    Workspace {
+        #[command(subcommand)]
+        command: WorkspaceCommand,
+    },
     /// View and change cluster-wide tritond settings (fleet-admin
     /// only). The minimum tritond needs to start lives in its
     /// bootstrap config file; everything here lives in FoundationDB
@@ -919,6 +926,41 @@ enum TenantProjectQuotaCommand {
     },
     /// Remove the project's quota (project becomes unlimited).
     Delete { tenant_id: Uuid, project_id: Uuid },
+}
+
+#[derive(Subcommand)]
+enum WorkspaceCommand {
+    /// Manage per-workspace storage quotas.
+    Quota {
+        #[command(subcommand)]
+        command: WorkspaceQuotaCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum WorkspaceQuotaCommand {
+    /// Set (or replace) the workspace's storage cap, in bytes.
+    Set {
+        /// Workspace name (e.g. `t-deadbeefdeadbeefdeadbeefdeadbeef`). Only
+        /// workspaces minted by tritond are quota-keyed; legacy workspaces
+        /// (`mantad-adm`-created names) return 400 WorkspaceNotQuotaAccounted.
+        name: String,
+        /// Cap in bytes. Pass `9223372036854775807` (i64::MAX) to effectively
+        /// remove the cap. There is no `delete` subcommand — the new wire
+        /// has no "no quota" notion; this sentinel is the explicit
+        /// no-cap idiom.
+        #[arg(long)]
+        limit_bytes: i64,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read the workspace's live usage + configured limit (both in bytes).
+    Get {
+        /// Workspace name (e.g. `t-deadbeefdeadbeefdeadbeefdeadbeef`).
+        name: String,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -3089,6 +3131,27 @@ async fn main() -> Result<()> {
                 StorageClusterCommand::ClearPresigner { ident } => {
                     commands::storage_cluster_clear_presigner(cli.endpoint, cli.api_key, ident)
                         .await
+                }
+            },
+        },
+        Commands::Workspace { command } => match command {
+            WorkspaceCommand::Quota { command } => match command {
+                WorkspaceQuotaCommand::Set {
+                    name,
+                    limit_bytes,
+                    json,
+                } => {
+                    commands::workspace_quota_set(
+                        cli.endpoint,
+                        cli.api_key,
+                        name,
+                        limit_bytes,
+                        json,
+                    )
+                    .await
+                }
+                WorkspaceQuotaCommand::Get { name, json } => {
+                    commands::workspace_quota_get(cli.endpoint, cli.api_key, name, json).await
                 }
             },
         },
