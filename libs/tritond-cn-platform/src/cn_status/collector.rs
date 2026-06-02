@@ -26,9 +26,11 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::cn_status::disk_usage::{DiskUsageSampler, VmSnapshot};
+use crate::smartos::disks::{DiskHealth, DiskTool};
 use crate::smartos::kstat::KstatTool;
 use crate::smartos::reservoir::ReservoirTool;
 use crate::smartos::sysinfo::Sysinfo;
+use crate::smartos::zfs::PoolStatus;
 use crate::smartos::{VmadmTool, ZfsTool};
 
 /// Fields the legacy reporter requests from vmadm for each VM.
@@ -117,6 +119,7 @@ pub struct StatusCollector {
     kstat: Arc<KstatTool>,
     reservoir: Arc<ReservoirTool>,
     disk_usage: DiskUsageSampler,
+    disks: Arc<DiskTool>,
     sysinfo_loader: Arc<dyn SysinfoLoader>,
 }
 
@@ -161,6 +164,7 @@ impl StatusCollector {
             kstat,
             reservoir,
             disk_usage,
+            disks: Arc::new(DiskTool::new()),
             sysinfo_loader: Arc::new(LiveSysinfo),
         }
     }
@@ -168,6 +172,12 @@ impl StatusCollector {
     /// Swap in a non-default sysinfo loader (tests).
     pub fn with_sysinfo_loader(mut self, loader: Arc<dyn SysinfoLoader>) -> Self {
         self.sysinfo_loader = loader;
+        self
+    }
+
+    /// Swap in a non-default disk-health tool (tests / mock binaries).
+    pub fn with_disk_tool(mut self, disks: Arc<DiskTool>) -> Self {
+        self.disks = disks;
         self
     }
 
@@ -200,13 +210,21 @@ impl StatusCollector {
         // admin Storage tab (and, later, the issue evaluator). Best-effort: a
         // parse hiccup or a non-SmartOS dev host just skips the fields. Kept
         // separate from `zpoolStatus` above, whose shape downstream consumers
-        // (tcadm, the classifier) depend on.
-        match self.collect_zpool_detail().await {
+        // (tcadm, the classifier) depend on. The parsed `zpool status` is also
+        // reused below to label disks with their pool/vdev membership.
+        let pool_status = match self.zfs.pool_status_all().await {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to collect zpool detail");
+                Vec::new()
+            }
+        };
+        match self.collect_zpool_detail(&pool_status).await {
             Ok((health, devices)) => {
                 report.fields.insert("zpoolHealth".to_string(), health);
                 report.fields.insert("zpoolDevices".to_string(), devices);
             }
-            Err(e) => tracing::warn!(error = %e, "failed to collect zpool detail"),
+            Err(e) => tracing::warn!(error = %e, "failed to encode zpool detail"),
         }
 
         // Step 2c: snapshot inventory summary (count + total + largest N).
@@ -218,6 +236,22 @@ impl StatusCollector {
                 Err(e) => tracing::warn!(error = %e, "failed to encode snapshot summary"),
             },
             Err(e) => tracing::warn!(error = %e, "failed to collect snapshot summary"),
+        }
+
+        // Step 2d: per-disk inventory + SMART health + current iostat
+        // (diskinfo/iostat/smartctl), labelled with pool/vdev membership from
+        // the `zpool status` parsed above. Feeds the admin Storage "Disks"
+        // view and the per-device performance table. Best-effort: degrades to
+        // inventory + native error counts when smartmontools is absent.
+        let mut disks = self.disks.collect().await;
+        assign_pool_membership(&mut disks, &pool_status);
+        if !disks.is_empty() {
+            match serde_json::to_value(&disks) {
+                Ok(v) => {
+                    report.fields.insert("disks".to_string(), v);
+                }
+                Err(e) => tracing::warn!(error = %e, "failed to encode disk health"),
+            }
         }
 
         // Step 3: memory info.
@@ -325,14 +359,15 @@ impl StatusCollector {
 
     /// Detailed zpool health (`zpool status -v`) plus per-device iostat,
     /// each keyed by pool name. Returns `(zpoolHealth, zpoolDevices)`.
+    /// Takes the already-parsed `pools` so the `zpool status` run is shared
+    /// with the disk-membership labelling.
     async fn collect_zpool_detail(
         &self,
+        pools: &[PoolStatus],
     ) -> Result<(serde_json::Value, serde_json::Value), String> {
-        let pools = self.zfs.pool_status_all().await.map_err(|e| e.to_string())?;
-
         let mut health = serde_json::Map::new();
         let mut devices = serde_json::Map::new();
-        for pool in &pools {
+        for pool in pools {
             let value = serde_json::to_value(pool).map_err(|e| e.to_string())?;
             health.insert(pool.name.clone(), value);
 
@@ -424,6 +459,49 @@ fn vm_snapshots_for_disk_usage(vms: &[serde_json::Value]) -> Vec<VmSnapshot> {
     out
 }
 
+/// Label each disk with the pool + top-level vdev it belongs to, derived
+/// from the parsed `zpool status` tree. Only disks whose `cXtYdZ` name
+/// appears as a vdev leaf are matched; unused/spare disks stay unlabelled.
+///
+/// The tree is flat-with-depth: depth 0 is the pool row, depth 1 is a
+/// top-level vdev (a container like `mirror-0`, or a leaf in a plain
+/// stripe), depth >= 2 is a leaf under the current container.
+fn assign_pool_membership(disks: &mut [DiskHealth], pools: &[PoolStatus]) {
+    use std::collections::HashMap;
+
+    let disk_names: std::collections::HashSet<&str> =
+        disks.iter().map(|d| d.device.as_str()).collect();
+
+    // device name -> (pool, vdev)
+    let mut map: HashMap<String, (String, Option<String>)> = HashMap::new();
+    for pool in pools {
+        let mut current_vdev: Option<String> = None;
+        for dev in &pool.devices {
+            let is_leaf_disk = disk_names.contains(dev.name.as_str());
+            if dev.depth <= 1 {
+                if is_leaf_disk {
+                    // Top-level stripe leaf: belongs directly to the pool.
+                    map.insert(dev.name.clone(), (pool.name.clone(), None));
+                    current_vdev = None;
+                } else if dev.depth == 1 {
+                    // A top-level container vdev (mirror-N / raidzN / logs / ...).
+                    current_vdev = Some(dev.name.clone());
+                }
+                // depth 0 (the pool row) is ignored.
+            } else if is_leaf_disk {
+                map.insert(dev.name.clone(), (pool.name.clone(), current_vdev.clone()));
+            }
+        }
+    }
+
+    for d in disks.iter_mut() {
+        if let Some((pool, vdev)) = map.get(&d.device) {
+            d.pool = Some(pool.clone());
+            d.vdev = vdev.clone();
+        }
+    }
+}
+
 /// Convert unix seconds to an RFC 3339 / ISO 8601 string.
 ///
 /// Matches the legacy formulation: `new Date(parseInt(sysinfo['Boot Time'],
@@ -477,6 +555,68 @@ mod tests {
         assert_eq!(snaps.len(), 1);
         assert_eq!(snaps[0].disks.len(), 2);
         assert_eq!(snaps[0].brand.as_deref(), Some("kvm"));
+    }
+
+    fn dev(depth: usize, name: &str, state: &str) -> crate::smartos::zfs::PoolDevice {
+        crate::smartos::zfs::PoolDevice {
+            depth,
+            name: name.to_string(),
+            state: state.to_string(),
+            read_errors: 0,
+            write_errors: 0,
+            cksum_errors: 0,
+            note: None,
+        }
+    }
+
+    fn disk(name: &str) -> DiskHealth {
+        DiskHealth {
+            device: name.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn pool_membership_labels_mirror_leaves() {
+        let pool = PoolStatus {
+            name: "zones".to_string(),
+            state: "ONLINE".to_string(),
+            status_line: None,
+            action_line: None,
+            scan: None,
+            errors: None,
+            devices: vec![
+                dev(0, "zones", "ONLINE"),
+                dev(1, "mirror-0", "ONLINE"),
+                dev(2, "c1t0d1", "ONLINE"),
+                dev(2, "c1t1d1", "ONLINE"),
+            ],
+        };
+        let mut disks = vec![disk("c1t0d1"), disk("c1t1d1"), disk("c2t5d0")];
+        assign_pool_membership(&mut disks, &[pool]);
+        assert_eq!(disks[0].pool.as_deref(), Some("zones"));
+        assert_eq!(disks[0].vdev.as_deref(), Some("mirror-0"));
+        assert_eq!(disks[1].vdev.as_deref(), Some("mirror-0"));
+        // A disk not in any pool stays unlabelled.
+        assert_eq!(disks[2].pool, None);
+        assert_eq!(disks[2].vdev, None);
+    }
+
+    #[test]
+    fn pool_membership_labels_stripe_leaf_with_no_vdev() {
+        let pool = PoolStatus {
+            name: "data".to_string(),
+            state: "ONLINE".to_string(),
+            status_line: None,
+            action_line: None,
+            scan: None,
+            errors: None,
+            devices: vec![dev(0, "data", "ONLINE"), dev(1, "c3t0d0", "ONLINE")],
+        };
+        let mut disks = vec![disk("c3t0d0")];
+        assign_pool_membership(&mut disks, &[pool]);
+        assert_eq!(disks[0].pool.as_deref(), Some("data"));
+        assert_eq!(disks[0].vdev, None);
     }
 
     #[test]

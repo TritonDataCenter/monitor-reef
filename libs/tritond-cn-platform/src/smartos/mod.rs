@@ -8,6 +8,7 @@
 //! `zfs`/`zpool`, `kstat`, and `/usr/bin/sysinfo`. Each wrapper carries
 //! the binary path so tests can swap in mock scripts.
 
+pub mod disks;
 pub mod kstat;
 pub mod reservoir;
 pub mod sysinfo;
@@ -15,6 +16,7 @@ pub mod vmadm;
 pub mod zfs;
 pub mod zoneadm;
 
+pub use disks::{DiskHealth, DiskTool};
 pub use kstat::KstatTool;
 pub use reservoir::{ReservoirState, ReservoirTool};
 pub use sysinfo::Sysinfo;
