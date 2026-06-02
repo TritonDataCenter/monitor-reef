@@ -261,6 +261,55 @@ The active branch is `nick-tritond-phase0` (13+ commits ahead of
 message is substantive and self-describing; `git log --oneline
 main..nick-tritond-phase0` is a reasonable starting index.
 
+## Build → Package → Update (vNext components)
+
+The canonical loop for changing a deployed vNext component (`tritond`,
+`tritonagent`, `tcadm`, adminui/`admin-backend`, the zone images). **Never
+build deploy artifacts on the Mac** — illumos binaries are cross-built on
+the build host `142.147.4.194`.
+
+1. **`cargo check` — fast local validation.** Typecheck for quick
+   feedback before paying for a full cross-build (no artifacts produced,
+   so it does not violate the never-build-on-Mac rule). `tritond`'s
+   `foundationdb` feature and the `admin-backend` frontend-embed only
+   resolve on the build host; `cargo check -p tcadm`/`-p tritonagent` is
+   the fast Mac path. The frontend uses `tsc -b` / `vite build`.
+
+2. **Build on `.194` to validate.** The authoritative compile. Source the
+   build env and build the affected crate(s):
+   ```sh
+   ssh root@142.147.4.194 'cd /root/monitor-reef && . /opt/tritoncloud/build-env.sh && \
+       cargo build --release -p tritond -p tritonagent -p tcadm --features tritond/foundationdb'
+   ```
+   adminui lives in the sibling `admin/` workspace on the host at
+   `/root/admin` with its own `CARGO_TARGET_DIR=/opt/cargo-target-admin`
+   (build the React `dist` first, then `touch backend/src/assets.rs` to
+   force the `rust_embed` re-embed). Run the package's tests too.
+
+3. **`tools/package.sh` — bundle + publish.** When the build is clean,
+   package builds the **lockstep trio** (`tritond` + `tritonagent` +
+   `tcadm` — shared blueprint postcard wire; they MUST move together) plus
+   adminui in one pass, then publishes each as its own signed channel
+   artifact so they update individually:
+   ```sh
+   tools/package.sh [--channel edge|stable] [--no-publish] [trio|adminui|<component>...]
+   ```
+   `tritond`/`admin-backend` → `services/` (binary-swap), `tritonagent` →
+   `agents/`, `tcadm` → `tcadm/`. `--no-publish` builds only. Publishing
+   needs the Manta creds + minisign key on the build host. The publish
+   verbs are `tritoncloud-publish {service,agent,tcadm,image}`.
+
+4. **(optional) `tcadm update` — push to the live system.** On the
+   headnode GZ, pull the just-published artifacts:
+   ```sh
+   tcadm update --check                          # what's outdated
+   tcadm update tritond adminui tritonagent      # or: tcadm update --all
+   ```
+   Hybrid apply: binary-swap for `tritond`/adminui/agents, `vmadm
+   reprovision` (data-format-gated) for `fdb`/`clickhouse`/`mantad`,
+   self-update for `tcadm`. `--dry-run` prints the plan. A fresh headnode
+   is stood up with `tcadm setup apply` (see repo-root `HEADNODE_INSTALL.md`).
+
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
