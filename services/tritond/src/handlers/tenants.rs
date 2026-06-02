@@ -498,7 +498,11 @@ async fn archive_tenant_workspace(
         Err(mantad_client::MantadClientError::Status { status: 404, .. }) => {}
         Err(e) => {
             let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
-            return Err((http_err, audit_outcome, "archive.mantad.delete_presigner_user"));
+            return Err((
+                http_err,
+                audit_outcome,
+                "archive.mantad.delete_presigner_user",
+            ));
         }
     }
 
