@@ -110,7 +110,7 @@ pub(crate) fn fetch_and_verify_channel(channel_url: &str) -> Result<ChannelManif
     parse_channel(&manifest_bytes).map_err(Into::into)
 }
 
-fn http_get(url: &str) -> Result<Vec<u8>> {
+pub(crate) fn http_get(url: &str) -> Result<Vec<u8>> {
     let client = crate::http::blocking_client()?;
     let resp = client
         .get(url)
@@ -322,7 +322,7 @@ fn imgadm_has(target_uuid: &str) -> Result<bool> {
     Ok(stdout.lines().any(|line| line.trim() == target_uuid))
 }
 
-fn read_installed_agent_version(name: &str) -> Result<String> {
+pub(crate) fn read_installed_agent_version(name: &str) -> Result<String> {
     let path: PathBuf = Path::new("/opt/triton").join(name).join("etc/version");
     let s = fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
     Ok(s.trim().to_string())

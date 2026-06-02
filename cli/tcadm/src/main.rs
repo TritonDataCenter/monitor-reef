@@ -14,6 +14,7 @@ mod install;
 mod self_update;
 mod session;
 mod setup;
+mod update;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -254,6 +255,29 @@ enum Commands {
     Setup {
         #[command(subcommand)]
         command: SetupCommand,
+    },
+
+    /// Update running components from the signed channel. Hybrid:
+    /// binary-swap the zone services (tritond, adminui) + GZ agents
+    /// (tritonagent, proteusadm); reprovision the data-bearing zones
+    /// (fdb, clickhouse, mantad); self-update tcadm. Run on the headnode
+    /// GZ.
+    Update {
+        /// Components to update: tcadm tritond adminui tritonagent
+        /// proteusadm fdb clickhouse mantad. Omit when using --all.
+        components: Vec<String>,
+        /// Update every known component present in the channel + host.
+        #[arg(long)]
+        all: bool,
+        /// Report what is outdated; change nothing.
+        #[arg(long)]
+        check: bool,
+        /// Print planned actions; change nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// Override the channel manifest URL.
+        #[arg(long)]
+        channel_url: Option<String>,
     },
 
     /// Update this `tcadm` binary against the signed Manta release
@@ -3267,6 +3291,27 @@ async fn main() -> Result<()> {
                 .map_err(|e| anyhow::anyhow!("setup task panicked: {e}"))?
             }
         },
+        Commands::Update {
+            components,
+            all,
+            check,
+            dry_run,
+            channel_url,
+        } => {
+            // sync (channel fetch + vmadm/imgadm/zlogin shell-outs); run
+            // on a blocking-task slot like install/setup.
+            tokio::task::spawn_blocking(move || {
+                update::run(update::UpdateOpts {
+                    components,
+                    all,
+                    check,
+                    dry_run,
+                    channel_url,
+                })
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("update task panicked: {e}"))?
+        }
         Commands::SelfUpdate {
             channel_url,
             install_dir,

@@ -57,10 +57,52 @@ pub struct ChannelManifest {
     #[serde(default)]
     pub agents: BTreeMap<String, AgentEntry>,
 
+    /// Zone-resident service binaries that update by swapping the binary
+    /// into an existing zone + restarting its SMF service (binary-swap,
+    /// not a full image reprovision), indexed by canonical service name
+    /// (e.g. `"tritond"`, `"admin-backend"`). Additive at schema 1.
+    #[serde(default)]
+    pub services: BTreeMap<String, ServiceEntry>,
+
     /// `tcadm` binaries indexed by Rust target triple
     /// (e.g. `"x86_64-unknown-illumos"`).
     #[serde(default)]
     pub tcadm: BTreeMap<String, TcadmEntry>,
+}
+
+/// One zone-resident service binary. `tcadm update <name>` swaps it into
+/// the target zone and restarts its SMF service — no image reprovision,
+/// so `/data` and the rest of the zone root are untouched. Stays
+/// minisign-verified (the whole manifest is signed) + sha256-checked.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceEntry {
+    /// Build stamp (`YYYYMMDDTHHMMSSZ`).
+    pub stamp: String,
+
+    /// Public Manta URL of the binary blob.
+    pub url: Url,
+
+    /// Lowercase hex SHA-256 of the binary, verified after download and
+    /// compared against the on-disk binary to decide "already current".
+    pub sha256: String,
+
+    /// Size in bytes.
+    pub size_bytes: u64,
+
+    /// Alias of the zone the binary lives in (e.g. `"triton-tritond"`).
+    pub zone: String,
+
+    /// Absolute path of the binary INSIDE that zone
+    /// (e.g. `"/opt/triton/tritond/bin/tritond"`).
+    pub bin_path: String,
+
+    /// SMF service to restart after the swap
+    /// (e.g. `"site/triton-tritond"`).
+    pub smf: String,
+
+    /// Oldest PI buildstamp this binary is known to coexist with.
+    #[serde(default)]
+    pub pi_min: Option<String>,
 }
 
 /// One zone image. The pair of URLs points at the imgadm-shaped

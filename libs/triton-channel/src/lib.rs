@@ -48,7 +48,9 @@ mod types;
 mod verify;
 
 pub use errors::{IntegrityError, ParseError, VerifyError};
-pub use types::{AgentEntry, CURRENT_SCHEMA, ChannelManifest, ImageEntry, TcadmEntry};
+pub use types::{
+    AgentEntry, CURRENT_SCHEMA, ChannelManifest, ImageEntry, ServiceEntry, TcadmEntry,
+};
 pub use verify::{verify_minisign, verify_sha256};
 
 /// Parse `manifest_bytes` as a [`ChannelManifest`], rejecting any
