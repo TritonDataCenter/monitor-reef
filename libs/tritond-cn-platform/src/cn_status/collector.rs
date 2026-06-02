@@ -83,6 +83,11 @@ pub const VM_POSTED_FIELDS: &[&str] = &[
     "zone_state",
 ];
 
+/// How many of the largest snapshots to retain in the heartbeat's snapshot
+/// summary. Bounds payload size so per-VM image snapshots can't bloat
+/// `last_status`.
+const SNAPSHOT_TOP_N: usize = 25;
+
 /// One iteration's worth of data, ready to serialize for the
 /// [`crate::cn_status::StatusSink`].
 #[derive(Debug, Clone, Default)]
@@ -191,6 +196,30 @@ impl StatusCollector {
             Err(e) => tracing::warn!(error = %e, "failed to collect zpool status"),
         }
 
+        // Step 2b: detailed zpool health + per-device iostat, surfaced by the
+        // admin Storage tab (and, later, the issue evaluator). Best-effort: a
+        // parse hiccup or a non-SmartOS dev host just skips the fields. Kept
+        // separate from `zpoolStatus` above, whose shape downstream consumers
+        // (tcadm, the classifier) depend on.
+        match self.collect_zpool_detail().await {
+            Ok((health, devices)) => {
+                report.fields.insert("zpoolHealth".to_string(), health);
+                report.fields.insert("zpoolDevices".to_string(), devices);
+            }
+            Err(e) => tracing::warn!(error = %e, "failed to collect zpool detail"),
+        }
+
+        // Step 2c: snapshot inventory summary (count + total + largest N).
+        match self.zfs.snapshot_summary(SNAPSHOT_TOP_N).await {
+            Ok(summary) => match serde_json::to_value(summary) {
+                Ok(v) => {
+                    report.fields.insert("zfsSnapshotSummary".to_string(), v);
+                }
+                Err(e) => tracing::warn!(error = %e, "failed to encode snapshot summary"),
+            },
+            Err(e) => tracing::warn!(error = %e, "failed to collect snapshot summary"),
+        }
+
         // Step 3: memory info.
         match self.kstat.memory_info().await {
             Ok(mi) => match serde_json::to_value(mi) {
@@ -292,6 +321,39 @@ impl StatusCollector {
             );
         }
         Ok(serde_json::Value::Object(out))
+    }
+
+    /// Detailed zpool health (`zpool status -v`) plus per-device iostat,
+    /// each keyed by pool name. Returns `(zpoolHealth, zpoolDevices)`.
+    async fn collect_zpool_detail(
+        &self,
+    ) -> Result<(serde_json::Value, serde_json::Value), String> {
+        let pools = self.zfs.pool_status_all().await.map_err(|e| e.to_string())?;
+
+        let mut health = serde_json::Map::new();
+        let mut devices = serde_json::Map::new();
+        for pool in &pools {
+            let value = serde_json::to_value(pool).map_err(|e| e.to_string())?;
+            health.insert(pool.name.clone(), value);
+
+            match self.zfs.pool_iostat(&pool.name).await {
+                Ok(rows) => match serde_json::to_value(rows) {
+                    Ok(v) => {
+                        devices.insert(pool.name.clone(), v);
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, pool = %pool.name, "failed to encode iostat")
+                    }
+                },
+                Err(e) => {
+                    tracing::warn!(error = %e, pool = %pool.name, "failed to collect iostat")
+                }
+            }
+        }
+        Ok((
+            serde_json::Value::Object(health),
+            serde_json::Value::Object(devices),
+        ))
     }
 }
 
