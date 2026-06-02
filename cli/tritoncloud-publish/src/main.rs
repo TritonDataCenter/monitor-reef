@@ -43,7 +43,7 @@ use clap::{Args, Parser, Subcommand};
 use sha2::{Digest, Sha256};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
-use triton_channel::{AgentEntry, ChannelManifest, ImageEntry, TcadmEntry};
+use triton_channel::{AgentEntry, ChannelManifest, ImageEntry, ServiceEntry, TcadmEntry};
 
 use crate::channel::{ChannelLocator, fetch_or_init, new_empty, publish};
 use crate::manta::mput;
@@ -104,6 +104,10 @@ enum Command {
     /// Publish a per-CN GZ tarball (tritonagent, proteusadm).
     Agent(AgentArgs),
 
+    /// Publish a zone-resident service binary (tritond, admin-backend) as
+    /// a binary-swap update target (`services.<name>` in the manifest).
+    Service(ServiceArgs),
+
     /// Publish a tcadm binary for one target triple.
     Tcadm(TcadmArgs),
 
@@ -156,6 +160,39 @@ struct ImageArgs {
     /// Oldest on-disk data format this image can attach to.
     #[arg(long)]
     data_format_min_read: u32,
+}
+
+#[derive(Debug, Args)]
+struct ServiceArgs {
+    /// Canonical service name (key into `services`), e.g. `tritond`,
+    /// `admin-backend`. This is what `tcadm update <name>` resolves.
+    #[arg(long)]
+    name: String,
+
+    /// Build stamp.
+    #[arg(long)]
+    stamp: String,
+
+    /// Local path to the service binary.
+    #[arg(long)]
+    binary: PathBuf,
+
+    /// Alias of the zone the binary lives in (e.g. `triton-tritond`).
+    #[arg(long)]
+    zone: String,
+
+    /// Absolute path of the binary INSIDE that zone
+    /// (e.g. `/opt/triton/tritond/bin/tritond`).
+    #[arg(long)]
+    bin_path: String,
+
+    /// SMF service to restart after the swap (e.g. `site/triton-tritond`).
+    #[arg(long)]
+    smf: String,
+
+    /// Oldest PI buildstamp this binary is known to coexist with.
+    #[arg(long)]
+    pi_min: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -222,6 +259,7 @@ fn main() -> Result<()> {
         Command::Show => do_show(&locator),
         Command::Image(args) => do_image(&locator, &secret_key, args),
         Command::Agent(args) => do_agent(&locator, &secret_key, args),
+        Command::Service(args) => do_service(&locator, &secret_key, args),
         Command::Tcadm(args) => do_tcadm(&locator, &secret_key, args),
         Command::InstallSh { source } => do_install_sh(&locator, &secret_key, source),
     }
@@ -337,6 +375,44 @@ fn do_agent(locator: &ChannelLocator, secret_key: &Path, args: AgentArgs) -> Res
     let workdir = tempfile::tempdir().context("tempdir")?;
     publish(locator, &mut manifest, secret_key, workdir.path())?;
     info!(name = %args.name, stamp = %args.stamp, channel = %locator.channel, "agent published");
+    Ok(())
+}
+
+fn do_service(locator: &ChannelLocator, secret_key: &Path, args: ServiceArgs) -> Result<()> {
+    let bytes =
+        fs::read(&args.binary).with_context(|| format!("read {}", args.binary.display()))?;
+    let sha256 = hash_hex(&bytes);
+    let size_bytes = bytes.len() as u64;
+    drop(bytes);
+
+    let remote = format!(
+        "{}/services/{}/{}.bin",
+        locator.manta_base, args.name, args.stamp
+    );
+    mput(&args.binary, &remote)?;
+
+    let url = url::Url::parse(&format!(
+        "{}/services/{}/{}.bin",
+        locator.https_base, args.name, args.stamp
+    ))?;
+
+    let entry = ServiceEntry {
+        stamp: args.stamp.clone(),
+        url,
+        sha256,
+        size_bytes,
+        zone: args.zone,
+        bin_path: args.bin_path,
+        smf: args.smf,
+        pi_min: args.pi_min,
+    };
+
+    let mut manifest: ChannelManifest = fetch_or_init(locator)?;
+    manifest.services.insert(args.name.clone(), entry);
+
+    let workdir = tempfile::tempdir().context("tempdir")?;
+    publish(locator, &mut manifest, secret_key, workdir.path())?;
+    info!(name = %args.name, stamp = %args.stamp, channel = %locator.channel, "service published");
     Ok(())
 }
 

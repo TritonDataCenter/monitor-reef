@@ -88,6 +88,7 @@ pub fn new_empty(locator: &ChannelLocator) -> ChannelManifest {
         publisher: locator.publisher.clone(),
         images: Default::default(),
         agents: Default::default(),
+        services: Default::default(),
         tcadm: Default::default(),
     }
 }
