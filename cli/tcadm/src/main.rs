@@ -13,6 +13,7 @@ mod http;
 mod install;
 mod self_update;
 mod session;
+mod setup;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -245,6 +246,16 @@ enum Commands {
         list: bool,
     },
 
+    /// Bring up the control plane on this headnode: install the signed
+    /// zone images, vmadm-create the fdb / tritond(+adminui) / mantad /
+    /// clickhouse zones with first-boot metadata + health gates, and
+    /// install the GZ agents. Single-node; assumes the `zones` pool +
+    /// admin nic_tag already exist.
+    Setup {
+        #[command(subcommand)]
+        command: SetupCommand,
+    },
+
     /// Update this `tcadm` binary against the signed Manta release
     /// channel. Verifies the channel signature against the publisher
     /// pubkey baked into the binary; refuses to act on a tampered or
@@ -263,6 +274,55 @@ enum Commands {
         /// Exits non-zero if an update is available.
         #[arg(long)]
         check: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum SetupCommand {
+    /// Provision the control-plane zones + agents on this headnode.
+    Apply {
+        /// TOML config with per-zone IPs / nic_tag / gateway (flags win).
+        #[arg(long)]
+        config: Option<String>,
+        /// FDB zone admin IP (required, here or in config).
+        #[arg(long)]
+        fdb_ip: Option<String>,
+        /// tritond zone admin IP (required, here or in config).
+        #[arg(long)]
+        tritond_ip: Option<String>,
+        /// mantad (S3) zone admin IP (with --with-mantad).
+        #[arg(long)]
+        mantad_ip: Option<String>,
+        /// clickhouse zone admin IP (with --with-clickhouse).
+        #[arg(long)]
+        clickhouse_ip: Option<String>,
+        /// Admin-net mask (default 255.255.255.0).
+        #[arg(long)]
+        netmask: Option<String>,
+        /// Admin-net gateway (omitted if unset).
+        #[arg(long)]
+        gateway: Option<String>,
+        /// DNS resolver for the zones (optional).
+        #[arg(long)]
+        resolver: Option<String>,
+        /// nic_tag for the zone admin NIC (default admin).
+        #[arg(long)]
+        nic_tag: Option<String>,
+        /// Override the channel manifest URL.
+        #[arg(long)]
+        channel_url: Option<String>,
+        /// Also provision the mantad (S3) zone.
+        #[arg(long)]
+        with_mantad: bool,
+        /// Also provision the clickhouse (metrics) zone.
+        #[arg(long)]
+        with_clickhouse: bool,
+        /// Pin the FDB cluster secret (default: freshly generated).
+        #[arg(long)]
+        fdb_secret: Option<String>,
+        /// Print payloads + planned actions; change nothing.
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -1124,6 +1184,11 @@ enum InstanceCommand {
         cpu: u32,
         #[arg(long)]
         memory_bytes: u64,
+        /// Boot-disk size in bytes. Omit to use the image/brand default
+        /// (bhyve floors at 20 GiB). Honored down to the image content
+        /// size; the server rejects anything larger than 16 TiB.
+        #[arg(long)]
+        disk_bytes: Option<u64>,
         #[arg(long)]
         json: bool,
     },
@@ -1163,6 +1228,18 @@ enum DiskCommand {
     },
     Show {
         disk_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Grow a disk's backing volume. Grow-only. For a running instance
+    /// the guest sees the new capacity after a reboot (cloud-init then
+    /// grows the filesystem).
+    Resize {
+        disk_id: Uuid,
+        /// New total disk size in bytes. Must be larger than the
+        /// current size.
+        #[arg(long)]
+        size_bytes: u64,
         #[arg(long)]
         json: bool,
     },
@@ -1943,6 +2020,7 @@ async fn main() -> Result<()> {
                 ssh_key_ids,
                 cpu,
                 memory_bytes,
+                disk_bytes,
                 json,
             } => {
                 commands::instance_create_v1(
@@ -1957,6 +2035,7 @@ async fn main() -> Result<()> {
                     ssh_key_ids,
                     cpu,
                     memory_bytes,
+                    disk_bytes,
                     json,
                 )
                 .await
@@ -2063,6 +2142,13 @@ async fn main() -> Result<()> {
             }
             DiskCommand::Show { disk_id, json } => {
                 commands::disk_show_v1(cli.endpoint, cli.api_key, disk_id, json).await
+            }
+            DiskCommand::Resize {
+                disk_id,
+                size_bytes,
+                json,
+            } => {
+                commands::disk_resize_v1(cli.endpoint, cli.api_key, disk_id, size_bytes, json).await
             }
         },
         Commands::Nic { command } => match command {
@@ -3140,6 +3226,47 @@ async fn main() -> Result<()> {
             .await
             .map_err(|e| anyhow::anyhow!("install task panicked: {e}"))?
         }
+        Commands::Setup { command } => match command {
+            SetupCommand::Apply {
+                config,
+                fdb_ip,
+                tritond_ip,
+                mantad_ip,
+                clickhouse_ip,
+                netmask,
+                gateway,
+                resolver,
+                nic_tag,
+                channel_url,
+                with_mantad,
+                with_clickhouse,
+                fdb_secret,
+                dry_run,
+            } => {
+                // setup is sync (vmadm/imgadm/svccfg shell-outs + blocking
+                // reqwest); run on a blocking-task slot like install.
+                tokio::task::spawn_blocking(move || {
+                    setup::run(setup::SetupOpts {
+                        config,
+                        fdb_ip,
+                        tritond_ip,
+                        mantad_ip,
+                        clickhouse_ip,
+                        netmask,
+                        gateway,
+                        resolver,
+                        nic_tag,
+                        channel_url,
+                        with_mantad,
+                        with_clickhouse,
+                        fdb_secret,
+                        dry_run,
+                    })
+                })
+                .await
+                .map_err(|e| anyhow::anyhow!("setup task panicked: {e}"))?
+            }
+        },
         Commands::SelfUpdate {
             channel_url,
             install_dir,

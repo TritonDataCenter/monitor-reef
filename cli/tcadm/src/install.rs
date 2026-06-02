@@ -43,6 +43,11 @@ const PUBLISHER_PUBKEY: &str = include_str!("../publisher.pub");
 /// pre-release testing.
 const DEFAULT_CHANNEL_URL: &str = "https://us-central.manta.mnx.io/nick.wilkens@mnxsolutions.com/public/tritoncloud/channels/stable.json";
 
+/// The default (stable) channel URL, shared with `tcadm setup`.
+pub(crate) fn default_channel_url() -> String {
+    DEFAULT_CHANNEL_URL.to_string()
+}
+
 pub struct InstallOpts {
     pub name: Option<String>,
     pub stamp: Option<String>,
@@ -96,7 +101,7 @@ fn check_stamp(requested: Option<&str>, channel_stamp: &str) -> Result<()> {
     Ok(())
 }
 
-fn fetch_and_verify_channel(channel_url: &str) -> Result<ChannelManifest> {
+pub(crate) fn fetch_and_verify_channel(channel_url: &str) -> Result<ChannelManifest> {
     info!(channel_url = %channel_url, "fetch channel");
     let manifest_bytes = http_get(channel_url)?;
     let sig_bytes = http_get(&format!("{channel_url}.minisig"))?;
@@ -153,7 +158,7 @@ fn show_listing(manifest: &ChannelManifest) -> Result<()> {
     Ok(())
 }
 
-fn install_image(name: &str, entry: &ImageEntry) -> Result<()> {
+pub(crate) fn install_image(name: &str, entry: &ImageEntry) -> Result<()> {
     if imgadm_has(&entry.uuid.to_string()).unwrap_or(false) {
         println!(
             "image {} already installed (uuid {}); nothing to do",
@@ -202,7 +207,7 @@ fn install_image(name: &str, entry: &ImageEntry) -> Result<()> {
     Ok(())
 }
 
-fn install_agent(name: &str, entry: &AgentEntry) -> Result<()> {
+pub(crate) fn install_agent(name: &str, entry: &AgentEntry) -> Result<()> {
     let existing = read_installed_agent_version(name).ok();
     if existing.as_deref() == Some(&entry.stamp) {
         println!(
