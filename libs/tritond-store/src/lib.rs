@@ -1431,6 +1431,7 @@ pub trait Store: Send + Sync + 'static {
     /// Returns [`StoreError::NotFound`] if the CN does not exist or
     /// is Disabled; [`StoreError::Conflict`] if a credential is
     /// already attached (programmer error — never reapprove).
+    #[allow(clippy::too_many_arguments)] // CN bootstrap atomically attaches three per-CN secrets + the approval timestamp; bundling them into a struct would force every Store implementor to import that bundle for a single trait method
     async fn approve_cn(
         &self,
         server_uuid: Uuid,

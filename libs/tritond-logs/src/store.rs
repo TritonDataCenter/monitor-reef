@@ -121,6 +121,7 @@ impl Default for RingBufferLogStore {
 
 #[async_trait::async_trait]
 impl LogStore for RingBufferLogStore {
+    #[allow(clippy::expect_used)] // ring is just inserted/known to exist via entry().or_insert_with above; the intervening mutable borrow of guard.next_seq forces re-fetching the &mut ring via get_mut
     async fn insert(&self, batch: LogBatch) -> Result<(), LogStoreError> {
         let mut guard = self
             .inner

@@ -3336,10 +3336,10 @@ impl Store for MemStore {
         let mut rows: Vec<MigrationRecord> = guard.migrations_by_id.values().cloned().collect();
         rows.sort_by(|a, b| b.created_at.cmp(&a.created_at).then(b.id.cmp(&a.id)));
         // Cursor pagination: skip until we pass `after_id` in the sorted list.
-        if let Some(cursor) = after_id {
-            if let Some(idx) = rows.iter().position(|r| r.id == cursor) {
-                rows = rows.split_off(idx + 1);
-            }
+        if let Some(cursor) = after_id
+            && let Some(idx) = rows.iter().position(|r| r.id == cursor)
+        {
+            rows = rows.split_off(idx + 1);
         }
         rows.truncate(limit);
         Ok(rows)

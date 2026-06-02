@@ -2346,6 +2346,7 @@ impl JobKind {
 
     /// Stable target id used for logs and queue diagnostics.
     #[must_use]
+    #[allow(clippy::expect_used)] // every JobKind variant carries an instance or edge_instance uuid by construction
     pub fn target_id(&self) -> Uuid {
         self.instance_id()
             .or_else(|| self.edge_instance_id())
@@ -2729,16 +2730,16 @@ pub fn allocate_ipv4_sticky(
     already_allocated: &HashSet<Ipv4Addr>,
     prefer: Option<Ipv4Addr>,
 ) -> Option<Ipv4Addr> {
-    if let Some(want) = prefer {
-        if cidr.contains(want) {
-            let network = cidr.network();
-            let broadcast = cidr.broadcast();
-            let gateway = next_ipv4(network);
-            let is_reserved =
-                want == network || want == broadcast || gateway.map(|g| g == want).unwrap_or(false);
-            if !is_reserved && !already_allocated.contains(&want) {
-                return Some(want);
-            }
+    if let Some(want) = prefer
+        && cidr.contains(want)
+    {
+        let network = cidr.network();
+        let broadcast = cidr.broadcast();
+        let gateway = next_ipv4(network);
+        let is_reserved =
+            want == network || want == broadcast || gateway.map(|g| g == want).unwrap_or(false);
+        if !is_reserved && !already_allocated.contains(&want) {
+            return Some(want);
         }
     }
     allocate_ipv4(cidr, already_allocated)
@@ -3164,6 +3165,7 @@ impl Settings {
     /// Current value of one key, as JSON. Always `Some`-equivalent —
     /// every field is serialized, so the returned `Value` is never a
     /// missing entry.
+    #[allow(clippy::expect_used)] // Settings is Serialize-derived and every ConfigKey names a field; both expects are provable invariants
     pub fn get(&self, key: ConfigKey) -> serde_json::Value {
         let obj = serde_json::to_value(self).expect("Settings always serializes to a JSON object");
         obj.get(key.as_str())
@@ -3193,6 +3195,7 @@ impl Settings {
     }
 
     /// Reset one key to its built-in default.
+    #[allow(clippy::expect_used)] // default values are validated at compile via Default; round-trip cannot fail
     pub fn reset(&mut self, key: ConfigKey) {
         let default_value = Settings::default().get(key);
         self.set(key, default_value)
@@ -3423,10 +3426,12 @@ mod settings_tests {
 
     #[test]
     fn serde_round_trip() {
-        let mut s = Settings::default();
-        s.sweeper_interval_secs = 42;
-        s.metrics_backend = MetricsBackend::Clickhouse;
-        s.metrics_clickhouse_url = Some("http://ch:8123".to_string());
+        let s = Settings {
+            sweeper_interval_secs: 42,
+            metrics_backend: MetricsBackend::Clickhouse,
+            metrics_clickhouse_url: Some("http://ch:8123".to_string()),
+            ..Default::default()
+        };
         let json = serde_json::to_string(&s).unwrap();
         let back: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(s, back);
@@ -5229,6 +5234,7 @@ impl From<StorageCluster> for StorageClusterView {
 /// the presigner, send empty strings (the handler treats that as
 /// "unset").
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[allow(dead_code)] // public Dropshot request body; constructed externally via deserialize
 pub struct SetPresignerRequest {
     /// Optional. When `None`, the cluster's existing
     /// `s3_endpoint` is left unchanged; when `Some`, it's replaced.
@@ -5587,6 +5593,7 @@ pub enum MetaError {
 /// Classify a key's top-level namespace and validate its syntax
 /// (charset, segment structure, depth, length). Does not look at the
 /// scope.
+#[allow(clippy::unwrap_used)] // emptiness checked one line earlier; chars().next() is provably Some
 fn classify_meta_key(key: &str) -> Result<MetaNamespace, MetaError> {
     if key.is_empty() {
         return Err(MetaError::EmptyKey);
@@ -5667,6 +5674,7 @@ fn classify_meta_key(key: &str) -> Result<MetaNamespace, MetaError> {
 ///     would conflate operator config with per-VM bootstrap data).
 ///   * `meta-data/*` / `system/*` / `dynamic/*` — reserved (computed
 ///     by tritond at request time, not operator-set).
+#[allow(clippy::unwrap_used)] // str::split always yields at least one element; next() is provably Some
 pub fn validate_meta_key(scope: MetaScope, key: &str) -> Result<(), MetaError> {
     let ns = classify_meta_key(key)?;
     match ns {
@@ -7131,7 +7139,7 @@ pub struct MigrationRecord {
 /// One progress entry appended to the per-migration event log. The
 /// agent's progress POSTs (LM-3) write one of these per phase
 /// transition + per N-byte threshold during streaming; the admin UI
-/// + `tcadm migrations get` pages through them via the `?since=<seq>`
+/// and `tcadm migrations get` page through them via the `?since=<seq>`
 /// query parameter.
 ///
 /// The shape mirrors the legacy `MigrationProgress` JSON in
