@@ -101,11 +101,17 @@ rsync -az --exclude=target --exclude=node_modules --exclude=.git --exclude=rust 
     "$TOP/" "root@$BUILD_HOST:$MR_DIR/"
 
 echo "== cross-build the trio + tritoncloud-publish =="
-# One invocation builds tritond (+foundationdb), tritonagent, tcadm in
-# lockstep, plus the publisher.
+# Two invocations on purpose. tritond needs the `foundationdb` feature, but
+# tritonagent + tcadm also depend on tritond-store, so building them in the
+# SAME invocation would unify `tritond-store/foundationdb` into them (cargo
+# feature unification) and leave the agent linked against libfdb_c — which
+# the GZ can't satisfy, producing a broken agent. Build the fdb side and the
+# no-fdb side separately; the trio still ships in lockstep, just compiled apart.
 run "cd $MR_DIR && . /opt/tritoncloud/build-env.sh && \
-     cargo build --release -p tritond -p tritonagent -p tcadm -p tritoncloud-publish \
+     cargo build --release -p tritond -p tritoncloud-publish \
          --features tritond/foundationdb"
+run "cd $MR_DIR && . /opt/tritoncloud/build-env.sh && \
+     cargo build --release -p tritonagent -p tcadm"
 
 if want admin-backend; then
     echo "== cross-build admin-backend (adminui) =="
