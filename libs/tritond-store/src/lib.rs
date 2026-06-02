@@ -35,8 +35,8 @@ pub use types::{
     AUTO_APPROVE_WINDOW_MAX, AddressFamily, AdoptableState, AffinityKind, AffinityOp, AffinityRule,
     AffinityScope, AffinitySelector, ApiKey, ApiKeyScope, ApiKeyView, AutoApproveWindow,
     BHYVE_M1_MIN_BOOT_DISK_BYTES, CLAIM_CODE_ALPHABET, CLAIM_CODE_LEN, CLAIM_CODE_TTL, Capability,
-    Cn, CnCapacity, CnLoadSummary, CnPickSnapshot, CnPlacement, CnReservation, CnRole, CnState,
-    CnView, ConfigError, ConfigKey, DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS,
+    Cn, CnCapacity, CnLoadSummary, CnNicTagInventory, CnPickSnapshot, CnPlacement, CnReservation,
+    CnRole, CnState, CnView, ConfigError, ConfigKey, DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS,
     DEFAULT_DHCP_RECONCILE_INTERVAL_SECS, DEFAULT_IMDS_ENABLED, DEFAULT_IMDS_HOP_LIMIT,
     DEFAULT_STALE_CLAIM_THRESHOLD_SECS, DEFAULT_SWEEPER_INTERVAL_SECS, DeviceCapacity, DeviceKind,
     DeviceReservation, DhcpLease, DhcpOptionRaw, DhcpPool, DhcpReservation, Disk, DiskKind,
@@ -47,28 +47,28 @@ pub use types::{
     IMDS_HOP_LIMIT_MIN, IdpConfig, IdpConfigView, Image, ImageCompatibility, ImageScope,
     ImdsBindingWire, Instance, InstanceAffinity, InstanceBrand, InstanceCreateResult, IpCidr,
     JobKind, JobOutcome, JobStatus, JobStatusKind, LegacyNic, LegacyVm, LifecycleState,
-    LifecycleStateKind, MAX_META_KEY_BYTES, MAX_META_KEY_DEPTH, MAX_META_KEYS_PER_SCOPE,
-    MAX_META_VALUE_BYTES, MAX_REALIZED_BYTES_PER_INSTANCE, META_KEY_IMDS_ENABLED,
-    META_KEY_IMDS_HOP_LIMIT, META_KEY_USER_DATA, ManagedIdentity, MetaError, MetaProvenance,
-    MetaScope, MetaValue, MetricsBackend, MigrationAction, MigrationJobRole, MigrationPhase,
-    MigrationProgressEvent, MigrationRecord, MigrationState, NatGateway, NetworkKind, NetworkPool,
-    NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster, NewExternalSubnet,
-    NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewInstanceNic, NewJob, NewMigration,
-    NewNatGateway, NewNetworkPool, NewNicTag, NewProject, NewQuota, NewRoute, NewRouteTable,
-    NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, NicTag,
-    NicTagProvision, CnNicTagInventory, NumaNode, Project, ProvisioningJob, Quota, Realization,
-    RealizationStatus, RealizedMeta,
-    RealizedNetworkState, RealizedView, RealizerId, Route, RouteTable, RouteTarget, Settings, Silo,
-    SourceFilesystemDetails, SshKey, SshKeyScope, StorageCluster, StorageClusterStatus,
-    StorageClusterSurface, StorageClusterView, StorageTier, Subnet, SystemKey,
-    TRITOND_IMAGE_NAMESPACE, TRITOND_METADATA_IDENTITY_HMAC, TRITOND_METADATA_INSTANCE_ID,
-    TRITOND_METADATA_PROJECT_ID, TRITOND_METADATA_TENANT_ID, TRITOND_SSH_KEY_NAMESPACE, Tenant,
-    TenantInstanceProjection, TopologyKey, TopologySpread, UnderlayCapability, User, UserView,
-    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, VmNicReport, VmReport, VmState, Vpc, ZpoolCapacity,
-    ZpoolPropFingerprint, computed_metadata, default_boot_disk_size_bytes, default_guest_visible,
-    derive_image_id, derive_ssh_key_id, format_claim_code, generate_claim_code,
-    generate_poll_token, meta_key_guest_writable_allowed, normalize_claim_code, parse_vm_reports,
-    validate_meta_entry, validate_meta_key,
+    LifecycleStateKind, MAX_BOOT_DISK_BYTES, MAX_META_KEY_BYTES, MAX_META_KEY_DEPTH,
+    MAX_META_KEYS_PER_SCOPE, MAX_META_VALUE_BYTES, MAX_REALIZED_BYTES_PER_INSTANCE,
+    META_KEY_IMDS_ENABLED, META_KEY_IMDS_HOP_LIMIT, META_KEY_USER_DATA, ManagedIdentity, MetaError,
+    MetaProvenance, MetaScope, MetaValue, MetricsBackend, MigrationAction, MigrationJobRole,
+    MigrationPhase, MigrationProgressEvent, MigrationRecord, MigrationState, NatGateway,
+    NetworkKind, NetworkPool, NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster,
+    NewExternalSubnet, NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewInstanceNic,
+    NewJob, NewMigration, NewNatGateway, NewNetworkPool, NewNicTag, NewProject, NewQuota, NewRoute,
+    NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic,
+    NicTag, NicTagProvision, NumaNode, Project, ProvisioningJob, Quota, Realization,
+    RealizationStatus, RealizedMeta, RealizedNetworkState, RealizedView, RealizerId, Route,
+    RouteTable, RouteTarget, Settings, Silo, SourceFilesystemDetails, SshKey, SshKeyScope,
+    StorageCluster, StorageClusterStatus, StorageClusterSurface, StorageClusterView, StorageTier,
+    Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE, TRITOND_METADATA_IDENTITY_HMAC,
+    TRITOND_METADATA_INSTANCE_ID, TRITOND_METADATA_PROJECT_ID, TRITOND_METADATA_TENANT_ID,
+    TRITOND_SSH_KEY_NAMESPACE, Tenant, TenantInstanceProjection, TopologyKey, TopologySpread,
+    UnderlayCapability, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, VmNicReport,
+    VmReport, VmState, Vpc, ZpoolCapacity, ZpoolPropFingerprint, computed_metadata,
+    default_boot_disk_size_bytes, default_guest_visible, derive_image_id, derive_ssh_key_id,
+    format_claim_code, generate_claim_code, generate_poll_token, meta_key_guest_writable_allowed,
+    normalize_claim_code, parse_vm_reports, resolve_boot_disk_size_bytes, validate_meta_entry,
+    validate_meta_key,
 };
 
 use std::net::IpAddr;
@@ -1090,6 +1090,15 @@ pub trait Store: Send + Sync + 'static {
     /// (the auto-created `"boot"`).
     async fn list_disks_for_instance(&self, instance_id: Uuid) -> Result<Vec<Disk>, StoreError>;
 
+    /// Grow a disk's recorded size to `new_size_bytes` and return the
+    /// updated record. Grow-only: a value at or below the current size
+    /// is rejected with [`StoreError::Conflict`] (the caller validates
+    /// first for a clean error, but the store re-checks so a racing
+    /// shrink can't slip through). Returns [`StoreError::NotFound`] when
+    /// no such Disk exists. Persisting the larger size is what makes the
+    /// agent's volume grow durable across a reprovision.
+    async fn resize_disk(&self, disk_id: Uuid, new_size_bytes: u64) -> Result<Disk, StoreError>;
+
     // ------------------------------------------------------------------
     // Floating IPs (project-scoped, allocated from a fleet pool)
     // ------------------------------------------------------------------
@@ -1132,10 +1141,8 @@ pub trait Store: Send + Sync + 'static {
     /// for each of these so an InProgress claim from a crashed agent
     /// becomes re-claimable. The idempotent re-claim is a no-op at the
     /// kmod via the generation fence.
-    async fn list_floating_ips_hosted_on_cn(
-        &self,
-        cn: Uuid,
-    ) -> Result<Vec<FloatingIp>, StoreError>;
+    async fn list_floating_ips_hosted_on_cn(&self, cn: Uuid)
+    -> Result<Vec<FloatingIp>, StoreError>;
 
     /// Release a FloatingIp back to its pool. Returns
     /// [`StoreError::Conflict`] if the IP is currently attached

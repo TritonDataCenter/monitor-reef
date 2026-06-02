@@ -286,10 +286,7 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
             nic_tags: cfg.nic_tags.clone(),
         };
         match client.agent_report_nic_tags().body(report).send().await {
-            Ok(_) => info!(
-                count = cfg.nic_tags.len(),
-                "published CN nic_tag inventory",
-            ),
+            Ok(_) => info!(count = cfg.nic_tags.len(), "published CN nic_tag inventory",),
             Err(e) => warn!(
                 error = %e,
                 "failed to publish CN nic_tag inventory; floating-IP placement \
@@ -411,8 +408,7 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
         None
     };
 
-    let result =
-        run_poll_loop(client.as_ref(), &cfg, &bindings, reservoir_runtime.as_ref()).await;
+    let result = run_poll_loop(client.as_ref(), &cfg, &bindings, reservoir_runtime.as_ref()).await;
 
     if let Some(h) = dhcp_events_handle.take() {
         h.shutdown().await;
@@ -1104,6 +1100,16 @@ async fn drive_job(
                 *vlan_id,
             )?;
         }
+        JobKind::ResizeDisk {
+            instance_id,
+            size_bytes,
+            ..
+        } => {
+            // Grow the boot zvol + flexible pool to the new size. The
+            // durable Disk record is already grown control-plane side;
+            // the guest realizes the capacity on its next reboot.
+            vmadm::grow_boot_disk(*instance_id, *size_bytes).await?;
+        }
     }
 
     Ok(())
@@ -1224,11 +1230,9 @@ where
     // physical link if needed. The nic_tag is the physical-link identity
     // and the VLAN (from the external subnet) is stamped on the vnic —
     // exactly like legacy SDC `global-nic` + `vlan-id`.
-    let realized_link = ext_link
-        .realize_link(nic_tag, vlan_id)
-        .with_context(|| {
-            format!("realize external FIP link for nic_tag {nic_tag} vlan {vlan_id:?}")
-        })?;
+    let realized_link = ext_link.realize_link(nic_tag, vlan_id).with_context(|| {
+        format!("realize external FIP link for nic_tag {nic_tag} vlan {vlan_id:?}")
+    })?;
     let link_name = realized_link.as_str();
 
     // 1. Ensure the external siphon link exists FIRST (idempotent).
@@ -1451,8 +1455,9 @@ fn resolve_external_linkid(link_name: &str) -> Result<u32> {
     #[cfg(target_os = "illumos")]
     {
         use proteus_ioctl::dladm::DladmHandle;
-        let dladm = DladmHandle::open()
-            .with_context(|| "open libdladm to resolve external FIP link; tritonagent must run as root")?;
+        let dladm = DladmHandle::open().with_context(
+            || "open libdladm to resolve external FIP link; tritonagent must run as root",
+        )?;
         dladm
             .name2info(link_name)
             .with_context(|| format!("resolve dladm linkid for external FIP link {link_name}"))

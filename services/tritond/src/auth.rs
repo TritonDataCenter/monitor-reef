@@ -152,6 +152,7 @@ permit(
         Action::"nic_get",
         Action::"disk_list",
         Action::"disk_get",
+        Action::"disk_resize",
         Action::"floating_ip_list",
         Action::"floating_ip_create",
         Action::"floating_ip_get",
@@ -444,6 +445,10 @@ pub enum Action {
     NicGet,
     DiskList,
     DiskGet,
+    /// Grow a disk's backing volume (`POST /v1/disks/{id}/resize`).
+    /// A state-touching write granted to the same project members that
+    /// can start/stop the owning instance.
+    DiskResize,
     FloatingIpList,
     FloatingIpCreate,
     FloatingIpGet,
@@ -702,6 +707,7 @@ impl Action {
             Action::NicGet => "nic_get",
             Action::DiskList => "disk_list",
             Action::DiskGet => "disk_get",
+            Action::DiskResize => "disk_resize",
             Action::FloatingIpList => "floating_ip_list",
             Action::FloatingIpCreate => "floating_ip_create",
             Action::FloatingIpGet => "floating_ip_get",
@@ -1351,6 +1357,8 @@ fn is_read_action(action: Action) -> bool {
         | Action::InstanceStart
         | Action::InstanceStop
         | Action::InstanceRestart
+        // Growing a disk mutates the backing volume + flexible pool.
+        | Action::DiskResize
         // Opening a console is an interactive action that touches
         // the guest; a ReadOnly key must not reach it.
         | Action::InstanceConsole

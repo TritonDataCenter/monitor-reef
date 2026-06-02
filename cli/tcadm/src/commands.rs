@@ -700,9 +700,6 @@ fn print_instance(i: &tritond_client::types::Instance) {
     println!("  updated:     {}", i.updated_at);
 }
 
-
-
-
 /// Set (or replace) a project's quota.
 #[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
 // into a struct here just adds
@@ -817,7 +814,6 @@ pub async fn tenant_project_delete(
     println!("Deleted project {project_id} from silo {tenant_id}");
     Ok(())
 }
-
 
 /// Resolve `--public-key` / `--public-key-file` into the openssh
 /// string the API edge expects. Used by every per-scope ssh-key
@@ -3105,6 +3101,7 @@ pub async fn instance_create_v1(
     ssh_key_ids: Vec<Uuid>,
     cpu: u32,
     memory_bytes: u64,
+    disk_bytes: Option<u64>,
     json_output: bool,
 ) -> Result<()> {
     let session = Session::resolve(endpoint_override, api_key_override).await?;
@@ -3121,6 +3118,7 @@ pub async fn instance_create_v1(
             ssh_key_ids,
             cpu,
             memory_bytes,
+            disk_bytes,
             // Multi-NIC is not yet surfaced on the CLI; build the
             // JSON body directly via curl if you need extra NICs.
             extra_nics: Vec::new(),
@@ -3680,6 +3678,42 @@ pub async fn disk_show_v1(
     println!("  kind:       {:?}", d.kind);
     println!("  size_bytes: {}", d.size_bytes);
     println!("  instance:   {}", d.instance_id);
+    Ok(())
+}
+
+pub async fn disk_resize_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    disk_id: Uuid,
+    size_bytes: u64,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let resp = client
+        .resize_disk_v1()
+        .disk_id(disk_id)
+        .body(tritond_client::types::DiskResizeRequest { size_bytes })
+        .send()
+        .await
+        .context("/v1/disks/{id}/resize")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+    println!(
+        "Disk {} resized to {} bytes",
+        resp.disk.id, resp.disk.size_bytes
+    );
+    if resp.reboot_required {
+        println!(
+            "  reboot required: the running guest sees the new capacity after a reboot \
+             (cloud-init then grows the partition + filesystem)"
+        );
+    } else {
+        println!("  the larger disk is available on the next start");
+    }
     Ok(())
 }
 

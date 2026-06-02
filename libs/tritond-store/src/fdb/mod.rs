@@ -56,8 +56,8 @@ use crate::{
     ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId, Route, RouteTable,
     RouteTarget, Settings, Silo, SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, Store,
     StoreError, Subnet, SystemKey, Tenant, TenantInstanceProjection, User, VPC_VNI_MAX,
-    VPC_VNI_RESERVED_CEILING, Vpc, default_boot_disk_size_bytes, generate_claim_code,
-    generate_poll_token,
+    VPC_VNI_RESERVED_CEILING, Vpc, generate_claim_code, generate_poll_token,
+    resolve_boot_disk_size_bytes,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
@@ -175,9 +175,7 @@ enum SimpleDelete {
 }
 
 /// Map a `SimpleDelete` outcome back to `StoreError`.
-fn finish_simple_delete(
-    outcome: Result<SimpleDelete, FdbBindingError>,
-) -> Result<(), StoreError> {
+fn finish_simple_delete(outcome: Result<SimpleDelete, FdbBindingError>) -> Result<(), StoreError> {
     match outcome {
         Ok(SimpleDelete::Deleted) => Ok(()),
         Ok(SimpleDelete::Vanished) => Err(StoreError::NotFound),
@@ -366,10 +364,8 @@ impl Store for FdbStore {
             default_tenant_id: tenant.id,
             created_at: now,
         };
-        let silo_value = serde_json::to_vec(&silo)
-            .map_err(ser_err("silo"))?;
-        let tenant_value = serde_json::to_vec(&tenant)
-            .map_err(ser_err("tenant"))?;
+        let silo_value = serde_json::to_vec(&silo).map_err(ser_err("silo"))?;
+        let tenant_value = serde_json::to_vec(&tenant).map_err(ser_err("tenant"))?;
         let silo_by_id_key = keys::silo_by_id_key(silo.id);
         let silo_by_name_key = keys::silo_by_name_key(&silo.name);
         let tenant_by_id_key = keys::tenant_by_id_key(tenant.id);
@@ -383,9 +379,15 @@ impl Store for FdbStore {
         let outcome = fdb_txn!(
             self.db,
             [
-                silo_by_id_key, silo_by_name_key, tenant_by_id_key,
-                tenant_by_name_key, tenant_in_silo_key, silo_value,
-                tenant_value, silo_id_bytes, tenant_id_bytes,
+                silo_by_id_key,
+                silo_by_name_key,
+                tenant_by_id_key,
+                tenant_by_name_key,
+                tenant_in_silo_key,
+                silo_value,
+                tenant_value,
+                silo_id_bytes,
+                tenant_id_bytes,
             ],
             |tr| {
                 if tr.get(&silo_by_name_key, false).await?.is_some() {
@@ -407,16 +409,14 @@ impl Store for FdbStore {
         let key = keys::silo_by_id_key(id);
         let bytes = self.read_bytes(&key).await?;
         match bytes {
-            Some(bytes) => serde_json::from_slice(&bytes)
-                .map_err(de_err("silo")),
+            Some(bytes) => serde_json::from_slice(&bytes).map_err(de_err("silo")),
             None => Err(StoreError::NotFound),
         }
     }
 
     async fn create_user(&self, user: User) -> Result<User, StoreError> {
         validate::username("username", &user.username)?;
-        let value = serde_json::to_vec(&user)
-            .map_err(ser_err("user"))?;
+        let value = serde_json::to_vec(&user).map_err(ser_err("user"))?;
         let by_id_key = keys::user_by_id_key(user.id);
         let by_name_key = keys::user_by_name_key(&user.username);
         // Federation index is keyed by (tenant_id, issuer, subject) —
@@ -491,8 +491,7 @@ impl Store for FdbStore {
     async fn get_user_by_id(&self, id: Uuid) -> Result<User, StoreError> {
         let key = keys::user_by_id_key(id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("user"))
+        serde_json::from_slice(&bytes).map_err(de_err("user"))
     }
 
     async fn update_user_password_hash(
@@ -512,8 +511,10 @@ impl Store for FdbStore {
                     let Some(id_bytes) = tr.get(&by_name_key, false).await? else {
                         return Ok(None);
                     };
-                    let id_str = std::str::from_utf8(id_bytes.as_ref()).map_err(txn_err("user index value not utf8"))?;
-                    let id = Uuid::parse_str(id_str).map_err(txn_err("user index value not uuid"))?;
+                    let id_str = std::str::from_utf8(id_bytes.as_ref())
+                        .map_err(txn_err("user index value not utf8"))?;
+                    let id =
+                        Uuid::parse_str(id_str).map_err(txn_err("user index value not uuid"))?;
                     let by_id_key = keys::user_by_id_key(id);
                     let Some(user_bytes) = tr.get(&by_id_key, false).await? else {
                         return Ok(None);
@@ -589,8 +590,7 @@ impl Store for FdbStore {
             let mut updated = user.clone();
             updated.capabilities = new_caps;
             let by_id_key = keys::user_by_id_key(updated.id);
-            let value = serde_json::to_vec(&updated)
-                .map_err(ser_err("user"))?;
+            let value = serde_json::to_vec(&updated).map_err(ser_err("user"))?;
             let result: Result<(), FdbBindingError> = self
                 .db
                 .run(|tr, _| {
@@ -672,8 +672,7 @@ impl Store for FdbStore {
     }
 
     async fn create_api_key(&self, key: ApiKey) -> Result<ApiKey, StoreError> {
-        let value = serde_json::to_vec(&key)
-            .map_err(ser_err("api key"))?;
+        let value = serde_json::to_vec(&key).map_err(ser_err("api key"))?;
         let by_id_key = keys::apikey_by_id_key(key.id);
         let by_lookup_key = keys::apikey_by_lookup_key(&key.lookup_id);
         let user_index_key = keys::apikey_user_index_key(key.user_id, key.id);
@@ -730,8 +729,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            ;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -740,8 +738,7 @@ impl Store for FdbStore {
                 .map_err(|e| StoreError::Backend(format!("api key index uuid: {e}")))?;
             let by_id_key = keys::apikey_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
-                let key: ApiKey = serde_json::from_slice(&bytes)
-                    .map_err(de_err("api key"))?;
+                let key: ApiKey = serde_json::from_slice(&bytes).map_err(de_err("api key"))?;
                 out.push(key);
             }
         }
@@ -763,8 +760,7 @@ impl Store for FdbStore {
             .read_bytes(&by_id_key)
             .await?
             .ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("api key"))
+        serde_json::from_slice(&bytes).map_err(de_err("api key"))
     }
 
     async fn delete_api_key(&self, user_id: Uuid, key_id: Uuid) -> Result<(), StoreError> {
@@ -813,15 +809,13 @@ impl Store for FdbStore {
     async fn get_settings(&self) -> Result<Settings, StoreError> {
         let key = keys::settings_key().to_vec();
         match self.read_bytes(&key).await? {
-            Some(bytes) => serde_json::from_slice(&bytes)
-                .map_err(de_err("settings")),
+            Some(bytes) => serde_json::from_slice(&bytes).map_err(de_err("settings")),
             None => Ok(Settings::default()),
         }
     }
 
     async fn put_settings(&self, settings: Settings) -> Result<(), StoreError> {
-        let value = serde_json::to_vec(&settings)
-            .map_err(ser_err("settings"))?;
+        let value = serde_json::to_vec(&settings).map_err(ser_err("settings"))?;
         let key = keys::settings_key().to_vec();
         let result: Result<(), FdbBindingError> = self
             .db
@@ -878,8 +872,7 @@ impl Store for FdbStore {
             .map_err(|e| StoreError::Conflict(e.to_string()))?;
         let entry_key = keys::meta_entry_key(scope, scope_id, key);
         let gen_key = keys::meta_gen_key(scope, scope_id);
-        let encoded = serde_json::to_vec(&value)
-            .map_err(ser_err("MetaValue"))?;
+        let encoded = serde_json::to_vec(&value).map_err(ser_err("MetaValue"))?;
         let result: Result<u64, FdbBindingError> = self
             .db
             .run(|tr, _| {
@@ -911,8 +904,7 @@ impl Store for FdbStore {
     ) -> Result<MetaValue, StoreError> {
         let entry_key = keys::meta_entry_key(scope, scope_id, key);
         match self.read_bytes(&entry_key).await? {
-            Some(bytes) => serde_json::from_slice(&bytes)
-                .map_err(de_err("MetaValue")),
+            Some(bytes) => serde_json::from_slice(&bytes).map_err(de_err("MetaValue")),
             None => Err(StoreError::NotFound),
         }
     }
@@ -990,8 +982,7 @@ impl Store for FdbStore {
         let raw = raw.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(raw.len());
         for (k, bytes) in raw {
-            let v: MetaValue = serde_json::from_slice(&bytes)
-                .map_err(de_err("MetaValue"))?;
+            let v: MetaValue = serde_json::from_slice(&bytes).map_err(de_err("MetaValue"))?;
             out.push((k, v));
         }
         Ok(out)
@@ -1032,8 +1023,7 @@ impl Store for FdbStore {
     ) -> Result<IdpConfig, StoreError> {
         let by_tenant_key = keys::idp_config_key(tenant_id);
         let by_issuer_key = keys::idp_by_issuer_key(&config.issuer_url);
-        let value = serde_json::to_vec(&config)
-            .map_err(ser_err("idp config"))?;
+        let value = serde_json::to_vec(&config).map_err(ser_err("idp config"))?;
         let tenant_id_str = tenant_id.to_string();
 
         // Single transaction:
@@ -1058,7 +1048,8 @@ impl Store for FdbStore {
                         return Ok(PutIdpOutcome::IssuerTaken);
                     }
                     if let Some(prev_bytes) = tr.get(&by_tenant_key, false).await? {
-                        let prev: IdpConfig = serde_json::from_slice(&prev_bytes).map_err(txn_de_err("prev idp config"))?;
+                        let prev: IdpConfig = serde_json::from_slice(&prev_bytes)
+                            .map_err(txn_de_err("prev idp config"))?;
                         // Drop the stale issuer→tenant entry when
                         // the tenant is moving to a different issuer.
                         let prev_issuer_key = keys::idp_by_issuer_key(&prev.issuer_url);
@@ -1085,8 +1076,7 @@ impl Store for FdbStore {
     async fn get_idp_config(&self, tenant_id: Uuid) -> Result<IdpConfig, StoreError> {
         let key = keys::idp_config_key(tenant_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("idp config"))
+        serde_json::from_slice(&bytes).map_err(de_err("idp config"))
     }
 
     async fn delete_idp_config(&self, tenant_id: Uuid) -> Result<(), StoreError> {
@@ -1151,8 +1141,7 @@ impl Store for FdbStore {
                 .map_err(|e| StoreError::Backend(format!("idp index key not utf8: {e}")))?;
             let tenant_id = Uuid::parse_str(tenant_str)
                 .map_err(|e| StoreError::Backend(format!("idp index key not uuid: {e}")))?;
-            let config: IdpConfig = serde_json::from_slice(&value)
-                .map_err(de_err("idp config"))?;
+            let config: IdpConfig = serde_json::from_slice(&value).map_err(de_err("idp config"))?;
             out.push((tenant_id, config));
         }
         Ok(out)
@@ -1188,8 +1177,7 @@ impl Store for FdbStore {
             description: req.description.unwrap_or_default(),
             created_at: Utc::now(),
         };
-        let value = serde_json::to_vec(&project)
-            .map_err(ser_err("project"))?;
+        let value = serde_json::to_vec(&project).map_err(ser_err("project"))?;
         let by_id_key = keys::project_by_id_key(project.id);
         let by_name_key = keys::project_by_tenant_name_key(tenant_id, &project.name);
         let in_tenant_key = keys::project_in_tenant_key(tenant_id, project.id);
@@ -1200,7 +1188,14 @@ impl Store for FdbStore {
         let id_bytes = id_str.into_bytes();
         let outcome = fdb_txn!(
             self.db,
-            [by_id_key, by_name_key, in_tenant_key, tenant_check_key, value, id_bytes],
+            [
+                by_id_key,
+                by_name_key,
+                in_tenant_key,
+                tenant_check_key,
+                value,
+                id_bytes
+            ],
             |tr| {
                 if tr.get(&tenant_check_key, false).await?.is_none() {
                     return Ok(SimpleCreate::ParentMissing);
@@ -1221,8 +1216,7 @@ impl Store for FdbStore {
     async fn get_project(&self, project_id: Uuid) -> Result<Project, StoreError> {
         let key = keys::project_by_id_key(project_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("project"))
+        serde_json::from_slice(&bytes).map_err(de_err("project"))
     }
 
     async fn list_projects_in_tenant(&self, tenant_id: Uuid) -> Result<Vec<Project>, StoreError> {
@@ -1245,8 +1239,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            ;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -1255,8 +1248,7 @@ impl Store for FdbStore {
                 .map_err(|e| StoreError::Backend(format!("project index uuid: {e}")))?;
             let by_id_key = keys::project_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
-                let project: Project = serde_json::from_slice(&bytes)
-                    .map_err(de_err("project"))?;
+                let project: Project = serde_json::from_slice(&bytes).map_err(de_err("project"))?;
                 out.push(project);
             }
         }
@@ -1283,8 +1275,7 @@ impl Store for FdbStore {
                         serde_json::from_slice(&bytes).map_err(txn_de_err("project"))?;
                     let by_name_key =
                         keys::project_by_tenant_name_key(project.tenant_id, &project.name);
-                    let in_tenant_key =
-                        keys::project_in_tenant_key(project.tenant_id, project.id);
+                    let in_tenant_key = keys::project_in_tenant_key(project.tenant_id, project.id);
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&in_tenant_key);
@@ -1309,8 +1300,7 @@ impl Store for FdbStore {
             description: req.description.unwrap_or_default(),
             created_at: Utc::now(),
         };
-        let value = serde_json::to_vec(&tenant)
-            .map_err(ser_err("tenant"))?;
+        let value = serde_json::to_vec(&tenant).map_err(ser_err("tenant"))?;
         let by_id_key = keys::tenant_by_id_key(tenant.id);
         let by_name_key = keys::tenant_by_silo_name_key(silo_id, &tenant.name);
         let in_silo_key = keys::tenant_in_silo_key(silo_id, tenant.id);
@@ -1321,7 +1311,14 @@ impl Store for FdbStore {
         let id_bytes = id_str.into_bytes();
         let outcome = fdb_txn!(
             self.db,
-            [by_id_key, by_name_key, in_silo_key, silo_check_key, value, id_bytes],
+            [
+                by_id_key,
+                by_name_key,
+                in_silo_key,
+                silo_check_key,
+                value,
+                id_bytes
+            ],
             |tr| {
                 if tr.get(&silo_check_key, false).await?.is_none() {
                     return Ok(SimpleCreate::ParentMissing);
@@ -1342,8 +1339,7 @@ impl Store for FdbStore {
     async fn get_tenant(&self, tenant_id: Uuid) -> Result<Tenant, StoreError> {
         let key = keys::tenant_by_id_key(tenant_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("tenant"))
+        serde_json::from_slice(&bytes).map_err(de_err("tenant"))
     }
 
     async fn list_tenants_in_silo(&self, silo_id: Uuid) -> Result<Vec<Tenant>, StoreError> {
@@ -1374,8 +1370,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            ;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -1384,8 +1379,7 @@ impl Store for FdbStore {
                 .map_err(|e| StoreError::Backend(format!("tenant index uuid: {e}")))?;
             let by_id_key = keys::tenant_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
-                let tenant: Tenant = serde_json::from_slice(&bytes)
-                    .map_err(de_err("tenant"))?;
+                let tenant: Tenant = serde_json::from_slice(&bytes).map_err(de_err("tenant"))?;
                 out.push(tenant);
             }
         }
@@ -1407,8 +1401,7 @@ impl Store for FdbStore {
                     };
                     let tenant: Tenant =
                         serde_json::from_slice(&bytes).map_err(txn_de_err("tenant"))?;
-                    let by_name_key =
-                        keys::tenant_by_silo_name_key(tenant.silo_id, &tenant.name);
+                    let by_name_key = keys::tenant_by_silo_name_key(tenant.silo_id, &tenant.name);
                     let in_silo_key = keys::tenant_in_silo_key(tenant.silo_id, tenant.id);
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
@@ -1473,10 +1466,9 @@ impl Store for FdbStore {
                 ipv6_block: req.ipv6_block,
                 created_at: now,
             };
-            let value = serde_json::to_vec(&candidate)
-                .map_err(ser_err("vpc"))?;
-            let main_route_table_value = serde_json::to_vec(&main_route_table)
-                .map_err(ser_err("route table"))?;
+            let value = serde_json::to_vec(&candidate).map_err(ser_err("vpc"))?;
+            let main_route_table_value =
+                serde_json::to_vec(&main_route_table).map_err(ser_err("route table"))?;
             let by_id_key = keys::vpc_by_id_key(candidate.id);
             let in_project_key = keys::vpc_in_project_key(project_id, candidate.id);
             let by_vni_key = keys::vpc_by_vni_key(vni);
@@ -1561,8 +1553,7 @@ impl Store for FdbStore {
     async fn get_vpc(&self, vpc_id: Uuid) -> Result<Vpc, StoreError> {
         let key = keys::vpc_by_id_key(vpc_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("vpc"))
+        serde_json::from_slice(&bytes).map_err(de_err("vpc"))
     }
 
     async fn list_vpcs_in_project(&self, project_id: Uuid) -> Result<Vec<Vpc>, StoreError> {
@@ -1585,8 +1576,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            ;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -1595,8 +1585,7 @@ impl Store for FdbStore {
                 .map_err(|e| StoreError::Backend(format!("vpc index uuid: {e}")))?;
             let by_id_key = keys::vpc_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
-                let vpc: Vpc = serde_json::from_slice(&bytes)
-                    .map_err(de_err("vpc"))?;
+                let vpc: Vpc = serde_json::from_slice(&bytes).map_err(de_err("vpc"))?;
                 out.push(vpc);
             }
         }
@@ -1638,8 +1627,7 @@ impl Store for FdbStore {
                         None => return Ok(DelOut::Vanished),
                     };
                     let vpc: Vpc = serde_json::from_slice(&bytes).map_err(txn_de_err("vpc"))?;
-                    let by_name_key =
-                        keys::vpc_by_project_name_key(vpc.project_id, &vpc.name);
+                    let by_name_key = keys::vpc_by_project_name_key(vpc.project_id, &vpc.name);
                     let in_project_key = keys::vpc_in_project_key(vpc.project_id, vpc.id);
                     let by_vni_key = keys::vpc_by_vni_key(vpc.vni);
                     let main_rt_by_id_key = keys::route_table_by_id_key(vpc.main_route_table_id);
@@ -1863,8 +1851,7 @@ impl Store for FdbStore {
     async fn get_subnet(&self, subnet_id: Uuid) -> Result<Subnet, StoreError> {
         let key = keys::subnet_by_id_key(subnet_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("subnet"))
+        serde_json::from_slice(&bytes).map_err(de_err("subnet"))
     }
 
     async fn list_subnets_in_vpc(&self, vpc_id: Uuid) -> Result<Vec<Subnet>, StoreError> {
@@ -1887,8 +1874,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            ;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -1897,8 +1883,7 @@ impl Store for FdbStore {
                 .map_err(|e| StoreError::Backend(format!("subnet index uuid: {e}")))?;
             let by_id_key = keys::subnet_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
-                let subnet: Subnet = serde_json::from_slice(&bytes)
-                    .map_err(de_err("subnet"))?;
+                let subnet: Subnet = serde_json::from_slice(&bytes).map_err(de_err("subnet"))?;
                 out.push(subnet);
             }
         }
@@ -1913,8 +1898,7 @@ impl Store for FdbStore {
                 Some(b) => b,
                 None => return Ok(SimpleDelete::Vanished),
             };
-            let subnet: Subnet =
-                serde_json::from_slice(&bytes).map_err(txn_de_err("subnet"))?;
+            let subnet: Subnet = serde_json::from_slice(&bytes).map_err(txn_de_err("subnet"))?;
             tr.clear(&by_id_key);
             tr.clear(&keys::subnet_by_vpc_name_key(subnet.vpc_id, &subnet.name));
             tr.clear(&keys::subnet_in_vpc_key(subnet.vpc_id, subnet.id));
@@ -2010,8 +1994,7 @@ impl Store for FdbStore {
     async fn get_route_table(&self, route_table_id: Uuid) -> Result<RouteTable, StoreError> {
         let key = keys::route_table_by_id_key(route_table_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("route table"))
+        serde_json::from_slice(&bytes).map_err(de_err("route table"))
     }
 
     async fn list_route_tables_in_vpc(&self, vpc_id: Uuid) -> Result<Vec<RouteTable>, StoreError> {
@@ -2034,8 +2017,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            ;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -2273,8 +2255,7 @@ impl Store for FdbStore {
     async fn get_route(&self, route_id: Uuid) -> Result<Route, StoreError> {
         let key = keys::route_by_id_key(route_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("route"))
+        serde_json::from_slice(&bytes).map_err(de_err("route"))
     }
 
     async fn list_routes_in_table(&self, route_table_id: Uuid) -> Result<Vec<Route>, StoreError> {
@@ -2297,8 +2278,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            ;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -2531,8 +2511,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            ;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -2747,8 +2726,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            ;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -2787,8 +2765,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            ;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -2993,8 +2970,7 @@ impl Store for FdbStore {
     async fn get_ssh_key(&self, key_id: Uuid) -> Result<SshKey, StoreError> {
         let key = keys::ssh_key_by_id_key(key_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("ssh key"))
+        serde_json::from_slice(&bytes).map_err(de_err("ssh key"))
     }
 
     async fn list_ssh_keys_public(&self) -> Result<Vec<SshKey>, StoreError> {
@@ -3030,8 +3006,7 @@ impl Store for FdbStore {
             .read_bytes(&keys::tenant_by_id_key(tenant_id))
             .await?
             .ok_or(StoreError::NotFound)?;
-        let tenant: Tenant = serde_json::from_slice(&tenant_bytes)
-            .map_err(de_err("tenant"))?;
+        let tenant: Tenant = serde_json::from_slice(&tenant_bytes).map_err(de_err("tenant"))?;
         let mut out = self.list_ssh_keys_public().await?;
         out.extend(self.list_ssh_keys_in_silo(tenant.silo_id).await?);
         out.extend(self.list_ssh_keys_in_tenant(tenant_id).await?);
@@ -3046,14 +3021,12 @@ impl Store for FdbStore {
             .read_bytes(&keys::project_by_id_key(project_id))
             .await?
             .ok_or(StoreError::NotFound)?;
-        let project: Project = serde_json::from_slice(&project_bytes)
-            .map_err(de_err("project"))?;
+        let project: Project = serde_json::from_slice(&project_bytes).map_err(de_err("project"))?;
         let tenant_bytes = self
             .read_bytes(&keys::tenant_by_id_key(project.tenant_id))
             .await?
             .ok_or(StoreError::NotFound)?;
-        let tenant: Tenant = serde_json::from_slice(&tenant_bytes)
-            .map_err(de_err("tenant"))?;
+        let tenant: Tenant = serde_json::from_slice(&tenant_bytes).map_err(de_err("tenant"))?;
         let mut out = self.list_ssh_keys_public().await?;
         out.extend(self.list_ssh_keys_in_silo(tenant.silo_id).await?);
         out.extend(self.list_ssh_keys_in_tenant(project.tenant_id).await?);
@@ -3068,8 +3041,7 @@ impl Store for FdbStore {
                 Some(b) => b,
                 None => return Ok(SimpleDelete::Vanished),
             };
-            let key: SshKey =
-                serde_json::from_slice(&bytes).map_err(txn_de_err("ssh key"))?;
+            let key: SshKey = serde_json::from_slice(&bytes).map_err(txn_de_err("ssh key"))?;
             let (by_name_key, by_fp_key, in_scope_key) = match &key.scope {
                 SshKeyScope::Public => (
                     keys::ssh_key_by_public_name_key(&key.name),
@@ -3201,8 +3173,7 @@ impl Store for FdbStore {
     async fn get_image(&self, image_id: Uuid) -> Result<Image, StoreError> {
         let key = keys::image_by_id_key(image_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("image"))
+        serde_json::from_slice(&bytes).map_err(de_err("image"))
     }
 
     async fn list_images_public(&self) -> Result<Vec<Image>, StoreError> {
@@ -3241,8 +3212,7 @@ impl Store for FdbStore {
             .read_bytes(&keys::tenant_by_id_key(tenant_id))
             .await?
             .ok_or(StoreError::NotFound)?;
-        let tenant: Tenant = serde_json::from_slice(&tenant_bytes)
-            .map_err(de_err("tenant"))?;
+        let tenant: Tenant = serde_json::from_slice(&tenant_bytes).map_err(de_err("tenant"))?;
         let mut out = self.list_images_public().await?;
         out.extend(self.list_images_in_silo(tenant.silo_id).await?);
         out.extend(self.list_images_in_tenant(tenant_id).await?);
@@ -3257,14 +3227,12 @@ impl Store for FdbStore {
             .read_bytes(&keys::project_by_id_key(project_id))
             .await?
             .ok_or(StoreError::NotFound)?;
-        let project: Project = serde_json::from_slice(&project_bytes)
-            .map_err(de_err("project"))?;
+        let project: Project = serde_json::from_slice(&project_bytes).map_err(de_err("project"))?;
         let tenant_bytes = self
             .read_bytes(&keys::tenant_by_id_key(project.tenant_id))
             .await?
             .ok_or(StoreError::NotFound)?;
-        let tenant: Tenant = serde_json::from_slice(&tenant_bytes)
-            .map_err(de_err("tenant"))?;
+        let tenant: Tenant = serde_json::from_slice(&tenant_bytes).map_err(de_err("tenant"))?;
         let mut out = self.list_images_public().await?;
         out.extend(self.list_images_in_silo(tenant.silo_id).await?);
         out.extend(self.list_images_in_tenant(project.tenant_id).await?);
@@ -3279,8 +3247,7 @@ impl Store for FdbStore {
                 Some(b) => b,
                 None => return Ok(SimpleDelete::Vanished),
             };
-            let image: Image =
-                serde_json::from_slice(&bytes).map_err(txn_de_err("image"))?;
+            let image: Image = serde_json::from_slice(&bytes).map_err(txn_de_err("image"))?;
             let (by_name_key, in_scope_key) = match &image.scope {
                 ImageScope::Public => (
                     keys::image_by_public_name_key(&image.name),
@@ -3328,8 +3295,7 @@ impl Store for FdbStore {
             instance_limit: req.instance_limit,
             updated_at: Utc::now(),
         };
-        let value = serde_json::to_vec(&quota)
-            .map_err(ser_err("quota"))?;
+        let value = serde_json::to_vec(&quota).map_err(ser_err("quota"))?;
 
         enum Outcome {
             Stored,
@@ -3746,7 +3712,7 @@ impl Store for FdbStore {
                         name: "boot".to_string(),
                         description: format!("Boot disk for instance {}", instance.name),
                         kind: DiskKind::Boot,
-                        size_bytes: default_boot_disk_size_bytes(&image),
+                        size_bytes: resolve_boot_disk_size_bytes(&image, req.disk_bytes),
                         source_image_id: Some(image.id),
                         created_at: now,
                     };
@@ -3969,8 +3935,7 @@ impl Store for FdbStore {
     async fn get_instance(&self, instance_id: Uuid) -> Result<Instance, StoreError> {
         let key = keys::instance_by_id_key(instance_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("instance"))
+        serde_json::from_slice(&bytes).map_err(de_err("instance"))
     }
 
     async fn list_instances_in_project(
@@ -3996,8 +3961,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            ;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -4006,8 +3970,8 @@ impl Store for FdbStore {
                 .map_err(|e| StoreError::Backend(format!("instance index uuid: {e}")))?;
             let by_id_key = keys::instance_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
-                let instance: Instance = serde_json::from_slice(&bytes)
-                    .map_err(de_err("instance"))?;
+                let instance: Instance =
+                    serde_json::from_slice(&bytes).map_err(de_err("instance"))?;
                 out.push(instance);
             }
         }
@@ -4138,8 +4102,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            ;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -4148,8 +4111,8 @@ impl Store for FdbStore {
                 .map_err(|e| StoreError::Backend(format!("instance image index uuid: {e}")))?;
             let by_id_key = keys::instance_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
-                let instance: Instance = serde_json::from_slice(&bytes)
-                    .map_err(de_err("instance"))?;
+                let instance: Instance =
+                    serde_json::from_slice(&bytes).map_err(de_err("instance"))?;
                 out.push(instance);
             }
         }
@@ -4182,8 +4145,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            ;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -4192,8 +4154,7 @@ impl Store for FdbStore {
                 .map_err(|e| StoreError::Backend(format!("nic subnet index uuid: {e}")))?;
             let by_id_key = keys::nic_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
-                let nic: Nic = serde_json::from_slice(&bytes)
-                    .map_err(de_err("nic"))?;
+                let nic: Nic = serde_json::from_slice(&bytes).map_err(de_err("nic"))?;
                 out.push(nic);
             }
         }
@@ -4212,8 +4173,7 @@ impl Store for FdbStore {
             .read_bytes(&nic_key)
             .await?
             .ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&nic_bytes)
-            .map_err(de_err("nic"))
+        serde_json::from_slice(&nic_bytes).map_err(de_err("nic"))
     }
 
     async fn find_dhcp_lease_by_mac(&self, mac: &str) -> Result<DhcpLease, StoreError> {
@@ -4232,8 +4192,7 @@ impl Store for FdbStore {
             .read_bytes(&lease_key)
             .await?
             .ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&lease_bytes)
-            .map_err(de_err("dhcp lease"))
+        serde_json::from_slice(&lease_bytes).map_err(de_err("dhcp lease"))
     }
 
     async fn list_instances_for_cn(&self, host_cn_uuid: Uuid) -> Result<Vec<Instance>, StoreError> {
@@ -4256,8 +4215,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            ;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -4266,8 +4224,8 @@ impl Store for FdbStore {
                 .map_err(|e| StoreError::Backend(format!("instance host index uuid: {e}")))?;
             let by_id_key = keys::instance_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
-                let instance: Instance = serde_json::from_slice(&bytes)
-                    .map_err(de_err("instance"))?;
+                let instance: Instance =
+                    serde_json::from_slice(&bytes).map_err(de_err("instance"))?;
                 out.push(instance);
             }
         }
@@ -4344,8 +4302,7 @@ impl Store for FdbStore {
 
                     for nic_id in nic_ids {
                         let nic_key = keys::nic_by_id_key(nic_id);
-                        let nic_in_instance_key =
-                            keys::nic_in_instance_key(instance_id, nic_id);
+                        let nic_in_instance_key = keys::nic_in_instance_key(instance_id, nic_id);
                         let nic_bytes = match tr.get(&nic_key, false).await? {
                             Some(b) => b,
                             None => {
@@ -4414,8 +4371,7 @@ impl Store for FdbStore {
                     // the candidates by scanning the project's
                     // floating-ip membership index and matching on
                     // attached_to.instance_id.
-                    let fip_prefix =
-                        keys::floating_ip_in_project_prefix(instance.project_id);
+                    let fip_prefix = keys::floating_ip_in_project_prefix(instance.project_id);
                     let (fip_begin, fip_end) = prefix_range(&fip_prefix);
                     let fip_prefix_len = fip_prefix.len();
                     // `WantAll`: must see every FIP in the project or we
@@ -4544,15 +4500,13 @@ impl Store for FdbStore {
     async fn get_nic(&self, nic_id: Uuid) -> Result<Nic, StoreError> {
         let key = keys::nic_by_id_key(nic_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("nic"))
+        serde_json::from_slice(&bytes).map_err(de_err("nic"))
     }
 
     async fn get_disk(&self, disk_id: Uuid) -> Result<Disk, StoreError> {
         let key = keys::disk_by_id_key(disk_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("disk"))
+        serde_json::from_slice(&bytes).map_err(de_err("disk"))
     }
 
     async fn list_disks_for_instance(&self, instance_id: Uuid) -> Result<Vec<Disk>, StoreError> {
@@ -4575,8 +4529,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            ;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -4585,12 +4538,54 @@ impl Store for FdbStore {
                 .map_err(|e| StoreError::Backend(format!("disk index uuid: {e}")))?;
             let by_id_key = keys::disk_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
-                let disk: Disk = serde_json::from_slice(&bytes)
-                    .map_err(de_err("disk"))?;
+                let disk: Disk = serde_json::from_slice(&bytes).map_err(de_err("disk"))?;
                 out.push(disk);
             }
         }
         Ok(out)
+    }
+
+    async fn resize_disk(&self, disk_id: Uuid, new_size_bytes: u64) -> Result<Disk, StoreError> {
+        let by_id_key = keys::disk_by_id_key(disk_id);
+        enum Out {
+            Updated(Box<Disk>),
+            Vanished,
+            TooSmall(u64),
+        }
+        let outcome: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Out::Vanished),
+                    };
+                    let mut disk: Disk = match serde_json::from_slice(&bytes) {
+                        Ok(d) => d,
+                        Err(_) => return Ok(Out::Vanished),
+                    };
+                    if new_size_bytes <= disk.size_bytes {
+                        return Ok(Out::TooSmall(disk.size_bytes));
+                    }
+                    disk.size_bytes = new_size_bytes;
+                    let value = match serde_json::to_vec(&disk) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Out::Vanished),
+                    };
+                    tr.set(&by_id_key, &value);
+                    Ok(Out::Updated(Box::new(disk)))
+                }
+            })
+            .await;
+        match outcome {
+            Ok(Out::Updated(d)) => Ok(*d),
+            Ok(Out::Vanished) => Err(StoreError::NotFound),
+            Ok(Out::TooSmall(cur)) => Err(StoreError::Conflict(format!(
+                "disk resize must grow: requested {new_size_bytes} <= current {cur}"
+            ))),
+            Err(e) => Err(e.into()),
+        }
     }
 
     async fn list_nics_for_instance(&self, instance_id: Uuid) -> Result<Vec<Nic>, StoreError> {
@@ -4613,8 +4608,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            ;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -4623,8 +4617,7 @@ impl Store for FdbStore {
                 .map_err(|e| StoreError::Backend(format!("nic index uuid: {e}")))?;
             let by_id_key = keys::nic_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
-                let nic: Nic = serde_json::from_slice(&bytes)
-                    .map_err(de_err("nic"))?;
+                let nic: Nic = serde_json::from_slice(&bytes).map_err(de_err("nic"))?;
                 out.push(nic);
             }
         }
@@ -4654,8 +4647,7 @@ impl Store for FdbStore {
         let by_id_key = keys::floating_ip_by_id_key(fip_id);
         let in_project_key = keys::floating_ip_in_project_key(project_id, fip_id);
         let id_str = fip_id.to_string();
-        let holder =
-            keys::public_ip_holder_value(NetworkResourceId::FloatingIp { id: fip_id });
+        let holder = keys::public_ip_holder_value(NetworkResourceId::FloatingIp { id: fip_id });
 
         enum Outcome {
             Created(Box<FloatingIp>),
@@ -4776,13 +4768,11 @@ impl Store for FdbStore {
                             (address, None, None)
                         }
                         crate::types::FloatingIpSource::Network(subnet_id) => {
-                            let subnet_bytes = match tr
-                                .get(&keys::subnet_by_id_key(subnet_id), false)
-                                .await?
-                            {
-                                Some(b) => b,
-                                None => return Ok(Outcome::SubnetMissing),
-                            };
+                            let subnet_bytes =
+                                match tr.get(&keys::subnet_by_id_key(subnet_id), false).await? {
+                                    Some(b) => b,
+                                    None => return Ok(Outcome::SubnetMissing),
+                                };
                             let subnet: Subnet = match serde_json::from_slice(&subnet_bytes) {
                                 Ok(s) => s,
                                 Err(_) => return Ok(Outcome::SubnetMissing),
@@ -4894,8 +4884,7 @@ impl Store for FdbStore {
     async fn get_floating_ip(&self, fip_id: Uuid) -> Result<FloatingIp, StoreError> {
         let key = keys::floating_ip_by_id_key(fip_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("floating ip"))
+        serde_json::from_slice(&bytes).map_err(de_err("floating ip"))
     }
 
     async fn list_floating_ips_in_project(
@@ -4921,8 +4910,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            ;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -4931,8 +4919,8 @@ impl Store for FdbStore {
                 .map_err(|e| StoreError::Backend(format!("floating ip index uuid: {e}")))?;
             let by_id_key = keys::floating_ip_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
-                let fip: FloatingIp = serde_json::from_slice(&bytes)
-                    .map_err(de_err("floating ip"))?;
+                let fip: FloatingIp =
+                    serde_json::from_slice(&bytes).map_err(de_err("floating ip"))?;
                 out.push(fip);
             }
         }
@@ -4951,24 +4939,25 @@ impl Store for FdbStore {
         let prefix = keys::floating_ip_by_id_prefix();
         let (begin, end) = prefix_range(prefix);
 
-        let fips: Result<Vec<FloatingIp>, FdbBindingError> = fdb_txn!(self.db, [begin, end], |tr| {
-            let opt = RangeOption {
-                begin: KeySelector::first_greater_or_equal(begin),
-                end: KeySelector::first_greater_or_equal(end),
-                mode: StreamingMode::WantAll,
-                ..RangeOption::default()
-            };
-            let kvs = tr.get_range(&opt, 1, false).await?;
-            let mut out = Vec::new();
-            for kv in kvs.iter() {
-                if let Ok(fip) = serde_json::from_slice::<FloatingIp>(kv.value())
-                    && fip.hosted_cn == Some(cn)
-                {
-                    out.push(fip);
+        let fips: Result<Vec<FloatingIp>, FdbBindingError> =
+            fdb_txn!(self.db, [begin, end], |tr| {
+                let opt = RangeOption {
+                    begin: KeySelector::first_greater_or_equal(begin),
+                    end: KeySelector::first_greater_or_equal(end),
+                    mode: StreamingMode::WantAll,
+                    ..RangeOption::default()
+                };
+                let kvs = tr.get_range(&opt, 1, false).await?;
+                let mut out = Vec::new();
+                for kv in kvs.iter() {
+                    if let Ok(fip) = serde_json::from_slice::<FloatingIp>(kv.value())
+                        && fip.hosted_cn == Some(cn)
+                    {
+                        out.push(fip);
+                    }
                 }
-            }
-            Ok(out)
-        });
+                Ok(out)
+            });
         fips.map_err(StoreError::from)
     }
 
@@ -4998,8 +4987,7 @@ impl Store for FdbStore {
                     }
                     let by_name_key =
                         keys::floating_ip_by_project_name_key(fip.project_id, &fip.name);
-                    let in_project_key =
-                        keys::floating_ip_in_project_key(fip.project_id, fip.id);
+                    let in_project_key = keys::floating_ip_in_project_key(fip.project_id, fip.id);
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&in_project_key);
@@ -5549,9 +5537,9 @@ impl Store for FdbStore {
         match outcome {
             Ok(Out::Deleted) => Ok(()),
             Ok(Out::Vanished) => Err(StoreError::NotFound),
-            Ok(Out::Corrupt(e)) => {
-                Err(StoreError::Backend(format!("deserialize network pool: {e}")))
-            }
+            Ok(Out::Corrupt(e)) => Err(StoreError::Backend(format!(
+                "deserialize network pool: {e}"
+            ))),
             Err(e) => Err(e.into()),
         }
     }
@@ -5624,11 +5612,11 @@ impl Store for FdbStore {
                     }
                     drop(peer_index);
                     for peer_id in peer_ids {
-                        let peer_bytes = match tr.get(&keys::subnet_by_id_key(peer_id), false).await?
-                        {
-                            Some(b) => b,
-                            None => continue,
-                        };
+                        let peer_bytes =
+                            match tr.get(&keys::subnet_by_id_key(peer_id), false).await? {
+                                Some(b) => b,
+                                None => continue,
+                            };
                         let peer: Subnet = match serde_json::from_slice(&peer_bytes) {
                             Ok(p) => p,
                             Err(_) => continue,
@@ -6076,8 +6064,10 @@ impl Store for FdbStore {
                     drop(kvs);
 
                     for (pending_key, job_id_bytes) in entries {
-                        let id_str = std::str::from_utf8(&job_id_bytes).map_err(txn_err("pending index value not utf8"))?;
-                        let job_id = Uuid::parse_str(id_str).map_err(txn_err("pending index value not uuid"))?;
+                        let id_str = std::str::from_utf8(&job_id_bytes)
+                            .map_err(txn_err("pending index value not utf8"))?;
+                        let job_id = Uuid::parse_str(id_str)
+                            .map_err(txn_err("pending index value not uuid"))?;
                         let by_id_key = keys::job_by_id_key(job_id);
                         // Serializable read on the chosen pending
                         // entry: brings the pending_key into the
@@ -6183,8 +6173,7 @@ impl Store for FdbStore {
     async fn get_job(&self, job_id: Uuid) -> Result<ProvisioningJob, StoreError> {
         let key = keys::job_by_id_key(job_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("job"))
+        serde_json::from_slice(&bytes).map_err(de_err("job"))
     }
 
     async fn list_recent_jobs(&self, limit: usize) -> Result<Vec<ProvisioningJob>, StoreError> {
@@ -6458,14 +6447,16 @@ impl Store for FdbStore {
                             "migration-not-found".to_string().into(),
                         ));
                     };
-                    let mut record: MigrationRecord =
-                        serde_json::from_slice(&bytes).map_err(txn_err("decode MigrationRecord"))?;
+                    let mut record: MigrationRecord = serde_json::from_slice(&bytes)
+                        .map_err(txn_err("decode MigrationRecord"))?;
                     let next_seq = record.last_progress_seq.saturating_add(1);
                     record.last_progress_seq = next_seq;
                     let mut event_out = event_clone.clone();
                     event_out.seq = next_seq;
-                    let record_bytes = serde_json::to_vec(&record).map_err(txn_err("encode MigrationRecord"))?;
-                    let event_bytes = serde_json::to_vec(&event_out).map_err(txn_err("encode MigrationProgressEvent"))?;
+                    let record_bytes =
+                        serde_json::to_vec(&record).map_err(txn_err("encode MigrationRecord"))?;
+                    let event_bytes = serde_json::to_vec(&event_out)
+                        .map_err(txn_err("encode MigrationProgressEvent"))?;
                     let event_key = keys::migration_progress_key(migration_id, next_seq);
                     tr.set(&record_key, &record_bytes);
                     tr.set(&event_key, &event_bytes);
@@ -6554,7 +6545,8 @@ impl Store for FdbStore {
                 async move {
                     // Branch 1: existing record at by_uuid.
                     if let Some(bytes) = tr.get(&by_uuid_key, false).await? {
-                        let existing: Cn = serde_json::from_slice(&bytes).map_err(txn_de_err("cn"))?;
+                        let existing: Cn =
+                            serde_json::from_slice(&bytes).map_err(txn_de_err("cn"))?;
                         let prev_state = existing.state;
                         match prev_state {
                             CnState::Approved => {
@@ -6565,7 +6557,8 @@ impl Store for FdbStore {
                                 updated.admin_ip = admin_ip;
                                 updated.sysinfo = sysinfo;
                                 updated.last_seen = Some(now);
-                                let value = serde_json::to_vec(&updated).map_err(txn_ser_err("cn"))?;
+                                let value =
+                                    serde_json::to_vec(&updated).map_err(txn_ser_err("cn"))?;
                                 tr.set(&by_uuid_key, &value);
                                 return Ok(Outcome::Created(Box::new(updated)));
                             }
@@ -6698,8 +6691,7 @@ impl Store for FdbStore {
     async fn get_cn(&self, server_uuid: Uuid) -> Result<Cn, StoreError> {
         let key = keys::cn_by_uuid_key(server_uuid);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("cn"))
+        serde_json::from_slice(&bytes).map_err(de_err("cn"))
     }
 
     async fn get_cn_by_poll_token(&self, poll_token: &str) -> Result<Cn, StoreError> {
@@ -6769,8 +6761,7 @@ impl Store for FdbStore {
                     }
                 })
                 .await;
-            let id_strs =
-                id_strs.map_err(StoreError::from)?;
+            let id_strs = id_strs.map_err(StoreError::from)?;
 
             for s in id_strs {
                 let id = Uuid::parse_str(&s)
@@ -6780,8 +6771,7 @@ impl Store for FdbStore {
                 }
                 let by_id_key = keys::cn_by_uuid_key(id);
                 if let Some(bytes) = self.read_bytes(&by_id_key).await? {
-                    let cn: Cn = serde_json::from_slice(&bytes)
-                        .map_err(de_err("cn"))?;
+                    let cn: Cn = serde_json::from_slice(&bytes).map_err(de_err("cn"))?;
                     out.push(cn);
                 }
             }
@@ -6959,7 +6949,8 @@ impl Store for FdbStore {
                         Some(b) => b,
                         None => return Ok(Outcome::NotFound),
                     };
-                    let id_str = std::str::from_utf8(&id_bytes).map_err(txn_err("cn poll index not utf8"))?;
+                    let id_str = std::str::from_utf8(&id_bytes)
+                        .map_err(txn_err("cn poll index not utf8"))?;
                     let id = Uuid::parse_str(id_str).map_err(txn_err("cn poll index not uuid"))?;
                     let by_uuid_key = keys::cn_by_uuid_key(id);
                     let cn_bytes = match tr.get(&by_uuid_key, false).await? {
@@ -7108,8 +7099,7 @@ impl Store for FdbStore {
 
     async fn put_cn_capacity(&self, row: CnCapacity) -> Result<(), StoreError> {
         let key = keys::cn_capacity_key(row.server_uuid);
-        let value = serde_json::to_vec(&row)
-            .map_err(ser_err("cn_capacity"))?;
+        let value = serde_json::to_vec(&row).map_err(ser_err("cn_capacity"))?;
         self.db
             .run(|tr, _| {
                 let key = key.clone();
@@ -7135,8 +7125,7 @@ impl Store for FdbStore {
         let bytes = bytes
             .map_err(StoreError::from)?
             .ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("cn_capacity"))
+        serde_json::from_slice(&bytes).map_err(de_err("cn_capacity"))
     }
 
     async fn list_cn_capacities(&self) -> Result<Vec<CnCapacity>, StoreError> {
@@ -7159,12 +7148,10 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let bytes_list =
-            bytes_list.map_err(StoreError::from)?;
+        let bytes_list = bytes_list.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(bytes_list.len());
         for bytes in bytes_list {
-            let v: CnCapacity = serde_json::from_slice(&bytes)
-                .map_err(de_err("cn_capacity"))?;
+            let v: CnCapacity = serde_json::from_slice(&bytes).map_err(de_err("cn_capacity"))?;
             out.push(v);
         }
         out.sort_by_key(|c| c.server_uuid);
@@ -7177,8 +7164,7 @@ impl Store for FdbStore {
         // past. Look up the tenant's silo row by id; reject if it
         // disagrees with the pinned silo.
         let placement_key = keys::cn_placement_key(row.server_uuid);
-        let payload = serde_json::to_vec(&row)
-            .map_err(ser_err("cn_placement"))?;
+        let payload = serde_json::to_vec(&row).map_err(ser_err("cn_placement"))?;
 
         enum Outcome {
             Wrote,
@@ -7239,8 +7225,7 @@ impl Store for FdbStore {
             })
             .await;
         match bytes.map_err(StoreError::from)? {
-            Some(bytes) => serde_json::from_slice(&bytes)
-                .map_err(de_err("cn_placement")),
+            Some(bytes) => serde_json::from_slice(&bytes).map_err(de_err("cn_placement")),
             None => Ok(CnPlacement::fresh(server_uuid, Utc::now())),
         }
     }
@@ -7298,12 +7283,10 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let bytes_list =
-            bytes_list.map_err(StoreError::from)?;
+        let bytes_list = bytes_list.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(bytes_list.len());
         for bytes in bytes_list {
-            let v: CnPlacement = serde_json::from_slice(&bytes)
-                .map_err(de_err("cn_placement"))?;
+            let v: CnPlacement = serde_json::from_slice(&bytes).map_err(de_err("cn_placement"))?;
             out.push(v);
         }
         out.sort_by_key(|p| p.server_uuid);
@@ -7312,8 +7295,7 @@ impl Store for FdbStore {
 
     async fn reserve_cn_capacity(&self, row: CnReservation) -> Result<(), StoreError> {
         let key = keys::cn_reservation_key(row.server_uuid, row.saga_id);
-        let value = serde_json::to_vec(&row)
-            .map_err(ser_err("cn_reservation"))?;
+        let value = serde_json::to_vec(&row).map_err(ser_err("cn_reservation"))?;
         let server_uuid = row.server_uuid;
         let saga_id = row.saga_id;
 
@@ -7405,12 +7387,11 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let bytes_list =
-            bytes_list.map_err(StoreError::from)?;
+        let bytes_list = bytes_list.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(bytes_list.len());
         for bytes in bytes_list {
-            let v: CnReservation = serde_json::from_slice(&bytes)
-                .map_err(de_err("cn_reservation"))?;
+            let v: CnReservation =
+                serde_json::from_slice(&bytes).map_err(de_err("cn_reservation"))?;
             out.push(v);
         }
         out.sort_by_key(|r| (r.server_uuid, r.saga_id));
@@ -7419,8 +7400,7 @@ impl Store for FdbStore {
 
     async fn put_cn_load_summary(&self, row: CnLoadSummary) -> Result<(), StoreError> {
         let key = keys::cn_load_summary_key(row.server_uuid);
-        let value = serde_json::to_vec(&row)
-            .map_err(ser_err("cn_load_summary"))?;
+        let value = serde_json::to_vec(&row).map_err(ser_err("cn_load_summary"))?;
         self.db
             .run(|tr, _| {
                 let key = key.clone();
@@ -7447,7 +7427,9 @@ impl Store for FdbStore {
             })
             .await;
         match bytes.map_err(StoreError::from)? {
-            Some(bytes) => Ok(Some(serde_json::from_slice(&bytes).map_err(de_err("cn_load_summary"))?)),
+            Some(bytes) => Ok(Some(
+                serde_json::from_slice(&bytes).map_err(de_err("cn_load_summary"))?,
+            )),
             None => Ok(None),
         }
     }
@@ -7472,12 +7454,11 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let bytes_list =
-            bytes_list.map_err(StoreError::from)?;
+        let bytes_list = bytes_list.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(bytes_list.len());
         for bytes in bytes_list {
-            let v: CnLoadSummary = serde_json::from_slice(&bytes)
-                .map_err(de_err("cn_load_summary"))?;
+            let v: CnLoadSummary =
+                serde_json::from_slice(&bytes).map_err(de_err("cn_load_summary"))?;
             out.push(v);
         }
         out.sort_by_key(|s| s.server_uuid);
@@ -7487,8 +7468,7 @@ impl Store for FdbStore {
     async fn put_instance_affinity(&self, row: InstanceAffinity) -> Result<(), StoreError> {
         let by_id_key = keys::instance_affinity_key(row.instance_id);
         let by_tenant_key = keys::instance_affinity_by_tenant_key(row.tenant_uuid, row.instance_id);
-        let value = serde_json::to_vec(&row)
-            .map_err(ser_err("instance_affinity"))?;
+        let value = serde_json::to_vec(&row).map_err(ser_err("instance_affinity"))?;
         // If the row's tenant changed across edits we'd leak the old
         // by_tenant index entry; for v1 the tenant is fixed at create
         // time and never re-parented, so we don't pay for the read
@@ -7524,8 +7504,7 @@ impl Store for FdbStore {
         let bytes = bytes
             .map_err(StoreError::from)?
             .ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("instance_affinity"))
+        serde_json::from_slice(&bytes).map_err(de_err("instance_affinity"))
     }
 
     async fn list_instance_affinities_for_tenant(
@@ -7555,7 +7534,8 @@ impl Store for FdbStore {
                     let mut out = Vec::with_capacity(kvs.len());
                     for kv in kvs.iter() {
                         let suffix = &kv.key()[prefix_len..];
-                        let s = std::str::from_utf8(suffix).map_err(txn_err("instance_affinity_by_tenant key utf-8"))?;
+                        let s = std::str::from_utf8(suffix)
+                            .map_err(txn_err("instance_affinity_by_tenant key utf-8"))?;
                         let id = Uuid::parse_str(s).map_err(txn_err("parse instance_id uuid"))?;
                         out.push(id);
                     }
@@ -7651,8 +7631,7 @@ impl Store for FdbStore {
         let by_id_key = keys::legacy_vm_by_id_key(smartos_uuid);
         let instance_key = keys::instance_by_id_key(smartos_uuid);
         let new_membership_key = keys::legacy_vm_in_host_cn_key(new_host, smartos_uuid);
-        let value = serde_json::to_vec(&legacy_vm)
-            .map_err(ser_err("legacy_vm"))?;
+        let value = serde_json::to_vec(&legacy_vm).map_err(ser_err("legacy_vm"))?;
 
         // Sentinel for the UUID-uniqueness check; outer match
         // converts to a typed StoreError without leaking FDB.
@@ -7685,8 +7664,8 @@ impl Store for FdbStore {
                     // different host, drop the old membership-index
                     // entry inside the same txn so the move is atomic.
                     if let Some(existing_bytes) = tr.get(&by_id_key, false).await? {
-                        let existing: LegacyVm =
-                            serde_json::from_slice(&existing_bytes).map_err(txn_de_err("legacy_vm"))?;
+                        let existing: LegacyVm = serde_json::from_slice(&existing_bytes)
+                            .map_err(txn_de_err("legacy_vm"))?;
                         if existing.host_cn_uuid != new_host {
                             let old_membership_key =
                                 keys::legacy_vm_in_host_cn_key(existing.host_cn_uuid, smartos_uuid);
@@ -7711,8 +7690,7 @@ impl Store for FdbStore {
     async fn get_legacy_vm(&self, smartos_uuid: Uuid) -> Result<LegacyVm, StoreError> {
         let key = keys::legacy_vm_by_id_key(smartos_uuid);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("legacy_vm"))
+        serde_json::from_slice(&bytes).map_err(de_err("legacy_vm"))
     }
 
     async fn list_legacy_vms(&self) -> Result<Vec<LegacyVm>, StoreError> {
@@ -7745,12 +7723,10 @@ impl Store for FdbStore {
                 }
             })
             .await;
-        let bytes_list =
-            bytes_list.map_err(StoreError::from)?;
+        let bytes_list = bytes_list.map_err(StoreError::from)?;
         let mut out = Vec::with_capacity(bytes_list.len());
         for bytes in bytes_list {
-            let v: LegacyVm = serde_json::from_slice(&bytes)
-                .map_err(de_err("legacy_vm"))?;
+            let v: LegacyVm = serde_json::from_slice(&bytes).map_err(de_err("legacy_vm"))?;
             out.push(v);
         }
         out.sort_by_key(|v| v.smartos_uuid);
@@ -7797,8 +7773,7 @@ impl Store for FdbStore {
                 .map_err(|e| StoreError::Backend(format!("legacy_vm host index uuid: {e}")))?;
             let by_id_key = keys::legacy_vm_by_id_key(id);
             if let Some(bytes) = self.read_bytes(&by_id_key).await? {
-                let v: LegacyVm = serde_json::from_slice(&bytes)
-                    .map_err(de_err("legacy_vm"))?;
+                let v: LegacyVm = serde_json::from_slice(&bytes).map_err(de_err("legacy_vm"))?;
                 out.push(v);
             }
         }
@@ -7814,7 +7789,8 @@ impl Store for FdbStore {
                 let by_id_key = by_id_key.clone();
                 async move {
                     if let Some(bytes) = tr.get(&by_id_key, false).await? {
-                        let existing: LegacyVm = serde_json::from_slice(&bytes).map_err(txn_de_err("legacy_vm"))?;
+                        let existing: LegacyVm =
+                            serde_json::from_slice(&bytes).map_err(txn_de_err("legacy_vm"))?;
                         let membership_key =
                             keys::legacy_vm_in_host_cn_key(existing.host_cn_uuid, smartos_uuid);
                         tr.clear(&membership_key);
@@ -7833,7 +7809,8 @@ impl Store for FdbStore {
         let bytes = self.read_bytes(&key).await?;
         match bytes {
             Some(bytes) => {
-                let w: AutoApproveWindow = serde_json::from_slice(&bytes).map_err(de_err("auto-approve window"))?;
+                let w: AutoApproveWindow =
+                    serde_json::from_slice(&bytes).map_err(de_err("auto-approve window"))?;
                 Ok(Some(w))
             }
             None => Ok(None),
@@ -7841,8 +7818,7 @@ impl Store for FdbStore {
     }
 
     async fn open_auto_approve_window(&self, w: AutoApproveWindow) -> Result<(), StoreError> {
-        let value = serde_json::to_vec(&w)
-            .map_err(ser_err("auto-approve window"))?;
+        let value = serde_json::to_vec(&w).map_err(ser_err("auto-approve window"))?;
         let key = keys::auto_approve_window_key().to_vec();
         let result: Result<(), FdbBindingError> = self
             .db
@@ -8031,8 +8007,7 @@ impl Store for FdbStore {
 
         let mut out = Vec::with_capacity(kvs.len());
         for bytes in kvs {
-            let silo: Silo = serde_json::from_slice(&bytes)
-                .map_err(de_err("silo"))?;
+            let silo: Silo = serde_json::from_slice(&bytes).map_err(de_err("silo"))?;
             out.push(silo);
         }
         out.sort_by(|a, b| a.name.cmp(&b.name));
@@ -8084,8 +8059,7 @@ impl Store for FdbStore {
         match self.read_bytes(&key).await? {
             None => Ok(None),
             Some(bytes) => {
-                let pool: DhcpPool = serde_json::from_slice(&bytes)
-                    .map_err(de_err("dhcp pool"))?;
+                let pool: DhcpPool = serde_json::from_slice(&bytes).map_err(de_err("dhcp pool"))?;
                 Ok(Some(pool))
             }
         }
@@ -8196,8 +8170,8 @@ impl Store for FdbStore {
 
         let mut out = Vec::with_capacity(values.len());
         for bytes in values {
-            let reservation: DhcpReservation = serde_json::from_slice(&bytes)
-                .map_err(de_err("dhcp reservation"))?;
+            let reservation: DhcpReservation =
+                serde_json::from_slice(&bytes).map_err(de_err("dhcp reservation"))?;
             out.push(reservation);
         }
         out.sort_by(|a, b| a.mac.cmp(&b.mac));
@@ -8259,7 +8233,8 @@ impl Store for FdbStore {
                         per_mac_options: req.per_mac_options,
                         created_at: now,
                     };
-                    let value = serde_json::to_vec(&reservation).map_err(txn_ser_err("dhcp reservation"))?;
+                    let value = serde_json::to_vec(&reservation)
+                        .map_err(txn_ser_err("dhcp reservation"))?;
                     tr.set(&res_key, &value);
                     Ok(Outcome::Created(Box::new(reservation)))
                 }
@@ -8290,8 +8265,7 @@ impl Store for FdbStore {
         let mac = crate::types::canonical_mac(mac)?;
         let key = keys::dhcp_reservation_by_vpc_mac_key(vpc_id, &mac);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("dhcp reservation"))
+        serde_json::from_slice(&bytes).map_err(de_err("dhcp reservation"))
     }
 
     async fn delete_dhcp_reservation(&self, vpc_id: Uuid, mac: &str) -> Result<(), StoreError> {
@@ -8335,15 +8309,13 @@ impl Store for FdbStore {
         let mac = crate::types::canonical_mac(mac)?;
         let key = keys::dhcp_lease_by_vpc_mac_key(vpc_id, &mac);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("dhcp lease"))
+        serde_json::from_slice(&bytes).map_err(de_err("dhcp lease"))
     }
 
     async fn record_dhcp_lease(&self, mut lease: DhcpLease) -> Result<DhcpLease, StoreError> {
         lease.mac = crate::types::canonical_mac(&lease.mac)?;
         let key = keys::dhcp_lease_by_vpc_mac_key(lease.vpc_id, &lease.mac);
-        let value = serde_json::to_vec(&lease)
-            .map_err(ser_err("dhcp lease"))?;
+        let value = serde_json::to_vec(&lease).map_err(ser_err("dhcp lease"))?;
         // RFD 00007 AP-1c: MAC -> vpc index. Stored as the canonical
         // lease key components so a reader can resolve a bare MAC to
         // its parent VPC without scanning every VPC's lease prefix.
@@ -8500,8 +8472,7 @@ impl Store for FdbStore {
     async fn get_storage_cluster(&self, id: Uuid) -> Result<StorageCluster, StoreError> {
         let key = keys::storage_cluster_by_id_key(id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
-        serde_json::from_slice(&bytes)
-            .map_err(de_err("storage cluster"))
+        serde_json::from_slice(&bytes).map_err(de_err("storage cluster"))
     }
 
     async fn get_storage_cluster_by_name(&self, name: &str) -> Result<StorageCluster, StoreError> {
@@ -8537,8 +8508,7 @@ impl Store for FdbStore {
                 }
             }
             Ok(ids)
-        })
-            ;
+        });
         let id_strs = id_strs.map_err(StoreError::from)?;
 
         let mut out = Vec::with_capacity(id_strs.len());
@@ -8913,7 +8883,8 @@ async fn consume_auto_approve_slot_in_txn(
         Some(b) => b,
         None => return Ok(false),
     };
-    let mut window: AutoApproveWindow = serde_json::from_slice(&bytes).map_err(txn_de_err("auto-approve window"))?;
+    let mut window: AutoApproveWindow =
+        serde_json::from_slice(&bytes).map_err(txn_de_err("auto-approve window"))?;
     if now >= window.expires_at {
         tr.clear(window_key);
         return Ok(false);
@@ -8929,7 +8900,8 @@ async fn consume_auto_approve_slot_in_txn(
             if exhausted {
                 tr.clear(window_key);
             } else {
-                let value = serde_json::to_vec(&window).map_err(txn_ser_err("auto-approve window"))?;
+                let value =
+                    serde_json::to_vec(&window).map_err(txn_ser_err("auto-approve window"))?;
                 tr.set(window_key, &value);
             }
             Ok(true)
@@ -8937,7 +8909,6 @@ async fn consume_auto_approve_slot_in_txn(
         None => Ok(true),
     }
 }
-
 
 #[cfg(test)]
 mod cn_tests;

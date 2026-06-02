@@ -48,6 +48,29 @@ pub struct DiskPath {
     pub disk_id: Uuid,
 }
 
+/// Request body for `POST /v1/disks/{disk_id}/resize`. `size_bytes` is
+/// the desired new total size of the disk's backing volume. Grow-only:
+/// a value at or below the current size is rejected — shrinking a live
+/// volume loses data, so the caller must provision a new, smaller disk
+/// instead of asking us to truncate this one.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct DiskResizeRequest {
+    pub size_bytes: u64,
+}
+
+/// Response from a disk resize. The control-plane record and the host
+/// zvol + flexible-disk pool grow synchronously. `reboot_required` is
+/// `true` when the instance is running: bhyve reads the block device
+/// size only at boot, so the guest sees the new capacity after a power
+/// cycle (cloud-init then grows the partition + filesystem). It is
+/// `false` when the instance is stopped — the next start picks up the
+/// larger disk directly.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct DiskResizeResponse {
+    pub disk: tritond_store::Disk,
+    pub reboot_required: bool,
+}
+
 /// Path parameters for `/v1/nics/{nic_id}` (AP-2f).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NicPath {

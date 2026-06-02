@@ -32,12 +32,12 @@ use crate::{
     MigrationRecord, MigrationState, NatGateway, NetworkKind, NetworkPool, NetworkResourceId,
     NewDhcpPool, NewDhcpReservation, NewEdgeCluster, NewExternalSubnet, NewFirewallRule,
     NewFloatingIp, NewImage, NewInstance, NewJob, NewMigration, NewNatGateway, NewNetworkPool,
-    NewNicTag, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster,
-    NewSubnet, NewTenant, NewVpc, Nic, NicTag, Project, ProvisioningJob, Quota, Realization,
-    RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Settings, Silo, SshKey,
-    SshKeyScope, StorageCluster, StorageClusterStatus, Store, StoreError, Subnet, SystemKey, Tenant,
-    TenantInstanceProjection, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
-    default_boot_disk_size_bytes, generate_claim_code, generate_poll_token,
+    NewNicTag, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
+    NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, NicTag, Project, ProvisioningJob, Quota,
+    Realization, RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Settings, Silo,
+    SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, Store, StoreError, Subnet,
+    SystemKey, Tenant, TenantInstanceProjection, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    generate_claim_code, generate_poll_token, resolve_boot_disk_size_bytes,
 };
 #[cfg(test)]
 use crate::{
@@ -413,7 +413,10 @@ fn alloc_external_in_subnet(
     match family {
         AddressFamily::V4 => {
             let cidr = subnet.ipv4_block.ok_or_else(|| {
-                StoreError::PoolExhausted(format!("external subnet {} has no ipv4_block", subnet.id))
+                StoreError::PoolExhausted(format!(
+                    "external subnet {} has no ipv4_block",
+                    subnet.id
+                ))
             })?;
             let allocated: HashSet<Ipv4Addr> =
                 guard.public_ipv4_allocations.keys().copied().collect();
@@ -434,7 +437,10 @@ fn alloc_external_in_subnet(
         }
         AddressFamily::V6 => {
             let cidr = subnet.ipv6_block.ok_or_else(|| {
-                StoreError::PoolExhausted(format!("external subnet {} has no ipv6_block", subnet.id))
+                StoreError::PoolExhausted(format!(
+                    "external subnet {} has no ipv6_block",
+                    subnet.id
+                ))
             })?;
             let allocated: HashSet<Ipv6Addr> =
                 guard.public_ipv6_allocations.keys().copied().collect();
@@ -2553,7 +2559,7 @@ impl Store for MemStore {
             name: "boot".to_string(),
             description: format!("Boot disk for instance {}", instance.name),
             kind: DiskKind::Boot,
-            size_bytes: default_boot_disk_size_bytes(&image),
+            size_bytes: resolve_boot_disk_size_bytes(&image, req.disk_bytes),
             source_image_id: Some(image.id),
             created_at: now,
         };
@@ -3070,6 +3076,22 @@ impl Store for MemStore {
             .collect())
     }
 
+    async fn resize_disk(&self, disk_id: Uuid, new_size_bytes: u64) -> Result<Disk, StoreError> {
+        let mut guard = self.inner.write().await;
+        let disk = guard
+            .disks_by_id
+            .get_mut(&disk_id)
+            .ok_or(StoreError::NotFound)?;
+        if new_size_bytes <= disk.size_bytes {
+            return Err(StoreError::Conflict(format!(
+                "disk resize must grow: requested {new_size_bytes} <= current {}",
+                disk.size_bytes
+            )));
+        }
+        disk.size_bytes = new_size_bytes;
+        Ok(disk.clone())
+    }
+
     async fn create_floating_ip(
         &self,
         tenant_id: Uuid,
@@ -3121,7 +3143,8 @@ impl Store for MemStore {
                             "external subnet {subnet_id} has no addressable block"
                         ))
                     })?;
-                    let addr = alloc_external_in_subnet(&mut guard, &subnet, family, holder.clone())?;
+                    let addr =
+                        alloc_external_in_subnet(&mut guard, &subnet, family, holder.clone())?;
                     (addr, Some(subnet_id), subnet.nic_tag)
                 }
                 crate::types::FloatingIpSource::Pool(pool_id) => {
@@ -3410,14 +3433,14 @@ impl Store for MemStore {
         if !guard.nic_tags_by_id.contains_key(&id) {
             return Err(StoreError::NotFound);
         }
-        let in_use = guard
-            .subnets_by_id
-            .values()
-            .any(|s| s.nic_tag == Some(id));
+        let in_use = guard.subnets_by_id.values().any(|s| s.nic_tag == Some(id));
         if in_use {
             return Err(StoreError::NicTagInUse(id));
         }
-        let tag = guard.nic_tags_by_id.remove(&id).ok_or(StoreError::NotFound)?;
+        let tag = guard
+            .nic_tags_by_id
+            .remove(&id)
+            .ok_or(StoreError::NotFound)?;
         guard.nic_tag_id_by_name.remove(&tag.name);
         Ok(())
     }
@@ -3557,9 +3580,7 @@ impl Store for MemStore {
             provision_end_ipv6: req.provision_end_ipv6,
             created_at: Utc::now(),
         };
-        guard
-            .external_subnet_id_by_name
-            .insert(req.name, subnet.id);
+        guard.external_subnet_id_by_name.insert(req.name, subnet.id);
         guard.subnets_by_id.insert(subnet.id, subnet.clone());
         Ok(subnet)
     }
@@ -7480,6 +7501,7 @@ mod tests {
             cpu: 2,
             memory_bytes: 2 * 1024 * 1024 * 1024,
             mac: None,
+            disk_bytes: None,
             extra_nics: Vec::new(),
         }
     }
@@ -8551,6 +8573,44 @@ mod tests {
         assert!(matches!(err, StoreError::NotFound));
     }
 
+    #[tokio::test]
+    async fn resize_disk_grows_and_rejects_shrink() {
+        let store = MemStore::new();
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let InstanceCreateResult { disks, .. } = store
+            .create_instance(
+                tenant_id,
+                project_id,
+                instance_req("web", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        let boot = &disks[0];
+        let grown = boot.size_bytes + 10 * 1024 * 1024 * 1024;
+
+        // Grow succeeds and persists.
+        let updated = store.resize_disk(boot.id, grown).await.unwrap();
+        assert_eq!(updated.size_bytes, grown);
+        assert_eq!(store.get_disk(boot.id).await.unwrap().size_bytes, grown);
+
+        // Same-size and shrink are both rejected (grow-only).
+        assert!(matches!(
+            store.resize_disk(boot.id, grown).await,
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(matches!(
+            store.resize_disk(boot.id, grown - 1).await,
+            Err(StoreError::Conflict(_))
+        ));
+
+        // Unknown disk is NotFound.
+        assert!(matches!(
+            store.resize_disk(Uuid::new_v4(), grown).await,
+            Err(StoreError::NotFound)
+        ));
+    }
+
     fn fip_req(name: &str, family: AddressFamily) -> NewFloatingIp {
         NewFloatingIp {
             name: name.to_string(),
@@ -9347,7 +9407,10 @@ mod tests {
             ))
             .await
             .unwrap();
-        let second_tag = store.create_nic_tag(nic_tag_req("external2")).await.unwrap();
+        let second_tag = store
+            .create_nic_tag(nic_tag_req("external2"))
+            .await
+            .unwrap();
         let second = store
             .create_external_subnet(ext_subnet_req(
                 "second",

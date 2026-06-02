@@ -3679,7 +3679,6 @@ pub trait TritondApi {
         body: TypedBody<NewSshKey>,
     ) -> Result<HttpResponseCreated<SshKey>, HttpError>;
 
-
     /// Delete an SSH key by id. Returns 404 when the key does
     /// not exist OR the principal lacks ownership for the key's
     /// scope:
@@ -3886,7 +3885,6 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<NewImage>,
     ) -> Result<HttpResponseCreated<Image>, HttpError>;
-
 
     /// Delete an image by id. Returns 404 when the image does
     /// not exist OR the principal lacks ownership for the
@@ -4281,6 +4279,22 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<crate::v1::DiskPath>,
     ) -> Result<HttpResponseOk<Disk>, HttpError>;
+
+    /// RFD 00007 `POST /v1/disks/{disk_id}/resize`. Grow a disk's
+    /// backing volume. Grow-only: a size at or below the current size
+    /// is rejected. The zvol and the VM's flexible-disk pool grow
+    /// immediately; a running guest realizes the new capacity on its
+    /// next reboot (see [`crate::v1::DiskResizeResponse`]).
+    #[endpoint {
+        method = POST,
+        path = "/v1/disks/{disk_id}/resize",
+        tags = ["disks"],
+    }]
+    async fn resize_disk_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::DiskPath>,
+        body: TypedBody<crate::v1::DiskResizeRequest>,
+    ) -> Result<HttpResponseOk<crate::v1::DiskResizeResponse>, HttpError>;
 
     /// List FloatingIps owned by a project.
     #[endpoint {

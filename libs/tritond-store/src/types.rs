@@ -415,16 +415,7 @@ pub struct NewSubnet {
 /// dataplane path treats as "not external" (fail closed) rather than
 /// silently behaving as `Internal`.
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Default,
-    Serialize,
-    Deserialize,
-    JsonSchema,
-    clap::ValueEnum,
+    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema, clap::ValueEnum,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum NetworkKind {
@@ -1582,6 +1573,77 @@ pub fn default_boot_disk_size_bytes(image: &Image) -> u64 {
     }
 }
 
+/// Hard ceiling on an operator-requested boot disk (16 TiB). A bound this
+/// high never gets in a real caller's way; it exists so a bogus or hostile
+/// `disk_bytes` can't ask the agent to reserve an absurd zvol.
+pub const MAX_BOOT_DISK_BYTES: u64 = 16 * 1024 * 1024 * 1024 * 1024;
+
+/// Resolve the boot-disk size for a new instance. An explicit
+/// operator request is honored but floored at the image content size
+/// (a zvol smaller than the image can't hold it); `None` falls back to
+/// the brand default. Callers that accept `requested` from the wire must
+/// also bound it by [`MAX_BOOT_DISK_BYTES`] at the API edge.
+pub fn resolve_boot_disk_size_bytes(image: &Image, requested: Option<u64>) -> u64 {
+    match requested {
+        Some(bytes) => bytes.max(image.size_bytes),
+        None => default_boot_disk_size_bytes(image),
+    }
+}
+
+#[cfg(test)]
+mod boot_disk_size_tests {
+    use super::*;
+
+    fn bhyve_image(size_bytes: u64) -> Image {
+        Image {
+            id: Uuid::nil(),
+            scope: ImageScope::Public,
+            name: "img".to_string(),
+            description: String::new(),
+            os: "linux".to_string(),
+            version: "ubuntu-24.04".to_string(),
+            size_bytes,
+            sha256: "a".repeat(64),
+            source_url: None,
+            compatibility: Some(ImageCompatibility {
+                brand: "bhyve".to_string(),
+                arch: "x86_64".to_string(),
+                min_smartos_platform: None,
+            }),
+            created_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn none_falls_back_to_brand_default() {
+        // A small bhyve image still floors at the 20 GiB brand default.
+        let img = bhyve_image(3 * 1024 * 1024 * 1024);
+        assert_eq!(
+            resolve_boot_disk_size_bytes(&img, None),
+            BHYVE_M1_MIN_BOOT_DISK_BYTES
+        );
+    }
+
+    #[test]
+    fn explicit_request_is_honored() {
+        let img = bhyve_image(3 * 1024 * 1024 * 1024);
+        let want = 40 * 1024 * 1024 * 1024;
+        assert_eq!(resolve_boot_disk_size_bytes(&img, Some(want)), want);
+    }
+
+    #[test]
+    fn explicit_request_floors_at_image_content() {
+        // A request smaller than the image can't hold it; floor to the
+        // image size rather than truncate.
+        let img = bhyve_image(8 * 1024 * 1024 * 1024);
+        let too_small = 2 * 1024 * 1024 * 1024;
+        assert_eq!(
+            resolve_boot_disk_size_bytes(&img, Some(too_small)),
+            img.size_bytes
+        );
+    }
+}
+
 /// Request body for registering an image in any scope's catalog.
 /// The owning scope (Public / Silo / Tenant / Project / User) is
 /// inferred from the URL path the request hit, *not* from the
@@ -2219,6 +2281,13 @@ pub struct NewInstance {
     pub ssh_key_ids: Vec<Uuid>,
     pub cpu: u32,
     pub memory_bytes: u64,
+    /// Optional boot-disk size in bytes. `None` (the default) sizes the
+    /// boot disk via [`default_boot_disk_size_bytes`]; an explicit value
+    /// is honored down to the image content size (see
+    /// [`resolve_boot_disk_size_bytes`]) and bounded at the API edge by
+    /// [`MAX_BOOT_DISK_BYTES`].
+    #[serde(default)]
+    pub disk_bytes: Option<u64>,
     /// Optional MAC address to pin on the primary NIC. Accepted in
     /// any case + any of the usual separator styles
     /// (`02:08:20:ab:cd:ef`, `02-08-20-AB-CD-EF`, `0208.20ab.cdef`).
@@ -2451,6 +2520,18 @@ pub enum JobKind {
         migration_id: Uuid,
         instance_id: Uuid,
     },
+    /// Grow a disk's backing zvol on the hosting CN and enlarge the
+    /// VM's flexible-disk pool to cover it. Enqueued by the disk-resize
+    /// handler *after* it has grown the durable `Disk` record, pinned to
+    /// the instance's `host_cn_uuid`. `size_bytes` is the new total disk
+    /// size; the agent grows the pool then the boot zvol to match. A
+    /// running guest realizes the new capacity on its next reboot.
+    /// `disk_id` identifies the record for audit and idempotency.
+    ResizeDisk {
+        instance_id: Uuid,
+        disk_id: Uuid,
+        size_bytes: u64,
+    },
 }
 
 /// Which side of a migration a [`JobKind`] runs on. Distinct from
@@ -2487,12 +2568,13 @@ impl JobKind {
             | JobKind::ProteusActivate { instance_id, .. }
             | JobKind::ProteusDeactivate { instance_id, .. }
             | JobKind::MigrationCleanupTarget { instance_id, .. }
-            | JobKind::MigrationCleanupSource { instance_id, .. } => Some(*instance_id),
+            | JobKind::MigrationCleanupSource { instance_id, .. }
+            | JobKind::ResizeDisk { instance_id, .. } => Some(*instance_id),
             // FipRelease carries no instance_id (the attachment may be
             // gone by release time); see `target_id` for its fallback.
-            JobKind::FipRelease { .. }
-            | JobKind::EdgeApply { .. }
-            | JobKind::EdgeReap { .. } => None,
+            JobKind::FipRelease { .. } | JobKind::EdgeApply { .. } | JobKind::EdgeReap { .. } => {
+                None
+            }
         }
     }
 
@@ -2517,7 +2599,8 @@ impl JobKind {
             | JobKind::ProteusActivate { .. }
             | JobKind::ProteusDeactivate { .. }
             | JobKind::MigrationCleanupTarget { .. }
-            | JobKind::MigrationCleanupSource { .. } => None,
+            | JobKind::MigrationCleanupSource { .. }
+            | JobKind::ResizeDisk { .. } => None,
         }
     }
 
@@ -3095,10 +3178,7 @@ pub fn allocate_ipv6_in_range(
         {
             return None;
         }
-        if candidate != network
-            && candidate != gateway
-            && !already_allocated.contains(&candidate)
-        {
+        if candidate != network && candidate != gateway && !already_allocated.contains(&candidate) {
             return Some(candidate);
         }
         candidate = next_ipv6(candidate)?;

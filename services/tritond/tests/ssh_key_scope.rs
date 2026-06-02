@@ -695,6 +695,7 @@ async fn instance_create_with_visible_ssh_key_succeeds() {
             ssh_key_ids: vec![ssh_key.id],
             cpu: 2,
             memory_bytes: 2 * 1024 * 1024 * 1024,
+            disk_bytes: None,
             extra_nics: Vec::new(),
             mac: None,
         })
@@ -791,6 +792,7 @@ async fn instance_create_with_invisible_ssh_key_returns_404() {
             ssh_key_ids: vec![foreign_key.id],
             cpu: 2,
             memory_bytes: 2 * 1024 * 1024 * 1024,
+            disk_bytes: None,
             extra_nics: Vec::new(),
             mac: None,
         })

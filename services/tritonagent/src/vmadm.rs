@@ -280,6 +280,139 @@ async fn run_simple(args: &[&str]) -> Result<()> {
     Ok(())
 }
 
+/// The slice of `vmadm get` we need for a disk resize. All sizes are in
+/// MiB, matching vmadm's flexible-disk units.
+#[derive(serde::Deserialize)]
+struct VmInfo {
+    #[serde(default)]
+    flexible_disk_size: u64,
+    #[serde(default)]
+    disks: Vec<VmDisk>,
+}
+
+#[derive(serde::Deserialize)]
+struct VmDisk {
+    path: String,
+    #[serde(default)]
+    boot: bool,
+    /// Disk size in MiB.
+    #[serde(default)]
+    size: u64,
+}
+
+/// Read the parts of `vmadm get <uuid>` we need to resize a disk.
+async fn get_vm(instance_id: Uuid) -> Result<VmInfo> {
+    let id = instance_id.to_string();
+    let output = Command::new("vmadm")
+        .arg("get")
+        .arg(&id)
+        .output()
+        .await
+        .with_context(|| format!("spawn vmadm get {id}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        bail!("vmadm get {id} failed (exit {}): {stderr}", output.status);
+    }
+    serde_json::from_slice(&output.stdout).with_context(|| format!("parse vmadm get {id} JSON"))
+}
+
+/// Pipe a JSON payload to `vmadm update <uuid>` (vmadm reads the payload
+/// from stdin to EOF, same contract as `vmadm create`).
+async fn run_update(instance_id: Uuid, payload: serde_json::Value) -> Result<()> {
+    let payload_bytes = serde_json::to_vec(&payload).context("serialise vmadm update payload")?;
+    let id = instance_id.to_string();
+    let mut child = Command::new("vmadm")
+        .arg("update")
+        .arg(&id)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("spawn vmadm update — is it on PATH on this host?")?;
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin
+            .write_all(&payload_bytes)
+            .await
+            .context("write vmadm update payload to stdin")?;
+        stdin
+            .shutdown()
+            .await
+            .context("close stdin to vmadm update — vmadm reads to EOF before acting")?;
+    } else {
+        bail!("vmadm update child had no stdin");
+    }
+    let output = child
+        .wait_with_output()
+        .await
+        .context("await vmadm update completion")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+        return Err(anyhow!(
+            "vmadm update {id} failed (exit {}): stderr={stderr}; stdout={stdout}",
+            output.status,
+        ));
+    }
+    Ok(())
+}
+
+/// Grow an instance's boot disk to `new_size_bytes`. Used for
+/// `JobKind::ResizeDisk`.
+///
+/// Two ordered `vmadm update`s: first enlarge `flexible_disk_size` so
+/// the pool can hold the bigger disk, then grow the boot zvol into it
+/// (the platform runs `zfs set volsize` + adjusts the refreservation).
+/// Grow-only and idempotent — a re-run whose target is already
+/// satisfied is a no-op. The running guest sees the new capacity only
+/// after a reboot (bhyve reads the block device size at boot); cloud-init
+/// then grows the partition + filesystem.
+pub async fn grow_boot_disk(instance_id: Uuid, new_size_bytes: u64) -> Result<()> {
+    let new_disk_mib = new_size_bytes / 1024 / 1024;
+    let vm = get_vm(instance_id).await?;
+    let boot = vm
+        .disks
+        .iter()
+        .find(|d| d.boot)
+        .ok_or_else(|| anyhow!("vmadm get {instance_id}: no boot disk to resize"))?;
+    if new_disk_mib <= boot.size {
+        info!(
+            %instance_id,
+            current_mib = boot.size,
+            target_mib = new_disk_mib,
+            "resize-disk: boot disk already at/above target; nothing to do",
+        );
+        return Ok(());
+    }
+    let boot_path = boot.path.clone();
+    let other_mib: u64 = vm.disks.iter().filter(|d| !d.boot).map(|d| d.size).sum();
+    let new_flex = (new_disk_mib + other_mib).max(vm.flexible_disk_size);
+
+    if new_flex > vm.flexible_disk_size {
+        run_update(
+            instance_id,
+            serde_json::json!({ "flexible_disk_size": new_flex }),
+        )
+        .await
+        .with_context(|| format!("grow flexible_disk_size to {new_flex} MiB"))?;
+    }
+    run_update(
+        instance_id,
+        serde_json::json!({
+            "update_disks": [ { "path": boot_path, "size": new_disk_mib } ]
+        }),
+    )
+    .await
+    .with_context(|| format!("grow boot disk {boot_path} to {new_disk_mib} MiB"))?;
+
+    info!(
+        %instance_id,
+        new_disk_mib,
+        new_flex,
+        "resize-disk: grew boot zvol + flexible pool",
+    );
+    Ok(())
+}
+
 /// Build the vmadm create JSON for a Provision blueprint.
 ///
 /// Returns a `serde_json::Value` (rather than a typed struct) so
@@ -521,6 +654,14 @@ pub(crate) fn create_bhyve_payload_with_nic_tags(
                 "boot": true,
                 "model": "virtio",
                 "image_uuid": image.id,
+                // Grow the boot zvol to fill the flexible-disk pool
+                // (minus the platform's NoCloud seed disk). Without an
+                // explicit size, vmadm creates the boot disk at the
+                // image's content size and strands the rest of
+                // flexible_disk_size as unusable free_space, leaving the
+                // guest a disk far smaller than its package. "remaining"
+                // is the flexible-disk keyword for "consume the pool".
+                "size": "remaining",
             }
         ],
         "nics": nics_json,
@@ -540,9 +681,7 @@ pub(crate) fn create_bhyve_payload_with_nic_tags(
     // policy enables the reservoir AND the agent has confirmed/grown
     // enough free reservoir for this guest (the kernel does not fall back
     // to transient memory). Applied at create only.
-    if use_reservoir
-        && let Some(obj) = payload.as_object_mut()
-    {
+    if use_reservoir && let Some(obj) = payload.as_object_mut() {
         obj.insert(
             "bhyve_extra_opts".to_string(),
             serde_json::Value::String("-o memory.use_reservoir=true".to_string()),
@@ -871,7 +1010,9 @@ fn render_nocloud_network_config(nics: &[Nic], subnets: &[Subnet]) -> Result<Str
             out.push_str(&format!("        via: {gateway}\n"));
             // TODO: thread resolvers from subnet/VPC config once vNext DNS
             // lands; a public default keeps the guest usable until then.
-            out.push_str("    nameservers:\n      addresses:\n        - 1.1.1.1\n        - 8.8.8.8\n");
+            out.push_str(
+                "    nameservers:\n      addresses:\n        - 1.1.1.1\n        - 8.8.8.8\n",
+            );
         }
     }
     Ok(out)
@@ -1192,6 +1333,7 @@ mod tests {
                     "boot": true,
                     "model": "virtio",
                     "image_uuid": image.id.to_string(),
+                    "size": "remaining",
                 }
             ],
             "nics": [

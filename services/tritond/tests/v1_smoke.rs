@@ -499,6 +499,7 @@ async fn v1_instance_create_then_image_index_lookup() {
             ssh_key_ids: vec![fx.ssh_key_id],
             cpu: 2,
             memory_bytes: 2 * 1024 * 1024 * 1024,
+            disk_bytes: None,
             extra_nics: Vec::new(),
             mac: None,
         })
@@ -593,6 +594,7 @@ async fn v1_nic_indexes_by_ip_and_subnet() {
             ssh_key_ids: vec![fx.ssh_key_id],
             cpu: 1,
             memory_bytes: 1024 * 1024 * 1024,
+            disk_bytes: None,
             extra_nics: Vec::new(),
             mac: None,
         })
@@ -688,6 +690,7 @@ async fn v1_dhcp_lease_by_mac() {
             ssh_key_ids: vec![fx.ssh_key_id],
             cpu: 1,
             memory_bytes: 1024 * 1024 * 1024,
+            disk_bytes: None,
             extra_nics: Vec::new(),
             mac: None,
         })
@@ -759,6 +762,7 @@ async fn v1_cn_host_index_via_set_instance_host_cn() {
             ssh_key_ids: vec![fx.ssh_key_id],
             cpu: 1,
             memory_bytes: 1024 * 1024 * 1024,
+            disk_bytes: None,
             extra_nics: Vec::new(),
             mac: None,
         })

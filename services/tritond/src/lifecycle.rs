@@ -697,6 +697,7 @@ mod tests {
                     cpu: 1,
                     memory_bytes: 1024 * 1024 * 1024,
                     mac: None,
+                    disk_bytes: None,
                     extra_nics: Vec::new(),
                 },
             )
@@ -731,7 +732,12 @@ mod tests {
     }
 
     async fn lifecycle_kind(store: &MemStore, instance_id: Uuid) -> LifecycleStateKind {
-        store.get_instance(instance_id).await.unwrap().lifecycle.kind()
+        store
+            .get_instance(instance_id)
+            .await
+            .unwrap()
+            .lifecycle
+            .kind()
     }
 
     /// CTF regression: a victim's FipClaim failing (kmod unreachable,
@@ -765,7 +771,10 @@ mod tests {
     #[tokio::test]
     async fn failed_apply_port_blueprint_leaves_running_instance_unchanged() {
         let (store, instance_id, nic_id) = running_instance().await;
-        let job = failed_job(JobKind::ApplyPortBlueprint { instance_id, nic_id });
+        let job = failed_job(JobKind::ApplyPortBlueprint {
+            instance_id,
+            nic_id,
+        });
         let outcome = JobOutcome::Failed {
             reason: "ipadm error".into(),
         };
@@ -782,9 +791,15 @@ mod tests {
     #[tokio::test]
     async fn failed_instance_lifecycle_jobs_still_transition_to_failed() {
         for kind in [
-            JobKind::Provision { instance_id: Uuid::nil() },
-            JobKind::Start { instance_id: Uuid::nil() },
-            JobKind::Stop { instance_id: Uuid::nil() },
+            JobKind::Provision {
+                instance_id: Uuid::nil(),
+            },
+            JobKind::Start {
+                instance_id: Uuid::nil(),
+            },
+            JobKind::Stop {
+                instance_id: Uuid::nil(),
+            },
         ] {
             let (store, instance_id, _nic_id) = running_instance().await;
             // Rebind the kind onto this fixture's instance id.

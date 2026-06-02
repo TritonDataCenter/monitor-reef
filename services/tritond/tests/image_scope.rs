@@ -725,6 +725,7 @@ async fn instance_create_with_visible_image_succeeds() {
             ssh_key_ids: vec![ssh_key.id],
             cpu: 2,
             memory_bytes: 2 * 1024 * 1024 * 1024,
+            disk_bytes: None,
             extra_nics: Vec::new(),
             mac: None,
         })
@@ -826,6 +827,7 @@ async fn instance_create_with_invisible_image_returns_404() {
             ssh_key_ids: vec![ssh_key.id],
             cpu: 2,
             memory_bytes: 2 * 1024 * 1024 * 1024,
+            disk_bytes: None,
             extra_nics: Vec::new(),
             mac: None,
         })

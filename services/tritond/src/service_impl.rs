@@ -27,24 +27,22 @@ use dropshot::{
 };
 use tritond_api::{
     AgentConfigResponse, AgentJobPath, AgentPortBlueprint, AgentPortBlueprintPath,
-    AgentStatusRequest, ApiKeyCreated,
-    ApiKeyPath, ApproveCnRequest, AttachFloatingIpRequest, AuditEventList, AuditEventPath,
-    AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, ClaimJobRequest, ClaimJobResponse,
-    CnListQuery, CnPath, CnReservoirView, CompleteJobRequest, ConfigEntry, ConfigKeyPath,
-    HealthResponse, ImagePath,
-    InstanceDeleteQuery, InstanceLogsPath, LegacyCnSummary, LegacyVmListQuery, LegacyVmPath,
-    LogTailQuery, LoginRequest, MetricsRangeQuery, NetworkRealizationRequest, NewApiKey,
-    NewIdpConfig, NewImageFromBundle, NewImageFromImgapi, OpenAutoApproveRequest,
-    ProvisioningBlueprint, RefreshRequest, RegisterCnRequest, RegisterCnResponse,
-    RegisterStatusQuery, RegisterStatusResponse, SetCnReservoirRequest, SetCnRoleRequest,
-    SetConfigRequest, SiloPath,
-    SiloTenantPath, SshKeyPath, StorageClusterAccessKeyPath, StorageClusterBucketPath,
-    StorageClusterNodePath, StorageClusterPath, StorageClusterUserPath,
-    StorageClusterUserPolicyPath, TenantIdpPath, TenantPath, TenantProjectFloatingIpPath,
-    TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath, TenantProjectInstancePath,
-    TenantProjectPath, TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath,
-    TenantProjectVpcNatGatewayPath, TenantProjectVpcPath, TenantProjectVpcRouteTablePath,
-    TenantProjectVpcRouteTableRoutePath, TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
+    AgentStatusRequest, ApiKeyCreated, ApiKeyPath, ApproveCnRequest, AttachFloatingIpRequest,
+    AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery, AuditVerifyResponse,
+    ClaimJobRequest, ClaimJobResponse, CnListQuery, CnPath, CnReservoirView, CompleteJobRequest,
+    ConfigEntry, ConfigKeyPath, HealthResponse, ImagePath, InstanceDeleteQuery, InstanceLogsPath,
+    LegacyCnSummary, LegacyVmListQuery, LegacyVmPath, LogTailQuery, LoginRequest,
+    MetricsRangeQuery, NetworkRealizationRequest, NewApiKey, NewIdpConfig, NewImageFromBundle,
+    NewImageFromImgapi, OpenAutoApproveRequest, ProvisioningBlueprint, RefreshRequest,
+    RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery, RegisterStatusResponse,
+    SetCnReservoirRequest, SetCnRoleRequest, SetConfigRequest, SiloPath, SiloTenantPath,
+    SshKeyPath, StorageClusterAccessKeyPath, StorageClusterBucketPath, StorageClusterNodePath,
+    StorageClusterPath, StorageClusterUserPath, StorageClusterUserPolicyPath, TenantIdpPath,
+    TenantPath, TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath,
+    TenantProjectInstanceNicPath, TenantProjectInstancePath, TenantProjectPath,
+    TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath, TenantProjectVpcNatGatewayPath,
+    TenantProjectVpcPath, TenantProjectVpcRouteTablePath, TenantProjectVpcRouteTableRoutePath,
+    TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, DhcpLease, DhcpPool, DhcpReservation,
         Disk, FirewallRule, FloatingIp, IdpConfigView, Image, Instance, LegacyVm, NatGateway,
@@ -1176,6 +1174,14 @@ impl TritondApi for TritondServiceImpl {
         path: Path<tritond_api::v1::DiskPath>,
     ) -> Result<HttpResponseOk<Disk>, HttpError> {
         crate::handlers::instances::get_disk_v1(rqctx, path).await
+    }
+
+    async fn resize_disk_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::DiskPath>,
+        body: dropshot::TypedBody<tritond_api::v1::DiskResizeRequest>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::DiskResizeResponse>, HttpError> {
+        crate::handlers::instances::resize_disk_v1(rqctx, path, body).await
     }
 
     async fn list_nics_v1(

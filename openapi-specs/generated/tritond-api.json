@@ -1952,6 +1952,55 @@
         }
       }
     },
+    "/v1/disks/{disk_id}/resize": {
+      "post": {
+        "tags": [
+          "disks"
+        ],
+        "summary": "RFD 00007 `POST /v1/disks/{disk_id}/resize`. Grow a disk's",
+        "description": "backing volume. Grow-only: a size at or below the current size is rejected. The zvol and the VM's flexible-disk pool grow immediately; a running guest realizes the new capacity on its next reboot (see [`crate::v1::DiskResizeResponse`]).",
+        "operationId": "resize_disk_v1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disk_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiskResizeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiskResizeResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/firewall-rules": {
       "get": {
         "tags": [
@@ -12139,6 +12188,36 @@
           }
         ]
       },
+      "DiskResizeRequest": {
+        "description": "Request body for `POST /v1/disks/{disk_id}/resize`. `size_bytes` is the desired new total size of the disk's backing volume. Grow-only: a value at or below the current size is rejected — shrinking a live volume loses data, so the caller must provision a new, smaller disk instead of asking us to truncate this one.",
+        "type": "object",
+        "properties": {
+          "size_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "size_bytes"
+        ]
+      },
+      "DiskResizeResponse": {
+        "description": "Response from a disk resize. The control-plane record and the host zvol + flexible-disk pool grow synchronously. `reboot_required` is `true` when the instance is running: bhyve reads the block device size only at boot, so the guest sees the new capacity after a power cycle (cloud-init then grows the partition + filesystem). It is `false` when the instance is stopped — the next start picks up the larger disk directly.",
+        "type": "object",
+        "properties": {
+          "disk": {
+            "$ref": "#/components/schemas/Disk"
+          },
+          "reboot_required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "disk",
+          "reboot_required"
+        ]
+      },
       "DrainMigrationRow": {
         "description": "One row of the drain-preview migration plan. `target_cn_*` are populated when the placement engine found an eligible CN for the instance; otherwise `reason` carries the no-eligible-CN explanation.",
         "type": "object",
@@ -13465,6 +13544,37 @@
               "instance_id",
               "kind",
               "migration_id"
+            ]
+          },
+          {
+            "description": "Grow a disk's backing zvol on the hosting CN and enlarge the VM's flexible-disk pool to cover it. Enqueued by the disk-resize handler *after* it has grown the durable `Disk` record, pinned to the instance's `host_cn_uuid`. `size_bytes` is the new total disk size; the agent grows the pool then the boot zvol to match. A running guest realizes the new capacity on its next reboot. `disk_id` identifies the record for audit and idempotency.",
+            "type": "object",
+            "properties": {
+              "disk_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "resize_disk"
+                ]
+              },
+              "size_bytes": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "disk_id",
+              "instance_id",
+              "kind",
+              "size_bytes"
             ]
           }
         ]
@@ -15355,6 +15465,14 @@
             "nullable": true,
             "default": null,
             "type": "string"
+          },
+          "disk_bytes": {
+            "nullable": true,
+            "description": "Optional boot-disk size in bytes. `None` (the default) sizes the boot disk via [`default_boot_disk_size_bytes`]; an explicit value is honored down to the image content size (see [`resolve_boot_disk_size_bytes`]) and bounded at the API edge by [`MAX_BOOT_DISK_BYTES`].",
+            "default": null,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
           },
           "extra_nics": {
             "description": "Additional NICs beyond the primary one on `primary_subnet_id`. Each entry causes the store to allocate one NIC + IP from the named subnet at create time. The `InstanceCreateResult.nics` Vec returns all of them in declaration order (primary at index 0). The agent's vmadm payload iterates over the Vec and attaches `net0`, `net1`, …",

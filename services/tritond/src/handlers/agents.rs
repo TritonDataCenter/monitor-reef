@@ -28,23 +28,22 @@ use dropshot::{
 };
 use tritond_api::{
     AgentConfigResponse, AgentJobPath, AgentPortBlueprint, AgentPortBlueprintPath,
-    AgentStatusRequest, ApiKeyCreated,
-    ApiKeyPath, ApproveCnRequest, AttachFloatingIpRequest, AuditEventList, AuditEventPath,
-    AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, ClaimJobRequest, ClaimJobResponse,
-    CnListQuery, CnPath, CompleteJobRequest, ConfigEntry, ConfigKeyPath, DhcpLeaseActivityReport,
-    HealthResponse, ImagePath, InstanceDeleteQuery, InstanceLogsPath, LegacyCnSummary,
-    LegacyVmListQuery, LegacyVmPath, LogTailQuery, LoginRequest, MetricsRangeQuery,
-    NetworkRealizationRequest, NewApiKey, NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest,
-    ProvisioningBlueprint, RefreshRequest, RegisterCnRequest, RegisterCnResponse,
-    RegisterNicTagProvision, RegisterStatusQuery, RegisterStatusResponse, SetCnRoleRequest,
-    SetConfigRequest, SiloPath,
-    SiloTenantPath, SshKeyPath, StorageClusterAccessKeyPath, StorageClusterBucketPath,
-    StorageClusterNodePath, StorageClusterPath, StorageClusterUserPath,
-    StorageClusterUserPolicyPath, TenantIdpPath, TenantPath, TenantProjectFloatingIpPath,
-    TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath, TenantProjectInstancePath,
-    TenantProjectPath, TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath,
-    TenantProjectVpcNatGatewayPath, TenantProjectVpcPath, TenantProjectVpcRouteTablePath,
-    TenantProjectVpcRouteTableRoutePath, TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
+    AgentStatusRequest, ApiKeyCreated, ApiKeyPath, ApproveCnRequest, AttachFloatingIpRequest,
+    AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery, AuditVerifyResponse,
+    ClaimJobRequest, ClaimJobResponse, CnListQuery, CnPath, CompleteJobRequest, ConfigEntry,
+    ConfigKeyPath, DhcpLeaseActivityReport, HealthResponse, ImagePath, InstanceDeleteQuery,
+    InstanceLogsPath, LegacyCnSummary, LegacyVmListQuery, LegacyVmPath, LogTailQuery, LoginRequest,
+    MetricsRangeQuery, NetworkRealizationRequest, NewApiKey, NewIdpConfig, NewImageFromBundle,
+    OpenAutoApproveRequest, ProvisioningBlueprint, RefreshRequest, RegisterCnRequest,
+    RegisterCnResponse, RegisterNicTagProvision, RegisterStatusQuery, RegisterStatusResponse,
+    SetCnRoleRequest, SetConfigRequest, SiloPath, SiloTenantPath, SshKeyPath,
+    StorageClusterAccessKeyPath, StorageClusterBucketPath, StorageClusterNodePath,
+    StorageClusterPath, StorageClusterUserPath, StorageClusterUserPolicyPath, TenantIdpPath,
+    TenantPath, TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath,
+    TenantProjectInstanceNicPath, TenantProjectInstancePath, TenantProjectPath,
+    TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath, TenantProjectVpcNatGatewayPath,
+    TenantProjectVpcPath, TenantProjectVpcRouteTablePath, TenantProjectVpcRouteTableRoutePath,
+    TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, DhcpLease, DhcpPool, DhcpReservation,
         Disk, FirewallRule, FloatingIp, IdpConfigView, Image, ImageScope, Instance, JobKind,
@@ -425,7 +424,11 @@ pub(crate) async fn agent_get_config(
     .await?;
     let server_uuid = require_bound_cn(&principal)?;
 
-    let settings = ctx.store.get_settings().await.map_err(store_error_to_http)?;
+    let settings = ctx
+        .store
+        .get_settings()
+        .await
+        .map_err(store_error_to_http)?;
     let placement = ctx
         .store
         .get_cn_placement(server_uuid)
@@ -908,14 +911,9 @@ mod nic_tag_publish_tests {
         let cn = Uuid::new_v4();
         let now = chrono::Utc::now();
 
-        resolve_and_publish_nic_tags(
-            &store,
-            cn,
-            &[reported("external", "igb2")],
-            now,
-        )
-        .await
-        .expect("publish");
+        resolve_and_publish_nic_tags(&store, cn, &[reported("external", "igb2")], now)
+            .await
+            .expect("publish");
 
         let inv = store
             .get_cn_nic_tags(cn)
@@ -1096,6 +1094,7 @@ mod reconcile_hosted_fips_tests {
                     cpu: 1,
                     memory_bytes: 1024 * 1024 * 1024,
                     mac: None,
+                    disk_bytes: None,
                     extra_nics: Vec::new(),
                 },
             )
@@ -1201,6 +1200,9 @@ mod reconcile_hosted_fips_tests {
         let (store, fip_id, _nic_id, _instance_id, host_cn) = hosted_fip_fixture().await;
         store.detach_floating_ip(fip_id).await.unwrap();
         let enqueued = reconcile_hosted_fips(&store, host_cn).await.unwrap();
-        assert_eq!(enqueued, 0, "detached FIP is no longer hosted; nothing to reconcile");
+        assert_eq!(
+            enqueued, 0,
+            "detached FIP is no longer hosted; nothing to reconcile"
+        );
     }
 }

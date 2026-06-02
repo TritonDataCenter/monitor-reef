@@ -449,6 +449,23 @@ async fn create_instance_inner(
         )
         .await);
     }
+    // An explicit disk request must be positive and within the hard
+    // ceiling. The store floors it at the image content size; this just
+    // keeps a bogus/hostile value from asking the agent for an absurd
+    // zvol reservation.
+    if let Some(bytes) = req.disk_bytes
+        && (bytes == 0 || bytes > tritond_store::MAX_BOOT_DISK_BYTES)
+    {
+        return Err(reject_audit(
+            ctx,
+            &principal,
+            Action::InstanceCreate,
+            request_id,
+            "disk_bytes must be greater than zero and at most 16 TiB",
+            serde_json::json!({ "tenant_id": tenant_id, "project_id": project_id }),
+        )
+        .await);
+    }
 
     // Cross-scope visibility on the referenced image and SSH
     // keys. The store no longer enforces silo membership on
@@ -1414,6 +1431,159 @@ pub(crate) async fn get_disk_v1(
     )
     .await?;
     Ok(HttpResponseOk(disk))
+}
+
+/// `POST /v1/disks/{disk_id}/resize`. Grow a disk's backing volume.
+/// Auth derives the owning tenant from the disk's parent instance.
+/// Grow-only and bounded at the edge; the store re-checks the grow
+/// invariant. The durable `Disk` record grows first (so a reprovision
+/// recreates the larger zvol), then a [`JobKind::ResizeDisk`] is pinned
+/// to the hosting CN to grow the live volume + flexible pool.
+pub(crate) async fn resize_disk_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::DiskPath>,
+    body: dropshot::TypedBody<tritond_api::v1::DiskResizeRequest>,
+) -> Result<HttpResponseOk<tritond_api::v1::DiskResizeResponse>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::DiskPath { disk_id } = path.into_inner();
+    let req = body.into_inner();
+
+    let disk = ctx
+        .store
+        .get_disk(disk_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let principal = authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::DiskResize,
+        disk.tenant_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+    let audit_ctx = serde_json::json!({
+        "disk_id": disk_id,
+        "instance_id": disk.instance_id,
+        "size_bytes": req.size_bytes,
+    });
+
+    if req.size_bytes == 0 || req.size_bytes > tritond_store::MAX_BOOT_DISK_BYTES {
+        return Err(reject_audit(
+            ctx,
+            &principal,
+            Action::DiskResize,
+            request_id,
+            "size_bytes must be greater than zero and at most 16 TiB",
+            audit_ctx,
+        )
+        .await);
+    }
+
+    // The hosting instance must be placed and quiescent enough to resize
+    // its zvol. Running grows live (guest realizes it after a reboot);
+    // Stopped grows the dataset for the next start. Pending /
+    // Provisioning / Stopping race the create or power transition, so we
+    // refuse rather than fight vmadm for the dataset.
+    let instance = ctx
+        .store
+        .get_instance(disk.instance_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let state = instance.lifecycle.kind();
+    let Some(target_cn_uuid) = instance.host_cn_uuid else {
+        return Err(reject_audit(
+            ctx,
+            &principal,
+            Action::DiskResize,
+            request_id,
+            "instance is not placed on a CN yet",
+            audit_ctx,
+        )
+        .await);
+    };
+    if !matches!(
+        state,
+        LifecycleStateKind::Running | LifecycleStateKind::Stopped
+    ) {
+        return Err(reject_audit(
+            ctx,
+            &principal,
+            Action::DiskResize,
+            request_id,
+            "instance must be running or stopped to resize its disk",
+            audit_ctx,
+        )
+        .await);
+    }
+
+    // Grow the durable record (store re-validates grow-only -> 409 on a
+    // shrink that slipped past the edge check or a concurrent grow).
+    let updated = match ctx.store.resize_disk(disk_id, req.size_bytes).await {
+        Ok(d) => d,
+        Err(e) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::DiskResize,
+                    request_id,
+                    Some(format!("Disk::\"{disk_id}\"")),
+                    store_error_to_audit_outcome(&e),
+                    serde_json::Value::Null,
+                )
+                .await;
+            return Err(store_error_to_http(e));
+        }
+    };
+
+    if let Err(e) = ctx
+        .store
+        .enqueue_job(NewJob {
+            kind: JobKind::ResizeDisk {
+                instance_id: disk.instance_id,
+                disk_id,
+                size_bytes: req.size_bytes,
+            },
+            target_cn_uuid: Some(target_cn_uuid),
+        })
+        .await
+    {
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::DiskResize,
+                request_id,
+                Some(format!("Disk::\"{disk_id}\"")),
+                store_error_to_audit_outcome(&e),
+                serde_json::Value::Null,
+            )
+            .await;
+        return Err(store_error_to_http(e));
+    }
+
+    let reboot_required = state == LifecycleStateKind::Running;
+    ctx.audit
+        .record_mutation(
+            &principal,
+            Action::DiskResize,
+            request_id,
+            Some(format!("Disk::\"{disk_id}\"")),
+            AuditOutcome::Success {
+                resource: Some(format!("Disk::\"{disk_id}\"")),
+            },
+            serde_json::json!({
+                "disk_id": disk_id,
+                "instance_id": disk.instance_id,
+                "size_bytes": req.size_bytes,
+                "reboot_required": reboot_required,
+            }),
+        )
+        .await;
+    Ok(HttpResponseOk(tritond_api::v1::DiskResizeResponse {
+        disk: updated,
+        reboot_required,
+    }))
 }
 
 pub(crate) async fn list_project_floating_ips(

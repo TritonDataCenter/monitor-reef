@@ -2913,6 +2913,77 @@ pub mod types {
         }
     }
 
+    #[doc = "Request body for `POST /v1/disks/{disk_id}/resize`. `size_bytes` is the desired new total size of the disk's backing volume. Grow-only: a value at or below the current size is rejected — shrinking a live volume loses data, so the caller must provision a new, smaller disk instead of asking us to truncate this one."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v1/disks/{disk_id}/resize`. `size_bytes` is the desired new total size of the disk's backing volume. Grow-only: a value at or below the current size is rejected — shrinking a live volume loses data, so the caller must provision a new, smaller disk instead of asking us to truncate this one.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"size_bytes\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"size_bytes\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct DiskResizeRequest {
+        pub size_bytes: u64,
+    }
+
+    impl DiskResizeRequest {
+        pub fn builder() -> builder::DiskResizeRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Response from a disk resize. The control-plane record and the host zvol + flexible-disk pool grow synchronously. `reboot_required` is `true` when the instance is running: bhyve reads the block device size only at boot, so the guest sees the new capacity after a power cycle (cloud-init then grows the partition + filesystem). It is `false` when the instance is stopped — the next start picks up the larger disk directly."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Response from a disk resize. The control-plane record and the host zvol + flexible-disk pool grow synchronously. `reboot_required` is `true` when the instance is running: bhyve reads the block device size only at boot, so the guest sees the new capacity after a power cycle (cloud-init then grows the partition + filesystem). It is `false` when the instance is stopped — the next start picks up the larger disk directly.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"disk\","]
+    #[doc = "    \"reboot_required\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"disk\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/Disk\""]
+    #[doc = "    },"]
+    #[doc = "    \"reboot_required\": {"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct DiskResizeResponse {
+        pub disk: Disk,
+        pub reboot_required: bool,
+    }
+
+    impl DiskResizeResponse {
+        pub fn builder() -> builder::DiskResizeResponse {
+            Default::default()
+        }
+    }
+
     #[doc = "One row of the drain-preview migration plan. `target_cn_*` are populated when the placement engine found an eligible CN for the instance; otherwise `reason` carries the no-eligible-CN explanation."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -5261,6 +5332,37 @@ pub mod types {
     #[doc = "          \"format\": \"uuid\""]
     #[doc = "        }"]
     #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Grow a disk's backing zvol on the hosting CN and enlarge the VM's flexible-disk pool to cover it. Enqueued by the disk-resize handler *after* it has grown the durable `Disk` record, pinned to the instance's `host_cn_uuid`. `size_bytes` is the new total disk size; the agent grows the pool then the boot zvol to match. A running guest realizes the new capacity on its next reboot. `disk_id` identifies the record for audit and idempotency.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"disk_id\","]
+    #[doc = "        \"instance_id\","]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"size_bytes\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"disk_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"instance_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"resize_disk\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"size_bytes\": {"]
+    #[doc = "          \"type\": \"integer\","]
+    #[doc = "          \"format\": \"uint64\","]
+    #[doc = "          \"minimum\": 0.0"]
+    #[doc = "        }"]
+    #[doc = "      }"]
     #[doc = "    }"]
     #[doc = "  ]"]
     #[doc = "}"]
@@ -5382,6 +5484,13 @@ pub mod types {
         MigrationCleanupSource {
             instance_id: ::uuid::Uuid,
             migration_id: ::uuid::Uuid,
+        },
+        #[doc = "Grow a disk's backing zvol on the hosting CN and enlarge the VM's flexible-disk pool to cover it. Enqueued by the disk-resize handler *after* it has grown the durable `Disk` record, pinned to the instance's `host_cn_uuid`. `size_bytes` is the new total disk size; the agent grows the pool then the boot zvol to match. A running guest realizes the new capacity on its next reboot. `disk_id` identifies the record for audit and idempotency."]
+        #[serde(rename = "resize_disk")]
+        ResizeDisk {
+            disk_id: ::uuid::Uuid,
+            instance_id: ::uuid::Uuid,
+            size_bytes: u64,
         },
     }
 
@@ -8889,6 +8998,15 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
+    #[doc = "    \"disk_bytes\": {"]
+    #[doc = "      \"description\": \"Optional boot-disk size in bytes. `None` (the default) sizes the boot disk via [`default_boot_disk_size_bytes`]; an explicit value is honored down to the image content size (see [`resolve_boot_disk_size_bytes`]) and bounded at the API edge by [`MAX_BOOT_DISK_BYTES`].\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
     #[doc = "    \"extra_nics\": {"]
     #[doc = "      \"description\": \"Additional NICs beyond the primary one on `primary_subnet_id`. Each entry causes the store to allocate one NIC + IP from the named subnet at create time. The `InstanceCreateResult.nics` Vec returns all of them in declaration order (primary at index 0). The agent's vmadm payload iterates over the Vec and attaches `net0`, `net1`, …\","]
     #[doc = "      \"default\": [],"]
@@ -8939,6 +9057,9 @@ pub mod types {
         pub cpu: u32,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub description: ::std::option::Option<::std::string::String>,
+        #[doc = "Optional boot-disk size in bytes. `None` (the default) sizes the boot disk via [`default_boot_disk_size_bytes`]; an explicit value is honored down to the image content size (see [`resolve_boot_disk_size_bytes`]) and bounded at the API edge by [`MAX_BOOT_DISK_BYTES`]."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub disk_bytes: ::std::option::Option<u64>,
         #[doc = "Additional NICs beyond the primary one on `primary_subnet_id`. Each entry causes the store to allocate one NIC + IP from the named subnet at create time. The `InstanceCreateResult.nics` Vec returns all of them in declaration order (primary at index 0). The agent's vmadm payload iterates over the Vec and attaches `net0`, `net1`, …"]
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
         pub extra_nics: ::std::vec::Vec<NewInstanceNic>,
@@ -18846,6 +18967,110 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct DiskResizeRequest {
+            size_bytes: ::std::result::Result<u64, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for DiskResizeRequest {
+            fn default() -> Self {
+                Self {
+                    size_bytes: Err("no value supplied for size_bytes".to_string()),
+                }
+            }
+        }
+
+        impl DiskResizeRequest {
+            pub fn size_bytes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.size_bytes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for size_bytes: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<DiskResizeRequest> for super::DiskResizeRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: DiskResizeRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    size_bytes: value.size_bytes?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::DiskResizeRequest> for DiskResizeRequest {
+            fn from(value: super::DiskResizeRequest) -> Self {
+                Self {
+                    size_bytes: Ok(value.size_bytes),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct DiskResizeResponse {
+            disk: ::std::result::Result<super::Disk, ::std::string::String>,
+            reboot_required: ::std::result::Result<bool, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for DiskResizeResponse {
+            fn default() -> Self {
+                Self {
+                    disk: Err("no value supplied for disk".to_string()),
+                    reboot_required: Err("no value supplied for reboot_required".to_string()),
+                }
+            }
+        }
+
+        impl DiskResizeResponse {
+            pub fn disk<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::Disk>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.disk = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for disk: {e}"));
+                self
+            }
+            pub fn reboot_required<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reboot_required = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for reboot_required: {e}")
+                });
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<DiskResizeResponse> for super::DiskResizeResponse {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: DiskResizeResponse,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    disk: value.disk?,
+                    reboot_required: value.reboot_required?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::DiskResizeResponse> for DiskResizeResponse {
+            fn from(value: super::DiskResizeResponse) -> Self {
+                Self {
+                    disk: Ok(value.disk),
+                    reboot_required: Ok(value.reboot_required),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct DrainMigrationRow {
             instance_cpu: ::std::result::Result<u32, ::std::string::String>,
             instance_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
@@ -24290,6 +24515,7 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            disk_bytes: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
             extra_nics: ::std::result::Result<
                 ::std::vec::Vec<super::NewInstanceNic>,
                 ::std::string::String,
@@ -24311,6 +24537,7 @@ pub mod types {
                 Self {
                     cpu: Err("no value supplied for cpu".to_string()),
                     description: Ok(Default::default()),
+                    disk_bytes: Ok(Default::default()),
                     extra_nics: Ok(Default::default()),
                     image_id: Err("no value supplied for image_id".to_string()),
                     mac: Ok(Default::default()),
@@ -24341,6 +24568,16 @@ pub mod types {
                 self.description = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn disk_bytes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.disk_bytes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for disk_bytes: {e}"));
                 self
             }
             pub fn extra_nics<T>(mut self, value: T) -> Self
@@ -24423,6 +24660,7 @@ pub mod types {
                 Ok(Self {
                     cpu: value.cpu?,
                     description: value.description?,
+                    disk_bytes: value.disk_bytes?,
                     extra_nics: value.extra_nics?,
                     image_id: value.image_id?,
                     mac: value.mac?,
@@ -24439,6 +24677,7 @@ pub mod types {
                 Self {
                     cpu: Ok(value.cpu),
                     description: Ok(value.description),
+                    disk_bytes: Ok(value.disk_bytes),
                     extra_nics: Ok(value.extra_nics),
                     image_id: Ok(value.image_id),
                     mac: Ok(value.mac),
@@ -33359,6 +33598,11 @@ impl Client {
         builder::GetDiskV1::new(self)
     }
 
+    #[doc = "RFD 00007 `POST /v1/disks/{disk_id}/resize`. Grow a disk's\n\nbacking volume. Grow-only: a size at or below the current size is rejected. The zvol and the VM's flexible-disk pool grow immediately; a running guest realizes the new capacity on its next reboot (see [`crate::v1::DiskResizeResponse`]).\n\nSends a `POST` request to `/v1/disks/{disk_id}/resize`\n\n```ignore\nlet response = client.resize_disk_v1()\n    .disk_id(disk_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn resize_disk_v1(&self) -> builder::ResizeDiskV1<'_> {
+        builder::ResizeDiskV1::new(self)
+    }
+
     #[doc = "RFD 00007 `GET /v1/firewall-rules?vpc=<uuid>`\n\nSends a `GET` request to `/v1/firewall-rules`\n\nArguments:\n- `project`: Restrict to a single project.\n- `silo`: Restrict to a single silo (fleet-admin only).\n- `tenant`: Restrict to a single tenant.\n- `vpc`: Restrict to firewall rules attached to this VPC. Required.\n```ignore\nlet response = client.list_firewall_rules_v1()\n    .project(project)\n    .silo(silo)\n    .tenant(tenant)\n    .vpc(vpc)\n    .send()\n    .await;\n```"]
     pub fn list_firewall_rules_v1(&self) -> builder::ListFirewallRulesV1<'_> {
         builder::ListFirewallRulesV1::new(self)
@@ -38003,6 +38247,109 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "get_disk_v1",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::resize_disk_v1`]\n\n[`Client::resize_disk_v1`]: super::Client::resize_disk_v1"]
+    #[derive(Debug, Clone)]
+    pub struct ResizeDiskV1<'a> {
+        client: &'a super::Client,
+        disk_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::DiskResizeRequest, String>,
+    }
+
+    impl<'a> ResizeDiskV1<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                disk_id: Err("disk_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn disk_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.disk_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for disk_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::DiskResizeRequest>,
+            <V as std::convert::TryInto<types::DiskResizeRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `DiskResizeRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::DiskResizeRequest,
+                ) -> types::builder::DiskResizeRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/disks/{disk_id}/resize`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::DiskResizeResponse>, Error<types::Error>> {
+            let Self {
+                client,
+                disk_id,
+                body,
+            } = self;
+            let disk_id = disk_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::DiskResizeRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/disks/{}/resize",
+                client.baseurl,
+                encode_path(&disk_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "resize_disk_v1",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

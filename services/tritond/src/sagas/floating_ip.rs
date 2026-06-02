@@ -217,7 +217,11 @@ pub fn build_attach_dag(params: &FloatingIpAttachParams) -> SagaResult<Arc<SagaD
     b.append(Node::action(
         "claim_job",
         "enqueue_claim",
-        &*ActionFunc::new_action("floating_ip.enqueue_claim", enqueue_claim, enqueue_claim_undo),
+        &*ActionFunc::new_action(
+            "floating_ip.enqueue_claim",
+            enqueue_claim,
+            enqueue_claim_undo,
+        ),
     ));
     // 3. Await the agent's terminal job status (provision-style).
     b.append(Node::action(
@@ -266,11 +270,7 @@ async fn attach(ctx: Ctx) -> Result<FloatingIp, ActionError> {
         // here as a Conflict (→ 409); a cross-CN move that skipped the
         // detach lands here as a Conflict too.
         store
-            .attach_floating_ip_cas(
-                params.fip_id,
-                params.target_nic_id,
-                params.prior_hosted_cn,
-            )
+            .attach_floating_ip_cas(params.fip_id, params.target_nic_id, params.prior_hosted_cn)
             .await
             .map_err(store_err_to_action_err)
     })
@@ -493,11 +493,7 @@ pub fn build_detach_dag(params: &FloatingIpDetachParams) -> SagaResult<Arc<SagaD
     b.append(Node::action(
         "release_job",
         "release_detach",
-        &*ActionFunc::new_action(
-            "floating_ip.release_detach",
-            release_detach,
-            no_op_undo,
-        ),
+        &*ActionFunc::new_action("floating_ip.release_detach", release_detach, no_op_undo),
     ));
     b.append(Node::action(
         "released",
@@ -620,7 +616,10 @@ async fn await_release(ctx: Ctx) -> Result<(), ActionError> {
             let job_id = job.id;
             const POLL: std::time::Duration = std::time::Duration::from_millis(50);
             loop {
-                let current = store.get_job(job_id).await.map_err(store_err_to_action_err)?;
+                let current = store
+                    .get_job(job_id)
+                    .await
+                    .map_err(store_err_to_action_err)?;
                 match current.status.kind() {
                     tritond_store::JobStatusKind::Completed => return Ok(()),
                     tritond_store::JobStatusKind::Failed => {
@@ -793,6 +792,7 @@ mod tests {
                     cpu: 1,
                     memory_bytes: 1024 * 1024 * 1024,
                     mac: None,
+                    disk_bytes: None,
                     extra_nics: Vec::new(),
                 },
             )
