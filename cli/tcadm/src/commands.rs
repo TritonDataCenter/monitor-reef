@@ -1079,6 +1079,104 @@ pub async fn user_policy_list(
     Ok(())
 }
 
+/// Mint a bucket-scoped access key on a mantad IAM user. Mirrors
+/// manta-ng's scoped-key CLI: each `scope_specs[i]` is parsed as
+/// `<bucket>:<level>[:<key_prefix>]` where `level` is `read`,
+/// `read_write` (alias `rw`), or `full`. The minted key is returned
+/// once on stdout — capture the `secret_access_key` immediately; it
+/// is not retrievable later.
+pub async fn user_scoped_key_create(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    user: String,
+    scope_specs: Vec<String>,
+    workspace: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    use mantad_client::{ScopeEntry, ScopeLevel, ScopedAccessKeyRequest};
+
+    if scope_specs.is_empty() {
+        anyhow::bail!("at least one --scope flag is required");
+    }
+    let mut scope: Vec<ScopeEntry> = Vec::with_capacity(scope_specs.len());
+    for raw in &scope_specs {
+        let parts: Vec<&str> = raw.splitn(3, ':').collect();
+        if parts.len() < 2 {
+            anyhow::bail!(
+                "bad --scope {:?}: expected 'bucket:level[:key_prefix]'",
+                raw,
+            );
+        }
+        let bucket = parts[0].to_string();
+        if bucket.is_empty() {
+            anyhow::bail!("bad --scope {:?}: bucket is empty", raw);
+        }
+        let level = match parts[1] {
+            "read" | "r" => ScopeLevel::Read,
+            "read_write" | "rw" | "readwrite" => ScopeLevel::ReadWrite,
+            "full" | "f" => ScopeLevel::Full,
+            other => anyhow::bail!(
+                "bad --scope {:?}: unknown level '{}'; expected read|read_write|full",
+                raw,
+                other,
+            ),
+        };
+        let key_prefix = parts.get(2).map(|p| (*p).to_string());
+        if let Some(p) = key_prefix.as_deref()
+            && p.is_empty()
+        {
+            anyhow::bail!(
+                "bad --scope {:?}: key_prefix is empty; drop the trailing ':' for full-bucket access",
+                raw,
+            );
+        }
+        scope.push(ScopeEntry {
+            bucket,
+            level,
+            key_prefix,
+        });
+    }
+    let req = ScopedAccessKeyRequest {
+        scope: scope.clone(),
+    };
+
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.mantad_client()?;
+    let ak = client
+        .create_scoped_access_key(&user, workspace.as_deref(), &req)
+        .await
+        .context("create scoped access key")?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&ak)?);
+    } else {
+        println!("Scoped access key minted for user {user}");
+        if !ak.workspace.is_empty() {
+            println!("  workspace:     {}", ak.workspace);
+        }
+        println!("  access_key_id: {}", ak.access_key_id);
+        if let Some(s) = &ak.secret_access_key {
+            println!("  secret:        {s}");
+        }
+        println!("  status:        {}", ak.status);
+        println!("  scope:");
+        for s in &scope {
+            let suffix = s
+                .key_prefix
+                .as_deref()
+                .map(|p| format!(", key_prefix={p}"))
+                .unwrap_or_default();
+            println!(
+                "    - bucket={}, level={:?}{suffix}",
+                s.bucket, s.level
+            );
+        }
+        println!();
+        println!("Save the secret now — mantad does not retain it.");
+    }
+    Ok(())
+}
+
 /// Delete a project.
 pub async fn tenant_project_delete(
     endpoint_override: Option<String>,

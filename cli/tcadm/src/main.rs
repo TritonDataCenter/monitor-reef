@@ -977,6 +977,36 @@ enum UserCommand {
         #[command(subcommand)]
         command: UserPolicyCommand,
     },
+    /// Bucket-scoped access keys (manta-ng parity).
+    ScopedKey {
+        #[command(subcommand)]
+        command: UserScopedKeyCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum UserScopedKeyCommand {
+    /// Mint a bucket-scoped access key. Each `--scope` flag is
+    /// `<bucket>:<level>[:<key_prefix>]` where level is one of
+    /// `read`, `read_write` (alias `rw`), or `full`. Repeat the flag
+    /// to grant multiple buckets. Example:
+    ///
+    ///     tcadm user scoped-key create alice \\
+    ///         --scope images:read \\
+    ///         --scope logs:rw:errors/
+    Create {
+        /// User name (must already exist in the workspace).
+        user: String,
+        /// One or more scope grants. Format: `bucket:level[:key_prefix]`.
+        #[arg(long = "scope", required = true)]
+        scope: Vec<String>,
+        /// Workspace scope (for workspace-scoped users).
+        #[arg(long)]
+        workspace: Option<String>,
+        /// JSON output (includes the cleartext secret_access_key).
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -3267,6 +3297,24 @@ async fn main() -> Result<()> {
                 } => {
                     commands::user_policy_list(cli.endpoint, cli.api_key, user, workspace, json)
                         .await
+                }
+            },
+            UserCommand::ScopedKey { command } => match command {
+                UserScopedKeyCommand::Create {
+                    user,
+                    scope,
+                    workspace,
+                    json,
+                } => {
+                    commands::user_scoped_key_create(
+                        cli.endpoint,
+                        cli.api_key,
+                        user,
+                        scope,
+                        workspace,
+                        json,
+                    )
+                    .await
                 }
             },
         },
