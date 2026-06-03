@@ -402,6 +402,9 @@ pub enum GrantType {
     RefreshToken,
     DeviceCode,
     ClientCredentials,
+    /// Resource-owner password credentials. Dev/demo convenience for the
+    /// Workbench client; not recommended for production clients.
+    Password,
 }
 
 /// A registered OAuth 2.0 / OIDC client.
