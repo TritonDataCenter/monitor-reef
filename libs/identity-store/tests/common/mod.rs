@@ -470,6 +470,211 @@ pub async fn check_user_round_trip_and_uniqueness<S: IdentityStore>(store: S) {
     assert_conflict(store.delete_realm(other.id).await);
 }
 
+/// H1 regression: a per-realm list must return EVERY record, not just the
+/// first FDB range batch. With `StreamingMode::Iterator` and a single
+/// `get_range(.., iteration=1, ..)` call the backend returns only a small
+/// first batch, silently truncating. We insert far more users than fit in
+/// one batch and assert the list (and the membership probe) see them all.
+/// Trivially green on MemStore; the real guard is on FdbStore.
+pub async fn check_large_realm_list_drains_all_batches<S: IdentityStore>(store: S) {
+    let realm = make_realm(
+        &store,
+        RealmScope::Tenant {
+            tenant_id: Uuid::new_v4(),
+        },
+        "https://id.example/realms/large",
+    )
+    .await;
+
+    // 1500 users comfortably exceeds the first `Iterator`-mode batch, which
+    // is what made the pre-fix scan truncate.
+    const N: usize = 1500;
+    for i in 0..N {
+        make_user(&store, realm.id, &format!("user-{i:04}")).await;
+    }
+
+    let listed = store.list_users_in_realm(realm.id).await.unwrap();
+    assert_eq!(
+        listed.len(),
+        N,
+        "list_users_in_realm truncated a multi-batch range scan",
+    );
+    // Every listed user really belongs to this realm (no cross-realm bleed).
+    assert!(listed.iter().all(|u| u.realm_id == realm.id));
+    // Distinct ids — the scan didn't duplicate across batch boundaries.
+    let mut ids: Vec<Uuid> = listed.iter().map(|u| u.id).collect();
+    ids.sort();
+    ids.dedup();
+    assert_eq!(ids.len(), N, "scan returned duplicate users across batches");
+
+    assert!(store.has_any_user_in_realm(realm.id).await.unwrap());
+}
+
+/// H3: a realm has at most one enabled upstream connection. Enabling a
+/// second connection disables the first, in the same operation, so the
+/// identity-source selection is deterministic. Enforced identically by
+/// MemStore and FdbStore `set_connection_enabled`.
+pub async fn check_connection_at_most_one_enabled<S: IdentityStore>(store: S) {
+    let realm = make_realm(
+        &store,
+        RealmScope::Tenant {
+            tenant_id: Uuid::new_v4(),
+        },
+        "https://id.example/realms/single-enabled",
+    )
+    .await;
+
+    let mk = |name: &str, enabled: bool| NewUpstreamConnection {
+        realm_id: realm.id,
+        name: name.into(),
+        kind: ConnectionKind::Oidc {
+            issuer_url: format!("https://{name}.example"),
+            client_id: name.into(),
+            client_secret: RedactedString::from("shh"),
+            scopes: vec!["openid".into()],
+            audience: None,
+        },
+        enabled,
+    };
+
+    // Create A enabled, B and C disabled.
+    let a = store.create_upstream_connection(mk("a", true)).await.unwrap();
+    let b = store
+        .create_upstream_connection(mk("b", false))
+        .await
+        .unwrap();
+    let c = store
+        .create_upstream_connection(mk("c", false))
+        .await
+        .unwrap();
+
+    async fn enabled_ids<S: IdentityStore>(store: &S, realm_id: Uuid) -> Vec<Uuid> {
+        let mut v: Vec<Uuid> = store
+            .list_connections_in_realm(realm_id)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|c| c.enabled)
+            .map(|c| c.id)
+            .collect();
+        v.sort();
+        v
+    }
+
+    // Only A is enabled at the start.
+    assert_eq!(enabled_ids(&store, realm.id).await, vec![a.id]);
+
+    // Enable B: A must be auto-disabled, leaving exactly B enabled.
+    let b2 = store.set_connection_enabled(b.id, true).await.unwrap();
+    assert!(b2.enabled);
+    assert_eq!(
+        enabled_ids(&store, realm.id).await,
+        vec![b.id],
+        "enabling B must disable the previously-enabled A",
+    );
+    assert!(!store.get_upstream_connection(a.id).await.unwrap().enabled);
+
+    // Enabling B again is idempotent — still exactly B.
+    store.set_connection_enabled(b.id, true).await.unwrap();
+    assert_eq!(enabled_ids(&store, realm.id).await, vec![b.id]);
+
+    // Enable C: B auto-disabled, exactly C enabled.
+    store.set_connection_enabled(c.id, true).await.unwrap();
+    assert_eq!(
+        enabled_ids(&store, realm.id).await,
+        vec![c.id],
+        "enabling C must disable B",
+    );
+
+    // Disabling C leaves the realm with zero enabled connections (does NOT
+    // re-enable anything).
+    store.set_connection_enabled(c.id, false).await.unwrap();
+    assert!(
+        enabled_ids(&store, realm.id).await.is_empty(),
+        "disabling the sole enabled connection leaves none enabled",
+    );
+
+    // A connection in a *different* realm is unaffected by the invariant.
+    let other_realm = make_realm(
+        &store,
+        RealmScope::Tenant {
+            tenant_id: Uuid::new_v4(),
+        },
+        "https://id.example/realms/single-enabled-other",
+    )
+    .await;
+    let d = store
+        .create_upstream_connection(NewUpstreamConnection {
+            realm_id: other_realm.id,
+            name: "d".into(),
+            kind: ConnectionKind::Oidc {
+                issuer_url: "https://d.example".into(),
+                client_id: "d".into(),
+                client_secret: RedactedString::from("shh"),
+                scopes: vec!["openid".into()],
+                audience: None,
+            },
+            enabled: true,
+        })
+        .await
+        .unwrap();
+    // Re-enable B in `realm`; it must not touch d in `other_realm`.
+    store.set_connection_enabled(b.id, true).await.unwrap();
+    assert!(store.get_upstream_connection(d.id).await.unwrap().enabled);
+    assert_eq!(enabled_ids(&store, realm.id).await, vec![b.id]);
+}
+
+/// H2: `delete_user` must drop the user's sessions (via the per-user
+/// session index on FdbStore) and leave other users' sessions untouched.
+/// Also pins that a still-fresh session of another user survives, and a
+/// deleted user's session is gone for good.
+pub async fn check_delete_user_clears_sessions<S: IdentityStore>(store: S) {
+    let realm = make_system_realm(&store).await;
+    let alice = make_user(&store, realm.id, "alice").await;
+    let bob = make_user(&store, realm.id, "bob").await;
+
+    let mk_session = |user_id: Uuid| Session {
+        id: Uuid::new_v4(),
+        realm_id: realm.id,
+        user_id,
+        idp_session_index: None,
+        created_at: t0(),
+        expires_at: t0() + Duration::days(1),
+    };
+    let a1 = mk_session(alice.id);
+    let a2 = mk_session(alice.id);
+    let b1 = mk_session(bob.id);
+    store.put_session(a1.clone()).await.unwrap();
+    store.put_session(a2.clone()).await.unwrap();
+    store.put_session(b1.clone()).await.unwrap();
+
+    // Sanity: all three readable.
+    assert!(store.get_session(a1.id).await.is_ok());
+    assert!(store.get_session(a2.id).await.is_ok());
+    assert!(store.get_session(b1.id).await.is_ok());
+
+    // Deleting alice clears both of her sessions, but not bob's.
+    store.delete_user(alice.id).await.unwrap();
+    assert_not_found(store.get_session(a1.id).await);
+    assert_not_found(store.get_session(a2.id).await);
+    assert!(
+        store.get_session(b1.id).await.is_ok(),
+        "delete_user wrongly dropped another user's session",
+    );
+
+    // The reverse index is gone too: re-creating a user and a session for a
+    // fresh id list stays correct (no stale edge resurrects a session). A
+    // sweep with everything fresh drops nothing.
+    let dropped = store.sweep_expired(t0()).await.unwrap();
+    assert_eq!(dropped, 0);
+    assert!(store.get_session(b1.id).await.is_ok());
+
+    // Explicit delete_session on bob clears his session + its index.
+    store.delete_session(b1.id).await.unwrap();
+    assert_not_found(store.get_session(b1.id).await);
+    assert_not_found(store.delete_session(b1.id).await);
+}
+
 pub async fn check_brokered_user_lookup<S: IdentityStore>(store: S) {
     let realm = make_realm(
         &store,

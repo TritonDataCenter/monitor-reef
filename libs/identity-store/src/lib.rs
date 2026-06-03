@@ -12,11 +12,13 @@
 //! * [`MemStore`] — an in-process `Mutex<…HashMap…>` implementation, used
 //!   for tests and for `identityd` runs that don't need durable state.
 //!   Always available.
-//! * `FdbStore` (behind a `foundationdb` cargo feature) — the production
-//!   FoundationDB-backed implementation, laying keys under the `identity/…`
-//!   prefix on the region's shared FDB cluster. **Not yet implemented**;
-//!   the keyspace is fully specified in `rfd/00003/01-data-model-and-store.md`
-//!   and it lands in a follow-up.
+//! * [`FdbStore`] (behind a `foundationdb` cargo feature) — the production
+//!   FoundationDB-backed implementation, laying every key under the
+//!   `identity/…` prefix on the region's shared FDB cluster (separate from
+//!   tritond's `triton/…` keyspace). Mirrors `tritond-store`'s `fdb`
+//!   backend (boot-once network thread, single-transaction writes,
+//!   reverse/secondary indexes for every uniqueness + lookup the trait
+//!   needs).
 //!
 //! The trait deals only in plain Rust types — no HTTP, JSON, or Dropshot.
 //! The OIDC wire surface lives in `identityd-api` and re-uses these types
@@ -24,9 +26,13 @@
 //!
 //! Design: `rfd/00003/01-data-model-and-store.md`.
 
+#[cfg(feature = "foundationdb")]
+pub mod fdb;
 pub mod mem;
 pub mod types;
 
+#[cfg(feature = "foundationdb")]
+pub use fdb::FdbStore;
 pub use mem::MemStore;
 pub use types::{
     AssignmentSubject, AssignmentTarget, AuthCode, BrokerState, BrokeredLink, ClaimMapping,
