@@ -8,6 +8,7 @@
 members = [
     "apis/bugview-api",
     "apis/cloudapi-api",
+    "apis/identityd-api",
     "apis/jira-api",
     "apis/tritond-api",
     "apis/vmapi-api",
@@ -20,6 +21,7 @@ members = [
     "clients/internal/tritond-client",
     "clients/internal/vmapi-client",
     "libs/identity-store",
+    "libs/identity-token",
     "libs/triton-auth",
     "libs/tritond-audit",
     "libs/tritond-auth",
@@ -41,6 +43,7 @@ members = [
     "client-generator",
     "openapi-manager",
     "services/bugview-service",
+    "services/identityd",
     "services/jira-stub-server",
     "services/tritond",
     "services/tritonagent",
@@ -245,6 +248,8 @@ jira-client = { path = "clients/internal/jira-client" }
 jira-stub-server = { path = "services/jira-stub-server" }
 edge-manifest = { path = "libs/edge-manifest" }
 identity-store = { path = "libs/identity-store" }
+identity-token = { path = "libs/identity-token" }
+identityd-api = { path = "apis/identityd-api" }
 triton-auth = { path = "libs/triton-auth" }
 tritond = { path = "services/tritond" }
 tritond-api = { path = "apis/tritond-api" }

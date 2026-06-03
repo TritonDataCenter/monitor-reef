@@ -112,7 +112,6 @@ async fn serve(boot: BootstrapConfig) -> Result<()> {
     let (jwt_key, identity_hmac_key) = bootstrap::ensure(store.as_ref())
         .await
         .context("first-run bootstrap")?;
-    let auth = Arc::new(AuthService::new(jwt_key).context("build auth service")?);
     let audit = Arc::new(AuditService::new(audit_chain));
 
     for key in settings::active_env_overrides() {
@@ -128,6 +127,21 @@ async fn serve(boot: BootstrapConfig) -> Result<()> {
             .await
             .context("load cluster settings")?,
     );
+
+    // identityd relying-party verifier (RFD 00004 IS-3) is opt-in: an
+    // env var takes precedence, then the FDB-stored setting; absent both
+    // the verify path is skipped and auth behaves exactly as before.
+    let identityd_issuer = std::env::var("TRITOND_IDENTITYD_ISSUER_URL")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .or_else(|| resolved.identityd_issuer_url.clone());
+    let mut auth = AuthService::new(jwt_key).context("build auth service")?;
+    if let Some(issuer) = &identityd_issuer {
+        tracing::info!(%issuer, "accepting identityd access tokens (RFD 00004 IS-3)");
+        auth = auth.with_identityd_issuer_url(issuer);
+    }
+    let auth = Arc::new(auth);
 
     let identity_hmac_key = Arc::new(identity_hmac_key);
     let mut context = ApiContext::new(Arc::clone(&store), auth, audit)

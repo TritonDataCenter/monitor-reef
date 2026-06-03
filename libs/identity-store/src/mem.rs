@@ -732,7 +732,25 @@ impl IdentityStore for MemStore {
         enabled: bool,
     ) -> Result<UpstreamConnection, StoreError> {
         let mut inner = self.lock();
-        let c = inner.connections.get_mut(&id).ok_or(StoreError::NotFound)?;
+        // A realm has at most one enabled upstream connection. Enabling one
+        // disables every other in the same realm so the identity-source
+        // selection is deterministic (no order-dependent "first enabled").
+        let realm_id = inner
+            .connections
+            .get(&id)
+            .ok_or(StoreError::NotFound)?
+            .realm_id;
+        if enabled {
+            for other in inner.connections.values_mut() {
+                if other.id != id && other.realm_id == realm_id {
+                    other.enabled = false;
+                }
+            }
+        }
+        let c = inner
+            .connections
+            .get_mut(&id)
+            .ok_or(StoreError::NotFound)?;
         c.enabled = enabled;
         Ok(c.clone())
     }

@@ -2003,6 +2003,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fslock"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04412b8935272e3a9bae6f48c7bfff74c2911f60525404edfdd28e49884c3bfb"
+dependencies = [
+ "libc",
+ "winapi",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2599,13 +2609,69 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "foundationdb",
  "schemars 0.8.22",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.18",
  "tokio",
  "uuid",
  "zeroize",
+]
+
+[[package]]
+name = "identity-token"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "jsonwebtoken",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "identityd"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "bcrypt",
+ "chrono",
+ "dropshot",
+ "http",
+ "identity-store",
+ "identity-token",
+ "identityd-api",
+ "jsonwebtoken",
+ "reqwest 0.13.2",
+ "rsa",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "identityd-api"
+version = "0.1.0"
+dependencies = [
+ "dropshot",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -5281,6 +5347,7 @@ version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "911bd979bf1070a3f3aa7b691a3b3e9968f339ceeec89e08c280a8a22207a32f"
 dependencies = [
+ "fslock",
  "futures-executor",
  "futures-util",
  "log",
@@ -6537,6 +6604,7 @@ dependencies = [
  "hex",
  "hmac",
  "http",
+ "identity-token",
  "imgapi-manifest",
  "jsonwebtoken",
  "mantad-client",

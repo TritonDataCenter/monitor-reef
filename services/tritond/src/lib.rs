@@ -24,6 +24,7 @@ pub mod bootstrap;
 pub mod bootstrap_config;
 pub mod dhcp_reconciler;
 pub mod edge;
+pub mod identityd_verify;
 pub mod legacy_classify;
 pub mod peer_invalidations;
 pub mod placement;

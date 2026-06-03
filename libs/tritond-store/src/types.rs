@@ -3650,6 +3650,13 @@ pub struct Settings {
     /// stay until human cleanup. RFD 00004 SG-4.
     #[serde(rename = "saga.retention_secs")]
     pub saga_retention_secs: u64,
+    /// Realm issuer URL of an external `identityd` whose RS256 access
+    /// tokens `tritond` should accept (RFD 00004 IS-3). When `None`
+    /// (the default), the identityd verify path is skipped entirely and
+    /// authentication behaves exactly as before. No `ConfigKey` is wired
+    /// for this yet; it is set at boot via `TRITOND_IDENTITYD_ISSUER_URL`.
+    #[serde(rename = "identityd.issuer_url")]
+    pub identityd_issuer_url: Option<String>,
 }
 
 impl Default for Settings {
@@ -3667,6 +3674,7 @@ impl Default for Settings {
             reservoir_enabled_default: DEFAULT_RESERVOIR_ENABLED,
             reservoir_percent_default: DEFAULT_RESERVOIR_PERCENT,
             saga_retention_secs: DEFAULT_SAGA_RETENTION_SECS,
+            identityd_issuer_url: None,
         }
     }
 }
