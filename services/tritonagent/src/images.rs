@@ -107,11 +107,20 @@ pub async fn ensure(image: &Image) -> Result<()> {
     let download_path: PathBuf = format!("{CACHE_DIR}/{}.gz", image.id).into();
 
     // `source_url` is either a bare gzipped `zfs send` stream
-    // (legacy) or a tar bundle (`compatibility` set). The bundle
+    // (IMGAPI / mantad path; URL ends in `/file`) or a tar bundle
+    // (legacy tritond-bundle path; URL ends in `.tar`). The bundle
     // case extracts `content.zfs.gz`; the manifest was validated
     // server-side at ingest, so we don't re-parse it here.
-    info!(image_id = %image.id, %source, "downloading image content");
-    if image.compatibility.is_some() {
+    //
+    // We discriminate by URL suffix rather than by
+    // `compatibility.is_some()` because the IMGAPI ingest path
+    // sets compatibility too (derived from manifest.type / brand),
+    // and conflating "has compatibility" with "is a bundle"
+    // misclassifies every IMGAPI-sourced image as a bundle and
+    // fails tar extraction on what is actually raw gzip bytes.
+    let is_bundle = source.ends_with(".tar");
+    info!(image_id = %image.id, %source, is_bundle, "downloading image content");
+    if is_bundle {
         download_bundle_extract_content(source, &image.sha256, &download_path).await?;
     } else {
         download_and_verify(source, &image.sha256, &download_path).await?;

@@ -27,6 +27,7 @@ use uuid::Uuid;
 
 use crate::cn_status::disk_usage::{DiskUsageSampler, VmSnapshot};
 use crate::smartos::disks::{DiskHealth, DiskTool};
+use crate::smartos::ipmi::IpmiTool;
 use crate::smartos::kstat::KstatTool;
 use crate::smartos::reservoir::ReservoirTool;
 use crate::smartos::sysinfo::Sysinfo;
@@ -120,6 +121,7 @@ pub struct StatusCollector {
     reservoir: Arc<ReservoirTool>,
     disk_usage: DiskUsageSampler,
     disks: Arc<DiskTool>,
+    ipmi: Arc<IpmiTool>,
     sysinfo_loader: Arc<dyn SysinfoLoader>,
 }
 
@@ -165,6 +167,7 @@ impl StatusCollector {
             reservoir,
             disk_usage,
             disks: Arc::new(DiskTool::new()),
+            ipmi: Arc::new(IpmiTool::new()),
             sysinfo_loader: Arc::new(LiveSysinfo),
         }
     }
@@ -178,6 +181,12 @@ impl StatusCollector {
     /// Swap in a non-default disk-health tool (tests / mock binaries).
     pub fn with_disk_tool(mut self, disks: Arc<DiskTool>) -> Self {
         self.disks = disks;
+        self
+    }
+
+    /// Swap in a non-default IPMI tool (tests / mock binaries).
+    pub fn with_ipmi_tool(mut self, ipmi: Arc<IpmiTool>) -> Self {
+        self.ipmi = ipmi;
         self
     }
 
@@ -281,6 +290,21 @@ impl StatusCollector {
             },
             Ok(None) => tracing::debug!("reservoir busy (resize in progress); skipping this tick"),
             Err(e) => tracing::debug!(error = %e, "failed to query reservoir"),
+        }
+
+        // Step 3c: in-band IPMI/BMC hardware (sensors, power, FRU, SEL,
+        // BMC posture) for the admin Hardware tab. Best-effort and cached
+        // ~60s inside the tool, so zone-event bursts don't hammer the BMC.
+        // `collect` returns `None` on a CN with no BMC / no ipmitool (dev
+        // laptop), and we simply omit the field.
+        match self.ipmi.collect().await {
+            Some(hw) => match serde_json::to_value(hw) {
+                Ok(v) => {
+                    report.fields.insert("hardware".to_string(), v);
+                }
+                Err(e) => tracing::warn!(error = %e, "failed to encode hardware report"),
+            },
+            None => tracing::debug!("no in-band BMC; skipping hardware section"),
         }
 
         // Step 4: disk usage.
