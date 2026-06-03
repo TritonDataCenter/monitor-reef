@@ -15,6 +15,8 @@
 use std::process::{Child, Command};
 use std::time::Duration;
 
+use serial_test::file_serial;
+
 const TENANT_REALM: &str = "11111111-1111-4111-8111-111111111111";
 const CLIENT_ID: &str = "triton-workbench";
 const CLIENT_SECRET: &str = "dev-secret";
@@ -39,11 +41,13 @@ fn base() -> String {
 }
 
 async fn wait_healthy(client: &reqwest::Client) -> bool {
-    for _ in 0..50 {
-        if let Ok(resp) = client.get(format!("{}/healthz", base())).send().await {
-            if resp.status().is_success() {
-                return true;
-            }
+    // Boot seeds several bcrypt(cost=12) hashes; on a slow build host the
+    // seed alone can take ~6s, so allow a generous window.
+    for _ in 0..200 {
+        if let Ok(resp) = client.get(format!("{}/healthz", base())).send().await
+            && resp.status().is_success()
+        {
+            return true;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
@@ -57,6 +61,7 @@ fn spawn() -> Option<Server> {
 }
 
 #[tokio::test]
+#[file_serial(identityd_port)]
 async fn password_grant_then_userinfo_round_trip() {
     let Some(_server) = spawn() else {
         eprintln!("SKIP: could not spawn identityd binary");

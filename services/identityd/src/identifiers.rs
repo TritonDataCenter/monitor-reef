@@ -57,6 +57,23 @@ pub const CLIENT_ID: &str = "triton-workbench";
 /// time). Dev-only.
 pub const CLIENT_SECRET: &str = "dev-secret";
 
+/// System-realm operator login (fleet_admin). Lets the admin surface be
+/// exercised with a fleet token via the password grant. Dev-only.
+pub const OPERATOR_USERNAME: &str = "operator";
+/// Operator password (plaintext; bcrypt-hashed at seed time). Dev-only.
+pub const OPERATOR_PASSWORD: &str = "operator-demo";
+/// Operator email.
+pub const OPERATOR_EMAIL: &str = "operator@mnx.example";
+/// Operator display name.
+pub const OPERATOR_DISPLAY_NAME: &str = "Fleet Operator";
+
+/// The System-realm operator OAuth client id (confidential; password
+/// grant), so a fleet token is obtainable in dev.
+pub const SYSTEM_CLIENT_ID: &str = "triton-operator";
+/// The System-realm operator client secret (plaintext; bcrypt-hashed at
+/// seed time). Dev-only.
+pub const SYSTEM_CLIENT_SECRET: &str = "operator-secret";
+
 /// Issuer URL for the tenant realm.
 #[must_use]
 pub fn tenant_issuer_url() -> String {

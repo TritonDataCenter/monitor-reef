@@ -14,22 +14,35 @@
 //! MemStore comes up immediately usable by the BFF.
 
 use chrono::{Duration, Utc};
+use identity_store::types::{AssignmentSubject, AssignmentTarget, RedactedString};
 use identity_store::{
     GrantType, IdentityStore, KeyStatus, NewOAuthClient, NewRealm, NewRoleAssignment, NewSigningKey,
-    NewUser, RealmScope, Role, SigningAlg,
+    NewUser, RealmScope, Role, SigningAlg, StoreError,
 };
-use identity_store::types::{AssignmentSubject, AssignmentTarget, RedactedString};
 
 use crate::identifiers;
 
-/// Seed both realms and the demo principal/client into `store`.
+/// Seed both realms and the demo principal/client into `store`, unless the
+/// store is already seeded.
 ///
 /// `public_jwk` is the JWK derived from the embedded signing key; it is
 /// what every realm's JWKS endpoint publishes.
-pub async fn seed<S: IdentityStore>(
-    store: &S,
+///
+/// Idempotent: a durable (FoundationDB) store survives restarts, so a
+/// second boot must not attempt to re-create the System realm (which would
+/// fail the singleton-scope invariant) or re-seed the demo principal. We
+/// gate on the presence of the System realm — if it exists, the store has
+/// already been seeded and we return without touching it.
+pub async fn seed(
+    store: &dyn IdentityStore,
     public_jwk: serde_json::Value,
 ) -> anyhow::Result<()> {
+    match store.get_realm_by_scope(&RealmScope::System).await {
+        Ok(_) => return Ok(()), // already seeded
+        Err(StoreError::NotFound) => {} // fresh store; seed below
+        Err(e) => return Err(anyhow::anyhow!("probe existing seed: {e}")),
+    }
+
     let now = Utc::now();
 
     // One Active signing key per realm; both reuse the single dev key.
@@ -121,19 +134,24 @@ pub async fn seed<S: IdentityStore>(
         .await
         .map_err(|e| anyhow::anyhow!("seed demo user: {e}"))?;
 
-    // --- Role assignment: user -> tenant, TenantMember. ---
-    store
-        .create_role_assignment(NewRoleAssignment {
-            realm_id: tenant_realm.id,
-            subject: AssignmentSubject::User { user_id: user.id },
-            target: AssignmentTarget::Tenant {
-                tenant_id: identifiers::TENANT_ID,
-            },
-            role: Role::TenantMember,
-            created_by: user.id,
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("seed role assignment: {e}"))?;
+    // --- Role assignments: user -> tenant. ---
+    // The demo user is both a TenantMember (so member-scoped flows work)
+    // and a TenantAdmin (so tenant self-service against the admin surface
+    // is exercisable). The admin authz gate keys on the TenantAdmin grant.
+    for role in [Role::TenantMember, Role::TenantAdmin] {
+        store
+            .create_role_assignment(NewRoleAssignment {
+                realm_id: tenant_realm.id,
+                subject: AssignmentSubject::User { user_id: user.id },
+                target: AssignmentTarget::Tenant {
+                    tenant_id: identifiers::TENANT_ID,
+                },
+                role,
+                created_by: user.id,
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("seed role assignment {role:?}: {e}"))?;
+    }
 
     // --- Workbench OAuth client (confidential). ---
     let client_secret_hash = bcrypt::hash(identifiers::CLIENT_SECRET, bcrypt::DEFAULT_COST)
@@ -159,6 +177,59 @@ pub async fn seed<S: IdentityStore>(
         })
         .await
         .map_err(|e| anyhow::anyhow!("seed oauth client: {e}"))?;
+
+    // --- System realm: operator principal + client (fleet token source). ---
+    // Resolve the system realm's store-assigned id the same way as the
+    // tenant realm.
+    let system_realm = store
+        .get_realm_by_issuer(&identifiers::realm_issuer_url(identifiers::SYSTEM_REALM_ID))
+        .await
+        .map_err(|e| anyhow::anyhow!("resolve system realm: {e}"))?;
+
+    // Operator user with fleet_admin=true. Because the realm is System,
+    // `build_claims` honors the fleet flag, so this user's tokens carry
+    // fleet authority — the other half of the authz contract.
+    let operator_hash = bcrypt::hash(identifiers::OPERATOR_PASSWORD, bcrypt::DEFAULT_COST)
+        .map_err(|e| anyhow::anyhow!("hash operator password: {e}"))?;
+    store
+        .create_user(NewUser {
+            realm_id: system_realm.id,
+            username: identifiers::OPERATOR_USERNAME.to_string(),
+            email: Some(identifiers::OPERATOR_EMAIL.to_string()),
+            display_name: Some(identifiers::OPERATOR_DISPLAY_NAME.to_string()),
+            password_hash: operator_hash,
+            is_root: false,
+            fleet_admin: true,
+            brokered: None,
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("seed operator user: {e}"))?;
+
+    // Confidential client in the System realm allowing the password grant,
+    // so a fleet token is obtainable in dev (same shape as the Workbench
+    // client, but bound to the operator directory).
+    let system_client_secret_hash =
+        bcrypt::hash(identifiers::SYSTEM_CLIENT_SECRET, bcrypt::DEFAULT_COST)
+            .map_err(|e| anyhow::anyhow!("hash system client secret: {e}"))?;
+    store
+        .create_oauth_client(NewOAuthClient {
+            realm_id: system_realm.id,
+            name: identifiers::SYSTEM_CLIENT_ID.to_string(),
+            client_secret_hash: Some(system_client_secret_hash),
+            redirect_uris: vec![],
+            grant_types: vec![
+                GrantType::AuthorizationCode,
+                GrantType::RefreshToken,
+                GrantType::ClientCredentials,
+                GrantType::Password,
+            ],
+            pkce_required: false,
+            scopes_allowed: vec!["openid".to_string(), "profile".to_string()],
+            is_workload: false,
+            bound_to_cn: None,
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("seed system oauth client: {e}"))?;
 
     Ok(())
 }

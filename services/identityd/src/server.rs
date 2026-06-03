@@ -55,7 +55,7 @@ impl Ctx {
 
 /// Map a store error to an HTTP status. NotFound→404, Conflict→409,
 /// Backend→500.
-fn store_err_to_http(err: StoreError) -> HttpError {
+pub(crate) fn store_err_to_http(err: StoreError) -> HttpError {
     match err {
         StoreError::NotFound => HttpError::for_not_found(None, "not found".to_string()),
         StoreError::Conflict(msg) => HttpError::for_client_error(
@@ -251,9 +251,6 @@ async fn verify_client(
     client_id: &str,
     client_secret: Option<&str>,
 ) -> Result<(), HttpError> {
-    if client_id != identifiers::CLIENT_ID {
-        return Err(invalid_grant());
-    }
     let clients = ctx
         .store
         .list_oauth_clients_in_realm(realm.id)
@@ -576,6 +573,161 @@ impl IdentitydApi for IdentitydImpl {
             groups: claims.groups,
         }))
     }
+
+    // ---- Admin surface (`/v1/...`). Bodies live in `crate::admin`. ----
+
+    async fn admin_list_realms(
+        rqctx: RequestContext<Self::Context>,
+        query: dropshot::Query<identityd_api::ListRealmsQuery>,
+    ) -> Result<HttpResponseOk<Vec<identityd_api::RealmView>>, HttpError> {
+        Self::admin_list_realms_impl(rqctx, query).await
+    }
+
+    async fn admin_get_realm(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<identityd_api::AdminRealmPath>,
+    ) -> Result<HttpResponseOk<identityd_api::RealmView>, HttpError> {
+        Self::admin_get_realm_impl(rqctx, path).await
+    }
+
+    async fn admin_create_tenant_realm(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<identityd_api::AdminTenantPath>,
+    ) -> Result<HttpResponseOk<identityd_api::RealmView>, HttpError> {
+        Self::admin_create_tenant_realm_impl(rqctx, path).await
+    }
+
+    async fn admin_list_users(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<identityd_api::AdminRealmPath>,
+    ) -> Result<HttpResponseOk<Vec<identityd_api::UserView>>, HttpError> {
+        Self::admin_list_users_impl(rqctx, path).await
+    }
+
+    async fn admin_create_user(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<identityd_api::AdminRealmPath>,
+        body: TypedBody<identityd_api::CreateUserRequest>,
+    ) -> Result<HttpResponseOk<identityd_api::UserView>, HttpError> {
+        Self::admin_create_user_impl(rqctx, path, body).await
+    }
+
+    async fn admin_get_user(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<identityd_api::AdminUserPath>,
+    ) -> Result<HttpResponseOk<identityd_api::UserView>, HttpError> {
+        Self::admin_get_user_impl(rqctx, path).await
+    }
+
+    async fn admin_update_user(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<identityd_api::AdminUserPath>,
+        body: TypedBody<identityd_api::UpdateUserRequest>,
+    ) -> Result<HttpResponseOk<identityd_api::UserView>, HttpError> {
+        Self::admin_update_user_impl(rqctx, path, body).await
+    }
+
+    async fn admin_set_user_password(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<identityd_api::AdminUserPath>,
+        body: TypedBody<identityd_api::SetPasswordRequest>,
+    ) -> Result<HttpResponseOk<identityd_api::UserView>, HttpError> {
+        Self::admin_set_user_password_impl(rqctx, path, body).await
+    }
+
+    async fn admin_delete_user(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<identityd_api::AdminUserPath>,
+    ) -> Result<dropshot::HttpResponseDeleted, HttpError> {
+        Self::admin_delete_user_impl(rqctx, path).await
+    }
+
+    async fn admin_list_role_assignments(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<identityd_api::AdminRealmPath>,
+    ) -> Result<HttpResponseOk<Vec<identityd_api::RoleAssignmentView>>, HttpError> {
+        Self::admin_list_role_assignments_impl(rqctx, path).await
+    }
+
+    async fn admin_create_role_assignment(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<identityd_api::AdminRealmPath>,
+        body: TypedBody<identityd_api::CreateRoleAssignmentRequest>,
+    ) -> Result<HttpResponseOk<identityd_api::RoleAssignmentView>, HttpError> {
+        Self::admin_create_role_assignment_impl(rqctx, path, body).await
+    }
+
+    async fn admin_delete_role_assignment(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<identityd_api::AdminAssignmentPath>,
+    ) -> Result<dropshot::HttpResponseDeleted, HttpError> {
+        Self::admin_delete_role_assignment_impl(rqctx, path).await
+    }
+
+    async fn admin_get_identity_source(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<identityd_api::AdminRealmPath>,
+    ) -> Result<HttpResponseOk<identityd_api::IdentitySourceView>, HttpError> {
+        Self::admin_get_identity_source_impl(rqctx, path).await
+    }
+
+    async fn admin_list_connections(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<identityd_api::AdminRealmPath>,
+    ) -> Result<HttpResponseOk<Vec<identityd_api::ConnectionView>>, HttpError> {
+        Self::admin_list_connections_impl(rqctx, path).await
+    }
+
+    async fn admin_create_connection(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<identityd_api::AdminRealmPath>,
+        body: TypedBody<identityd_api::CreateConnectionRequest>,
+    ) -> Result<HttpResponseOk<identityd_api::ConnectionView>, HttpError> {
+        Self::admin_create_connection_impl(rqctx, path, body).await
+    }
+
+    async fn admin_patch_connection(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<identityd_api::AdminConnectionPath>,
+        body: TypedBody<identityd_api::PatchConnectionRequest>,
+    ) -> Result<HttpResponseOk<identityd_api::ConnectionView>, HttpError> {
+        Self::admin_patch_connection_impl(rqctx, path, body).await
+    }
+
+    async fn admin_delete_connection(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<identityd_api::AdminConnectionPath>,
+    ) -> Result<dropshot::HttpResponseDeleted, HttpError> {
+        Self::admin_delete_connection_impl(rqctx, path).await
+    }
+
+    async fn admin_put_claim_mappings(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<identityd_api::AdminConnectionPath>,
+        body: TypedBody<identityd_api::PutClaimMappingsRequest>,
+    ) -> Result<HttpResponseOk<Vec<identityd_api::ClaimMappingView>>, HttpError> {
+        Self::admin_put_claim_mappings_impl(rqctx, path, body).await
+    }
+}
+
+/// Verify a locally minted access token without a pre-resolved realm.
+///
+/// The admin surface receives tokens whose `iss` could be any seeded
+/// realm's issuer URL. We read the (unverified) `iss`, confirm it names a
+/// realm this provider serves, then verify the signature and bind `iss`
+/// to that realm — so a token forged for an unknown/foreign issuer is
+/// rejected before any authorization decision is made.
+pub(crate) async fn verify_token_with_realms(
+    ctx: &Ctx,
+    token: &str,
+) -> Result<AccessClaims, HttpError> {
+    let issuer = identity_token::peek_issuer(token).map_err(|_| unauthorized())?;
+    let realm = ctx
+        .store
+        .get_realm_by_issuer(&issuer)
+        .await
+        .map_err(|_| unauthorized())?;
+    verify_access_local(ctx, &realm, token).await
 }
 
 /// Verify a locally minted access token against this provider's own

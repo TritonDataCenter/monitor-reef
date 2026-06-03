@@ -6,11 +6,22 @@
 
 //! `identityd`: a minimal native OpenID Connect provider (RFD 00004).
 //!
-//! Boots with zero config and no FoundationDB: it seeds a fixed tenant
-//! and system realm, a demo user, a role assignment, and the Workbench
-//! OAuth client into an in-memory store, then serves the realm-scoped
-//! discovery / JWKS / token / userinfo endpoints on `127.0.0.1:8090`.
+//! Boots with zero config: it seeds a fixed tenant and system realm, a
+//! demo user, a role assignment, and the Workbench OAuth client into the
+//! store, then serves the realm-scoped discovery / JWKS / token / userinfo
+//! endpoints on `127.0.0.1:8090`.
+//!
+//! # Store backend
+//!
+//! By default the store is an in-process [`MemStore`] (zero-config dev,
+//! state lost on exit). When the binary is built with the `foundationdb`
+//! feature *and* a cluster file is configured (the `IDENTITYD_FDB_CLUSTER_FILE`
+//! env var, or the standard `/etc/foundationdb/fdb.cluster` resolved by
+//! passing `None`), the store is the durable FoundationDB-backed
+//! `FdbStore`. The seed is idempotent (see [`bootstrap::seed`]), so a
+//! restart against an already-seeded FDB is a no-op.
 
+mod admin;
 mod bootstrap;
 mod identifiers;
 mod keys;
@@ -19,10 +30,7 @@ mod server;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use dropshot::{
-    ConfigDropshot, ConfigLogging, ConfigLoggingLevel, HttpServerStarter,
-};
-use identity_store::MemStore;
+use dropshot::{ConfigDropshot, ConfigLogging, ConfigLoggingLevel, HttpServerStarter};
 use tracing::info;
 
 use crate::server::{Ctx, IdentitydImpl};
@@ -37,11 +45,18 @@ async fn main() -> Result<()> {
 
     let signing = keys::load().context("load dev signing key")?;
 
-    let store = MemStore::new();
-    bootstrap::seed(&store, signing.public_jwk.clone())
+    // Mirror tritond's seam: a configured cluster file + the `foundationdb`
+    // feature selects the durable backend; otherwise MemStore.
+    let fdb_cluster_file = std::env::var("IDENTITYD_FDB_CLUSTER_FILE")
+        .ok()
+        .filter(|s| !s.is_empty());
+    let store = build_store(fdb_cluster_file.as_deref())?;
+
+    // Seed only when the store is empty (bootstrap::seed probes for the
+    // System realm first), so a durable FDB realm set is not re-seeded.
+    bootstrap::seed(store.as_ref(), signing.public_jwk.clone())
         .await
         .context("seed identity store")?;
-    let store: Arc<dyn identity_store::IdentityStore> = Arc::new(store);
 
     let ctx = Arc::new(Ctx { store, signing });
 
@@ -72,4 +87,37 @@ async fn main() -> Result<()> {
     server
         .await
         .map_err(|e| anyhow::anyhow!("server error: {e}"))
+}
+
+/// Select the store backend. With the `foundationdb` feature, a configured
+/// cluster file opens the durable `FdbStore`; otherwise (or when no cluster
+/// file is configured) the in-memory store. Mirrors tritond's seam.
+#[cfg(feature = "foundationdb")]
+fn build_store(fdb_cluster_file: Option<&str>) -> Result<Arc<dyn identity_store::IdentityStore>> {
+    match fdb_cluster_file {
+        Some(cluster_file) => {
+            info!(%cluster_file, "using FoundationDB backend (identity store)");
+            let store = identity_store::FdbStore::open(Some(cluster_file))
+                .map_err(|e| anyhow::anyhow!("open FoundationDB: {e}"))?;
+            Ok(Arc::new(store))
+        }
+        None => {
+            info!("no cluster file configured; using in-memory identity store");
+            Ok(Arc::new(identity_store::MemStore::new()))
+        }
+    }
+}
+
+/// Without the `foundationdb` feature the binary is MemStore-only. A
+/// configured cluster file is a misconfiguration we surface loudly rather
+/// than silently dropping durable state on the floor.
+#[cfg(not(feature = "foundationdb"))]
+fn build_store(fdb_cluster_file: Option<&str>) -> Result<Arc<dyn identity_store::IdentityStore>> {
+    if fdb_cluster_file.is_some() {
+        anyhow::bail!(
+            "IDENTITYD_FDB_CLUSTER_FILE is set but identityd was built without the `foundationdb` feature"
+        );
+    }
+    info!("using in-memory identity store (binary not built with `foundationdb` feature)");
+    Ok(Arc::new(identity_store::MemStore::new()))
 }

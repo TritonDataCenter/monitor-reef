@@ -14,6 +14,12 @@ license = "MPL-2.0"
 [lints]
 workspace = true
 
+[features]
+default = []
+# Enable the FoundationDB-backed `IdentityStore`. Without it `identityd`
+# is MemStore-only (zero-config dev). Requires libfdb_c.so on the host.
+foundationdb = ["identity-store/foundationdb"]
+
 [[bin]]
 name = "identityd"
 path = "src/main.rs"
@@ -40,5 +46,9 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["json"] }
+# `file_locks` gives the cross-process `#[file_serial]` lock so the
+# server-spawning integration tests (which share the fixed bind port) never
+# run concurrently, even across separate test binaries.
+serial_test = { workspace = true, features = ["file_locks"] }
 serde_json = { workspace = true }
 tokio = { workspace = true }
