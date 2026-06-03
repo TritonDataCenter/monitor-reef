@@ -801,6 +801,9 @@ pub struct AuthService {
     policy_set: PolicySet,
     authorizer: Authorizer,
     oidc: OidcVerifier,
+    /// Optional relying-party verifier for an external `identityd`
+    /// (RFD 00004 IS-3). `None` (the default) skips the path entirely.
+    identityd: Option<crate::identityd_verify::IdentitydVerifier>,
 }
 
 impl AuthService {
@@ -812,7 +815,17 @@ impl AuthService {
             policy_set,
             authorizer: Authorizer::new(),
             oidc: OidcVerifier::new(),
+            identityd: None,
         })
+    }
+
+    /// Enable the identityd relying-party path for `issuer_url` (the
+    /// realm's `iss`). When unset, identityd tokens are not accepted and
+    /// authentication is byte-for-byte the prior behaviour.
+    #[must_use]
+    pub fn with_identityd_issuer_url(mut self, issuer_url: impl Into<String>) -> Self {
+        self.identityd = Some(crate::identityd_verify::IdentitydVerifier::new(issuer_url));
+        self
     }
 
     pub fn jwt_key(&self) -> &JwtKey {
@@ -843,10 +856,20 @@ impl AuthService {
         };
 
         if token.starts_with(tritond_auth::API_KEY_PREFIX) {
-            self.authenticate_api_key(store, token).await
-        } else {
-            self.authenticate_jwt(store, token).await
+            return self.authenticate_api_key(store, token).await;
         }
+
+        // identityd relying-party path (RFD 00004 IS-3), tried before the
+        // inline operator-JWT / OIDC path. A token this verifier doesn't
+        // accept yields `None`, so we fall through unchanged. When no
+        // issuer is configured the field is `None` and this is skipped.
+        if let Some(verifier) = &self.identityd
+            && let Some(principal) = verifier.authenticate(token).await
+        {
+            return Ok(principal);
+        }
+
+        self.authenticate_jwt(store, token).await
     }
 
     async fn authenticate_jwt(
