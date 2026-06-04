@@ -1587,6 +1587,17 @@ impl TritondApi for TritondServiceImpl {
         .await
     }
 
+    async fn create_silo_tenant_storage_scoped_access_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::SiloTenantUserPath>,
+        body: TypedBody<tritond_api::StorageScopedAccessKeyRequest>,
+    ) -> Result<HttpResponseCreated<StorageAccessKey>, HttpError> {
+        crate::handlers::storage_clusters::access_keys::create_silo_tenant_storage_scoped_access_key(
+            rqctx, path, body,
+        )
+        .await
+    }
+
     async fn create_silo_tenant_storage_bucket(
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloTenantPath>,

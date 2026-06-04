@@ -1358,6 +1358,44 @@ pub struct StorageAccessKey {
     pub workspace: String,
 }
 
+// ----- Bucket-scoped access keys (monitor-reef-y6n2) -----
+
+/// Mirror of `mantad_client::types::ScopeLevel`. Coarse permission
+/// band on one [`StorageScopeEntry`]. Wire form is **lowercase**
+/// (`"read"` / `"readwrite"` / `"full"`) — matches mantad's
+/// `#[serde(rename_all = "lowercase")]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum StorageScopeLevel {
+    /// Read-only on the listed bucket.
+    Read,
+    /// Read + write on the listed bucket.
+    ReadWrite,
+    /// All bucket-scoped operations (read, write, bucket-policy,
+    /// versioning, lifecycle).
+    Full,
+}
+
+/// Mirror of `mantad_client::types::ScopeEntry`. One scope grant
+/// on a bucket-scoped access key. `key_prefix = None` grants the
+/// whole bucket; non-empty `Some(prefix)` narrows the grant.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StorageScopeEntry {
+    pub bucket: String,
+    pub level: StorageScopeLevel,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_prefix: Option<String>,
+}
+
+/// Body of `POST .../storage/users/{user}/scoped-access-keys`.
+/// Minted key inherits the user's workspace; each `scope[i].bucket`
+/// must live in that workspace (mantad validates server-side).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StorageScopedAccessKeyRequest {
+    /// One or more scope grants. Must be non-empty.
+    pub scope: Vec<StorageScopeEntry>,
+}
+
 // ----- Presign + multipart wire types (Stage 6a) -----
 
 /// Body of `POST /v1/storage/clusters/{id}/presigner`. Operator
@@ -4852,6 +4890,28 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloTenantUserAccessKeyPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// Mint a **bucket-scoped** access key for a user in a tenant.
+    /// Sibling of `create_silo_tenant_storage_user_access_key`; the
+    /// difference is the body carries one or more
+    /// [`StorageScopeEntry`] grants and each grant's bucket must
+    /// live in the user's workspace (mantad validates this
+    /// server-side). The minted key carries the scope list and
+    /// rejects S3 operations that fall outside it.
+    ///
+    /// See `monitor-reef-y6n2` for the operator UX story. Failure
+    /// modes are the same as the unscoped sibling plus 400 when the
+    /// scope list is empty or a referenced bucket doesn't exist.
+    #[endpoint {
+        method = POST,
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/scoped-access-keys",
+        tags = ["silos", "tenants", "storage-clusters"],
+    }]
+    async fn create_silo_tenant_storage_scoped_access_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantUserPath>,
+        body: TypedBody<StorageScopedAccessKeyRequest>,
+    ) -> Result<HttpResponseCreated<StorageAccessKey>, HttpError>;
 
     /// Create a bucket inside a single tenant's storage workspace.
     /// Mirrors `create_storage_cluster_bucket` but pre-resolves the

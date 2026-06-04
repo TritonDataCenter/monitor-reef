@@ -493,3 +493,125 @@ pub(crate) async fn delete_silo_tenant_storage_user_access_key(
         }
     }
 }
+
+/// y6n2: mint a bucket-scoped access key. Mirrors
+/// `create_silo_tenant_storage_user_access_key` but the body
+/// carries scope grants and the audit log uses
+/// `StorageScopedAccessKeyCreateInTenant` so an auditor can
+/// distinguish scoped vs unscoped mints in the chain.
+pub(crate) async fn create_silo_tenant_storage_scoped_access_key(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::SiloTenantUserPath>,
+    body: TypedBody<tritond_api::StorageScopedAccessKeyRequest>,
+) -> Result<HttpResponseCreated<StorageAccessKey>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::SiloTenantUserPath {
+        silo_id,
+        tenant_id,
+        user,
+    } = path.into_inner();
+    let req = body.into_inner();
+    let principal = authenticate_and_authorize_in_silo(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::StorageScopedAccessKeyCreateInTenant,
+        silo_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+
+    let tenant = ctx
+        .store
+        .get_tenant(tenant_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if tenant.silo_id != silo_id {
+        return Err(HttpError::for_not_found(
+            Some("NotFound".to_string()),
+            format!("tenant {tenant_id} not found in silo {silo_id}"),
+        ));
+    }
+
+    let (workspace_uuid, cluster_id) =
+        match (tenant.storage_workspace_id, tenant.storage_cluster_id) {
+            (Some(w), Some(c)) => (w, c),
+            _ => {
+                return Err(HttpError::for_client_error(
+                    Some("TenantStorageUnbound".to_string()),
+                    ClientErrorStatusCode::PRECONDITION_FAILED,
+                    format!(
+                        "tenant {tenant_id} has no storage binding; run \
+                         `POST /v1/silos/{silo_id}/tenants/{tenant_id}/init-storage` first"
+                    ),
+                ));
+            }
+        };
+
+    let workspace_name = format!("t-{}", workspace_uuid.simple());
+    let scope_audit: Vec<serde_json::Value> = req
+        .scope
+        .iter()
+        .map(|e| {
+            serde_json::json!({
+                "bucket": e.bucket,
+                "level": match e.level {
+                    tritond_api::StorageScopeLevel::Read => "read",
+                    tritond_api::StorageScopeLevel::ReadWrite => "readwrite",
+                    tritond_api::StorageScopeLevel::Full => "full",
+                },
+                "key_prefix": e.key_prefix,
+            })
+        })
+        .collect();
+    let payload = serde_json::json!({
+        "user": user,
+        "silo_id": silo_id,
+        "tenant_id": tenant_id,
+        "scope": scope_audit,
+    });
+    let mantad_req = crate::storage::scoped_access_key_request_to(req);
+    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    match client
+        .create_scoped_access_key(&user, Some(workspace_name.as_str()), &mantad_req)
+        .await
+    {
+        Ok(k) => {
+            let view = crate::storage::access_key_from(k);
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::StorageScopedAccessKeyCreateInTenant,
+                    request_id,
+                    Some(format!("StorageAccessKey::\"{}\"", view.access_key_id)),
+                    AuditOutcome::Success {
+                        resource: Some(format!("StorageAccessKey::\"{}\"", view.access_key_id)),
+                    },
+                    serde_json::json!({
+                        "user": user,
+                        "silo_id": silo_id,
+                        "tenant_id": tenant_id,
+                        "access_key_id": view.access_key_id,
+                        "scope": scope_audit,
+                    }),
+                )
+                .await;
+            Ok(HttpResponseCreated(view))
+        }
+        Err(e) => {
+            let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::StorageScopedAccessKeyCreateInTenant,
+                    request_id,
+                    None,
+                    audit_outcome,
+                    payload,
+                )
+                .await;
+            Err(http_err)
+        }
+    }
+}

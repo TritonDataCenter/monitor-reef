@@ -5669,6 +5669,74 @@
         }
       }
     },
+    "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/scoped-access-keys": {
+      "post": {
+        "tags": [
+          "silos",
+          "tenants",
+          "storage-clusters"
+        ],
+        "summary": "Mint a **bucket-scoped** access key for a user in a tenant.",
+        "description": "Sibling of `create_silo_tenant_storage_user_access_key`; the difference is the body carries one or more [`StorageScopeEntry`] grants and each grant's bucket must live in the user's workspace (mantad validates this server-side). The minted key carries the scope list and rejects S3 operations that fall outside it.\n\nSee `monitor-reef-y6n2` for the operator UX story. Failure modes are the same as the unscoped sibling plus 400 when the scope list is empty or a referenced bucket doesn't exist.",
+        "operationId": "create_silo_tenant_storage_scoped_access_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageScopedAccessKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageAccessKey"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/silos/{silo_id}/tenants/{tenant_id}/users": {
       "post": {
         "tags": [
@@ -18457,6 +18525,68 @@
         },
         "required": [
           "factor"
+        ]
+      },
+      "StorageScopeEntry": {
+        "description": "Mirror of `mantad_client::types::ScopeEntry`. One scope grant on a bucket-scoped access key. `key_prefix = None` grants the whole bucket; non-empty `Some(prefix)` narrows the grant.",
+        "type": "object",
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "key_prefix": {
+            "nullable": true,
+            "type": "string"
+          },
+          "level": {
+            "$ref": "#/components/schemas/StorageScopeLevel"
+          }
+        },
+        "required": [
+          "bucket",
+          "level"
+        ]
+      },
+      "StorageScopeLevel": {
+        "description": "Mirror of `mantad_client::types::ScopeLevel`. Coarse permission band on one [`StorageScopeEntry`]. Wire form is **lowercase** (`\"read\"` / `\"readwrite\"` / `\"full\"`) — matches mantad's `#[serde(rename_all = \"lowercase\")]`.",
+        "oneOf": [
+          {
+            "description": "Read-only on the listed bucket.",
+            "type": "string",
+            "enum": [
+              "read"
+            ]
+          },
+          {
+            "description": "Read + write on the listed bucket.",
+            "type": "string",
+            "enum": [
+              "readwrite"
+            ]
+          },
+          {
+            "description": "All bucket-scoped operations (read, write, bucket-policy, versioning, lifecycle).",
+            "type": "string",
+            "enum": [
+              "full"
+            ]
+          }
+        ]
+      },
+      "StorageScopedAccessKeyRequest": {
+        "description": "Body of `POST .../storage/users/{user}/scoped-access-keys`. Minted key inherits the user's workspace; each `scope[i].bucket` must live in that workspace (mantad validates server-side).",
+        "type": "object",
+        "properties": {
+          "scope": {
+            "description": "One or more scope grants. Must be non-empty.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StorageScopeEntry"
+            }
+          }
+        },
+        "required": [
+          "scope"
         ]
       },
       "StorageUser": {

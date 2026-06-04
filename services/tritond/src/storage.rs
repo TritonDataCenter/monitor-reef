@@ -469,6 +469,28 @@ pub(crate) fn create_user_request_to(
     mantad_client::CreateUserRequest { name: r.name }
 }
 
+pub(crate) fn scoped_access_key_request_to(
+    r: tritond_api::StorageScopedAccessKeyRequest,
+) -> mantad_client::types::ScopedAccessKeyRequest {
+    mantad_client::types::ScopedAccessKeyRequest {
+        scope: r
+            .scope
+            .into_iter()
+            .map(|e| mantad_client::types::ScopeEntry {
+                bucket: e.bucket,
+                level: match e.level {
+                    tritond_api::StorageScopeLevel::Read => mantad_client::types::ScopeLevel::Read,
+                    tritond_api::StorageScopeLevel::ReadWrite => {
+                        mantad_client::types::ScopeLevel::ReadWrite
+                    }
+                    tritond_api::StorageScopeLevel::Full => mantad_client::types::ScopeLevel::Full,
+                },
+                key_prefix: e.key_prefix,
+            })
+            .collect(),
+    }
+}
+
 pub(crate) fn objects_query_to(q: tritond_api::StorageObjectsQuery) -> mantad_client::ObjectsQuery {
     mantad_client::ObjectsQuery {
         prefix: q.prefix,

@@ -14099,6 +14099,193 @@ pub mod types {
         }
     }
 
+    #[doc = "Mirror of `mantad_client::types::ScopeEntry`. One scope grant on a bucket-scoped access key. `key_prefix = None` grants the whole bucket; non-empty `Some(prefix)` narrows the grant."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Mirror of `mantad_client::types::ScopeEntry`. One scope grant on a bucket-scoped access key. `key_prefix = None` grants the whole bucket; non-empty `Some(prefix)` narrows the grant.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"bucket\","]
+    #[doc = "    \"level\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"bucket\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"key_prefix\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"level\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/StorageScopeLevel\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StorageScopeEntry {
+        pub bucket: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub key_prefix: ::std::option::Option<::std::string::String>,
+        pub level: StorageScopeLevel,
+    }
+
+    impl StorageScopeEntry {
+        pub fn builder() -> builder::StorageScopeEntry {
+            Default::default()
+        }
+    }
+
+    #[doc = "Mirror of `mantad_client::types::ScopeLevel`. Coarse permission band on one [`StorageScopeEntry`]. Wire form is **lowercase** (`\"read\"` / `\"readwrite\"` / `\"full\"`) — matches mantad's `#[serde(rename_all = \"lowercase\")]`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Mirror of `mantad_client::types::ScopeLevel`. Coarse permission band on one [`StorageScopeEntry`]. Wire form is **lowercase** (`\\\"read\\\"` / `\\\"readwrite\\\"` / `\\\"full\\\"`) — matches mantad's `#[serde(rename_all = \\\"lowercase\\\")]`.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Read-only on the listed bucket.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"read\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Read + write on the listed bucket.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"readwrite\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"All bucket-scoped operations (read, write, bucket-policy, versioning, lifecycle).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"full\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum StorageScopeLevel {
+        #[doc = "Read-only on the listed bucket."]
+        #[serde(rename = "read")]
+        Read,
+        #[doc = "Read + write on the listed bucket."]
+        #[serde(rename = "readwrite")]
+        Readwrite,
+        #[doc = "All bucket-scoped operations (read, write, bucket-policy, versioning, lifecycle)."]
+        #[serde(rename = "full")]
+        Full,
+    }
+
+    impl ::std::fmt::Display for StorageScopeLevel {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Read => f.write_str("read"),
+                Self::Readwrite => f.write_str("readwrite"),
+                Self::Full => f.write_str("full"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for StorageScopeLevel {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "read" => Ok(Self::Read),
+                "readwrite" => Ok(Self::Readwrite),
+                "full" => Ok(Self::Full),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for StorageScopeLevel {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for StorageScopeLevel {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for StorageScopeLevel {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    #[doc = "Body of `POST .../storage/users/{user}/scoped-access-keys`. Minted key inherits the user's workspace; each `scope[i].bucket` must live in that workspace (mantad validates server-side)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Body of `POST .../storage/users/{user}/scoped-access-keys`. Minted key inherits the user's workspace; each `scope[i].bucket` must live in that workspace (mantad validates server-side).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"scope\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"scope\": {"]
+    #[doc = "      \"description\": \"One or more scope grants. Must be non-empty.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/StorageScopeEntry\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StorageScopedAccessKeyRequest {
+        #[doc = "One or more scope grants. Must be non-empty."]
+        pub scope: ::std::vec::Vec<StorageScopeEntry>,
+    }
+
+    impl StorageScopedAccessKeyRequest {
+        pub fn builder() -> builder::StorageScopedAccessKeyRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "Mirror of `mantad_client::types::User`. Returned by IAM list + per-user GET."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -29634,6 +29821,132 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct StorageScopeEntry {
+            bucket: ::std::result::Result<::std::string::String, ::std::string::String>,
+            key_prefix: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            level: ::std::result::Result<super::StorageScopeLevel, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for StorageScopeEntry {
+            fn default() -> Self {
+                Self {
+                    bucket: Err("no value supplied for bucket".to_string()),
+                    key_prefix: Ok(Default::default()),
+                    level: Err("no value supplied for level".to_string()),
+                }
+            }
+        }
+
+        impl StorageScopeEntry {
+            pub fn bucket<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.bucket = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for bucket: {e}"));
+                self
+            }
+            pub fn key_prefix<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.key_prefix = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for key_prefix: {e}"));
+                self
+            }
+            pub fn level<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::StorageScopeLevel>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.level = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for level: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StorageScopeEntry> for super::StorageScopeEntry {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StorageScopeEntry,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    bucket: value.bucket?,
+                    key_prefix: value.key_prefix?,
+                    level: value.level?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StorageScopeEntry> for StorageScopeEntry {
+            fn from(value: super::StorageScopeEntry) -> Self {
+                Self {
+                    bucket: Ok(value.bucket),
+                    key_prefix: Ok(value.key_prefix),
+                    level: Ok(value.level),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct StorageScopedAccessKeyRequest {
+            scope: ::std::result::Result<
+                ::std::vec::Vec<super::StorageScopeEntry>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for StorageScopedAccessKeyRequest {
+            fn default() -> Self {
+                Self {
+                    scope: Err("no value supplied for scope".to_string()),
+                }
+            }
+        }
+
+        impl StorageScopedAccessKeyRequest {
+            pub fn scope<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::StorageScopeEntry>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.scope = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for scope: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StorageScopedAccessKeyRequest>
+            for super::StorageScopedAccessKeyRequest
+        {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StorageScopedAccessKeyRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    scope: value.scope?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StorageScopedAccessKeyRequest> for StorageScopedAccessKeyRequest {
+            fn from(value: super::StorageScopedAccessKeyRequest) -> Self {
+                Self {
+                    scope: Ok(value.scope),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct StorageUser {
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
@@ -31165,6 +31478,13 @@ impl Client {
         &self,
     ) -> builder::PutSiloTenantStorageUserPolicy<'_> {
         builder::PutSiloTenantStorageUserPolicy::new(self)
+    }
+
+    #[doc = "Mint a **bucket-scoped** access key for a user in a tenant\n\nSibling of `create_silo_tenant_storage_user_access_key`; the difference is the body carries one or more [`StorageScopeEntry`] grants and each grant's bucket must live in the user's workspace (mantad validates this server-side). The minted key carries the scope list and rejects S3 operations that fall outside it.\n\nSee `monitor-reef-y6n2` for the operator UX story. Failure modes are the same as the unscoped sibling plus 400 when the scope list is empty or a referenced bucket doesn't exist.\n\nSends a `POST` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/scoped-access-keys`\n\n```ignore\nlet response = client.create_silo_tenant_storage_scoped_access_key()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .user(user)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_silo_tenant_storage_scoped_access_key(
+        &self,
+    ) -> builder::CreateSiloTenantStorageScopedAccessKey<'_> {
+        builder::CreateSiloTenantStorageScopedAccessKey::new(self)
     }
 
     #[doc = "Create a tenant-bound operator account\n\nUsed to mint test / non-federated tenant principals so the forwarder workspace gate can be exercised end-to-end without requiring an external OIDC IdP. The created user lands with `is_root: false`, `tenant_id: Some(<path tenant>)`, empty `capabilities` (no `/v1/system/` access), and a bcrypt-hashed password.\n\nFederated users continue to land via the JIT-on-OIDC-login path; this endpoint is for environments without an IdP and for verification tooling.\n\nReturns 409 if `username` is already in use; 404 if the tenant doesn't exist or belongs to another silo.\n\nSends a `POST` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/users`\n\n```ignore\nlet response = client.create_silo_tenant_user()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .body(body)\n    .send()\n    .await;\n```"]
@@ -42480,6 +42800,144 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_silo_tenant_storage_scoped_access_key`]\n\n[`Client::create_silo_tenant_storage_scoped_access_key`]: super::Client::create_silo_tenant_storage_scoped_access_key"]
+    #[derive(Debug, Clone)]
+    pub struct CreateSiloTenantStorageScopedAccessKey<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        tenant_id: Result<::uuid::Uuid, String>,
+        user: Result<::std::string::String, String>,
+        body: Result<types::builder::StorageScopedAccessKeyRequest, String>,
+    }
+
+    impl<'a> CreateSiloTenantStorageScopedAccessKey<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                user: Err("user was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn user<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.user = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for user failed".to_string()
+            });
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::StorageScopedAccessKeyRequest>,
+            <V as std::convert::TryInto<types::StorageScopedAccessKeyRequest>>::Error:
+                std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `StorageScopedAccessKeyRequest` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                types::builder::StorageScopedAccessKeyRequest,
+            ) -> types::builder::StorageScopedAccessKeyRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/scoped-access-keys`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StorageAccessKey>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                tenant_id,
+                user,
+                body,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let user = user.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| {
+                    types::StorageScopedAccessKeyRequest::try_from(v).map_err(|e| e.to_string())
+                })
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/silos/{}/tenants/{}/storage/users/{}/scoped-access-keys",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&tenant_id.to_string()),
+                encode_path(&user.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_silo_tenant_storage_scoped_access_key",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

@@ -106,7 +106,8 @@ permit(
         Action::"storage_access_key_delete_in_tenant",
         Action::"storage_bucket_create_in_tenant",
         Action::"storage_bucket_delete_in_tenant",
-        Action::"storage_user_policy_put_in_tenant"
+        Action::"storage_user_policy_put_in_tenant",
+        Action::"storage_scoped_access_key_create_in_tenant"
     ],
     resource
 ) when {
@@ -649,6 +650,12 @@ pub enum Action {
     StorageBucketCreateInTenant,
     StorageBucketDeleteInTenant,
     StorageUserPolicyPutInTenant,
+    /// Mint a bucket-scoped access key inside a tenant (y6n2).
+    /// Same silo-gated authorization as the unscoped Wave 2 sibling
+    /// `StorageAccessKeyCreateInTenant`; distinct because the body
+    /// carries scope grants and the audit log entry should reflect
+    /// that this is a scoped mint, not an unscoped one.
+    StorageScopedAccessKeyCreateInTenant,
     /// Configure (or rotate) the per-cluster IAM presigner credential
     /// tritond signs presigned S3 URLs with. Distinct from the bucket
     /// `Create*`/`Delete*` actions because rotating the signer
@@ -853,6 +860,9 @@ impl Action {
             Action::StorageBucketCreateInTenant => "storage_bucket_create_in_tenant",
             Action::StorageBucketDeleteInTenant => "storage_bucket_delete_in_tenant",
             Action::StorageUserPolicyPutInTenant => "storage_user_policy_put_in_tenant",
+            Action::StorageScopedAccessKeyCreateInTenant => {
+                "storage_scoped_access_key_create_in_tenant"
+            }
             Action::StorageClusterSetPresigner => "storage_cluster_set_presigner",
             Action::StorageObjectPresignPut => "storage_object_presign_put",
             Action::StorageObjectPresignGet => "storage_object_presign_get",
@@ -1508,6 +1518,7 @@ fn is_read_action(action: Action) -> bool {
         | Action::StorageBucketCreateInTenant
         | Action::StorageBucketDeleteInTenant
         | Action::StorageUserPolicyPutInTenant
+        | Action::StorageScopedAccessKeyCreateInTenant
         // Presigner config + object mutations: rotating the signing
         // credential, minting a PUT URL, and the multipart lifecycle
         // (init/parts/complete/abort) all change cluster-side state
@@ -2002,6 +2013,7 @@ mod tests {
         Action::StorageBucketCreateInTenant,
         Action::StorageBucketDeleteInTenant,
         Action::StorageUserPolicyPutInTenant,
+        Action::StorageScopedAccessKeyCreateInTenant,
         Action::StorageClusterSetPresigner,
         Action::StorageObjectPresignPut,
         Action::StorageObjectPresignGet,
