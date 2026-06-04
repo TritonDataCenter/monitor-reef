@@ -244,6 +244,83 @@ pub(crate) async fn delete_storage_cluster_bucket(
     }
 }
 
+/// `GET /v1/silos/{silo_id}/tenants/{tenant_id}/storage/buckets` — list
+/// the buckets owned by a single tenant's storage workspace.
+///
+/// Mirrors `list_storage_cluster_buckets` but resolves the
+/// `(cluster_id, workspace_name)` pair from the tenant binding on the
+/// URL, so the caller can never enumerate buckets owned by a sibling
+/// tenant on the same cluster — regardless of caller principal. This
+/// is the surface the operator-ui's "filter by silo+tenant" view
+/// consumes; the cluster-flat endpoint above stays operator-flat by
+/// design.
+///
+/// Authz is silo-scoped (`Action::TenantGet`); cross-silo probes are
+/// neutralised by a 404 on tenant lookup. The tenant must have a
+/// storage binding (412 `TenantStorageUnbound` otherwise — same
+/// failure shape as `drop_silo_tenant_storage` so operators see the
+/// same precondition vocabulary across the binding lifecycle).
+pub(crate) async fn list_silo_tenant_storage_buckets(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::SiloTenantPath>,
+    query: Query<tritond_api::StorageBucketListQuery>,
+) -> Result<HttpResponseOk<Vec<StorageBucket>>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::SiloTenantPath { silo_id, tenant_id } = path.into_inner();
+    let _principal = authenticate_and_authorize_in_silo(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::TenantGet,
+        silo_id,
+    )
+    .await?;
+
+    // Cross-silo defence: a tenant in silo B reached via silo A's URL
+    // must look "missing" not "forbidden".
+    let tenant = ctx
+        .store
+        .get_tenant(tenant_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if tenant.silo_id != silo_id {
+        return Err(HttpError::for_not_found(
+            Some("NotFound".to_string()),
+            format!("tenant {tenant_id} not found in silo {silo_id}"),
+        ));
+    }
+
+    let (workspace_uuid, cluster_id) =
+        match (tenant.storage_workspace_id, tenant.storage_cluster_id) {
+            (Some(w), Some(c)) => (w, c),
+            _ => {
+                return Err(HttpError::for_client_error(
+                    Some("TenantStorageUnbound".to_string()),
+                    ClientErrorStatusCode::PRECONDITION_FAILED,
+                    format!(
+                        "tenant {tenant_id} has no storage binding; run \
+                         `POST /v1/silos/{silo_id}/tenants/{tenant_id}/init-storage` first"
+                    ),
+                ));
+            }
+        };
+
+    let workspace_name = format!("t-{}", workspace_uuid.simple());
+    let with_stats = query.into_inner().stats.unwrap_or(false);
+    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let buckets = client
+        .list_buckets(with_stats, Some(workspace_name.as_str()))
+        .await
+        .map_err(crate::storage::mantad_error_to_http)?;
+    Ok(HttpResponseOk(
+        buckets
+            .into_iter()
+            .map(crate::storage::bucket_from)
+            .collect(),
+    ))
+}
+
 pub(crate) async fn list_storage_cluster_objects(
     rqctx: RequestContext<ApiContext>,
     path: Path<StorageClusterBucketPath>,

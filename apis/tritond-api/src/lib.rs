@@ -1197,6 +1197,16 @@ pub struct StorageBucket {
     pub name: String,
     pub owner: String,
     pub created_at: DateTime<Utc>,
+    /// Owning workspace name (matches the `workspace` field on the
+    /// upstream `mantad_client::types::Bucket`). Empty string for
+    /// admin-direct creates and for buckets that predate the vnext
+    /// tenant binding. Non-empty values match the
+    /// `t-{tenant_uuid_simple}` mint format tritond uses, so a webui
+    /// can group buckets by tenant without round-tripping through the
+    /// tenant resource. Defaults to `""` for forward-compatibility
+    /// with an older mantad that omits the field.
+    #[serde(default)]
+    pub workspace: String,
     /// Object count, present only when `?stats=1` was forwarded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_count: Option<u64>,
@@ -4549,6 +4559,38 @@ pub trait TritondApi {
     async fn list_storage_cluster_buckets(
         rqctx: RequestContext<Self::Context>,
         path: Path<StorageClusterPath>,
+        query: Query<StorageBucketListQuery>,
+    ) -> Result<HttpResponseOk<Vec<StorageBucket>>, HttpError>;
+
+    /// List the buckets owned by a single tenant's storage workspace.
+    ///
+    /// Mirrors `list_storage_cluster_buckets`, but pre-resolves the
+    /// `(cluster_id, workspace_name)` pair from the tenant binding on
+    /// the URL so the caller never sees buckets owned by a sibling
+    /// tenant. Intended for the operator webui's "filter by
+    /// silo+tenant" view; the cluster-flat endpoint stays
+    /// operator-flat by design.
+    ///
+    /// Cross-silo defence: a tenant in silo B reached via silo A's
+    /// URL returns 404, not 403, so probes cannot learn that the
+    /// tenant exists in another silo.
+    ///
+    /// Failure modes:
+    ///
+    /// * 412 `TenantStorageUnbound` — the tenant has no
+    ///   `storage_workspace_id` / `storage_cluster_id` binding yet
+    ///   (run `init_silo_tenant_storage` first).
+    /// * 503 `StorageClusterUnreachable` — the bound cluster's last
+    ///   health probe failed; refresh with `tcadm storage health`.
+    /// * 404 — tenant does not exist or belongs to another silo.
+    #[endpoint {
+        method = GET,
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/buckets",
+        tags = ["silos", "tenants", "storage-clusters"],
+    }]
+    async fn list_silo_tenant_storage_buckets(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantPath>,
         query: Query<StorageBucketListQuery>,
     ) -> Result<HttpResponseOk<Vec<StorageBucket>>, HttpError>;
 

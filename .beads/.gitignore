@@ -13,6 +13,16 @@ bd.sock
 sync-state.json
 last-touched
 
+# Dolt embedded-server runtime + databases (local-only)
+dolt-server.lock
+dolt-server.log
+dolt-server.pid
+dolt-server.port
+dolt/
+embeddeddolt/
+backup/
+export-state.json
+
 # Local version tracking (prevents upgrade notification spam after git ops)
 .local_version
 

@@ -1499,6 +1499,17 @@ impl TritondApi for TritondServiceImpl {
             .await
     }
 
+    async fn list_silo_tenant_storage_buckets(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantPath>,
+        query: Query<tritond_api::StorageBucketListQuery>,
+    ) -> Result<HttpResponseOk<Vec<StorageBucket>>, HttpError> {
+        crate::handlers::storage_clusters::buckets::list_silo_tenant_storage_buckets(
+            rqctx, path, query,
+        )
+        .await
+    }
+
     async fn get_storage_cluster_bucket(
         rqctx: RequestContext<Self::Context>,
         path: Path<StorageClusterBucketPath>,

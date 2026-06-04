@@ -4967,6 +4967,68 @@
         }
       }
     },
+    "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/buckets": {
+      "get": {
+        "tags": [
+          "silos",
+          "tenants",
+          "storage-clusters"
+        ],
+        "summary": "List the buckets owned by a single tenant's storage workspace.",
+        "description": "Mirrors `list_storage_cluster_buckets`, but pre-resolves the `(cluster_id, workspace_name)` pair from the tenant binding on the URL so the caller never sees buckets owned by a sibling tenant. Intended for the operator webui's \"filter by silo+tenant\" view; the cluster-flat endpoint stays operator-flat by design.\n\nCross-silo defence: a tenant in silo B reached via silo A's URL returns 404, not 403, so probes cannot learn that the tenant exists in another silo.\n\nFailure modes:\n\n* 412 `TenantStorageUnbound` — the tenant has no `storage_workspace_id` / `storage_cluster_id` binding yet (run `init_silo_tenant_storage` first). * 503 `StorageClusterUnreachable` — the bound cluster's last health probe failed; refresh with `tcadm storage health`. * 404 — tenant does not exist or belongs to another silo.",
+        "operationId": "list_silo_tenant_storage_buckets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stats",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_StorageBucket",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StorageBucket"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/silos/{silo_id}/tenants/{tenant_id}/users": {
       "post": {
         "tags": [
@@ -13797,7 +13859,7 @@
         ]
       },
       "MigrationProgressEvent": {
-        "description": "One progress entry appended to the per-migration event log. The agent's progress POSTs (LM-3) write one of these per phase transition + per N-byte threshold during streaming; the admin UI + `tcadm migrations get` pages through them via the `?since=<seq>` query parameter.\n\nThe shape mirrors the legacy `MigrationProgress` JSON in `vmapi-api::types::migrations` so existing operators see the fields they expect.",
+        "description": "One progress entry appended to the per-migration event log. The agent's progress POSTs (LM-3) write one of these per phase transition + per N-byte threshold during streaming; the admin UI and `tcadm migrations get` page through them via the `?since=<seq>` query parameter.\n\nThe shape mirrors the legacy `MigrationProgress` JSON in `vmapi-api::types::migrations` so existing operators see the fields they expect.",
         "type": "object",
         "properties": {
           "error": {
@@ -17344,6 +17406,11 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0
+          },
+          "workspace": {
+            "description": "Owning workspace name (matches the `workspace` field on the upstream `mantad_client::types::Bucket`). Empty string for admin-direct creates and for buckets that predate the vnext tenant binding. Non-empty values match the `t-{tenant_uuid_simple}` mint format tritond uses, so a webui can group buckets by tenant without round-tripping through the tenant resource. Defaults to `\"\"` for forward-compatibility with an older mantad that omits the field.",
+            "default": "",
+            "type": "string"
           }
         },
         "required": [

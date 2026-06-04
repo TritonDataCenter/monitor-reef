@@ -6685,13 +6685,13 @@ pub mod types {
         }
     }
 
-    #[doc = "One progress entry appended to the per-migration event log. The agent's progress POSTs (LM-3) write one of these per phase transition + per N-byte threshold during streaming; the admin UI + `tcadm migrations get` pages through them via the `?since=<seq>` query parameter.\n\nThe shape mirrors the legacy `MigrationProgress` JSON in `vmapi-api::types::migrations` so existing operators see the fields they expect."]
+    #[doc = "One progress entry appended to the per-migration event log. The agent's progress POSTs (LM-3) write one of these per phase transition + per N-byte threshold during streaming; the admin UI and `tcadm migrations get` page through them via the `?since=<seq>` query parameter.\n\nThe shape mirrors the legacy `MigrationProgress` JSON in `vmapi-api::types::migrations` so existing operators see the fields they expect."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One progress entry appended to the per-migration event log. The agent's progress POSTs (LM-3) write one of these per phase transition + per N-byte threshold during streaming; the admin UI + `tcadm migrations get` pages through them via the `?since=<seq>` query parameter.\\n\\nThe shape mirrors the legacy `MigrationProgress` JSON in `vmapi-api::types::migrations` so existing operators see the fields they expect.\","]
+    #[doc = "  \"description\": \"One progress entry appended to the per-migration event log. The agent's progress POSTs (LM-3) write one of these per phase transition + per N-byte threshold during streaming; the admin UI and `tcadm migrations get` page through them via the `?since=<seq>` query parameter.\\n\\nThe shape mirrors the legacy `MigrationProgress` JSON in `vmapi-api::types::migrations` so existing operators see the fields they expect.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"seq\","]
@@ -13232,6 +13232,11 @@ pub mod types {
     #[doc = "      ],"]
     #[doc = "      \"format\": \"uint64\","]
     #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"workspace\": {"]
+    #[doc = "      \"description\": \"Owning workspace name (matches the `workspace` field on the upstream `mantad_client::types::Bucket`). Empty string for admin-direct creates and for buckets that predate the vnext tenant binding. Non-empty values match the `t-{tenant_uuid_simple}` mint format tritond uses, so a webui can group buckets by tenant without round-tripping through the tenant resource. Defaults to `\\\"\\\"` for forward-compatibility with an older mantad that omits the field.\","]
+    #[doc = "      \"default\": \"\","]
+    #[doc = "      \"type\": \"string\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -13249,6 +13254,9 @@ pub mod types {
         pub owner: ::std::string::String,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub total_bytes: ::std::option::Option<u64>,
+        #[doc = "Owning workspace name (matches the `workspace` field on the upstream `mantad_client::types::Bucket`). Empty string for admin-direct creates and for buckets that predate the vnext tenant binding. Non-empty values match the `t-{tenant_uuid_simple}` mint format tritond uses, so a webui can group buckets by tenant without round-tripping through the tenant resource. Defaults to `\"\"` for forward-compatibility with an older mantad that omits the field."]
+        #[serde(default)]
+        pub workspace: ::std::string::String,
     }
 
     impl StorageBucket {
@@ -28418,6 +28426,7 @@ pub mod types {
             object_count: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
             owner: ::std::result::Result<::std::string::String, ::std::string::String>,
             total_bytes: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
+            workspace: ::std::result::Result<::std::string::String, ::std::string::String>,
         }
 
         impl ::std::default::Default for StorageBucket {
@@ -28428,6 +28437,7 @@ pub mod types {
                     object_count: Ok(Default::default()),
                     owner: Err("no value supplied for owner".to_string()),
                     total_bytes: Ok(Default::default()),
+                    workspace: Ok(Default::default()),
                 }
             }
         }
@@ -28483,6 +28493,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for total_bytes: {e}"));
                 self
             }
+            pub fn workspace<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.workspace = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for workspace: {e}"));
+                self
+            }
         }
 
         impl ::std::convert::TryFrom<StorageBucket> for super::StorageBucket {
@@ -28496,6 +28516,7 @@ pub mod types {
                     object_count: value.object_count?,
                     owner: value.owner?,
                     total_bytes: value.total_bytes?,
+                    workspace: value.workspace?,
                 })
             }
         }
@@ -28508,6 +28529,7 @@ pub mod types {
                     object_count: Ok(value.object_count),
                     owner: Ok(value.owner),
                     total_bytes: Ok(value.total_bytes),
+                    workspace: Ok(value.workspace),
                 }
             }
         }
@@ -31027,6 +31049,11 @@ impl Client {
     #[doc = "Drop the storage workspace binding from a tenant\n\nCounterpart to `init_silo_tenant_storage`. Archives the mantad workspace (refused if it still has buckets) and clears both binding columns on the Tenant row. Required before rebinding a tenant to a different cluster.\n\nFailure modes:\n\n* 412 `TenantStorageUnbound` — tenant has no binding to drop (operators see a distinct outcome from \"dropped just now\"). * 409 `Conflict` — mantad refused to delete the workspace because it still contains buckets. Drain first and retry. * 503 `StorageClusterUnreachable` — the cluster the tenant was bound to is down. * 404 — tenant does not exist or belongs to another silo.\n\nSends a `DELETE` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage`\n\n```ignore\nlet response = client.drop_silo_tenant_storage()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
     pub fn drop_silo_tenant_storage(&self) -> builder::DropSiloTenantStorage<'_> {
         builder::DropSiloTenantStorage::new(self)
+    }
+
+    #[doc = "List the buckets owned by a single tenant's storage workspace\n\nMirrors `list_storage_cluster_buckets`, but pre-resolves the `(cluster_id, workspace_name)` pair from the tenant binding on the URL so the caller never sees buckets owned by a sibling tenant. Intended for the operator webui's \"filter by silo+tenant\" view; the cluster-flat endpoint stays operator-flat by design.\n\nCross-silo defence: a tenant in silo B reached via silo A's URL returns 404, not 403, so probes cannot learn that the tenant exists in another silo.\n\nFailure modes:\n\n* 412 `TenantStorageUnbound` — the tenant has no `storage_workspace_id` / `storage_cluster_id` binding yet (run `init_silo_tenant_storage` first). * 503 `StorageClusterUnreachable` — the bound cluster's last health probe failed; refresh with `tcadm storage health`. * 404 — tenant does not exist or belongs to another silo.\n\nSends a `GET` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/buckets`\n\n```ignore\nlet response = client.list_silo_tenant_storage_buckets()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .stats(stats)\n    .send()\n    .await;\n```"]
+    pub fn list_silo_tenant_storage_buckets(&self) -> builder::ListSiloTenantStorageBuckets<'_> {
+        builder::ListSiloTenantStorageBuckets::new(self)
     }
 
     #[doc = "Create a tenant-bound operator account\n\nUsed to mint test / non-federated tenant principals so the forwarder workspace gate can be exercised end-to-end without requiring an external OIDC IdP. The created user lands with `is_root: false`, `tenant_id: Some(<path tenant>)`, empty `capabilities` (no `/v1/system/` access), and a bcrypt-hashed password.\n\nFederated users continue to land via the JIT-on-OIDC-login path; this endpoint is for environments without an IdP and for verification tooling.\n\nReturns 409 if `username` is already in use; 404 if the tenant doesn't exist or belongs to another silo.\n\nSends a `POST` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/users`\n\n```ignore\nlet response = client.create_silo_tenant_user()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .body(body)\n    .send()\n    .await;\n```"]
@@ -41012,6 +41039,112 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "drop_silo_tenant_storage",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_silo_tenant_storage_buckets`]\n\n[`Client::list_silo_tenant_storage_buckets`]: super::Client::list_silo_tenant_storage_buckets"]
+    #[derive(Debug, Clone)]
+    pub struct ListSiloTenantStorageBuckets<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        tenant_id: Result<::uuid::Uuid, String>,
+        stats: Result<Option<bool>, String>,
+    }
+
+    impl<'a> ListSiloTenantStorageBuckets<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                stats: Ok(None),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn stats<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.stats = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for stats failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/buckets`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::StorageBucket>>, Error<types::Error>>
+        {
+            let Self {
+                client,
+                silo_id,
+                tenant_id,
+                stats,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let stats = stats.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/silos/{}/tenants/{}/storage/buckets",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&tenant_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("stats", &stats))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_silo_tenant_storage_buckets",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

@@ -391,6 +391,7 @@ pub(crate) fn bucket_from(b: mantad_client::Bucket) -> StorageBucket {
         name: b.name,
         owner: b.owner,
         created_at: b.created_at,
+        workspace: b.workspace,
         object_count: b.object_count,
         total_bytes: b.total_bytes,
     }
