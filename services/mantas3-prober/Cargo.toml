@@ -1,0 +1,48 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+# Synthetic-request prober for the mantas3 S3 surface. Slice 1 of
+# monitor-reef-zy0v: a black-box daemon that issues real PUT/GET/HEAD/
+# DELETE cycles against mantad:7443 and exposes Prometheus metrics on
+# :9275. Catches wedge-style failures (like monitor-reef-69bg) that
+# internal counters miss because the request handler is stuck while
+# heartbeats keep ticking.
+#
+# Plan: ~/.claude/plans/zy0v-slice1-prober.md (nine-reviewers Approve
+# round 2, 2026-06-04).
+
+[package]
+name = "mantas3-prober"
+version = "0.1.0"
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+aws-config.workspace = true
+aws-credential-types.workspace = true
+aws-sdk-s3.workspace = true
+chrono = { workspace = true, features = ["serde"] }
+http-body-util.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+prometheus.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+# Tier-2 wiremock test stubs the S3 surface so the cycle loop's
+# assertions (cycle_success, data_integrity_failures, auth_failures)
+# can be verified without a live mantad.
+wiremock = "0.6"

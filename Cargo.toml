@@ -39,6 +39,7 @@ members = [
     "openapi-manager",
     "services/bugview-service",
     "services/jira-stub-server",
+    "services/mantas3-prober",
     "services/tritond",
     "services/tritonagent",
     "cli/tcadm",
@@ -81,6 +82,14 @@ expect_used = "deny"
 [workspace.dependencies]
 aes = "0.8"
 anyhow = "1.0"
+# AWS SDK for the mantas3 synthetic prober (services/mantas3-prober).
+# Pinned to v1 with the rustls + behavior-version-latest features the
+# rest of the workspace expects. Same dep set manta-storage uses in
+# its mantas3 test harness — keep aligned so transitive resolution
+# stays simple.
+aws-config = { version = "1", default-features = false, features = ["rustls", "behavior-version-latest", "rt-tokio"] }
+aws-credential-types = { version = "1", features = ["hardcoded-credentials"] }
+aws-sdk-s3 = { version = "1", default-features = false, features = ["rustls", "rt-tokio", "behavior-version-latest"] }
 bcrypt = "0.19"
 cedar-policy = "4.10"
 jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
@@ -123,6 +132,9 @@ hex = "0.4"
 hmac = "0.12"
 hostname = "0.4"
 http = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "server", "http1"] }
 indexmap = "2"
 indicatif = "0.18"
 # CIDR types for VPC ipv4/ipv6 blocks. We rely on the serde
@@ -144,6 +156,14 @@ pem-rfc7468 = { version = "1.0", features = ["alloc"] }
 pkcs8 = "0.10"
 postcard = { version = "1.1", features = ["use-std"] }
 predicates = "3.0"
+# Prometheus registry + text exposition encoder for the mantas3
+# synthetic prober's /metrics endpoint. We pair this with a
+# hand-rolled hyper listener (services/mantas3-prober/src/supervise.rs)
+# so the listener task lives in OUR tokio runtime and is observable
+# via JoinHandle.await — R2 (listener supervision) from the slice-1
+# plan needs the listener to be supervisable, which
+# metrics-exporter-prometheus's built-in listener doesn't expose.
+prometheus = "0.13"
 pretty_assertions = "1.4"
 progenitor = "0.13"
 progenitor-client = "0.13"
@@ -211,7 +231,7 @@ tokio-rustls = "0.26"
 tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
 toml = "0.8"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 url = { version = "2", features = ["serde"] }
 urlencoding = "2"
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
