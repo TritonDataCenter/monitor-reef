@@ -31423,6 +31423,13 @@ impl Client {
         builder::DeleteSiloTenantStorageBucket::new(self)
     }
 
+    #[doc = "List objects inside a single tenant's bucket. Mirrors\n\nlist_storage_cluster_objects but pre-resolves the (cluster_id, workspace_name) pair from the tenant binding on the URL so an operator-ui drill-down can never enumerate objects in a sibling tenant's bucket.\n\nCross-silo / cross-tenant defence: mantad's workspace gate on list_objects (monitor-reef-oei3 layer 1) returns 404 on bucket→workspace mismatch.\n\nSends a `GET` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/buckets/{bucket}/objects`\n\n```ignore\nlet response = client.list_silo_tenant_storage_bucket_objects()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .bucket(bucket)\n    .continuation_token(continuation_token)\n    .delimiter(delimiter)\n    .max_keys(max_keys)\n    .prefix(prefix)\n    .send()\n    .await;\n```"]
+    pub fn list_silo_tenant_storage_bucket_objects(
+        &self,
+    ) -> builder::ListSiloTenantStorageBucketObjects<'_> {
+        builder::ListSiloTenantStorageBucketObjects::new(self)
+    }
+
     #[doc = "List the IAM users owned by a single tenant's storage workspace\n\nMirrors `list_storage_cluster_users` but pre-resolves the `(cluster_id, workspace_name)` pair from the tenant binding on the URL so the operator-ui \"filter by silo+tenant\" view never enumerates users owned by a sibling tenant. The cluster-flat endpoint stays operator-flat by design. (monitor-reef-nbdp)\n\nCross-silo defence: a tenant in silo B reached via silo A's URL returns 404, not 403, so probes cannot learn that the tenant exists in another silo.\n\nFailure modes:\n\n* 412 `TenantStorageUnbound` — the tenant has no `storage_workspace_id` / `storage_cluster_id` binding yet (run `init_silo_tenant_storage` first). * 503 `StorageClusterUnreachable` — the bound cluster's last health probe failed; refresh with `tcadm storage health`. * 404 — tenant does not exist or belongs to another silo.\n\nSends a `GET` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users`\n\n```ignore\nlet response = client.list_silo_tenant_storage_users()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
     pub fn list_silo_tenant_storage_users(&self) -> builder::ListSiloTenantStorageUsers<'_> {
         builder::ListSiloTenantStorageUsers::new(self)
@@ -41808,6 +41815,175 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_silo_tenant_storage_bucket_objects`]\n\n[`Client::list_silo_tenant_storage_bucket_objects`]: super::Client::list_silo_tenant_storage_bucket_objects"]
+    #[derive(Debug, Clone)]
+    pub struct ListSiloTenantStorageBucketObjects<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        tenant_id: Result<::uuid::Uuid, String>,
+        bucket: Result<::std::string::String, String>,
+        continuation_token: Result<Option<::std::string::String>, String>,
+        delimiter: Result<Option<::std::string::String>, String>,
+        max_keys: Result<Option<u32>, String>,
+        prefix: Result<Option<::std::string::String>, String>,
+    }
+
+    impl<'a> ListSiloTenantStorageBucketObjects<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                bucket: Err("bucket was not initialized".to_string()),
+                continuation_token: Ok(None),
+                delimiter: Ok(None),
+                max_keys: Ok(None),
+                prefix: Ok(None),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn bucket<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.bucket = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for bucket failed".to_string()
+            });
+            self
+        }
+
+        pub fn continuation_token<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.continuation_token = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for continuation_token failed"
+                    .to_string()
+            });
+            self
+        }
+
+        pub fn delimiter<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.delimiter = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for delimiter failed".to_string()
+            });
+            self
+        }
+
+        pub fn max_keys<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u32>,
+        {
+            self.max_keys = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u32` for max_keys failed".to_string());
+            self
+        }
+
+        pub fn prefix<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.prefix = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for prefix failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/buckets/{bucket}/objects`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StorageObjectsPage>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                tenant_id,
+                bucket,
+                continuation_token,
+                delimiter,
+                max_keys,
+                prefix,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let bucket = bucket.map_err(Error::InvalidRequest)?;
+            let continuation_token = continuation_token.map_err(Error::InvalidRequest)?;
+            let delimiter = delimiter.map_err(Error::InvalidRequest)?;
+            let max_keys = max_keys.map_err(Error::InvalidRequest)?;
+            let prefix = prefix.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/silos/{}/tenants/{}/storage/buckets/{}/objects",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&tenant_id.to_string()),
+                encode_path(&bucket.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new(
+                    "continuation_token",
+                    &continuation_token,
+                ))
+                .query(&progenitor_client::QueryParam::new("delimiter", &delimiter))
+                .query(&progenitor_client::QueryParam::new("max_keys", &max_keys))
+                .query(&progenitor_client::QueryParam::new("prefix", &prefix))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_silo_tenant_storage_bucket_objects",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

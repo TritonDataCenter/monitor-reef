@@ -497,6 +497,11 @@ pub(crate) fn objects_query_to(q: tritond_api::StorageObjectsQuery) -> mantad_cl
         delimiter: q.delimiter,
         continuation_token: q.continuation_token,
         max_keys: q.max_keys,
+        // Workspace flows separately via the `list_objects` workspace
+        // parameter (operator-flat vs tenant-scoped), not through this
+        // conversion. Keep this `None` so the conversion stays a pure
+        // shape adapter; callers decide tenancy at the call site.
+        workspace: None,
     }
 }
 

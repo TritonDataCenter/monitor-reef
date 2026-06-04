@@ -321,6 +321,87 @@ pub(crate) async fn list_silo_tenant_storage_buckets(
     ))
 }
 
+/// `GET /v1/silos/{silo_id}/tenants/{tenant_id}/storage/buckets/{bucket}/objects`
+/// — list objects inside one tenant's bucket.
+///
+/// Mirrors `list_storage_cluster_objects` but resolves the
+/// `(cluster_id, workspace_name)` pair from the tenant binding on the
+/// URL, so the operator-ui drill-down view can never enumerate objects
+/// owned by a sibling tenant's bucket on the same cluster — regardless
+/// of caller principal. The cluster-flat endpoint stays operator-flat
+/// by design (its workspace scope is derived from the caller via
+/// `resolve_workspace_scope`, which is `None` for root/fleet-admin).
+///
+/// Authz is silo-scoped (`Action::TenantGet`); cross-silo probes are
+/// neutralised by a 404 on tenant lookup. The tenant must have a
+/// storage binding (412 `TenantStorageUnbound` otherwise — same
+/// failure shape as `list_silo_tenant_storage_buckets`).
+///
+/// Cross-silo / cross-tenant defence: mantad's workspace gate on
+/// `list_objects` (monitor-reef-oei3 layer 1) returns 404 on
+/// bucket→workspace mismatch, so a tenant pointing this endpoint at a
+/// bucket owned by another workspace on the same cluster cannot
+/// enumerate its contents.
+pub(crate) async fn list_silo_tenant_storage_bucket_objects(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::SiloTenantBucketPath>,
+    query: Query<tritond_api::StorageObjectsQuery>,
+) -> Result<HttpResponseOk<StorageObjectsPage>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::SiloTenantBucketPath {
+        silo_id,
+        tenant_id,
+        bucket,
+    } = path.into_inner();
+    let _principal = authenticate_and_authorize_in_silo(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::TenantGet,
+        silo_id,
+    )
+    .await?;
+
+    // Cross-silo defence: a tenant in silo B reached via silo A's URL
+    // must look "missing" not "forbidden".
+    let tenant = ctx
+        .store
+        .get_tenant(tenant_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if tenant.silo_id != silo_id {
+        return Err(HttpError::for_not_found(
+            Some("NotFound".to_string()),
+            format!("tenant {tenant_id} not found in silo {silo_id}"),
+        ));
+    }
+
+    let (workspace_uuid, cluster_id) =
+        match (tenant.storage_workspace_id, tenant.storage_cluster_id) {
+            (Some(w), Some(c)) => (w, c),
+            _ => {
+                return Err(HttpError::for_client_error(
+                    Some("TenantStorageUnbound".to_string()),
+                    ClientErrorStatusCode::PRECONDITION_FAILED,
+                    format!(
+                        "tenant {tenant_id} has no storage binding; run \
+                         `POST /v1/silos/{silo_id}/tenants/{tenant_id}/init-storage` first"
+                    ),
+                ));
+            }
+        };
+
+    let workspace_name = format!("t-{}", workspace_uuid.simple());
+    let mantad_query = crate::storage::objects_query_to(query.into_inner());
+    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let page = client
+        .list_objects(&bucket, Some(workspace_name.as_str()), &mantad_query)
+        .await
+        .map_err(crate::storage::mantad_error_to_http)?;
+    Ok(HttpResponseOk(crate::storage::objects_page_from(page)))
+}
+
 pub(crate) async fn list_storage_cluster_objects(
     rqctx: RequestContext<ApiContext>,
     path: Path<StorageClusterBucketPath>,
@@ -335,12 +416,12 @@ pub(crate) async fn list_storage_cluster_objects(
         Action::StorageObjectList,
     )
     .await?;
-    let _scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
+    let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let p = path.into_inner();
     let q = crate::storage::objects_query_to(query.into_inner());
     let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
     let page = client
-        .list_objects(&p.bucket, &q)
+        .list_objects(&p.bucket, scope.workspace_name(), &q)
         .await
         .map_err(crate::storage::mantad_error_to_http)?;
     Ok(HttpResponseOk(crate::storage::objects_page_from(page)))

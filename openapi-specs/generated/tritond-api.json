@@ -5138,6 +5138,98 @@
         }
       }
     },
+    "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/buckets/{bucket}/objects": {
+      "get": {
+        "tags": [
+          "silos",
+          "tenants",
+          "storage-clusters"
+        ],
+        "summary": "List objects inside a single tenant's bucket. Mirrors",
+        "description": "list_storage_cluster_objects but pre-resolves the (cluster_id, workspace_name) pair from the tenant binding on the URL so an operator-ui drill-down can never enumerate objects in a sibling tenant's bucket.\n\nCross-silo / cross-tenant defence: mantad's workspace gate on list_objects (monitor-reef-oei3 layer 1) returns 404 on bucket→workspace mismatch.",
+        "operationId": "list_silo_tenant_storage_bucket_objects",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bucket",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "continuation_token",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "delimiter",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_keys",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "prefix",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageObjectsPage"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users": {
       "get": {
         "tags": [

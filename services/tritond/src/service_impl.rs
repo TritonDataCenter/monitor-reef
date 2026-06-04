@@ -1510,6 +1510,17 @@ impl TritondApi for TritondServiceImpl {
         .await
     }
 
+    async fn list_silo_tenant_storage_bucket_objects(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::SiloTenantBucketPath>,
+        query: Query<tritond_api::StorageObjectsQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::StorageObjectsPage>, HttpError> {
+        crate::handlers::storage_clusters::buckets::list_silo_tenant_storage_bucket_objects(
+            rqctx, path, query,
+        )
+        .await
+    }
+
     async fn list_silo_tenant_storage_users(
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloTenantPath>,

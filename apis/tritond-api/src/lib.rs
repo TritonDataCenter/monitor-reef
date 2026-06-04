@@ -4691,6 +4691,26 @@ pub trait TritondApi {
         query: Query<StorageBucketListQuery>,
     ) -> Result<HttpResponseOk<Vec<StorageBucket>>, HttpError>;
 
+    /// List objects inside a single tenant's bucket. Mirrors
+    /// list_storage_cluster_objects but pre-resolves the
+    /// (cluster_id, workspace_name) pair from the tenant binding
+    /// on the URL so an operator-ui drill-down can never enumerate
+    /// objects in a sibling tenant's bucket.
+    ///
+    /// Cross-silo / cross-tenant defence: mantad's workspace gate
+    /// on list_objects (monitor-reef-oei3 layer 1) returns 404 on
+    /// bucket→workspace mismatch.
+    #[endpoint {
+        method = GET,
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/buckets/{bucket}/objects",
+        tags = ["silos", "tenants", "storage-clusters"],
+    }]
+    async fn list_silo_tenant_storage_bucket_objects(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantBucketPath>,
+        query: Query<StorageObjectsQuery>,
+    ) -> Result<HttpResponseOk<StorageObjectsPage>, HttpError>;
+
     /// List the IAM users owned by a single tenant's storage workspace.
     ///
     /// Mirrors `list_storage_cluster_users` but pre-resolves the
