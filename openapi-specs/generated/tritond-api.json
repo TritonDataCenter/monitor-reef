@@ -5027,6 +5027,115 @@
             "$ref": "#/components/responses/Error"
           }
         }
+      },
+      "post": {
+        "tags": [
+          "silos",
+          "tenants",
+          "storage-clusters"
+        ],
+        "summary": "Create a bucket inside a single tenant's storage workspace.",
+        "description": "Mirrors `create_storage_cluster_bucket` but pre-resolves the `(cluster_id, workspace_name)` pair from the tenant binding on the URL so the operator-ui \"create bucket\" action cannot mint a bucket inside a sibling tenant's workspace.\n\nCross-silo defence: a tenant in silo B reached via silo A's URL returns 404, not 403.\n\nFailure modes: same as [`list_silo_tenant_storage_buckets`].",
+        "operationId": "create_silo_tenant_storage_bucket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageCreateBucketRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageBucket"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/buckets/{bucket}": {
+      "delete": {
+        "tags": [
+          "silos",
+          "tenants",
+          "storage-clusters"
+        ],
+        "summary": "Delete a bucket from a single tenant's storage workspace.",
+        "description": "Mirrors `delete_storage_cluster_bucket` but pre-resolves the `(cluster_id, workspace_name)` pair from the tenant binding so the operator-ui delete action cannot remove a bucket owned by a sibling tenant.\n\nCross-silo / cross-tenant defence: a bucket that lives in another workspace returns 404 at mantad's workspace gate, not 403, so bucket-name enumeration cannot learn ownership across tenants.\n\nFailure modes: same as [`list_silo_tenant_storage_buckets`] plus 404 when the named bucket does not exist in the tenant's workspace.",
+        "operationId": "delete_silo_tenant_storage_bucket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bucket",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
       }
     },
     "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users": {
@@ -5073,6 +5182,115 @@
                 }
               }
             }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "silos",
+          "tenants",
+          "storage-clusters"
+        ],
+        "summary": "Create an IAM user inside a single tenant's storage workspace.",
+        "description": "Mirrors `create_storage_cluster_user` but pre-resolves the `(cluster_id, workspace_name)` pair from the tenant binding on the URL so the operator-ui \"create user\" view cannot mint a user inside a sibling tenant's workspace. The cluster-flat endpoint stays operator-flat by design.\n\nCross-silo defence: a tenant in silo B reached via silo A's URL returns 404, not 403, so probes cannot learn that the tenant exists in another silo.\n\nFailure modes:\n\n* 412 `TenantStorageUnbound` — the tenant has no `storage_workspace_id` / `storage_cluster_id` binding yet (run `init_silo_tenant_storage` first). * 503 `StorageClusterUnreachable` — the bound cluster's last health probe failed; refresh with `tcadm storage health`. * 404 — tenant does not exist or belongs to another silo.",
+        "operationId": "create_silo_tenant_storage_user",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageCreateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageUser"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}": {
+      "delete": {
+        "tags": [
+          "silos",
+          "tenants",
+          "storage-clusters"
+        ],
+        "summary": "Delete an IAM user from a single tenant's storage workspace.",
+        "description": "Mirrors `delete_storage_cluster_user` but pre-resolves the `(cluster_id, workspace_name)` pair from the tenant binding so the operator-ui delete action cannot remove a user owned by a sibling tenant.\n\nCross-silo / cross-tenant defence: a user that lives in another workspace returns 404 at mantad's workspace gate, not 403, so the existence of the user in another tenant's workspace is not disclosed.\n\nFailure modes: same as [`list_silo_tenant_storage_users`] plus 404 when the named user does not exist in the tenant's workspace.",
+        "operationId": "delete_silo_tenant_storage_user",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
@@ -5135,6 +5353,121 @@
                 }
               }
             }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "silos",
+          "tenants",
+          "storage-clusters"
+        ],
+        "summary": "Mint a new access key for a single tenant's user. Mirrors",
+        "description": "`create_storage_cluster_access_key` but pre-resolves the `(cluster_id, workspace_name)` pair from the tenant binding so the operator-ui \"create key\" action cannot mint a key against a sibling tenant's user.\n\nThe cleartext `secret_access_key` is returned once on this response. Caller must capture it; mantad does not retain the cleartext.\n\nCross-silo / cross-tenant defence: a user that lives in another workspace returns 404 at mantad's workspace gate, so the existence of the user in another tenant's workspace is not disclosed.\n\nFailure modes: same as [`list_silo_tenant_storage_user_access_keys`].",
+        "operationId": "create_silo_tenant_storage_user_access_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageAccessKey"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/access-keys/{access_key_id}": {
+      "delete": {
+        "tags": [
+          "silos",
+          "tenants",
+          "storage-clusters"
+        ],
+        "summary": "Delete a single access key from a tenant's user. Mirrors",
+        "description": "`delete_storage_cluster_access_key` but pre-resolves the `(cluster_id, workspace_name)` pair from the tenant binding AND verifies the access key belongs to the named user inside the tenant's workspace so the operator-ui delete action cannot revoke a key owned by a sibling tenant's user.\n\nCross-silo / cross-tenant defence: an access-key id that resolves to a user in another workspace returns 404 at mantad's workspace gate, not 403, so AKID enumeration cannot learn key ownership across tenants.\n\nFailure modes: same as [`list_silo_tenant_storage_user_access_keys`] plus 404 when the named access key does not belong to the named user in the tenant's workspace.",
+        "operationId": "delete_silo_tenant_storage_user_access_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "access_key_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
@@ -5261,6 +5594,71 @@
                 "schema": {}
               }
             }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "silos",
+          "tenants",
+          "storage-clusters"
+        ],
+        "summary": "Put one inline policy document, tenant-scoped. Mirrors",
+        "description": "`put_storage_cluster_user_policy` but pre-resolves the `(cluster_id, workspace_name)` pair from the tenant binding so the operator-ui detail view never writes into a sibling tenant's policy slot (which can carry tenant-identifying ARNs and resource paths).\n\nCross-silo / cross-tenant defence: a user that lives in another workspace returns 404 at mantad's workspace gate so policy *names* (which can themselves be sensitive) cannot be probed for existence across workspaces.\n\nFailure modes: same as [`get_silo_tenant_storage_user_policy`].",
+        "operationId": "put_silo_tenant_storage_user_policy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "resource updated"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"

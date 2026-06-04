@@ -345,3 +345,220 @@ pub(crate) async fn list_storage_cluster_objects(
         .map_err(crate::storage::mantad_error_to_http)?;
     Ok(HttpResponseOk(crate::storage::objects_page_from(page)))
 }
+
+/// `POST /v1/silos/{silo_id}/tenants/{tenant_id}/storage/buckets` —
+/// create a bucket owned by a single tenant's storage workspace.
+///
+/// Mirrors `create_storage_cluster_bucket` but resolves the
+/// `(cluster_id, workspace_name)` pair from the tenant binding on the
+/// URL, so the caller can never create buckets under a sibling
+/// tenant's workspace on the same cluster — regardless of caller
+/// principal. The cluster-flat endpoint above stays operator-flat by
+/// design.
+///
+/// Authz is silo-scoped (`Action::StorageBucketCreateInTenant`);
+/// cross-silo probes are neutralised by a 404 on tenant lookup. The
+/// tenant must have a storage binding (412 `TenantStorageUnbound`
+/// otherwise — same failure shape as `list_silo_tenant_storage_buckets`
+/// so operators see the same precondition vocabulary across the
+/// binding lifecycle).
+pub(crate) async fn create_silo_tenant_storage_bucket(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::SiloTenantPath>,
+    body: TypedBody<tritond_api::StorageCreateBucketRequest>,
+) -> Result<HttpResponseCreated<StorageBucket>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::SiloTenantPath { silo_id, tenant_id } = path.into_inner();
+    let principal = authenticate_and_authorize_in_silo(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::StorageBucketCreateInTenant,
+        silo_id,
+    )
+    .await?;
+
+    // Cross-silo defence: a tenant in silo B reached via silo A's URL
+    // must look "missing" not "forbidden".
+    let tenant = ctx
+        .store
+        .get_tenant(tenant_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if tenant.silo_id != silo_id {
+        return Err(HttpError::for_not_found(
+            Some("NotFound".to_string()),
+            format!("tenant {tenant_id} not found in silo {silo_id}"),
+        ));
+    }
+
+    let (workspace_uuid, cluster_id) =
+        match (tenant.storage_workspace_id, tenant.storage_cluster_id) {
+            (Some(w), Some(c)) => (w, c),
+            _ => {
+                return Err(HttpError::for_client_error(
+                    Some("TenantStorageUnbound".to_string()),
+                    ClientErrorStatusCode::PRECONDITION_FAILED,
+                    format!(
+                        "tenant {tenant_id} has no storage binding; run \
+                         `POST /v1/silos/{silo_id}/tenants/{tenant_id}/init-storage` first"
+                    ),
+                ));
+            }
+        };
+
+    let workspace_name = format!("t-{}", workspace_uuid.simple());
+    let request_id = parse_request_id(&rqctx);
+    let req = body.into_inner();
+    let payload = serde_json::json!({
+        "silo_id": silo_id,
+        "tenant_id": tenant_id,
+        "name": req.name,
+        "owner": req.owner,
+    });
+    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let mantad_req = crate::storage::create_bucket_request_to(req);
+    match client
+        .create_bucket(&mantad_req, Some(workspace_name.as_str()))
+        .await
+    {
+        Ok(b) => {
+            let view = crate::storage::bucket_from(b);
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::StorageBucketCreateInTenant,
+                    request_id,
+                    Some(format!("StorageBucket::\"{}\"", view.name)),
+                    AuditOutcome::Success {
+                        resource: Some(format!("StorageBucket::\"{}\"", view.name)),
+                    },
+                    payload,
+                )
+                .await;
+            Ok(HttpResponseCreated(view))
+        }
+        Err(e) => {
+            let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::StorageBucketCreateInTenant,
+                    request_id,
+                    Some(format!("StorageCluster::\"{cluster_id}\"")),
+                    audit_outcome,
+                    payload,
+                )
+                .await;
+            Err(http_err)
+        }
+    }
+}
+
+/// `DELETE /v1/silos/{silo_id}/tenants/{tenant_id}/storage/buckets/{bucket}` —
+/// delete a bucket owned by a single tenant's storage workspace.
+///
+/// Mirrors `delete_storage_cluster_bucket` but resolves the
+/// `(cluster_id, workspace_name)` pair from the tenant binding on the
+/// URL, so the caller can never delete buckets under a sibling
+/// tenant's workspace on the same cluster — regardless of caller
+/// principal. The cluster-flat endpoint above stays operator-flat by
+/// design.
+///
+/// Authz is silo-scoped (`Action::StorageBucketDeleteInTenant`);
+/// cross-silo probes are neutralised by a 404 on tenant lookup. The
+/// tenant must have a storage binding (412 `TenantStorageUnbound`
+/// otherwise).
+pub(crate) async fn delete_silo_tenant_storage_bucket(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::SiloTenantBucketPath>,
+) -> Result<HttpResponseDeleted, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::SiloTenantBucketPath {
+        silo_id,
+        tenant_id,
+        bucket,
+    } = path.into_inner();
+    let principal = authenticate_and_authorize_in_silo(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::StorageBucketDeleteInTenant,
+        silo_id,
+    )
+    .await?;
+
+    // Cross-silo defence: a tenant in silo B reached via silo A's URL
+    // must look "missing" not "forbidden".
+    let tenant = ctx
+        .store
+        .get_tenant(tenant_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if tenant.silo_id != silo_id {
+        return Err(HttpError::for_not_found(
+            Some("NotFound".to_string()),
+            format!("tenant {tenant_id} not found in silo {silo_id}"),
+        ));
+    }
+
+    let (workspace_uuid, cluster_id) =
+        match (tenant.storage_workspace_id, tenant.storage_cluster_id) {
+            (Some(w), Some(c)) => (w, c),
+            _ => {
+                return Err(HttpError::for_client_error(
+                    Some("TenantStorageUnbound".to_string()),
+                    ClientErrorStatusCode::PRECONDITION_FAILED,
+                    format!(
+                        "tenant {tenant_id} has no storage binding; run \
+                         `POST /v1/silos/{silo_id}/tenants/{tenant_id}/init-storage` first"
+                    ),
+                ));
+            }
+        };
+
+    let workspace_name = format!("t-{}", workspace_uuid.simple());
+    let request_id = parse_request_id(&rqctx);
+    let payload = serde_json::json!({
+        "silo_id": silo_id,
+        "tenant_id": tenant_id,
+        "bucket": bucket,
+    });
+    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    match client
+        .delete_bucket(&bucket, Some(workspace_name.as_str()))
+        .await
+    {
+        Ok(()) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::StorageBucketDeleteInTenant,
+                    request_id,
+                    Some(format!("StorageBucket::\"{bucket}\"")),
+                    AuditOutcome::Success {
+                        resource: Some(format!("StorageBucket::\"{bucket}\"")),
+                    },
+                    payload,
+                )
+                .await;
+            Ok(HttpResponseDeleted())
+        }
+        Err(e) => {
+            let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::StorageBucketDeleteInTenant,
+                    request_id,
+                    Some(format!("StorageBucket::\"{bucket}\"")),
+                    audit_outcome,
+                    payload,
+                )
+                .await;
+            Err(http_err)
+        }
+    }
+}

@@ -1547,6 +1547,76 @@ impl TritondApi for TritondServiceImpl {
         .await
     }
 
+    // ── Wave 2: tenant-scoped storage writes (monitor-reef-5fek) ────────
+
+    async fn create_silo_tenant_storage_user(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantPath>,
+        body: TypedBody<tritond_api::StorageCreateUserRequest>,
+    ) -> Result<HttpResponseCreated<StorageUser>, HttpError> {
+        crate::handlers::storage_clusters::users::create_silo_tenant_storage_user(
+            rqctx, path, body,
+        )
+        .await
+    }
+
+    async fn delete_silo_tenant_storage_user(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::SiloTenantUserPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        crate::handlers::storage_clusters::users::delete_silo_tenant_storage_user(rqctx, path).await
+    }
+
+    async fn create_silo_tenant_storage_user_access_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::SiloTenantUserPath>,
+    ) -> Result<HttpResponseCreated<StorageAccessKey>, HttpError> {
+        crate::handlers::storage_clusters::access_keys::create_silo_tenant_storage_user_access_key(
+            rqctx, path,
+        )
+        .await
+    }
+
+    async fn delete_silo_tenant_storage_user_access_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::SiloTenantUserAccessKeyPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        crate::handlers::storage_clusters::access_keys::delete_silo_tenant_storage_user_access_key(
+            rqctx, path,
+        )
+        .await
+    }
+
+    async fn create_silo_tenant_storage_bucket(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantPath>,
+        body: TypedBody<tritond_api::StorageCreateBucketRequest>,
+    ) -> Result<HttpResponseCreated<StorageBucket>, HttpError> {
+        crate::handlers::storage_clusters::buckets::create_silo_tenant_storage_bucket(
+            rqctx, path, body,
+        )
+        .await
+    }
+
+    async fn delete_silo_tenant_storage_bucket(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::SiloTenantBucketPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        crate::handlers::storage_clusters::buckets::delete_silo_tenant_storage_bucket(rqctx, path)
+            .await
+    }
+
+    async fn put_silo_tenant_storage_user_policy(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::SiloTenantUserPolicyPath>,
+        body: TypedBody<serde_json::Value>,
+    ) -> Result<HttpResponseUpdatedNoContent, HttpError> {
+        crate::handlers::storage_clusters::policies::put_silo_tenant_storage_user_policy(
+            rqctx, path, body,
+        )
+        .await
+    }
+
     async fn get_storage_cluster_bucket(
         rqctx: RequestContext<Self::Context>,
         path: Path<StorageClusterBucketPath>,

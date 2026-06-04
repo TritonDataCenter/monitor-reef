@@ -1134,6 +1134,29 @@ pub struct SiloTenantUserPolicyPath {
     pub policy: String,
 }
 
+/// Tenant-scoped per-access-key forwarder path,
+/// `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/access-keys/{access_key_id}`.
+/// The handler resolves `(cluster_id, workspace_name)` from the
+/// tenant binding so cross-tenant probes return 404 by design.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SiloTenantUserAccessKeyPath {
+    pub silo_id: Uuid,
+    pub tenant_id: Uuid,
+    pub user: String,
+    pub access_key_id: String,
+}
+
+/// Tenant-scoped per-bucket forwarder path,
+/// `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/buckets/{bucket}`.
+/// The handler resolves `(cluster_id, workspace_name)` from the
+/// tenant binding so cross-tenant probes return 404 by design.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SiloTenantBucketPath {
+    pub silo_id: Uuid,
+    pub tenant_id: Uuid,
+    pub bucket: String,
+}
+
 // ----- Storage cluster forwarder mirror types -----
 //
 // These types mirror `mantad_client::types::*` field-for-field so the
@@ -4722,6 +4745,184 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloTenantUserPolicyPath>,
     ) -> Result<HttpResponseOk<serde_json::Value>, HttpError>;
+
+    /// Create an IAM user inside a single tenant's storage workspace.
+    /// Mirrors `create_storage_cluster_user` but pre-resolves the
+    /// `(cluster_id, workspace_name)` pair from the tenant binding on
+    /// the URL so the operator-ui "create user" view cannot mint a
+    /// user inside a sibling tenant's workspace. The cluster-flat
+    /// endpoint stays operator-flat by design.
+    ///
+    /// Cross-silo defence: a tenant in silo B reached via silo A's
+    /// URL returns 404, not 403, so probes cannot learn that the
+    /// tenant exists in another silo.
+    ///
+    /// Failure modes:
+    ///
+    /// * 412 `TenantStorageUnbound` — the tenant has no
+    ///   `storage_workspace_id` / `storage_cluster_id` binding yet
+    ///   (run `init_silo_tenant_storage` first).
+    /// * 503 `StorageClusterUnreachable` — the bound cluster's last
+    ///   health probe failed; refresh with `tcadm storage health`.
+    /// * 404 — tenant does not exist or belongs to another silo.
+    #[endpoint {
+        method = POST,
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users",
+        tags = ["silos", "tenants", "storage-clusters"],
+    }]
+    async fn create_silo_tenant_storage_user(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantPath>,
+        body: TypedBody<StorageCreateUserRequest>,
+    ) -> Result<HttpResponseCreated<StorageUser>, HttpError>;
+
+    /// Delete an IAM user from a single tenant's storage workspace.
+    /// Mirrors `delete_storage_cluster_user` but pre-resolves the
+    /// `(cluster_id, workspace_name)` pair from the tenant binding so
+    /// the operator-ui delete action cannot remove a user owned by a
+    /// sibling tenant.
+    ///
+    /// Cross-silo / cross-tenant defence: a user that lives in
+    /// another workspace returns 404 at mantad's workspace gate, not
+    /// 403, so the existence of the user in another tenant's
+    /// workspace is not disclosed.
+    ///
+    /// Failure modes: same as
+    /// [`list_silo_tenant_storage_users`] plus 404 when the named
+    /// user does not exist in the tenant's workspace.
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}",
+        tags = ["silos", "tenants", "storage-clusters"],
+    }]
+    async fn delete_silo_tenant_storage_user(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantUserPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// Mint a new access key for a single tenant's user. Mirrors
+    /// `create_storage_cluster_access_key` but pre-resolves the
+    /// `(cluster_id, workspace_name)` pair from the tenant binding so
+    /// the operator-ui "create key" action cannot mint a key against
+    /// a sibling tenant's user.
+    ///
+    /// The cleartext `secret_access_key` is returned once on this
+    /// response. Caller must capture it; mantad does not retain the
+    /// cleartext.
+    ///
+    /// Cross-silo / cross-tenant defence: a user that lives in
+    /// another workspace returns 404 at mantad's workspace gate, so
+    /// the existence of the user in another tenant's workspace is
+    /// not disclosed.
+    ///
+    /// Failure modes: same as
+    /// [`list_silo_tenant_storage_user_access_keys`].
+    #[endpoint {
+        method = POST,
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/access-keys",
+        tags = ["silos", "tenants", "storage-clusters"],
+    }]
+    async fn create_silo_tenant_storage_user_access_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantUserPath>,
+    ) -> Result<HttpResponseCreated<StorageAccessKey>, HttpError>;
+
+    /// Delete a single access key from a tenant's user. Mirrors
+    /// `delete_storage_cluster_access_key` but pre-resolves the
+    /// `(cluster_id, workspace_name)` pair from the tenant binding
+    /// AND verifies the access key belongs to the named user inside
+    /// the tenant's workspace so the operator-ui delete action
+    /// cannot revoke a key owned by a sibling tenant's user.
+    ///
+    /// Cross-silo / cross-tenant defence: an access-key id that
+    /// resolves to a user in another workspace returns 404 at
+    /// mantad's workspace gate, not 403, so AKID enumeration cannot
+    /// learn key ownership across tenants.
+    ///
+    /// Failure modes: same as
+    /// [`list_silo_tenant_storage_user_access_keys`] plus 404 when
+    /// the named access key does not belong to the named user in the
+    /// tenant's workspace.
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/access-keys/{access_key_id}",
+        tags = ["silos", "tenants", "storage-clusters"],
+    }]
+    async fn delete_silo_tenant_storage_user_access_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantUserAccessKeyPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// Create a bucket inside a single tenant's storage workspace.
+    /// Mirrors `create_storage_cluster_bucket` but pre-resolves the
+    /// `(cluster_id, workspace_name)` pair from the tenant binding on
+    /// the URL so the operator-ui "create bucket" action cannot mint
+    /// a bucket inside a sibling tenant's workspace.
+    ///
+    /// Cross-silo defence: a tenant in silo B reached via silo A's
+    /// URL returns 404, not 403.
+    ///
+    /// Failure modes: same as
+    /// [`list_silo_tenant_storage_buckets`].
+    #[endpoint {
+        method = POST,
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/buckets",
+        tags = ["silos", "tenants", "storage-clusters"],
+    }]
+    async fn create_silo_tenant_storage_bucket(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantPath>,
+        body: TypedBody<StorageCreateBucketRequest>,
+    ) -> Result<HttpResponseCreated<StorageBucket>, HttpError>;
+
+    /// Delete a bucket from a single tenant's storage workspace.
+    /// Mirrors `delete_storage_cluster_bucket` but pre-resolves the
+    /// `(cluster_id, workspace_name)` pair from the tenant binding so
+    /// the operator-ui delete action cannot remove a bucket owned by
+    /// a sibling tenant.
+    ///
+    /// Cross-silo / cross-tenant defence: a bucket that lives in
+    /// another workspace returns 404 at mantad's workspace gate, not
+    /// 403, so bucket-name enumeration cannot learn ownership across
+    /// tenants.
+    ///
+    /// Failure modes: same as
+    /// [`list_silo_tenant_storage_buckets`] plus 404 when the named
+    /// bucket does not exist in the tenant's workspace.
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/buckets/{bucket}",
+        tags = ["silos", "tenants", "storage-clusters"],
+    }]
+    async fn delete_silo_tenant_storage_bucket(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantBucketPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// Put one inline policy document, tenant-scoped. Mirrors
+    /// `put_storage_cluster_user_policy` but pre-resolves the
+    /// `(cluster_id, workspace_name)` pair from the tenant binding so
+    /// the operator-ui detail view never writes into a sibling
+    /// tenant's policy slot (which can carry tenant-identifying ARNs
+    /// and resource paths).
+    ///
+    /// Cross-silo / cross-tenant defence: a user that lives in
+    /// another workspace returns 404 at mantad's workspace gate so
+    /// policy *names* (which can themselves be sensitive) cannot be
+    /// probed for existence across workspaces.
+    ///
+    /// Failure modes: same as
+    /// [`get_silo_tenant_storage_user_policy`].
+    #[endpoint {
+        method = PUT,
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/policies/{policy}",
+        tags = ["silos", "tenants", "storage-clusters"],
+    }]
+    async fn put_silo_tenant_storage_user_policy(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantUserPolicyPath>,
+        body: TypedBody<serde_json::Value>,
+    ) -> Result<HttpResponseUpdatedNoContent, HttpError>;
 
     /// `GET /admin/v1/buckets/{bucket}` — bucket detail.
     #[endpoint {

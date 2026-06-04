@@ -294,3 +294,204 @@ pub(crate) async fn delete_storage_cluster_user(
         }
     }
 }
+
+/// `POST /v1/silos/{silo_id}/tenants/{tenant_id}/storage/users` —
+/// create an IAM user inside a single tenant's storage workspace.
+///
+/// Mirrors `create_storage_cluster_user` but resolves the
+/// `(cluster_id, workspace_name)` pair from the tenant binding on
+/// the URL so an operator-ui drill-down cannot create a user inside
+/// a sibling tenant on the same cluster. The cluster-flat endpoint
+/// stays operator-flat by design. (monitor-reef-5fek)
+pub(crate) async fn create_silo_tenant_storage_user(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::SiloTenantPath>,
+    body: TypedBody<tritond_api::StorageCreateUserRequest>,
+) -> Result<HttpResponseCreated<StorageUser>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::SiloTenantPath { silo_id, tenant_id } = path.into_inner();
+    let principal = authenticate_and_authorize_in_silo(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::StorageUserCreateInTenant,
+        silo_id,
+    )
+    .await?;
+
+    let tenant = ctx
+        .store
+        .get_tenant(tenant_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if tenant.silo_id != silo_id {
+        return Err(HttpError::for_not_found(
+            Some("NotFound".to_string()),
+            format!("tenant {tenant_id} not found in silo {silo_id}"),
+        ));
+    }
+
+    let (workspace_uuid, cluster_id) =
+        match (tenant.storage_workspace_id, tenant.storage_cluster_id) {
+            (Some(w), Some(c)) => (w, c),
+            _ => {
+                return Err(HttpError::for_client_error(
+                    Some("TenantStorageUnbound".to_string()),
+                    ClientErrorStatusCode::PRECONDITION_FAILED,
+                    format!(
+                        "tenant {tenant_id} has no storage binding; run \
+                         `POST /v1/silos/{silo_id}/tenants/{tenant_id}/init-storage` first"
+                    ),
+                ));
+            }
+        };
+
+    let workspace_name = format!("t-{}", workspace_uuid.simple());
+    let request_id = parse_request_id(&rqctx);
+    let req = body.into_inner();
+    let payload = serde_json::json!({
+        "name": req.name,
+        "silo_id": silo_id,
+        "tenant_id": tenant_id,
+    });
+    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let mantad_req = crate::storage::create_user_request_to(req);
+    match client
+        .create_user(&mantad_req, Some(workspace_name.as_str()))
+        .await
+    {
+        Ok(u) => {
+            let view = crate::storage::user_from(u);
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::StorageUserCreateInTenant,
+                    request_id,
+                    Some(format!("StorageUser::\"{}\"", view.name)),
+                    AuditOutcome::Success {
+                        resource: Some(format!("StorageUser::\"{}\"", view.name)),
+                    },
+                    payload,
+                )
+                .await;
+            Ok(HttpResponseCreated(view))
+        }
+        Err(e) => {
+            let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::StorageUserCreateInTenant,
+                    request_id,
+                    Some(format!("StorageCluster::\"{cluster_id}\"")),
+                    audit_outcome,
+                    payload,
+                )
+                .await;
+            Err(http_err)
+        }
+    }
+}
+
+/// `DELETE /v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}`
+/// — delete an IAM user owned by a single tenant's storage workspace.
+///
+/// Mirrors `delete_storage_cluster_user` but resolves the
+/// `(cluster_id, workspace_name)` pair from the tenant binding on
+/// the URL so an operator-ui drill-down cannot delete a user owned
+/// by a sibling tenant on the same cluster, even when login names
+/// collide. (monitor-reef-5fek)
+pub(crate) async fn delete_silo_tenant_storage_user(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::SiloTenantUserPath>,
+) -> Result<HttpResponseDeleted, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::SiloTenantUserPath {
+        silo_id,
+        tenant_id,
+        user,
+    } = path.into_inner();
+    let principal = authenticate_and_authorize_in_silo(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::StorageUserDeleteInTenant,
+        silo_id,
+    )
+    .await?;
+
+    let tenant = ctx
+        .store
+        .get_tenant(tenant_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if tenant.silo_id != silo_id {
+        return Err(HttpError::for_not_found(
+            Some("NotFound".to_string()),
+            format!("tenant {tenant_id} not found in silo {silo_id}"),
+        ));
+    }
+
+    let (workspace_uuid, cluster_id) =
+        match (tenant.storage_workspace_id, tenant.storage_cluster_id) {
+            (Some(w), Some(c)) => (w, c),
+            _ => {
+                return Err(HttpError::for_client_error(
+                    Some("TenantStorageUnbound".to_string()),
+                    ClientErrorStatusCode::PRECONDITION_FAILED,
+                    format!(
+                        "tenant {tenant_id} has no storage binding; run \
+                         `POST /v1/silos/{silo_id}/tenants/{tenant_id}/init-storage` first"
+                    ),
+                ));
+            }
+        };
+
+    let workspace_name = format!("t-{}", workspace_uuid.simple());
+    let request_id = parse_request_id(&rqctx);
+    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    match client
+        .delete_user(&user, Some(workspace_name.as_str()))
+        .await
+    {
+        Ok(()) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::StorageUserDeleteInTenant,
+                    request_id,
+                    Some(format!("StorageUser::\"{user}\"")),
+                    AuditOutcome::Success {
+                        resource: Some(format!("StorageUser::\"{user}\"")),
+                    },
+                    serde_json::json!({
+                        "user": user,
+                        "silo_id": silo_id,
+                        "tenant_id": tenant_id,
+                    }),
+                )
+                .await;
+            Ok(HttpResponseDeleted())
+        }
+        Err(e) => {
+            let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::StorageUserDeleteInTenant,
+                    request_id,
+                    Some(format!("StorageUser::\"{user}\"")),
+                    audit_outcome,
+                    serde_json::json!({
+                        "user": user,
+                        "silo_id": silo_id,
+                        "tenant_id": tenant_id,
+                    }),
+                )
+                .await;
+            Err(http_err)
+        }
+    }
+}

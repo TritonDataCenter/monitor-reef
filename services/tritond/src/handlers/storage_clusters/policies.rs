@@ -358,3 +358,111 @@ pub(crate) async fn delete_storage_cluster_user_policy(
         }
     }
 }
+
+/// `PUT /v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/policies/{policy}`
+/// — tenant-scoped sibling of `put_storage_cluster_user_policy`.
+/// Pre-resolves the `(cluster_id, workspace_name)` pair from the
+/// tenant binding so an operator-ui PUT cannot install a policy
+/// document onto a sibling tenant's user. Policy bodies carry
+/// tenant-identifying ARNs and resource paths; writing the wrong
+/// body to the wrong workspace would silently widen access.
+/// (monitor-reef-5fek)
+pub(crate) async fn put_silo_tenant_storage_user_policy(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::SiloTenantUserPolicyPath>,
+    body: TypedBody<serde_json::Value>,
+) -> Result<HttpResponseUpdatedNoContent, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::SiloTenantUserPolicyPath {
+        silo_id,
+        tenant_id,
+        user,
+        policy,
+    } = path.into_inner();
+    let principal = authenticate_and_authorize_in_silo(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::StorageUserPolicyPutInTenant,
+        silo_id,
+    )
+    .await?;
+
+    let tenant = ctx
+        .store
+        .get_tenant(tenant_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if tenant.silo_id != silo_id {
+        return Err(HttpError::for_not_found(
+            Some("NotFound".to_string()),
+            format!("tenant {tenant_id} not found in silo {silo_id}"),
+        ));
+    }
+
+    let (workspace_uuid, cluster_id) =
+        match (tenant.storage_workspace_id, tenant.storage_cluster_id) {
+            (Some(w), Some(c)) => (w, c),
+            _ => {
+                return Err(HttpError::for_client_error(
+                    Some("TenantStorageUnbound".to_string()),
+                    ClientErrorStatusCode::PRECONDITION_FAILED,
+                    format!(
+                        "tenant {tenant_id} has no storage binding; run \
+                         `POST /v1/silos/{silo_id}/tenants/{tenant_id}/init-storage` first"
+                    ),
+                ));
+            }
+        };
+
+    let workspace_name = format!("t-{}", workspace_uuid.simple());
+    let request_id = parse_request_id(&rqctx);
+    let doc = body.into_inner();
+    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let resource = format!("StorageUserPolicy::\"{}/{}\"", user, policy);
+    match client
+        .put_user_policy(&user, &policy, &doc, Some(workspace_name.as_str()))
+        .await
+    {
+        Ok(()) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::StorageUserPolicyPutInTenant,
+                    request_id,
+                    Some(resource.clone()),
+                    AuditOutcome::Success {
+                        resource: Some(resource),
+                    },
+                    serde_json::json!({
+                        "user": user,
+                        "policy": policy,
+                        "silo_id": silo_id,
+                        "tenant_id": tenant_id,
+                    }),
+                )
+                .await;
+            Ok(HttpResponseUpdatedNoContent())
+        }
+        Err(e) => {
+            let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::StorageUserPolicyPutInTenant,
+                    request_id,
+                    Some(resource),
+                    audit_outcome,
+                    serde_json::json!({
+                        "user": user,
+                        "policy": policy,
+                        "silo_id": silo_id,
+                        "tenant_id": tenant_id,
+                    }),
+                )
+                .await;
+            Err(http_err)
+        }
+    }
+}

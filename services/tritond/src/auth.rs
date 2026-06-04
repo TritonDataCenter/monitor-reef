@@ -99,7 +99,14 @@ permit(
         Action::"meta_set",
         Action::"meta_get",
         Action::"meta_list",
-        Action::"meta_delete"
+        Action::"meta_delete",
+        Action::"storage_user_create_in_tenant",
+        Action::"storage_user_delete_in_tenant",
+        Action::"storage_access_key_create_in_tenant",
+        Action::"storage_access_key_delete_in_tenant",
+        Action::"storage_bucket_create_in_tenant",
+        Action::"storage_bucket_delete_in_tenant",
+        Action::"storage_user_policy_put_in_tenant"
     ],
     resource
 ) when {
@@ -627,6 +634,21 @@ pub enum Action {
     StorageUserPolicyGet,
     StorageUserPolicyPut,
     StorageUserPolicyDelete,
+    // ----- Wave 2: tenant-scoped storage write surface -----
+    //
+    // Distinct from the operator-only `Storage{User,Bucket,...}Create`
+    // forwarders above: these variants are gated by the silo-member
+    // Cedar rule, so a tenant operator can manage the resources inside
+    // their own workspace without being granted root. The handlers map
+    // 1:1 onto the existing mantad forwarder endpoints but apply
+    // workspace scoping before dispatch.
+    StorageUserCreateInTenant,
+    StorageUserDeleteInTenant,
+    StorageAccessKeyCreateInTenant,
+    StorageAccessKeyDeleteInTenant,
+    StorageBucketCreateInTenant,
+    StorageBucketDeleteInTenant,
+    StorageUserPolicyPutInTenant,
     /// Configure (or rotate) the per-cluster IAM presigner credential
     /// tritond signs presigned S3 URLs with. Distinct from the bucket
     /// `Create*`/`Delete*` actions because rotating the signer
@@ -824,6 +846,13 @@ impl Action {
             Action::StorageUserPolicyGet => "storage_user_policy_get",
             Action::StorageUserPolicyPut => "storage_user_policy_put",
             Action::StorageUserPolicyDelete => "storage_user_policy_delete",
+            Action::StorageUserCreateInTenant => "storage_user_create_in_tenant",
+            Action::StorageUserDeleteInTenant => "storage_user_delete_in_tenant",
+            Action::StorageAccessKeyCreateInTenant => "storage_access_key_create_in_tenant",
+            Action::StorageAccessKeyDeleteInTenant => "storage_access_key_delete_in_tenant",
+            Action::StorageBucketCreateInTenant => "storage_bucket_create_in_tenant",
+            Action::StorageBucketDeleteInTenant => "storage_bucket_delete_in_tenant",
+            Action::StorageUserPolicyPutInTenant => "storage_user_policy_put_in_tenant",
             Action::StorageClusterSetPresigner => "storage_cluster_set_presigner",
             Action::StorageObjectPresignPut => "storage_object_presign_put",
             Action::StorageObjectPresignGet => "storage_object_presign_get",
@@ -1469,6 +1498,16 @@ fn is_read_action(action: Action) -> bool {
         | Action::StorageAccessKeyDelete
         | Action::StorageUserPolicyPut
         | Action::StorageUserPolicyDelete
+        // Wave 2 tenant-scoped writes: same physical mutation as the
+        // operator-only forwarders above, just gated by the silo-member
+        // Cedar rule. A ReadOnly tritond key still cannot reach them.
+        | Action::StorageUserCreateInTenant
+        | Action::StorageUserDeleteInTenant
+        | Action::StorageAccessKeyCreateInTenant
+        | Action::StorageAccessKeyDeleteInTenant
+        | Action::StorageBucketCreateInTenant
+        | Action::StorageBucketDeleteInTenant
+        | Action::StorageUserPolicyPutInTenant
         // Presigner config + object mutations: rotating the signing
         // credential, minting a PUT URL, and the multipart lifecycle
         // (init/parts/complete/abort) all change cluster-side state
@@ -1956,6 +1995,13 @@ mod tests {
         Action::StorageUserPolicyGet,
         Action::StorageUserPolicyPut,
         Action::StorageUserPolicyDelete,
+        Action::StorageUserCreateInTenant,
+        Action::StorageUserDeleteInTenant,
+        Action::StorageAccessKeyCreateInTenant,
+        Action::StorageAccessKeyDeleteInTenant,
+        Action::StorageBucketCreateInTenant,
+        Action::StorageBucketDeleteInTenant,
+        Action::StorageUserPolicyPutInTenant,
         Action::StorageClusterSetPresigner,
         Action::StorageObjectPresignPut,
         Action::StorageObjectPresignGet,
