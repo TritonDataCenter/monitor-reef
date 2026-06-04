@@ -1113,6 +1113,27 @@ pub struct StorageClusterUserPolicyPath {
     pub policy: String,
 }
 
+/// Tenant-scoped per-user forwarder path,
+/// `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/…`.
+/// The handler resolves `(cluster_id, workspace_name)` from the
+/// tenant binding so cross-tenant probes return 404 by design.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SiloTenantUserPath {
+    pub silo_id: Uuid,
+    pub tenant_id: Uuid,
+    pub user: String,
+}
+
+/// Tenant-scoped per-policy forwarder path,
+/// `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/policies/{policy}`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SiloTenantUserPolicyPath {
+    pub silo_id: Uuid,
+    pub tenant_id: Uuid,
+    pub user: String,
+    pub policy: String,
+}
+
 // ----- Storage cluster forwarder mirror types -----
 //
 // These types mirror `mantad_client::types::*` field-for-field so the
@@ -1277,6 +1298,16 @@ pub struct StorageBucketListQuery {
 pub struct StorageUser {
     pub name: String,
     pub created_at: DateTime<Utc>,
+    /// Owning workspace name (matches the `workspace` field on the
+    /// upstream `mantad_client::types::User`). Empty string for
+    /// admin-direct creates and for users that predate the vnext
+    /// tenant binding. Non-empty values match the
+    /// `t-{tenant_uuid_simple}` mint format tritond uses, so a webui
+    /// can group users by tenant without round-tripping through the
+    /// tenant resource. Defaults to `""` for forward-compatibility
+    /// with an older mantad that omits the field.
+    #[serde(default)]
+    pub workspace: String,
 }
 
 /// Body for `POST /v1/storage/clusters/{id}/users`.
@@ -1297,6 +1328,11 @@ pub struct StorageAccessKey {
     pub status: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secret_access_key: Option<String>,
+    /// Owning workspace name (matches the owning user's workspace).
+    /// Same defaulting rules as [`StorageUser::workspace`] /
+    /// [`StorageBucket::workspace`].
+    #[serde(default)]
+    pub workspace: String,
 }
 
 // ----- Presign + multipart wire types (Stage 6a) -----
@@ -4593,6 +4629,99 @@ pub trait TritondApi {
         path: Path<SiloTenantPath>,
         query: Query<StorageBucketListQuery>,
     ) -> Result<HttpResponseOk<Vec<StorageBucket>>, HttpError>;
+
+    /// List the IAM users owned by a single tenant's storage workspace.
+    ///
+    /// Mirrors `list_storage_cluster_users` but pre-resolves the
+    /// `(cluster_id, workspace_name)` pair from the tenant binding on
+    /// the URL so the operator-ui "filter by silo+tenant" view never
+    /// enumerates users owned by a sibling tenant. The cluster-flat
+    /// endpoint stays operator-flat by design. (monitor-reef-nbdp)
+    ///
+    /// Cross-silo defence: a tenant in silo B reached via silo A's
+    /// URL returns 404, not 403, so probes cannot learn that the
+    /// tenant exists in another silo.
+    ///
+    /// Failure modes:
+    ///
+    /// * 412 `TenantStorageUnbound` — the tenant has no
+    ///   `storage_workspace_id` / `storage_cluster_id` binding yet
+    ///   (run `init_silo_tenant_storage` first).
+    /// * 503 `StorageClusterUnreachable` — the bound cluster's last
+    ///   health probe failed; refresh with `tcadm storage health`.
+    /// * 404 — tenant does not exist or belongs to another silo.
+    #[endpoint {
+        method = GET,
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users",
+        tags = ["silos", "tenants", "storage-clusters"],
+    }]
+    async fn list_silo_tenant_storage_users(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantPath>,
+    ) -> Result<HttpResponseOk<Vec<StorageUser>>, HttpError>;
+
+    /// List a single user's access keys, tenant-scoped. Mirrors
+    /// `list_storage_cluster_access_keys` but pre-resolves the
+    /// `(cluster_id, workspace_name)` pair from the tenant binding so
+    /// the operator-ui view never enumerates keys owned by a sibling
+    /// tenant's user. (monitor-reef-8imp)
+    ///
+    /// Cross-silo / cross-tenant defence: a user that lives in
+    /// another workspace (even with the same login name) surfaces as
+    /// 404 from mantad's workspace gate — `secret_access_key` is
+    /// always omitted on list responses.
+    ///
+    /// Failure modes: same as
+    /// [`list_silo_tenant_storage_users`] plus 404 when the named
+    /// user does not exist in the tenant's workspace.
+    #[endpoint {
+        method = GET,
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/access-keys",
+        tags = ["silos", "tenants", "storage-clusters"],
+    }]
+    async fn list_silo_tenant_storage_user_access_keys(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantUserPath>,
+    ) -> Result<HttpResponseOk<Vec<StorageAccessKey>>, HttpError>;
+
+    /// List a single user's inline policy names, tenant-scoped.
+    /// Mirrors `list_storage_cluster_user_policies` but pre-resolves
+    /// the `(cluster_id, workspace_name)` pair from the tenant binding
+    /// so the operator-ui view never enumerates policy names attached
+    /// to a sibling tenant's user. (monitor-reef-fydj)
+    ///
+    /// Cross-silo / cross-tenant defence: a user that lives in
+    /// another workspace returns 404 at mantad's workspace gate so
+    /// policy *names* (which can themselves be sensitive) cannot leak
+    /// across workspaces.
+    ///
+    /// Failure modes: same as
+    /// [`list_silo_tenant_storage_user_access_keys`].
+    #[endpoint {
+        method = GET,
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/policies",
+        tags = ["silos", "tenants", "storage-clusters"],
+    }]
+    async fn list_silo_tenant_storage_user_policies(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantUserPath>,
+    ) -> Result<HttpResponseOk<Vec<String>>, HttpError>;
+
+    /// Fetch one inline policy document, tenant-scoped. Mirrors
+    /// `get_storage_cluster_user_policy` but pre-resolves the
+    /// `(cluster_id, workspace_name)` pair from the tenant binding so
+    /// the operator-ui detail view never reads a sibling tenant's
+    /// policy body (which can carry tenant-identifying ARNs and
+    /// resource paths). (monitor-reef-fydj)
+    #[endpoint {
+        method = GET,
+        path = "/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/policies/{policy}",
+        tags = ["silos", "tenants", "storage-clusters"],
+    }]
+    async fn get_silo_tenant_storage_user_policy(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantUserPolicyPath>,
+    ) -> Result<HttpResponseOk<serde_json::Value>, HttpError>;
 
     /// `GET /admin/v1/buckets/{bucket}` — bucket detail.
     #[endpoint {

@@ -13124,6 +13124,11 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"user\": {"]
     #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"workspace\": {"]
+    #[doc = "      \"description\": \"Owning workspace name (matches the owning user's workspace). Same defaulting rules as [`StorageUser::workspace`] / [`StorageBucket::workspace`].\","]
+    #[doc = "      \"default\": \"\","]
+    #[doc = "      \"type\": \"string\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -13140,6 +13145,9 @@ pub mod types {
         #[doc = "`\"Active\"` or `\"Revoked\"` (free-form on the wire today)."]
         pub status: ::std::string::String,
         pub user: ::std::string::String,
+        #[doc = "Owning workspace name (matches the owning user's workspace). Same defaulting rules as [`StorageUser::workspace`] / [`StorageBucket::workspace`]."]
+        #[serde(default)]
+        pub workspace: ::std::string::String,
     }
 
     impl StorageAccessKey {
@@ -14110,6 +14118,11 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"workspace\": {"]
+    #[doc = "      \"description\": \"Owning workspace name (matches the `workspace` field on the upstream `mantad_client::types::User`). Empty string for admin-direct creates and for users that predate the vnext tenant binding. Non-empty values match the `t-{tenant_uuid_simple}` mint format tritond uses, so a webui can group users by tenant without round-tripping through the tenant resource. Defaults to `\\\"\\\"` for forward-compatibility with an older mantad that omits the field.\","]
+    #[doc = "      \"default\": \"\","]
+    #[doc = "      \"type\": \"string\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -14121,6 +14134,9 @@ pub mod types {
     pub struct StorageUser {
         pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
         pub name: ::std::string::String,
+        #[doc = "Owning workspace name (matches the `workspace` field on the upstream `mantad_client::types::User`). Empty string for admin-direct creates and for users that predate the vnext tenant binding. Non-empty values match the `t-{tenant_uuid_simple}` mint format tritond uses, so a webui can group users by tenant without round-tripping through the tenant resource. Defaults to `\"\"` for forward-compatibility with an older mantad that omits the field."]
+        #[serde(default)]
+        pub workspace: ::std::string::String,
     }
 
     impl StorageUser {
@@ -28249,6 +28265,7 @@ pub mod types {
             >,
             status: ::std::result::Result<::std::string::String, ::std::string::String>,
             user: ::std::result::Result<::std::string::String, ::std::string::String>,
+            workspace: ::std::result::Result<::std::string::String, ::std::string::String>,
         }
 
         impl ::std::default::Default for StorageAccessKey {
@@ -28259,6 +28276,7 @@ pub mod types {
                     secret_access_key: Ok(Default::default()),
                     status: Err("no value supplied for status".to_string()),
                     user: Err("no value supplied for user".to_string()),
+                    workspace: Ok(Default::default()),
                 }
             }
         }
@@ -28314,6 +28332,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for user: {e}"));
                 self
             }
+            pub fn workspace<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.workspace = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for workspace: {e}"));
+                self
+            }
         }
 
         impl ::std::convert::TryFrom<StorageAccessKey> for super::StorageAccessKey {
@@ -28327,6 +28355,7 @@ pub mod types {
                     secret_access_key: value.secret_access_key?,
                     status: value.status?,
                     user: value.user?,
+                    workspace: value.workspace?,
                 })
             }
         }
@@ -28339,6 +28368,7 @@ pub mod types {
                     secret_access_key: Ok(value.secret_access_key),
                     status: Ok(value.status),
                     user: Ok(value.user),
+                    workspace: Ok(value.workspace),
                 }
             }
         }
@@ -29610,6 +29640,7 @@ pub mod types {
                 ::std::string::String,
             >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            workspace: ::std::result::Result<::std::string::String, ::std::string::String>,
         }
 
         impl ::std::default::Default for StorageUser {
@@ -29617,6 +29648,7 @@ pub mod types {
                 Self {
                     created_at: Err("no value supplied for created_at".to_string()),
                     name: Err("no value supplied for name".to_string()),
+                    workspace: Ok(Default::default()),
                 }
             }
         }
@@ -29642,6 +29674,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for name: {e}"));
                 self
             }
+            pub fn workspace<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.workspace = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for workspace: {e}"));
+                self
+            }
         }
 
         impl ::std::convert::TryFrom<StorageUser> for super::StorageUser {
@@ -29652,6 +29694,7 @@ pub mod types {
                 Ok(Self {
                     created_at: value.created_at?,
                     name: value.name?,
+                    workspace: value.workspace?,
                 })
             }
         }
@@ -29661,6 +29704,7 @@ pub mod types {
                 Self {
                     created_at: Ok(value.created_at),
                     name: Ok(value.name),
+                    workspace: Ok(value.workspace),
                 }
             }
         }
@@ -31054,6 +31098,32 @@ impl Client {
     #[doc = "List the buckets owned by a single tenant's storage workspace\n\nMirrors `list_storage_cluster_buckets`, but pre-resolves the `(cluster_id, workspace_name)` pair from the tenant binding on the URL so the caller never sees buckets owned by a sibling tenant. Intended for the operator webui's \"filter by silo+tenant\" view; the cluster-flat endpoint stays operator-flat by design.\n\nCross-silo defence: a tenant in silo B reached via silo A's URL returns 404, not 403, so probes cannot learn that the tenant exists in another silo.\n\nFailure modes:\n\n* 412 `TenantStorageUnbound` — the tenant has no `storage_workspace_id` / `storage_cluster_id` binding yet (run `init_silo_tenant_storage` first). * 503 `StorageClusterUnreachable` — the bound cluster's last health probe failed; refresh with `tcadm storage health`. * 404 — tenant does not exist or belongs to another silo.\n\nSends a `GET` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/buckets`\n\n```ignore\nlet response = client.list_silo_tenant_storage_buckets()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .stats(stats)\n    .send()\n    .await;\n```"]
     pub fn list_silo_tenant_storage_buckets(&self) -> builder::ListSiloTenantStorageBuckets<'_> {
         builder::ListSiloTenantStorageBuckets::new(self)
+    }
+
+    #[doc = "List the IAM users owned by a single tenant's storage workspace\n\nMirrors `list_storage_cluster_users` but pre-resolves the `(cluster_id, workspace_name)` pair from the tenant binding on the URL so the operator-ui \"filter by silo+tenant\" view never enumerates users owned by a sibling tenant. The cluster-flat endpoint stays operator-flat by design. (monitor-reef-nbdp)\n\nCross-silo defence: a tenant in silo B reached via silo A's URL returns 404, not 403, so probes cannot learn that the tenant exists in another silo.\n\nFailure modes:\n\n* 412 `TenantStorageUnbound` — the tenant has no `storage_workspace_id` / `storage_cluster_id` binding yet (run `init_silo_tenant_storage` first). * 503 `StorageClusterUnreachable` — the bound cluster's last health probe failed; refresh with `tcadm storage health`. * 404 — tenant does not exist or belongs to another silo.\n\nSends a `GET` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users`\n\n```ignore\nlet response = client.list_silo_tenant_storage_users()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
+    pub fn list_silo_tenant_storage_users(&self) -> builder::ListSiloTenantStorageUsers<'_> {
+        builder::ListSiloTenantStorageUsers::new(self)
+    }
+
+    #[doc = "List a single user's access keys, tenant-scoped. Mirrors\n\n`list_storage_cluster_access_keys` but pre-resolves the `(cluster_id, workspace_name)` pair from the tenant binding so the operator-ui view never enumerates keys owned by a sibling tenant's user. (monitor-reef-8imp)\n\nCross-silo / cross-tenant defence: a user that lives in another workspace (even with the same login name) surfaces as 404 from mantad's workspace gate — `secret_access_key` is always omitted on list responses.\n\nFailure modes: same as [`list_silo_tenant_storage_users`] plus 404 when the named user does not exist in the tenant's workspace.\n\nSends a `GET` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/access-keys`\n\n```ignore\nlet response = client.list_silo_tenant_storage_user_access_keys()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .user(user)\n    .send()\n    .await;\n```"]
+    pub fn list_silo_tenant_storage_user_access_keys(
+        &self,
+    ) -> builder::ListSiloTenantStorageUserAccessKeys<'_> {
+        builder::ListSiloTenantStorageUserAccessKeys::new(self)
+    }
+
+    #[doc = "List a single user's inline policy names, tenant-scoped\n\nMirrors `list_storage_cluster_user_policies` but pre-resolves the `(cluster_id, workspace_name)` pair from the tenant binding so the operator-ui view never enumerates policy names attached to a sibling tenant's user. (monitor-reef-fydj)\n\nCross-silo / cross-tenant defence: a user that lives in another workspace returns 404 at mantad's workspace gate so policy *names* (which can themselves be sensitive) cannot leak across workspaces.\n\nFailure modes: same as [`list_silo_tenant_storage_user_access_keys`].\n\nSends a `GET` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/policies`\n\n```ignore\nlet response = client.list_silo_tenant_storage_user_policies()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .user(user)\n    .send()\n    .await;\n```"]
+    pub fn list_silo_tenant_storage_user_policies(
+        &self,
+    ) -> builder::ListSiloTenantStorageUserPolicies<'_> {
+        builder::ListSiloTenantStorageUserPolicies::new(self)
+    }
+
+    #[doc = "Fetch one inline policy document, tenant-scoped. Mirrors\n\n`get_storage_cluster_user_policy` but pre-resolves the `(cluster_id, workspace_name)` pair from the tenant binding so the operator-ui detail view never reads a sibling tenant's policy body (which can carry tenant-identifying ARNs and resource paths). (monitor-reef-fydj)\n\nSends a `GET` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/policies/{policy}`\n\n```ignore\nlet response = client.get_silo_tenant_storage_user_policy()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .user(user)\n    .policy(policy)\n    .send()\n    .await;\n```"]
+    pub fn get_silo_tenant_storage_user_policy(
+        &self,
+    ) -> builder::GetSiloTenantStorageUserPolicy<'_> {
+        builder::GetSiloTenantStorageUserPolicy::new(self)
     }
 
     #[doc = "Create a tenant-bound operator account\n\nUsed to mint test / non-federated tenant principals so the forwarder workspace gate can be exercised end-to-end without requiring an external OIDC IdP. The created user lands with `is_root: false`, `tenant_id: Some(<path tenant>)`, empty `capabilities` (no `/v1/system/` access), and a bcrypt-hashed password.\n\nFederated users continue to land via the JIT-on-OIDC-login path; this endpoint is for environments without an IdP and for verification tooling.\n\nReturns 409 if `username` is already in use; 404 if the tenant doesn't exist or belongs to another silo.\n\nSends a `POST` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/users`\n\n```ignore\nlet response = client.create_silo_tenant_user()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .body(body)\n    .send()\n    .await;\n```"]
@@ -41145,6 +41215,423 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "list_silo_tenant_storage_buckets",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_silo_tenant_storage_users`]\n\n[`Client::list_silo_tenant_storage_users`]: super::Client::list_silo_tenant_storage_users"]
+    #[derive(Debug, Clone)]
+    pub struct ListSiloTenantStorageUsers<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        tenant_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListSiloTenantStorageUsers<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::StorageUser>>, Error<types::Error>>
+        {
+            let Self {
+                client,
+                silo_id,
+                tenant_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/silos/{}/tenants/{}/storage/users",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&tenant_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_silo_tenant_storage_users",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_silo_tenant_storage_user_access_keys`]\n\n[`Client::list_silo_tenant_storage_user_access_keys`]: super::Client::list_silo_tenant_storage_user_access_keys"]
+    #[derive(Debug, Clone)]
+    pub struct ListSiloTenantStorageUserAccessKeys<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        tenant_id: Result<::uuid::Uuid, String>,
+        user: Result<::std::string::String, String>,
+    }
+
+    impl<'a> ListSiloTenantStorageUserAccessKeys<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                user: Err("user was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn user<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.user = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for user failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/access-keys`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::StorageAccessKey>>, Error<types::Error>>
+        {
+            let Self {
+                client,
+                silo_id,
+                tenant_id,
+                user,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let user = user.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/silos/{}/tenants/{}/storage/users/{}/access-keys",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&tenant_id.to_string()),
+                encode_path(&user.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_silo_tenant_storage_user_access_keys",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_silo_tenant_storage_user_policies`]\n\n[`Client::list_silo_tenant_storage_user_policies`]: super::Client::list_silo_tenant_storage_user_policies"]
+    #[derive(Debug, Clone)]
+    pub struct ListSiloTenantStorageUserPolicies<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        tenant_id: Result<::uuid::Uuid, String>,
+        user: Result<::std::string::String, String>,
+    }
+
+    impl<'a> ListSiloTenantStorageUserPolicies<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                user: Err("user was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn user<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.user = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for user failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/policies`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<::std::string::String>>, Error<types::Error>>
+        {
+            let Self {
+                client,
+                silo_id,
+                tenant_id,
+                user,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let user = user.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/silos/{}/tenants/{}/storage/users/{}/policies",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&tenant_id.to_string()),
+                encode_path(&user.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_silo_tenant_storage_user_policies",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_silo_tenant_storage_user_policy`]\n\n[`Client::get_silo_tenant_storage_user_policy`]: super::Client::get_silo_tenant_storage_user_policy"]
+    #[derive(Debug, Clone)]
+    pub struct GetSiloTenantStorageUserPolicy<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        tenant_id: Result<::uuid::Uuid, String>,
+        user: Result<::std::string::String, String>,
+        policy: Result<::std::string::String, String>,
+    }
+
+    impl<'a> GetSiloTenantStorageUserPolicy<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                user: Err("user was not initialized".to_string()),
+                policy: Err("policy was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn user<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.user = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for user failed".to_string()
+            });
+            self
+        }
+
+        pub fn policy<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.policy = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for policy failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/policies/{policy}`"]
+        pub async fn send(self) -> Result<ResponseValue<::serde_json::Value>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                tenant_id,
+                user,
+                policy,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let user = user.map_err(Error::InvalidRequest)?;
+            let policy = policy.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/silos/{}/tenants/{}/storage/users/{}/policies/{}",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&tenant_id.to_string()),
+                encode_path(&user.to_string()),
+                encode_path(&policy.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_silo_tenant_storage_user_policy",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

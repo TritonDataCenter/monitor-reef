@@ -102,6 +102,68 @@ pub(crate) async fn list_storage_cluster_users(
     ))
 }
 
+/// `GET /v1/silos/{silo_id}/tenants/{tenant_id}/storage/users` —
+/// list the IAM users owned by a single tenant's storage workspace.
+///
+/// Mirrors `list_storage_cluster_users` but resolves the
+/// `(cluster_id, workspace_name)` pair from the tenant binding on
+/// the URL, so an operator-ui drill-down can never enumerate users
+/// owned by a sibling tenant on the same cluster. The cluster-flat
+/// endpoint above stays operator-flat by design. (monitor-reef-nbdp)
+pub(crate) async fn list_silo_tenant_storage_users(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::SiloTenantPath>,
+) -> Result<HttpResponseOk<Vec<StorageUser>>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::SiloTenantPath { silo_id, tenant_id } = path.into_inner();
+    let _principal = authenticate_and_authorize_in_silo(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::TenantGet,
+        silo_id,
+    )
+    .await?;
+
+    let tenant = ctx
+        .store
+        .get_tenant(tenant_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if tenant.silo_id != silo_id {
+        return Err(HttpError::for_not_found(
+            Some("NotFound".to_string()),
+            format!("tenant {tenant_id} not found in silo {silo_id}"),
+        ));
+    }
+
+    let (workspace_uuid, cluster_id) =
+        match (tenant.storage_workspace_id, tenant.storage_cluster_id) {
+            (Some(w), Some(c)) => (w, c),
+            _ => {
+                return Err(HttpError::for_client_error(
+                    Some("TenantStorageUnbound".to_string()),
+                    ClientErrorStatusCode::PRECONDITION_FAILED,
+                    format!(
+                        "tenant {tenant_id} has no storage binding; run \
+                         `POST /v1/silos/{silo_id}/tenants/{tenant_id}/init-storage` first"
+                    ),
+                ));
+            }
+        };
+
+    let workspace_name = format!("t-{}", workspace_uuid.simple());
+    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let users = client
+        .list_users(Some(workspace_name.as_str()))
+        .await
+        .map_err(crate::storage::mantad_error_to_http)?;
+    Ok(HttpResponseOk(
+        users.into_iter().map(crate::storage::user_from).collect(),
+    ))
+}
+
 pub(crate) async fn create_storage_cluster_user(
     rqctx: RequestContext<ApiContext>,
     path: Path<StorageClusterPath>,

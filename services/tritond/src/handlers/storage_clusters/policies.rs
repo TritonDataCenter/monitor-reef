@@ -123,6 +123,132 @@ pub(crate) async fn get_storage_cluster_user_policy(
     Ok(HttpResponseOk(doc))
 }
 
+/// `GET /v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/policies`
+/// — tenant-scoped sibling of `list_storage_cluster_user_policies`.
+/// Pre-resolves the `(cluster_id, workspace_name)` pair from the
+/// tenant binding so the operator-ui never enumerates policy names
+/// attached to a sibling tenant's user. Policy names can themselves
+/// be sensitive (often hint at intended actions). (monitor-reef-fydj)
+pub(crate) async fn list_silo_tenant_storage_user_policies(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::SiloTenantUserPath>,
+) -> Result<HttpResponseOk<Vec<String>>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::SiloTenantUserPath {
+        silo_id,
+        tenant_id,
+        user,
+    } = path.into_inner();
+    let _principal = authenticate_and_authorize_in_silo(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::TenantGet,
+        silo_id,
+    )
+    .await?;
+
+    let tenant = ctx
+        .store
+        .get_tenant(tenant_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if tenant.silo_id != silo_id {
+        return Err(HttpError::for_not_found(
+            Some("NotFound".to_string()),
+            format!("tenant {tenant_id} not found in silo {silo_id}"),
+        ));
+    }
+
+    let (workspace_uuid, cluster_id) =
+        match (tenant.storage_workspace_id, tenant.storage_cluster_id) {
+            (Some(w), Some(c)) => (w, c),
+            _ => {
+                return Err(HttpError::for_client_error(
+                    Some("TenantStorageUnbound".to_string()),
+                    ClientErrorStatusCode::PRECONDITION_FAILED,
+                    format!(
+                        "tenant {tenant_id} has no storage binding; run \
+                         `POST /v1/silos/{silo_id}/tenants/{tenant_id}/init-storage` first"
+                    ),
+                ));
+            }
+        };
+
+    let workspace_name = format!("t-{}", workspace_uuid.simple());
+    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let policies = client
+        .list_user_policies(&user, Some(workspace_name.as_str()))
+        .await
+        .map_err(crate::storage::mantad_error_to_http)?;
+    Ok(HttpResponseOk(policies))
+}
+
+/// `GET /v1/silos/{silo_id}/tenants/{tenant_id}/storage/users/{user}/policies/{policy}`
+/// — tenant-scoped sibling of `get_storage_cluster_user_policy`.
+/// Pre-resolves the `(cluster_id, workspace_name)` pair from the
+/// tenant binding so the operator-ui's policy detail view never
+/// reads a sibling tenant's body. Policy documents carry
+/// tenant-identifying ARNs and resource paths; this is the
+/// highest-sensitivity leg of the family. (monitor-reef-fydj)
+pub(crate) async fn get_silo_tenant_storage_user_policy(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::SiloTenantUserPolicyPath>,
+) -> Result<HttpResponseOk<serde_json::Value>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::SiloTenantUserPolicyPath {
+        silo_id,
+        tenant_id,
+        user,
+        policy,
+    } = path.into_inner();
+    let _principal = authenticate_and_authorize_in_silo(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::TenantGet,
+        silo_id,
+    )
+    .await?;
+
+    let tenant = ctx
+        .store
+        .get_tenant(tenant_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if tenant.silo_id != silo_id {
+        return Err(HttpError::for_not_found(
+            Some("NotFound".to_string()),
+            format!("tenant {tenant_id} not found in silo {silo_id}"),
+        ));
+    }
+
+    let (workspace_uuid, cluster_id) =
+        match (tenant.storage_workspace_id, tenant.storage_cluster_id) {
+            (Some(w), Some(c)) => (w, c),
+            _ => {
+                return Err(HttpError::for_client_error(
+                    Some("TenantStorageUnbound".to_string()),
+                    ClientErrorStatusCode::PRECONDITION_FAILED,
+                    format!(
+                        "tenant {tenant_id} has no storage binding; run \
+                         `POST /v1/silos/{silo_id}/tenants/{tenant_id}/init-storage` first"
+                    ),
+                ));
+            }
+        };
+
+    let workspace_name = format!("t-{}", workspace_uuid.simple());
+    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let doc = client
+        .get_user_policy(&user, &policy, Some(workspace_name.as_str()))
+        .await
+        .map_err(crate::storage::mantad_error_to_http)?;
+    Ok(HttpResponseOk(doc))
+}
+
 pub(crate) async fn put_storage_cluster_user_policy(
     rqctx: RequestContext<ApiContext>,
     path: Path<StorageClusterUserPolicyPath>,

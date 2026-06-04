@@ -420,6 +420,7 @@ pub(crate) fn user_from(u: mantad_client::User) -> StorageUser {
     StorageUser {
         name: u.name,
         created_at: u.created_at,
+        workspace: u.workspace,
     }
 }
 
@@ -430,6 +431,7 @@ pub(crate) fn access_key_from(k: mantad_client::AccessKey) -> StorageAccessKey {
         created_at: k.created_at,
         status: k.status,
         secret_access_key: k.secret_access_key,
+        workspace: k.workspace,
     }
 }
 

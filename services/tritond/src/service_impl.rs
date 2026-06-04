@@ -1510,6 +1510,43 @@ impl TritondApi for TritondServiceImpl {
         .await
     }
 
+    async fn list_silo_tenant_storage_users(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantPath>,
+    ) -> Result<HttpResponseOk<Vec<StorageUser>>, HttpError> {
+        crate::handlers::storage_clusters::users::list_silo_tenant_storage_users(rqctx, path).await
+    }
+
+    async fn list_silo_tenant_storage_user_access_keys(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::SiloTenantUserPath>,
+    ) -> Result<HttpResponseOk<Vec<StorageAccessKey>>, HttpError> {
+        crate::handlers::storage_clusters::access_keys::list_silo_tenant_storage_user_access_keys(
+            rqctx, path,
+        )
+        .await
+    }
+
+    async fn list_silo_tenant_storage_user_policies(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::SiloTenantUserPath>,
+    ) -> Result<HttpResponseOk<Vec<String>>, HttpError> {
+        crate::handlers::storage_clusters::policies::list_silo_tenant_storage_user_policies(
+            rqctx, path,
+        )
+        .await
+    }
+
+    async fn get_silo_tenant_storage_user_policy(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::SiloTenantUserPolicyPath>,
+    ) -> Result<HttpResponseOk<serde_json::Value>, HttpError> {
+        crate::handlers::storage_clusters::policies::get_silo_tenant_storage_user_policy(
+            rqctx, path,
+        )
+        .await
+    }
+
     async fn get_storage_cluster_bucket(
         rqctx: RequestContext<Self::Context>,
         path: Path<StorageClusterBucketPath>,
