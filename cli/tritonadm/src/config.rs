@@ -4,13 +4,13 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! On-disk configuration for `tcadm`.
+//! On-disk configuration for `tritonadm`.
 //!
-//! Lives at `$XDG_CONFIG_HOME/tcadm/config.json` (typically
-//! `~/.config/tcadm/config.json` on Linux, `~/Library/Application
-//! Support/tcadm/config.json` on macOS). Carries the cluster
+//! Lives at `$XDG_CONFIG_HOME/triton/tritonadm/config.json` (typically
+//! `~/.config/triton/tritonadm/config.json` on Linux, `~/Library/Application
+//! Support/triton/tritonadm/config.json` on macOS). Carries the cluster
 //! endpoint and the most recent access/refresh token pair from
-//! `tcadm login` or `tcadm configure`. The refresh middleware in
+//! `tritonadm login` or `tritonadm configure`. The refresh middleware in
 //! [`crate::session`] rewrites the file in place after a successful
 //! `/v1/auth/refresh`.
 
@@ -38,14 +38,14 @@ pub struct Tokens {
 
 impl Config {
     pub fn path() -> Result<PathBuf> {
-        // `TCADM_CONFIG_DIR` overrides the system default. Useful for
+        // `TRITONADM_CONFIG_DIR` overrides the system default. Useful for
         // tests, for sandboxed deployments, and for operators who want
         // to keep the config alongside other secret material on disk.
-        if let Ok(custom) = std::env::var("TCADM_CONFIG_DIR") {
+        if let Ok(custom) = std::env::var("TRITONADM_CONFIG_DIR") {
             return Ok(PathBuf::from(custom).join("config.json"));
         }
         let base = dirs::config_dir().context("could not determine user config dir")?;
-        Ok(base.join("tcadm").join("config.json"))
+        Ok(base.join("triton").join("tritonadm").join("config.json"))
     }
 
     /// Load the config file, returning `Ok(None)` if it doesn't exist
@@ -83,7 +83,7 @@ impl Config {
         Ok(())
     }
 
-    /// Remove the config file (used by `tcadm logout`).
+    /// Remove the config file (used by `tritonadm logout`).
     pub fn delete() -> Result<()> {
         let path = Self::path()?;
         if path.exists() {

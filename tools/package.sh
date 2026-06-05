@@ -7,24 +7,24 @@
 # Copyright 2026 Edgecast Cloud LLC.
 #
 # package.sh - build the vNext components and publish them to the signed
-# channel so `tcadm update <name>` can pull them.
+# channel so `tritonadm update <name>` can pull them.
 #
-# The lockstep trio (tritond, tritonagent, tcadm) is ALWAYS built together
+# The lockstep trio (tritond, tritonagent, tritonadm) is ALWAYS built together
 # in one cargo invocation — they share the blueprint postcard wire and
 # must move in lockstep. adminui (admin-backend) builds alongside them
 # (it tracks tritond/tritonagent). They are PUBLISHED individually so they
 # update individually:
 #
-#   tritond, admin-backend  -> services/   (binary-swap; `tcadm update`)
+#   tritond, admin-backend  -> services/   (binary-swap; `tritonadm update`)
 #   tritonagent             -> agents/      (GZ tarball)
-#   tcadm                   -> tcadm/
+#   tritonadm                   -> tritonadm/
 #
 # Everything is cross-built on the illumos build host (never on the Mac)
 # and published via `tritoncloud-publish` (minisign-signed channel JSON).
 #
 # Usage:
 #   tools/package.sh [--channel edge|stable] [--no-publish] [--stamp S] [component...]
-#     components: trio adminui  (or: tritond tritonagent tcadm admin-backend)
+#     components: trio adminui  (or: tritond tritonagent tritonadm admin-backend)
 #     default: trio + adminui
 #
 # Env (defaults shown):
@@ -48,19 +48,19 @@ while [ $# -gt 0 ]; do
         --no-publish) PUBLISH=0; shift ;;
         --stamp) STAMP="$2"; shift 2 ;;
         -h|--help) sed -n '11,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-        trio) COMPONENTS+=(tritond tritonagent tcadm); shift ;;
+        trio) COMPONENTS+=(tritond tritonagent tritonadm); shift ;;
         adminui) COMPONENTS+=(admin-backend); shift ;;
-        tritond|tritonagent|tcadm|admin-backend) COMPONENTS+=("$1"); shift ;;
+        tritond|tritonagent|tritonadm|admin-backend) COMPONENTS+=("$1"); shift ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
 # Default: the trio + adminui.
-[ ${#COMPONENTS[@]} -eq 0 ] && COMPONENTS=(tritond tritonagent tcadm admin-backend)
+[ ${#COMPONENTS[@]} -eq 0 ] && COMPONENTS=(tritond tritonagent tritonadm admin-backend)
 
 # Always build the WHOLE trio if any of it is requested (lockstep).
 want() { printf '%s\n' "${COMPONENTS[@]}" | grep -qx "$1"; }
-if want tritond || want tritonagent || want tcadm; then
-    for c in tritond tritonagent tcadm; do want "$c" || COMPONENTS+=("$c"); done
+if want tritond || want tritonagent || want tritonadm; then
+    for c in tritond tritonagent tritonadm; do want "$c" || COMPONENTS+=("$c"); done
 fi
 
 BUILD_HOST=${BUILD_HOST:-142.147.4.194}
@@ -102,7 +102,7 @@ rsync -az --exclude=target --exclude=node_modules --exclude=.git --exclude=rust 
 
 echo "== cross-build the trio + tritoncloud-publish =="
 # Two invocations on purpose. tritond needs the `foundationdb` feature, but
-# tritonagent + tcadm also depend on tritond-store, so building them in the
+# tritonagent + tritonadm also depend on tritond-store, so building them in the
 # SAME invocation would unify `tritond-store/foundationdb` into them (cargo
 # feature unification) and leave the agent linked against libfdb_c — which
 # the GZ can't satisfy, producing a broken agent. Build the fdb side and the
@@ -111,7 +111,7 @@ run "cd $MR_DIR && . /opt/tritoncloud/build-env.sh && \
      cargo build --release -p tritond -p tritoncloud-publish \
          --features tritond/foundationdb"
 run "cd $MR_DIR && . /opt/tritoncloud/build-env.sh && \
-     cargo build --release -p tritonagent -p tcadm"
+     cargo build --release -p tritonagent -p tritonadm"
 
 if want admin-backend; then
     echo "== cross-build admin-backend (adminui) =="
@@ -126,7 +126,7 @@ fi
 if [ $PUBLISH -eq 0 ]; then
     echo "== build done (--no-publish) =="
     echo "binaries on $BUILD_HOST:"
-    echo "  $MR_DIR/../../opt/cargo-target/release/{tritond,tritonagent,tcadm}  (CARGO_TARGET_DIR)"
+    echo "  $MR_DIR/../../opt/cargo-target/release/{tritond,tritonagent,tritonadm}  (CARGO_TARGET_DIR)"
     echo "  /opt/cargo-target-admin/release/admin-backend"
     exit 0
 fi
@@ -162,17 +162,17 @@ if want tritonagent; then
          $PFX agent --name tritonagent --stamp $STAMP --tarball /var/tmp/tritonagent-$STAMP.tar.gz"
 fi
 
-if want tcadm; then
-    echo "== publish tcadm =="
-    run "cd $MR_DIR && rm -rf /var/tmp/tcadm-stage && mkdir -p /var/tmp/tcadm-stage && \
-         cp -p $TGT/tcadm /var/tmp/tcadm-stage/tcadm && chmod 0755 /var/tmp/tcadm-stage/tcadm && \
-         (cd /var/tmp/tcadm-stage && tar -czf /var/tmp/tcadm-$STAMP.tar.gz tcadm) && \
-         PATH=/opt/local/bin:\$PATH $PUB --channel $CHANNEL tcadm \
-             --stamp $STAMP --target x86_64-unknown-illumos --tarball /var/tmp/tcadm-$STAMP.tar.gz"
+if want tritonadm; then
+    echo "== publish tritonadm =="
+    run "cd $MR_DIR && rm -rf /var/tmp/tritonadm-stage && mkdir -p /var/tmp/tritonadm-stage && \
+         cp -p $TGT/tritonadm /var/tmp/tritonadm-stage/tritonadm && chmod 0755 /var/tmp/tritonadm-stage/tritonadm && \
+         (cd /var/tmp/tritonadm-stage && tar -czf /var/tmp/tritonadm-$STAMP.tar.gz tritonadm) && \
+         PATH=/opt/local/bin:\$PATH $PUB --channel $CHANNEL tritonadm \
+             --stamp $STAMP --target x86_64-unknown-illumos --tarball /var/tmp/tritonadm-$STAMP.tar.gz"
 fi
 
 echo ""
 echo "== published to channel '$CHANNEL' at stamp $STAMP =="
 echo "On the headnode GZ, pull the updates:"
-echo "  tcadm update --check"
-echo "  tcadm update tritond adminui tritonagent     # or: tcadm update --all"
+echo "  tritonadm update --check"
+echo "  tritonadm update tritond adminui tritonagent     # or: tritonadm update --all"

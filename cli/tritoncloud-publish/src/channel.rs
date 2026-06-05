@@ -10,7 +10,7 @@
 //!
 //! 1. Fetch the current `<channel>.json` from Manta (or start fresh
 //!    if it does not exist yet).
-//! 2. Mutate the relevant entry (image / agent / tcadm).
+//! 2. Mutate the relevant entry (image / agent / tritonadm).
 //! 3. Bump `updated_at`.
 //! 4. Serialize, sign, mput the `.new` pair, mmv into place.
 
@@ -89,7 +89,7 @@ pub fn new_empty(locator: &ChannelLocator) -> ChannelManifest {
         images: Default::default(),
         agents: Default::default(),
         services: Default::default(),
-        tcadm: Default::default(),
+        tritonadm: Default::default(),
     }
 }
 

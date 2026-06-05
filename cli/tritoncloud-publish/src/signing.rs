@@ -33,7 +33,7 @@ const PASSPHRASE_ENV: &str = "MINISIGN_PASSWORD";
 /// `MINISIGN_PASSWORD` (env) or an interactive `rpassword` prompt,
 /// then signs the manifest's bytes in-process. Output bytes are
 /// exactly what `minisign -S -m manifest -x sig` would produce, so
-/// downstream verifiers (`tcadm`, `install.sh`, anyone using
+/// downstream verifiers (`tritonadm`, `install.sh`, anyone using
 /// `minisign-verify`) cannot tell which signing path was used.
 pub fn sign_file(secret_key_path: &Path, manifest_path: &Path, sig_path: &Path) -> Result<()> {
     info!(

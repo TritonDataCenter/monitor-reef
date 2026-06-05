@@ -4,8 +4,8 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! End-to-end test for `tcadm bootstrap`: bring up `tritond` on an
-//! ephemeral port in-process, run the `tcadm` binary as a subprocess
+//! End-to-end test for `tritonadm bootstrap`: bring up `tritond` on an
+//! ephemeral port in-process, run the `tritonadm` binary as a subprocess
 //! pointed at it, and assert that it exits successfully and reports
 //! the expected status/version.
 
@@ -21,9 +21,9 @@ async fn bootstrap_against_running_tritond() {
     let bind = server.local_addr();
     let endpoint = format!("http://{bind}");
 
-    // Run the tcadm binary as a subprocess; assert_cmd compiles it
+    // Run the tritonadm binary as a subprocess; assert_cmd compiles it
     // via the package's binary target.
-    let mut cmd = Command::cargo_bin("tcadm").expect("tcadm binary should exist");
+    let mut cmd = Command::cargo_bin("tritonadm").expect("tritonadm binary should exist");
     cmd.args(["bootstrap", "--endpoint", &endpoint]);
 
     cmd.assert()
@@ -42,13 +42,13 @@ async fn bootstrap_json_output_is_valid_json() {
     let bind = server.local_addr();
     let endpoint = format!("http://{bind}");
 
-    let mut cmd = Command::cargo_bin("tcadm").expect("tcadm binary should exist");
+    let mut cmd = Command::cargo_bin("tritonadm").expect("tritonadm binary should exist");
     cmd.args(["bootstrap", "--endpoint", &endpoint, "--json"]);
 
-    let output = cmd.output().expect("tcadm should run");
+    let output = cmd.output().expect("tritonadm should run");
     assert!(
         output.status.success(),
-        "tcadm exited non-zero: {}",
+        "tritonadm exited non-zero: {}",
         String::from_utf8_lossy(&output.stderr),
     );
 
@@ -70,7 +70,7 @@ async fn bootstrap_fails_when_tritond_is_unreachable() {
     let dead_addr = listener.local_addr().expect("local_addr");
     drop(listener);
 
-    let mut cmd = Command::cargo_bin("tcadm").expect("tcadm binary should exist");
+    let mut cmd = Command::cargo_bin("tritonadm").expect("tritonadm binary should exist");
     cmd.args(["bootstrap", "--endpoint", &format!("http://{dead_addr}")]);
 
     cmd.assert()

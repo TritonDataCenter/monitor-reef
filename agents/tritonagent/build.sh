@@ -10,7 +10,7 @@
 #
 # Fetches the binary from Manta on demand, lays out the per-agent
 # proto/, writes etc/version with the stamp, and tars the result.
-# Output is suitable for `tcadm agent install tritonagent` (extract at /).
+# Output is suitable for `tritonadm agent install tritonagent` (extract at /).
 #
 
 set -euo pipefail
@@ -34,7 +34,7 @@ if [ ! -x "$BIN_DEST" ]; then
     chmod 0755 "$BIN_DEST"
 fi
 
-# Stamp the version file so `tcadm agent list` can show what is
+# Stamp the version file so `tritonadm agent list` can show what is
 # installed without re-reading the binary.
 printf '%s\n' "$STAMP" > "$PROTO_DIR/opt/triton/tritonagent/etc/version"
 chmod 0644 "$PROTO_DIR/opt/triton/tritonagent/etc/version"

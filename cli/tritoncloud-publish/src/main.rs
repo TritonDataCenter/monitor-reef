@@ -14,7 +14,7 @@
 //! - `init-channel`: create an empty `<channel>.json` (signed).
 //! - `image`: publish a zone image (manifest + content.zfs.gz).
 //! - `agent`: publish a per-CN GZ tarball (`tritonagent`, `proteusadm`).
-//! - `tcadm`: publish a tcadm binary for a target triple.
+//! - `tritonadm`: publish a tritonadm binary for a target triple.
 //! - `show`: dump the current channel manifest to stdout.
 //!
 //! ## Environment
@@ -43,7 +43,7 @@ use clap::{Args, Parser, Subcommand};
 use sha2::{Digest, Sha256};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
-use triton_channel::{AgentEntry, ChannelManifest, ImageEntry, ServiceEntry, TcadmEntry};
+use triton_channel::{AgentEntry, ChannelManifest, ImageEntry, ServiceEntry, TritonadmEntry};
 
 use crate::channel::{ChannelLocator, fetch_or_init, new_empty, publish};
 use crate::manta::mput;
@@ -108,8 +108,8 @@ enum Command {
     /// a binary-swap update target (`services.<name>` in the manifest).
     Service(ServiceArgs),
 
-    /// Publish a tcadm binary for one target triple.
-    Tcadm(TcadmArgs),
+    /// Publish a tritonadm binary for one target triple.
+    Tritonadm(TritonadmArgs),
 
     /// Publish the bootstrap install.sh script + its detached
     /// signature to `~~/public/tritoncloud/install.sh`. The script
@@ -165,7 +165,7 @@ struct ImageArgs {
 #[derive(Debug, Args)]
 struct ServiceArgs {
     /// Canonical service name (key into `services`), e.g. `tritond`,
-    /// `admin-backend`. This is what `tcadm update <name>` resolves.
+    /// `admin-backend`. This is what `tritonadm update <name>` resolves.
     #[arg(long)]
     name: String,
 
@@ -215,7 +215,7 @@ struct AgentArgs {
 }
 
 #[derive(Debug, Args)]
-struct TcadmArgs {
+struct TritonadmArgs {
     /// Build stamp.
     #[arg(long)]
     stamp: String,
@@ -224,7 +224,7 @@ struct TcadmArgs {
     #[arg(long)]
     target: String,
 
-    /// Local path to the tcadm tarball.
+    /// Local path to the tritonadm tarball.
     #[arg(long)]
     tarball: PathBuf,
 }
@@ -260,7 +260,7 @@ fn main() -> Result<()> {
         Command::Image(args) => do_image(&locator, &secret_key, args),
         Command::Agent(args) => do_agent(&locator, &secret_key, args),
         Command::Service(args) => do_service(&locator, &secret_key, args),
-        Command::Tcadm(args) => do_tcadm(&locator, &secret_key, args),
+        Command::Tritonadm(args) => do_tritonadm(&locator, &secret_key, args),
         Command::InstallSh { source } => do_install_sh(&locator, &secret_key, source),
     }
 }
@@ -416,7 +416,7 @@ fn do_service(locator: &ChannelLocator, secret_key: &Path, args: ServiceArgs) ->
     Ok(())
 }
 
-fn do_tcadm(locator: &ChannelLocator, secret_key: &Path, args: TcadmArgs) -> Result<()> {
+fn do_tritonadm(locator: &ChannelLocator, secret_key: &Path, args: TritonadmArgs) -> Result<()> {
     let bytes =
         fs::read(&args.tarball).with_context(|| format!("read {}", args.tarball.display()))?;
     let sha256 = hash_hex(&bytes);
@@ -424,17 +424,17 @@ fn do_tcadm(locator: &ChannelLocator, secret_key: &Path, args: TcadmArgs) -> Res
     drop(bytes);
 
     let remote = format!(
-        "{}/tcadm/{}-{}.tar.gz",
+        "{}/tritonadm/{}-{}.tar.gz",
         locator.manta_base, args.stamp, args.target
     );
     mput(&args.tarball, &remote)?;
 
     let url = url::Url::parse(&format!(
-        "{}/tcadm/{}-{}.tar.gz",
+        "{}/tritonadm/{}-{}.tar.gz",
         locator.https_base, args.stamp, args.target
     ))?;
 
-    let entry = TcadmEntry {
+    let entry = TritonadmEntry {
         stamp: args.stamp.clone(),
         url,
         sha256,
@@ -442,11 +442,11 @@ fn do_tcadm(locator: &ChannelLocator, secret_key: &Path, args: TcadmArgs) -> Res
     };
 
     let mut manifest: ChannelManifest = fetch_or_init(locator)?;
-    manifest.tcadm.insert(args.target.clone(), entry);
+    manifest.tritonadm.insert(args.target.clone(), entry);
 
     let workdir = tempfile::tempdir().context("tempdir")?;
     publish(locator, &mut manifest, secret_key, workdir.path())?;
-    info!(target = %args.target, stamp = %args.stamp, channel = %locator.channel, "tcadm published");
+    info!(target = %args.target, stamp = %args.stamp, channel = %locator.channel, "tritonadm published");
     Ok(())
 }
 

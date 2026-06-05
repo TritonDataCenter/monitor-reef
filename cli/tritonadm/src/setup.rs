@@ -4,13 +4,13 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! `tcadm setup apply` — converged single-node headnode bring-up.
+//! `tritonadm setup apply` — converged single-node headnode bring-up.
 //!
 //! Installs the signed zone images from the channel, `vmadm create`s the
 //! control-plane zones with their first-boot metadata in dependency order
 //! with health gates between them, installs the GZ agents, and surfaces
 //! the one-time root password + endpoints. This is the provisioning layer
-//! `tcadm install` deliberately stops short of (install only does
+//! `tritonadm install` deliberately stops short of (install only does
 //! `imgadm install` / agent-tar; it never `vmadm create`s a zone).
 //!
 //! Sequence: triton-fdb (self-runs `fdbcli configure new single ssd`) →
@@ -109,7 +109,7 @@ struct Plan {
 pub fn run(opts: SetupOpts) -> Result<()> {
     let plan = resolve_plan(opts)?;
 
-    println!("== tcadm setup: single-node headnode bring-up ==");
+    println!("== tritonadm setup: single-node headnode bring-up ==");
     println!("  nic_tag={} netmask={}", plan.nic_tag, plan.netmask);
     println!("  fdb={} tritond={}", plan.fdb_ip, plan.tritond_ip);
     if plan.with_mantad {
@@ -277,7 +277,7 @@ fn require_image<'a>(
     name: &str,
 ) -> Result<&'a ImageEntry> {
     images.get(name).ok_or_else(|| {
-        anyhow!("required image `{name}` is not in the channel — publish it first (`tcadm install --list`)")
+        anyhow!("required image `{name}` is not in the channel — publish it first (`tritonadm install --list`)")
     })
 }
 
@@ -562,20 +562,22 @@ fn print_summary(plan: &Plan, tritond_zone: Uuid, mantad_zone: Option<Uuid>) {
     }
     println!("\n next steps:");
     println!(
-        "  tcadm configure --endpoint {}:8080   # then log in as root",
+        "  tritonadm configure --endpoint {}:8080   # then log in as root",
         plan.tritond_ip
     );
-    println!("  tcadm api-key create                  # stop reusing the root password");
+    println!("  tritonadm api-key create                  # stop reusing the root password");
     if plan.with_mantad {
-        println!("  tcadm storage cluster add ...         # register mantad with tritond");
+        println!("  tritonadm storage cluster add ...         # register mantad with tritond");
     }
     if plan.with_clickhouse {
         println!(
-            "  tcadm config set metrics.backend clickhouse && tcadm config set metrics.clickhouse_url http://{}:8123",
+            "  tritonadm config set metrics.backend clickhouse && tritonadm config set metrics.clickhouse_url http://{}:8123",
             plan.clickhouse_ip.as_deref().unwrap_or("<ch-ip>")
         );
     }
-    println!("  # then on each CN: tcadm install tritonagent + approve via `tcadm cn approve`");
+    println!(
+        "  # then on each CN: tritonadm install tritonagent + approve via `tritonadm cn approve`"
+    );
     println!("========================================================");
 }
 

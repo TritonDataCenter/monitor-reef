@@ -4,7 +4,7 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! `tcadm image-v1 fetch-nocloud` — drive [`nocloud_import`] against
+//! `tritonadm image-v1 fetch-nocloud` — drive [`nocloud_import`] against
 //! a chosen vendor and, optionally, ship the result to a vnext tritond
 //! IMGAPI surface via an in-cluster mantad.
 //!
@@ -60,7 +60,7 @@ pub struct Opts {
     pub insecure_no_verify: bool,
     /// Endpoint of the tritond instance to register the image with.
     /// Only consulted when `target == Tritond`. Falls through to
-    /// the global `--endpoint` / `TCADM_ENDPOINT` chain.
+    /// the global `--endpoint` / `TRITONADM_ENDPOINT` chain.
     pub tritond_endpoint: Option<String>,
     /// Bearer token for the tritond endpoint (operator JWT or API
     /// key value). Only consulted when `target == Tritond`.
@@ -78,7 +78,10 @@ pub async fn run(opts: Opts) -> Result<()> {
         .resolve(&opts.release, &http)
         .await
         .with_context(|| format!("resolve {:?} @ {}", opts.vendor, opts.release))?;
-    println!("resolved: {} {} -> {}", resolved.series, resolved.version, resolved.url);
+    println!(
+        "resolved: {} {} -> {}",
+        resolved.series, resolved.version, resolved.url
+    );
     if let Some(ref sha) = resolved.expected_sha256 {
         println!("expected sha256: {sha}");
     }
@@ -94,9 +97,9 @@ pub async fn run(opts: Opts) -> Result<()> {
     let tritond_endpoint = opts.tritond_endpoint;
     let tritond_bearer = opts.tritond_bearer;
 
-    // Default the workdir + output_dir under /var/tmp/tcadm-nocloud/
+    // Default the workdir + output_dir under /var/tmp/tritonadm-nocloud/
     // so the user only needs to override when they care.
-    let base = PathBuf::from("/var/tmp/tcadm-nocloud");
+    let base = PathBuf::from("/var/tmp/tritonadm-nocloud");
     let workdir = opts.workdir.unwrap_or_else(|| base.join("work"));
     let output_dir = opts.output_dir.unwrap_or_else(|| base.join("out"));
     let zfs_dataset = opts.zfs_dataset.unwrap_or_else(|| "zones".to_string());
@@ -139,7 +142,7 @@ async fn register_with_tritond(
     outputs: &nocloud_import::pipeline::PipelineOutputs,
 ) -> Result<()> {
     let endpoint = tritond_endpoint
-        .ok_or_else(|| anyhow!("--target tritond needs --endpoint or TCADM_ENDPOINT"))?;
+        .ok_or_else(|| anyhow!("--target tritond needs --endpoint or TRITONADM_ENDPOINT"))?;
     let bearer = tritond_bearer
         .ok_or_else(|| anyhow!("--target tritond needs an --api-key or login session"))?;
 
@@ -151,8 +154,7 @@ async fn register_with_tritond(
     let mantad_region = std::env::var("MANTAD_REGION").unwrap_or_else(|_| "us-east-1".to_string());
     let mantad_bucket =
         std::env::var("MANTAD_BUCKET").unwrap_or_else(|_| "triton-images".to_string());
-    let mantad_ak =
-        std::env::var("MANTAD_ACCESS_KEY_ID").context("MANTAD_ACCESS_KEY_ID env")?;
+    let mantad_ak = std::env::var("MANTAD_ACCESS_KEY_ID").context("MANTAD_ACCESS_KEY_ID env")?;
     let mantad_sk =
         std::env::var("MANTAD_SECRET_ACCESS_KEY").context("MANTAD_SECRET_ACCESS_KEY env")?;
 
@@ -165,7 +167,10 @@ async fn register_with_tritond(
     )
     .context("BlobStore::new")?;
 
-    println!("uploading to mantad bucket: {}", store.url_for(outputs.manifest_uuid));
+    println!(
+        "uploading to mantad bucket: {}",
+        store.url_for(outputs.manifest_uuid)
+    );
     let upload = store
         .upload(outputs.manifest_uuid, &outputs.gz_path)
         .await
@@ -197,9 +202,13 @@ async fn register_with_tritond(
         "sha256": sha256,
     });
 
-    let url = format!("{}/v1/silos/{silo}/imgapi-images", endpoint.trim_end_matches('/'));
+    let url = format!(
+        "{}/v1/silos/{silo}/imgapi-images",
+        endpoint.trim_end_matches('/')
+    );
     println!("POST {url}");
-    let client = crate::http::async_client().context("build async reqwest client for tritond POST")?;
+    let client =
+        crate::http::async_client().context("build async reqwest client for tritond POST")?;
     let resp = client
         .post(&url)
         .bearer_auth(&bearer)

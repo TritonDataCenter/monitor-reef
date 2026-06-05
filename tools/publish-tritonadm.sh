@@ -6,7 +6,7 @@
 # Copyright 2026 Edgecast Cloud LLC.
 
 #
-# publish-tcadm.sh - cross-build tcadm for illumos on the SmartOS build
+# publish-tritonadm.sh - cross-build tritonadm for illumos on the SmartOS build
 # host, package it, and publish to Manta via tritoncloud-publish.
 #
 # Requires (on the local workstation):
@@ -20,7 +20,7 @@
 #   - CARGO_HOME and CARGO_TARGET_DIR writable
 #
 # Usage:
-#   bash tools/publish-tcadm.sh [--channel edge|stable]
+#   bash tools/publish-tritonadm.sh [--channel edge|stable]
 #
 # Channel defaults to edge.
 #
@@ -40,7 +40,7 @@ done
 
 BUILD_HOST=${BUILD_HOST:-root@10.199.199.10}
 BUILD_KEY=${BUILD_KEY:-$HOME/.ssh/sdc.id_rsa}
-BUILD_DIR=${BUILD_DIR:-/opt/tcadm-build}
+BUILD_DIR=${BUILD_DIR:-/opt/tritonadm-build}
 TARGET_TRIPLE=${TARGET_TRIPLE:-x86_64-unknown-illumos}
 
 TOP=$(cd "$(dirname "$0")/.." && pwd)
@@ -48,7 +48,7 @@ PUB=$TOP/target/release/tritoncloud-publish
 [ -x "$PUB" ] || { echo "tritoncloud-publish missing; cargo build -p tritoncloud-publish --release" >&2; exit 1; }
 
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
-TARBALL=$TOP/target/release/tcadm-$STAMP-$TARGET_TRIPLE.tar.gz
+TARBALL=$TOP/target/release/tritonadm-$STAMP-$TARGET_TRIPLE.tar.gz
 
 echo "==> stamp: $STAMP"
 echo "==> target: $TARGET_TRIPLE"
@@ -72,23 +72,23 @@ ssh -i "$BUILD_KEY" "$BUILD_HOST" \
             CARGO_TARGET_DIR=$BUILD_DIR/target \
             CARGO_HOME=/opt/cargo-home \
             LIBRARY_PATH=/opt/fdb/lib \
-            TCADM_BUILD_STAMP=$STAMP && \
-     cargo build -p tcadm --release -j 2"
+            TRITONADM_BUILD_STAMP=$STAMP && \
+     cargo build -p tritonadm --release -j 2"
 
 echo "==> fetch binary back"
-scp -i "$BUILD_KEY" "$BUILD_HOST:$BUILD_DIR/target/release/tcadm" \
-    "$TOP/target/release/tcadm-illumos-$STAMP"
+scp -i "$BUILD_KEY" "$BUILD_HOST:$BUILD_DIR/target/release/tritonadm" \
+    "$TOP/target/release/tritonadm-illumos-$STAMP"
 
 echo "==> package"
 STAGE=$(mktemp -d)
-cp "$TOP/target/release/tcadm-illumos-$STAMP" "$STAGE/tcadm"
-chmod 0755 "$STAGE/tcadm"
-tar -C "$STAGE" -czf "$TARBALL" tcadm
+cp "$TOP/target/release/tritonadm-illumos-$STAMP" "$STAGE/tritonadm"
+chmod 0755 "$STAGE/tritonadm"
+tar -C "$STAGE" -czf "$TARBALL" tritonadm
 rm -rf "$STAGE"
 ls -la "$TARBALL"
 
 echo "==> publish to Manta channel '$CHANNEL'"
-"$PUB" --channel "$CHANNEL" tcadm \
+"$PUB" --channel "$CHANNEL" tritonadm \
     --stamp "$STAMP" \
     --target "$TARGET_TRIPLE" \
     --tarball "$TARBALL"

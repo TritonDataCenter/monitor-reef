@@ -6,9 +6,9 @@
 
 //! Cloud-init nocloud image import pipeline.
 //!
-//! Lifted as-is from the upstream tritonadm `fetch-nocloud` command
+//! Lifted from an upstream `fetch-nocloud` command
 //! (TritonDataCenter/monitor-reef commit 727713ff) and re-homed here
-//! as a shared library so multiple CLIs (tritonadm's own, our tcadm
+//! as a shared library so multiple CLIs (the `tritonadm` operator CLI's
 //! `image fetch-nocloud` verb, future automation) can drive the same
 //! end-to-end fetch + qcow2/vmdk/xz decode + zfs receive + IMGAPI
 //! manifest pipeline without each one re-implementing the vendor

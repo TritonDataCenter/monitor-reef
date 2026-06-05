@@ -44,7 +44,7 @@ pub struct ChannelManifest {
 
     /// Free-form identifier for the operator who signed this snapshot.
     /// Not load-bearing for security — that comes from the minisign
-    /// signature — but used in `tcadm version` output.
+    /// signature — but used in `tritonadm version` output.
     pub publisher: String,
 
     /// Zone images indexed by canonical image name
@@ -64,13 +64,13 @@ pub struct ChannelManifest {
     #[serde(default)]
     pub services: BTreeMap<String, ServiceEntry>,
 
-    /// `tcadm` binaries indexed by Rust target triple
+    /// `tritonadm` binaries indexed by Rust target triple
     /// (e.g. `"x86_64-unknown-illumos"`).
     #[serde(default)]
-    pub tcadm: BTreeMap<String, TcadmEntry>,
+    pub tritonadm: BTreeMap<String, TritonadmEntry>,
 }
 
-/// One zone-resident service binary. `tcadm update <name>` swaps it into
+/// One zone-resident service binary. `tritonadm update <name>` swaps it into
 /// the target zone and restarts its SMF service — no image reprovision,
 /// so `/data` and the rest of the zone root are untouched. Stays
 /// minisign-verified (the whole manifest is signed) + sha256-checked.
@@ -128,12 +128,12 @@ pub struct ImageEntry {
     /// `super::verify_sha256` after download.
     pub sha256: String,
 
-    /// Size of the content blob in bytes. Surfaced so `tcadm image
+    /// Size of the content blob in bytes. Surfaced so `tritonadm image
     /// install` can show a progress bar without a HEAD request.
     pub size_bytes: u64,
 
     /// Oldest PI buildstamp this image is known to coexist with.
-    /// `None` means unconstrained. `tcadm` refuses to install if the
+    /// `None` means unconstrained. `tritonadm` refuses to install if the
     /// running PI buildstamp sorts earlier than this.
     #[serde(default)]
     pub pi_min: Option<String>,
@@ -142,7 +142,7 @@ pub struct ImageEntry {
     pub data_format_version: u32,
 
     /// Oldest on-disk data format this image can attach to and
-    /// upgrade from. `tcadm image update` refuses a reprovision when
+    /// upgrade from. `tritonadm image update` refuses a reprovision when
     /// the existing zone's `data_format_version` is below this.
     pub data_format_min_read: u32,
 }
@@ -167,12 +167,12 @@ pub struct AgentEntry {
     pub pi_min: Option<String>,
 }
 
-/// One `tcadm` binary tarball, keyed in the parent map by Rust target
-/// triple. We do not model the triple as an enum so an older `tcadm`
+/// One `tritonadm` binary tarball, keyed in the parent map by Rust target
+/// triple. We do not model the triple as an enum so an older `tritonadm`
 /// can still parse a manifest that adds new triples it does not know
 /// about (it simply will not find an entry for its own triple).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TcadmEntry {
+pub struct TritonadmEntry {
     /// Build stamp.
     pub stamp: String,
 

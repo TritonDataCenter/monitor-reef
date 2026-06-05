@@ -12,7 +12,7 @@
 //!    by the holder of the publisher private key. The `sha256` fields
 //!    inside the JSON are thus also trusted.
 //! 2. [`verify_sha256`] proves a downloaded artifact (image content,
-//!    agent tarball, tcadm tarball) matches the `sha256` claimed in
+//!    agent tarball, tritonadm tarball) matches the `sha256` claimed in
 //!    the (already-trusted) manifest.
 
 use minisign_verify::{PublicKey, Signature};
@@ -26,8 +26,8 @@ use crate::errors::{IntegrityError, VerifyError};
 /// `publisher_pubkey` is the contents of a `.pub` file produced by
 /// `minisign -G` (a two-line ASCII document: `untrusted comment: ...`
 /// then the base64 key). The committed key lives at
-/// `monitor-reef/cli/tcadm/publisher.pub` and is embedded at compile
-/// time via `include_str!` in `tcadm` (and via heredoc in
+/// `monitor-reef/cli/tritonadm/publisher.pub` and is embedded at compile
+/// time via `include_str!` in `tritonadm` (and via heredoc in
 /// `install.sh`).
 ///
 /// Returns `Ok(())` on success; on failure, the error variant

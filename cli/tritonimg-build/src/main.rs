@@ -60,7 +60,7 @@ struct Cli {
     zfs_source: String,
 
     /// Operator-friendly name for the image. Surfaced in
-    /// `tcadm silo image list`.
+    /// `tritonadm silo image list`.
     #[arg(long)]
     name: String,
 

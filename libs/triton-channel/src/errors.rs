@@ -16,7 +16,7 @@ pub enum ParseError {
     Json(#[from] serde_json::Error),
 
     /// The manifest's `schema` field is newer than the consumer
-    /// understands. Consumer should `tcadm self-update` and retry.
+    /// understands. Consumer should `tritonadm self-update` and retry.
     #[error(
         "channel manifest schema is {found}, this client only understands up to {supported}; \
          update your client and retry"

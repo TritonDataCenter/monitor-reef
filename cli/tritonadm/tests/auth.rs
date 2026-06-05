@@ -6,13 +6,13 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-//! Integration tests for the `tcadm` operator-auth surface.
+//! Integration tests for the `tritonadm` operator-auth surface.
 //!
 //! Each test spins up `tritond` in-process on an ephemeral port,
-//! seeds a root user with a known password, then runs `tcadm` as a
+//! seeds a root user with a known password, then runs `tritonadm` as a
 //! subprocess against that endpoint. The on-disk config is rerouted
-//! into a tempdir via `TCADM_CONFIG_DIR` so the user's real
-//! `~/.config/tcadm` is never touched.
+//! into a tempdir via `TRITONADM_CONFIG_DIR` so the user's real
+//! `~/.config/tritonadm` is never touched.
 
 use std::sync::Arc;
 
@@ -81,15 +81,15 @@ impl TestServer {
     }
 }
 
-/// Build a `Command::cargo_bin("tcadm")` with the config dir routed
-/// to `tmp` and TCADM_* env vars cleared so each test starts from a
+/// Build a `Command::cargo_bin("tritonadm")` with the config dir routed
+/// to `tmp` and TRITONADM_* env vars cleared so each test starts from a
 /// clean slate.
-fn tcadm_cmd(tmp: &TempDir) -> Command {
-    let mut cmd = Command::cargo_bin("tcadm").unwrap();
-    cmd.env("TCADM_CONFIG_DIR", tmp.path())
-        .env_remove("TCADM_ENDPOINT")
-        .env_remove("TCADM_API_KEY")
-        .env_remove("TCADM_ACCESS_TOKEN");
+fn tritonadm_cmd(tmp: &TempDir) -> Command {
+    let mut cmd = Command::cargo_bin("tritonadm").unwrap();
+    cmd.env("TRITONADM_CONFIG_DIR", tmp.path())
+        .env_remove("TRITONADM_ENDPOINT")
+        .env_remove("TRITONADM_API_KEY")
+        .env_remove("TRITONADM_ACCESS_TOKEN");
     cmd
 }
 
@@ -99,8 +99,8 @@ async fn configure_persists_tokens_and_subsequent_call_uses_them() {
     let test = TestServer::start().await;
     let endpoint = test.endpoint();
 
-    // tcadm configure --endpoint X --username root --password-stdin
-    tcadm_cmd(&tmp)
+    // tritonadm configure --endpoint X --username root --password-stdin
+    tritonadm_cmd(&tmp)
         .args([
             "configure",
             "--endpoint",
@@ -113,9 +113,9 @@ async fn configure_persists_tokens_and_subsequent_call_uses_them() {
         .assert()
         .success();
 
-    // Now `tcadm api-key list` should succeed using the persisted
+    // Now `tritonadm api-key list` should succeed using the persisted
     // tokens — no flag needed.
-    tcadm_cmd(&tmp)
+    tritonadm_cmd(&tmp)
         .args(["api-key", "list"])
         .assert()
         .success()
@@ -130,7 +130,7 @@ async fn login_with_wrong_password_fails() {
     let test = TestServer::start().await;
     let endpoint = test.endpoint();
 
-    tcadm_cmd(&tmp)
+    tritonadm_cmd(&tmp)
         .args([
             "configure",
             "--endpoint",
@@ -154,9 +154,9 @@ async fn access_token_env_var_authenticates() {
     let token = test.access_token();
 
     // No `configure` happened; we authenticate purely via env.
-    tcadm_cmd(&tmp)
+    tritonadm_cmd(&tmp)
         .args(["--endpoint", &endpoint, "api-key", "list"])
-        .env("TCADM_ACCESS_TOKEN", &token)
+        .env("TRITONADM_ACCESS_TOKEN", &token)
         .assert()
         .success();
 
@@ -170,8 +170,8 @@ async fn missing_credentials_returns_403_via_anonymous_call() {
     let endpoint = test.endpoint();
 
     // No config, no env, `api-key list` requires auth → server
-    // refuses with 403, tcadm bubbles that up as a non-zero exit.
-    tcadm_cmd(&tmp)
+    // refuses with 403, tritonadm bubbles that up as a non-zero exit.
+    tritonadm_cmd(&tmp)
         .args(["--endpoint", &endpoint, "api-key", "list"])
         .assert()
         .failure();
@@ -186,7 +186,7 @@ async fn api_key_create_then_use_via_api_key_flag() {
     let endpoint = test.endpoint();
 
     // First: configure (which mints a session JWT).
-    tcadm_cmd(&tmp)
+    tritonadm_cmd(&tmp)
         .args([
             "configure",
             "--endpoint",
@@ -200,7 +200,7 @@ async fn api_key_create_then_use_via_api_key_flag() {
         .success();
 
     // Mint an api key with --json so we can parse the secret.
-    let create_output = tcadm_cmd(&tmp)
+    let create_output = tritonadm_cmd(&tmp)
         .args(["api-key", "create", "--description", "ci", "--json"])
         .output()
         .unwrap();
@@ -211,11 +211,13 @@ async fn api_key_create_then_use_via_api_key_flag() {
     );
     let parsed: serde_json::Value = serde_json::from_slice(&create_output.stdout).unwrap();
     let secret = parsed["secret"].as_str().expect("secret should be present");
+    // Wire prefix is server-issued by tritond (tritond-auth API_KEY_PREFIX);
+    // the tcadm -> tritonadm CLI rename does not touch the on-wire key format.
     assert!(secret.starts_with("tcadm_"));
 
     // Use the api-key bearer to list — this proves the API-key path
     // works without using the stored JWT session.
-    let list_output = tcadm_cmd(&tmp)
+    let list_output = tritonadm_cmd(&tmp)
         .args([
             "--endpoint",
             &endpoint,
@@ -245,15 +247,15 @@ async fn env_subcommand_emits_endpoint_export() {
     let endpoint = test.endpoint();
     let token = test.access_token();
 
-    let output = tcadm_cmd(&tmp)
+    let output = tritonadm_cmd(&tmp)
         .args(["--endpoint", &endpoint, "env"])
-        .env("TCADM_ACCESS_TOKEN", &token)
+        .env("TRITONADM_ACCESS_TOKEN", &token)
         .output()
         .unwrap();
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("TCADM_ENDPOINT="));
-    assert!(stdout.contains("TCADM_ACCESS_TOKEN="));
+    assert!(stdout.contains("TRITONADM_ENDPOINT="));
+    assert!(stdout.contains("TRITONADM_ACCESS_TOKEN="));
 
     test.close().await;
 }

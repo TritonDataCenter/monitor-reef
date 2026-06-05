@@ -26,7 +26,7 @@ fn tls_config() -> rustls::ClientConfig {
 }
 
 /// Async reqwest::Client with the bundled Mozilla webpki roots.
-/// Use this in any async tcadm path that hits an HTTPS endpoint;
+/// Use this in any async tritonadm path that hits an HTTPS endpoint;
 /// the default reqwest 0.13 rustls feature pulls in
 /// rustls-platform-verifier, which fails on illumos with
 /// "No CA certificates were loaded from the system".

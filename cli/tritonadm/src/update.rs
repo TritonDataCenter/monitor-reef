@@ -4,11 +4,11 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! `tcadm update` — update running components from the signed channel.
+//! `tritonadm update` — update running components from the signed channel.
 //!
 //! Hybrid model:
 //!
-//! - **tcadm itself** — delegates to the existing `self-update` (atomic
+//! - **tritonadm itself** — delegates to the existing `self-update` (atomic
 //!   binary swap of the running CLI).
 //! - **Zone-resident services** (`tritond`, `admin-backend`/adminui) —
 //!   BINARY-SWAP: fetch the signed `services.<name>` binary, drop it into
@@ -48,8 +48,8 @@ pub struct UpdateOpts {
 }
 
 enum Target {
-    /// `tcadm` itself — delegate to the existing self-update flow.
-    SelfTcadm,
+    /// `tritonadm` itself — delegate to the existing self-update flow.
+    SelfTritonadm,
     /// Binary-swap a zone-resident service (`manifest.services[key]`).
     Service(&'static str),
     /// Re-extract a GZ agent tarball + restart its SMF service.
@@ -66,7 +66,7 @@ enum Target {
 
 fn resolve(name: &str) -> Option<Target> {
     Some(match name {
-        "tcadm" => Target::SelfTcadm,
+        "tritonadm" => Target::SelfTritonadm,
         "tritond" => Target::Service("tritond"),
         "adminui" | "admin-backend" | "ui" => Target::Service("admin-backend"),
         "tritonagent" | "agent" => Target::Agent {
@@ -93,7 +93,7 @@ fn resolve(name: &str) -> Option<Target> {
     })
 }
 
-/// Friendly names `--all` walks. tcadm last (it replaces the running
+/// Friendly names `--all` walks. tritonadm last (it replaces the running
 /// binary; let the rest run on the known one first).
 const ALL: &[&str] = &[
     "tritond",
@@ -103,7 +103,7 @@ const ALL: &[&str] = &[
     "fdb",
     "clickhouse",
     "mantad",
-    "tcadm",
+    "tritonadm",
 ];
 
 pub fn run(opts: UpdateOpts) -> Result<()> {
@@ -117,7 +117,7 @@ pub fn run(opts: UpdateOpts) -> Result<()> {
         ALL.iter().map(|s| s.to_string()).collect()
     } else if opts.components.is_empty() {
         bail!(
-            "usage: tcadm update <component>... | --all\n  components: tcadm tritond adminui tritonagent proteusadm fdb clickhouse mantad"
+            "usage: tritonadm update <component>... | --all\n  components: tritonadm tritond adminui tritonagent proteusadm fdb clickhouse mantad"
         );
     } else {
         opts.components.clone()
@@ -130,7 +130,7 @@ pub fn run(opts: UpdateOpts) -> Result<()> {
     } else {
         "apply"
     };
-    println!("== tcadm update ({mode}) ==");
+    println!("== tritonadm update ({mode}) ==");
 
     let mut applied = 0u32;
     let mut errors = 0u32;
@@ -140,7 +140,7 @@ pub fn run(opts: UpdateOpts) -> Result<()> {
             continue;
         };
         let r = match target {
-            Target::SelfTcadm => update_self(&channel_url, &opts),
+            Target::SelfTritonadm => update_self(&channel_url, &opts),
             Target::Service(key) => update_service(&manifest, name, key, &opts),
             Target::Agent { key, smf } => update_agent(&manifest, name, key, smf, &opts),
             Target::Image { image, zone } => update_image(&manifest, name, image, zone, &opts),
@@ -162,17 +162,17 @@ pub fn run(opts: UpdateOpts) -> Result<()> {
     Ok(())
 }
 
-// ── tcadm self ────────────────────────────────────────────────────────
+// ── tritonadm self ────────────────────────────────────────────────────────
 
 fn update_self(channel_url: &str, opts: &UpdateOpts) -> Result<bool> {
     if opts.check {
         println!(
-            "  tcadm: run `tcadm self-update --check` (self-update replaces the running binary)"
+            "  tritonadm: run `tritonadm self-update --check` (self-update replaces the running binary)"
         );
         return Ok(false);
     }
     if opts.dry_run {
-        println!("  tcadm: would self-update against {channel_url}");
+        println!("  tritonadm: would self-update against {channel_url}");
         return Ok(false);
     }
     crate::self_update::run(crate::self_update::SelfUpdateOpts {
@@ -430,7 +430,7 @@ mod tests {
 
     #[test]
     fn resolve_maps_components_to_kinds() {
-        assert!(matches!(resolve("tcadm"), Some(Target::SelfTcadm)));
+        assert!(matches!(resolve("tritonadm"), Some(Target::SelfTritonadm)));
         assert!(matches!(
             resolve("tritond"),
             Some(Target::Service("tritond"))
@@ -479,7 +479,7 @@ mod tests {
         for n in ALL {
             assert!(resolve(n).is_some(), "ALL entry {n} must resolve");
         }
-        for n in ["tritond", "tritonagent", "admin-backend", "tcadm"] {
+        for n in ["tritond", "tritonagent", "admin-backend", "tritonadm"] {
             assert!(ALL.contains(&n), "{n} should be in --all");
         }
     }

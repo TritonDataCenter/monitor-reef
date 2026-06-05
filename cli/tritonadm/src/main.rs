@@ -4,7 +4,7 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! tcadm — Triton Cloud operator CLI.
+//! tritonadm — Triton Cloud operator CLI.
 
 mod commands;
 mod config;
@@ -21,17 +21,17 @@ use clap::{Parser, Subcommand};
 use uuid::Uuid;
 
 #[derive(Parser)]
-#[command(name = "tcadm")]
+#[command(name = "tritonadm")]
 #[command(about = "Triton Cloud operator CLI", long_about = None)]
 #[command(version)]
 struct Cli {
-    /// Override the cluster endpoint. Falls back to `TCADM_ENDPOINT`
+    /// Override the cluster endpoint. Falls back to `TRITONADM_ENDPOINT`
     /// then to the `endpoint` field in the on-disk config.
     #[arg(long, global = true)]
     endpoint: Option<String>,
 
     /// Authenticate with this API key instead of the stored login
-    /// session. Falls back to `TCADM_API_KEY` if not given on the
+    /// session. Falls back to `TRITONADM_API_KEY` if not given on the
     /// command line.
     #[arg(long, global = true)]
     api_key: Option<String>,
@@ -45,7 +45,7 @@ enum Commands {
     /// Verify that a tritond control plane is reachable.
     Bootstrap {
         /// Endpoint to probe; defaults to http://localhost:8080 if no
-        /// global `--endpoint` / `TCADM_ENDPOINT` is set.
+        /// global `--endpoint` / `TRITONADM_ENDPOINT` is set.
         #[arg(long)]
         endpoint: Option<String>,
         /// Emit JSON instead of the human-readable form.
@@ -53,7 +53,7 @@ enum Commands {
         json: bool,
     },
     /// Interactive login: prompts for endpoint + username + password
-    /// and writes `~/.config/tcadm/config.json`.
+    /// and writes `~/.config/tritonadm/config.json`.
     Configure {
         /// Skip the endpoint prompt.
         #[arg(long)]
@@ -212,7 +212,7 @@ enum Commands {
     },
     /// Manage registered manta-storage clusters (operator-only).
     /// Forwarder endpoints (buckets / users / policies) are exposed
-    /// through admin-backend; tcadm stays at the registry level for now.
+    /// through admin-backend; tritonadm stays at the registry level for now.
     Storage {
         #[command(subcommand)]
         command: StorageCommand,
@@ -260,10 +260,10 @@ enum Commands {
     /// Update running components from the signed channel. Hybrid:
     /// binary-swap the zone services (tritond, adminui) + GZ agents
     /// (tritonagent, proteusadm); reprovision the data-bearing zones
-    /// (fdb, clickhouse, mantad); self-update tcadm. Run on the headnode
+    /// (fdb, clickhouse, mantad); self-update tritonadm. Run on the headnode
     /// GZ.
     Update {
-        /// Components to update: tcadm tritond adminui tritonagent
+        /// Components to update: tritonadm tritond adminui tritonagent
         /// proteusadm fdb clickhouse mantad. Omit when using --all.
         components: Vec<String>,
         /// Update every known component present in the channel + host.
@@ -280,11 +280,11 @@ enum Commands {
         channel_url: Option<String>,
     },
 
-    /// Update this `tcadm` binary against the signed Manta release
+    /// Update this `tritonadm` binary against the signed Manta release
     /// channel. Verifies the channel signature against the publisher
     /// pubkey baked into the binary; refuses to act on a tampered or
     /// mis-signed manifest. Atomic swap; the previous binary is kept
-    /// at `tcadm.prev` for manual rollback.
+    /// at `tritonadm.prev` for manual rollback.
     SelfUpdate {
         /// Override the channel manifest URL. Defaults to the stable
         /// channel under tritoncloud.
@@ -417,7 +417,7 @@ enum StorageClusterCommand {
         /// HTTP base URL of the cluster's admin API
         /// (e.g. http://10.199.199.250:7101). Distinct from the
         /// global `--endpoint` flag, which controls the *tritond*
-        /// URL tcadm itself talks to.
+        /// URL tritonadm itself talks to.
         #[arg(long = "cluster-endpoint")]
         cluster_endpoint: String,
         /// Bearer token tritond will present on /admin/v1/* calls.
@@ -685,7 +685,7 @@ enum SiloImageCommand {
 #[derive(Subcommand)]
 enum SiloSshKeyCommand {
     /// List `Silo`-scoped SSH keys (does NOT include Public; use
-    /// `tcadm tenant ssh-key list` for the unioned tenant view).
+    /// `tritonadm tenant ssh-key list` for the unioned tenant view).
     List {
         silo_id: Uuid,
         #[arg(long)]
@@ -893,7 +893,6 @@ enum TenantProjectImageCommand {
     },
 }
 
-
 #[derive(Subcommand)]
 enum TenantProjectQuotaCommand {
     /// Set (or replace) the project's quota.
@@ -921,7 +920,6 @@ enum TenantProjectQuotaCommand {
     /// Remove the project's quota (project becomes unlimited).
     Delete { tenant_id: Uuid, project_id: Uuid },
 }
-
 
 #[derive(Subcommand)]
 enum TenantIdpCommand {
@@ -1063,7 +1061,7 @@ impl From<ApiKeyScopeArg> for tritond_client::types::ApiKeyScope {
     }
 }
 
-/// Scope arg for `tcadm meta ...`. Matches the four `MetaScope`
+/// Scope arg for `tritonadm meta ...`. Matches the four `MetaScope`
 /// values from `tritond-store` / `tritond-api`; converted to the
 /// progenitor type via `From` at the call site.
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -1968,7 +1966,7 @@ async fn main() -> Result<()> {
         } => {
             let endpoint = subcmd_endpoint
                 .or(cli.endpoint)
-                .or_else(|| std::env::var("TCADM_ENDPOINT").ok())
+                .or_else(|| std::env::var("TRITONADM_ENDPOINT").ok())
                 .unwrap_or_else(|| "http://localhost:8080".to_string());
             commands::bootstrap(&endpoint, json).await
         }
@@ -1979,7 +1977,7 @@ async fn main() -> Result<()> {
         } => {
             let endpoint = endpoint
                 .or(cli.endpoint)
-                .or_else(|| std::env::var("TCADM_ENDPOINT").ok());
+                .or_else(|| std::env::var("TRITONADM_ENDPOINT").ok());
             commands::configure(endpoint, username, password_stdin).await
         }
         Commands::Login {
@@ -1989,7 +1987,7 @@ async fn main() -> Result<()> {
         } => {
             let endpoint = endpoint
                 .or(cli.endpoint)
-                .or_else(|| std::env::var("TCADM_ENDPOINT").ok());
+                .or_else(|| std::env::var("TRITONADM_ENDPOINT").ok());
             commands::login(endpoint, username, password_stdin).await
         }
         Commands::Logout => commands::logout(),

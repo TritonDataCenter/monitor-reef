@@ -4,7 +4,7 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! Subcommand implementations for `tcadm`.
+//! Subcommand implementations for `tritonadm`.
 
 use anyhow::{Context, Result, bail};
 use tritond_client::types::{ApiKeyScope, LoginRequest, NewApiKey, TokenResponse};
@@ -53,7 +53,7 @@ pub async fn bootstrap(endpoint: &str, json_output: bool) -> Result<()> {
     Ok(())
 }
 
-/// Interactively log in and persist credentials to `~/.config/tcadm/config.json`.
+/// Interactively log in and persist credentials to `~/.config/tritonadm/config.json`.
 pub async fn configure(
     endpoint: Option<String>,
     username: Option<String>,
@@ -99,7 +99,7 @@ pub async fn login(
     let stored = Config::load().context("load config")?;
     let endpoint = endpoint
         .or_else(|| stored.as_ref().map(|c| c.endpoint.clone()))
-        .context("no endpoint known: pass --endpoint or run `tcadm configure` first")?;
+        .context("no endpoint known: pass --endpoint or run `tritonadm configure` first")?;
     let username = match username {
         Some(u) => u,
         None => dialoguer::Input::new()
@@ -133,14 +133,14 @@ pub async fn env(
     api_key_override: Option<String>,
 ) -> Result<()> {
     let session = Session::resolve(endpoint_override, api_key_override).await?;
-    println!("export TCADM_ENDPOINT={:?}", session.endpoint);
+    println!("export TRITONADM_ENDPOINT={:?}", session.endpoint);
     if let Some(bearer) = session.bearer {
         // We can't tell whether the bearer is a JWT or an API key
         // without inspecting it; emit both env-var names so consumers
         // pick the one they want.
-        println!("export TCADM_ACCESS_TOKEN={bearer:?}");
+        println!("export TRITONADM_ACCESS_TOKEN={bearer:?}");
     }
-    println!("# eval \"$(tcadm env)\" to load these into the current shell");
+    println!("# eval \"$(tritonadm env)\" to load these into the current shell");
     Ok(())
 }
 
@@ -909,7 +909,7 @@ pub async fn public_ssh_key_add(
 }
 
 /// List SSH keys whose scope is exactly `Silo { silo_id }` (does
-/// NOT include Public; use `tcadm tenant ssh-key list` for the
+/// NOT include Public; use `tritonadm tenant ssh-key list` for the
 /// unioned tenant view).
 pub async fn silo_ssh_key_list(
     endpoint_override: Option<String>,
@@ -1180,7 +1180,7 @@ pub async fn ssh_key_delete(
 }
 
 /// List images whose scope is exactly `Silo { silo_id }` (not
-/// the unioned tenant view; use `tcadm tenant image list` for
+/// the unioned tenant view; use `tritonadm tenant image list` for
 /// that).
 pub async fn silo_image_list(
     endpoint_override: Option<String>,
@@ -2302,7 +2302,7 @@ async fn exchange_password(endpoint: &str, username: &str, password: &str) -> Re
 /// Resolve `ident` to a UUID. Tries to parse as a Uuid first; on
 /// failure, calls `list_storage_clusters` and finds the cluster with
 /// a matching `name` field. The fallback is one extra round trip but
-/// keeps `tcadm storage cluster show <name>` working without making
+/// keeps `tritonadm storage cluster show <name>` working without making
 /// the operator carry UUIDs around.
 async fn resolve_storage_cluster_ident(
     client: &tritond_client::Client,
@@ -2635,7 +2635,7 @@ pub async fn storage_cluster_clear_presigner(
 }
 
 // ---------------------------------------------------------------------
-// Cluster configuration (`tcadm config ...`)
+// Cluster configuration (`tritonadm config ...`)
 // ---------------------------------------------------------------------
 
 /// Render the `value` / `default` JSON for the `config` table compactly
@@ -3136,7 +3136,7 @@ pub async fn instance_create_v1(
     Ok(())
 }
 
-/// `tcadm instance delete <instance_id> [--force]`.
+/// `tritonadm instance delete <instance_id> [--force]`.
 pub async fn instance_delete_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -3156,7 +3156,7 @@ pub async fn instance_delete_v1(
     Ok(())
 }
 
-/// `tcadm instance {start,stop,restart} <instance_id>`.
+/// `tritonadm instance {start,stop,restart} <instance_id>`.
 pub async fn instance_lifecycle_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -3198,7 +3198,7 @@ pub async fn instance_lifecycle_v1(
     Ok(())
 }
 
-/// `tcadm system instances [--image=&cn=...]` -> fleet-wide search.
+/// `tritonadm system instances [--image=&cn=...]` -> fleet-wide search.
 pub async fn system_instances_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -3262,7 +3262,7 @@ pub async fn system_instances_v1(
     Ok(())
 }
 
-/// `tcadm system nics [--ip=&subnet=&instance=]` -> fleet NIC search.
+/// `tritonadm system nics [--ip=&subnet=&instance=]` -> fleet NIC search.
 pub async fn system_nics_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -3315,7 +3315,7 @@ pub async fn system_nics_v1(
     Ok(())
 }
 
-/// `tcadm system cns [--state=...]` -> fleet CN inventory via the
+/// `tritonadm system cns [--state=...]` -> fleet CN inventory via the
 /// `/v1/system/cns` operator endpoint. Capability: `SystemRead`.
 pub async fn system_cns_v1(
     endpoint_override: Option<String>,
@@ -3372,7 +3372,7 @@ fn parse_capability(s: &str) -> Result<tritond_client::types::Capability> {
     })
 }
 
-/// `tcadm system user-grant <user_id> <capability>`.
+/// `tritonadm system user-grant <user_id> <capability>`.
 pub async fn system_user_grant_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -3889,7 +3889,7 @@ pub async fn vpc_create_v1(
     Ok(())
 }
 
-/// `tcadm vpc delete <vpc_id>`.
+/// `tritonadm vpc delete <vpc_id>`.
 pub async fn vpc_delete_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -3998,7 +3998,7 @@ pub async fn subnet_create_v1(
     Ok(())
 }
 
-/// `tcadm subnet delete <subnet_id>`.
+/// `tritonadm subnet delete <subnet_id>`.
 pub async fn subnet_delete_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4124,7 +4124,7 @@ pub async fn floating_ip_create_v1(
     Ok(())
 }
 
-/// `tcadm floating-ip delete <floating_ip_id>`.
+/// `tritonadm floating-ip delete <floating_ip_id>`.
 pub async fn floating_ip_delete_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4237,7 +4237,7 @@ pub async fn system_images_using_v1(
     Ok(())
 }
 
-/// `tcadm system cn-instances <cn_id>` -> `/v1/system/cns/{cn}/instances`.
+/// `tritonadm system cn-instances <cn_id>` -> `/v1/system/cns/{cn}/instances`.
 pub async fn system_cn_instances_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4267,7 +4267,7 @@ pub async fn system_cn_instances_v1(
     Ok(())
 }
 
-/// `tcadm system utilization` -> `/v1/system/utilization/silos`. Returns
+/// `tritonadm system utilization` -> `/v1/system/utilization/silos`. Returns
 /// the locked 501 UtilizationUnavailable today; the surface is
 /// reserved for the future implementation.
 pub async fn system_utilization_v1(
@@ -4328,7 +4328,7 @@ pub async fn dhcp_lease_show_v1(
     Ok(())
 }
 
-/// `tcadm system user-revoke <user_id> <capability>`.
+/// `tritonadm system user-revoke <user_id> <capability>`.
 pub async fn system_user_revoke_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4403,7 +4403,7 @@ pub async fn firewall_rule_list_v1(
     Ok(())
 }
 
-/// `tcadm firewall-rule show <id>`.
+/// `tritonadm firewall-rule show <id>`.
 pub async fn firewall_rule_show_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4443,7 +4443,7 @@ pub async fn firewall_rule_show_v1(
     Ok(())
 }
 
-/// `tcadm nat-gateway list --vpc=<uuid> [--project=<uuid>] [--tenant=<uuid>]`.
+/// `tritonadm nat-gateway list --vpc=<uuid> [--project=<uuid>] [--tenant=<uuid>]`.
 pub async fn nat_gateway_list_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4484,7 +4484,7 @@ pub async fn nat_gateway_list_v1(
     Ok(())
 }
 
-/// `tcadm nat-gateway show <id>`.
+/// `tritonadm nat-gateway show <id>`.
 pub async fn nat_gateway_show_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4514,7 +4514,7 @@ pub async fn nat_gateway_show_v1(
     Ok(())
 }
 
-/// `tcadm route-table list --vpc=<uuid> [--project=<uuid>] [--tenant=<uuid>]`.
+/// `tritonadm route-table list --vpc=<uuid> [--project=<uuid>] [--tenant=<uuid>]`.
 pub async fn route_table_list_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4560,7 +4560,7 @@ pub async fn route_table_list_v1(
     Ok(())
 }
 
-/// `tcadm route-table show <id>`.
+/// `tritonadm route-table show <id>`.
 pub async fn route_table_show_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4588,7 +4588,7 @@ pub async fn route_table_show_v1(
     Ok(())
 }
 
-/// `tcadm route list --route-table=<uuid> [--project=<uuid>] [--tenant=<uuid>]`.
+/// `tritonadm route list --route-table=<uuid> [--project=<uuid>] [--tenant=<uuid>]`.
 pub async fn route_list_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4628,7 +4628,7 @@ pub async fn route_list_v1(
     Ok(())
 }
 
-/// `tcadm route show <id>`.
+/// `tritonadm route show <id>`.
 pub async fn route_show_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4676,7 +4676,7 @@ fn parse_port_range(s: &str) -> Result<tritond_client::types::FirewallPortRange>
     Ok(tritond_client::types::FirewallPortRange { low, high })
 }
 
-/// `tcadm firewall-rule create --vpc=<uuid> --name=X --action=allow ...`.
+/// `tritonadm firewall-rule create --vpc=<uuid> --name=X --action=allow ...`.
 #[allow(clippy::too_many_arguments)]
 pub async fn firewall_rule_create_v1(
     endpoint_override: Option<String>,
@@ -4759,7 +4759,7 @@ pub async fn firewall_rule_create_v1(
     Ok(())
 }
 
-/// `tcadm firewall-rule delete <id>`.
+/// `tritonadm firewall-rule delete <id>`.
 pub async fn firewall_rule_delete_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4777,7 +4777,7 @@ pub async fn firewall_rule_delete_v1(
     Ok(())
 }
 
-/// `tcadm nat-gateway create --vpc=<uuid> --name=X --family=ipv4`.
+/// `tritonadm nat-gateway create --vpc=<uuid> --name=X --family=ipv4`.
 pub async fn nat_gateway_create_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4817,7 +4817,7 @@ pub async fn nat_gateway_create_v1(
     Ok(())
 }
 
-/// `tcadm nat-gateway delete <id>`.
+/// `tritonadm nat-gateway delete <id>`.
 pub async fn nat_gateway_delete_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4835,7 +4835,7 @@ pub async fn nat_gateway_delete_v1(
     Ok(())
 }
 
-/// `tcadm route-table create --vpc=<uuid> --name=X`.
+/// `tritonadm route-table create --vpc=<uuid> --name=X`.
 pub async fn route_table_create_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4867,7 +4867,7 @@ pub async fn route_table_create_v1(
     Ok(())
 }
 
-/// `tcadm route-table delete <id>`.
+/// `tritonadm route-table delete <id>`.
 pub async fn route_table_delete_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -4885,7 +4885,7 @@ pub async fn route_table_delete_v1(
     Ok(())
 }
 
-/// `tcadm route create --route-table=<uuid> --name=X --destination=...`.
+/// `tritonadm route create --route-table=<uuid> --name=X --destination=...`.
 #[allow(clippy::too_many_arguments)]
 pub async fn route_create_v1(
     endpoint_override: Option<String>,
@@ -4953,7 +4953,7 @@ pub async fn route_create_v1(
     Ok(())
 }
 
-/// `tcadm route delete <id>`.
+/// `tritonadm route delete <id>`.
 pub async fn route_delete_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,

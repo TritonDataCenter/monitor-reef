@@ -8,7 +8,7 @@
 //! for the Triton Cloud release-channel JSON published to Manta under
 //! `~~/public/tritoncloud/channels/<channel>.json`.
 //!
-//! This crate is the consumer-side contract that `tcadm`, the
+//! This crate is the consumer-side contract that `tritonadm`, the
 //! `install.sh` bootstrap script's Rust equivalent paths, and any
 //! future Triton release tooling all sit on top of. It is deliberately
 //! IO-free: callers fetch bytes (via `curl`, `reqwest`, `file://`,
@@ -27,7 +27,7 @@
 //!
 //! // 2. Verify the manifest was signed by the publisher.
 //! const PUBLISHER_PUBKEY: &str =
-//!     include_str!("../../../cli/tcadm/publisher.pub");
+//!     include_str!("../../../cli/tritonadm/publisher.pub");
 //! verify_minisign(&manifest_bytes, &sig_bytes, PUBLISHER_PUBKEY)?;
 //!
 //! // 3. Parse the (now-trusted) manifest.
@@ -49,7 +49,7 @@ mod verify;
 
 pub use errors::{IntegrityError, ParseError, VerifyError};
 pub use types::{
-    AgentEntry, CURRENT_SCHEMA, ChannelManifest, ImageEntry, ServiceEntry, TcadmEntry,
+    AgentEntry, CURRENT_SCHEMA, ChannelManifest, ImageEntry, ServiceEntry, TritonadmEntry,
 };
 pub use verify::{verify_minisign, verify_sha256};
 
@@ -58,7 +58,7 @@ pub use verify::{verify_minisign, verify_sha256};
 ///
 /// Callers should ALWAYS go through this function rather than calling
 /// `serde_json::from_slice` directly, because the schema check is the
-/// boundary at which we surface "you need to update tcadm" rather than
+/// boundary at which we surface "you need to update tritonadm" rather than
 /// silently dropping fields a newer publisher added with new
 /// semantics.
 pub fn parse_channel(manifest_bytes: &[u8]) -> Result<ChannelManifest, ParseError> {

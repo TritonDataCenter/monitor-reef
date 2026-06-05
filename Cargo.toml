@@ -47,7 +47,7 @@ members = [
     "services/jira-stub-server",
     "services/tritond",
     "services/tritonagent",
-    "cli/tcadm",
+    "cli/tritonadm",
     "cli/tritoncloud-publish",
     "cli/tritonimg-build",
 

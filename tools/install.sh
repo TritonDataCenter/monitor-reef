@@ -8,17 +8,17 @@
 #
 # Triton Cloud bootstrap installer.
 #
-# Downloads the latest `tcadm` binary for this host's OS+arch from the
+# Downloads the latest `tritonadm` binary for this host's OS+arch from the
 # Manta-hosted release channel and verifies the binary's sha256
 # against the manifest entry.
 #
 # Trust model: TLS to Manta + sha256 of the artifact against the
-# (TLS-protected) channel JSON. `tcadm` itself ships with the
+# (TLS-protected) channel JSON. `tritonadm` itself ships with the
 # `minisign-verify` Rust crate built in and uses it on every
 # self-update; the script-bootstrap path keeps things lean and does
 # not require a minisign CLI on the target host (SmartOS PIs do not
 # ship one). Operators who want stronger upstream integrity can do
-# `tcadm self-update --check` after installation; that path enforces
+# `tritonadm self-update --check` after installation; that path enforces
 # the publisher signature.
 #
 # Usage:
@@ -126,19 +126,19 @@ note "fetching channel manifest"
 curl -fsSL "$CHANNEL_URL" -o "$TMPDIR/channel.json"
 
 #----------------------------------------------------------------------
-# 4. parse the manifest for this target's tcadm entry
+# 4. parse the manifest for this target's tritonadm entry
 #
 # We avoid a JSON parser dependency by using a small awk fallback when
 # jq is not present. The publisher emits one-field-per-line indented
 # JSON which awk can pick apart safely; richer parsing only matters
-# for tcadm itself (which uses the triton-channel crate).
+# for tritonadm itself (which uses the triton-channel crate).
 #----------------------------------------------------------------------
 
 extract_field() {
     target="$1"
     field="$2"
     if command -v jq >/dev/null 2>&1; then
-        jq -r --arg t "$target" --arg f "$field" '.tcadm[$t][$f] // ""' "$TMPDIR/channel.json"
+        jq -r --arg t "$target" --arg f "$field" '.tritonadm[$t][$f] // ""' "$TMPDIR/channel.json"
     else
         awk -v target="$target" -v field="$field" '
             $0 ~ "\"" target "\":" { in_target = 1; next }
@@ -156,21 +156,21 @@ extract_field() {
 
 URL="$(extract_field "$TARGET" url)"
 SHA="$(extract_field "$TARGET" sha256)"
-[ -n "$URL" ] || fatal "channel has no tcadm entry for $TARGET"
+[ -n "$URL" ] || fatal "channel has no tritonadm entry for $TARGET"
 [ -n "$SHA" ] || fatal "channel entry for $TARGET is missing sha256"
 
 #----------------------------------------------------------------------
 # 5. download, verify sha256, extract
 #----------------------------------------------------------------------
 
-TARBALL="$TMPDIR/tcadm.tar.gz"
-note "downloading tcadm from $URL"
+TARBALL="$TMPDIR/tritonadm.tar.gz"
+note "downloading tritonadm from $URL"
 curl -fsSL "$URL" -o "$TARBALL"
 
-note "verifying tcadm sha256"
+note "verifying tritonadm sha256"
 ACTUAL_SHA=$(sha256_hash "$TARBALL")
 [ "$ACTUAL_SHA" = "$SHA" ] \
-    || fatal "downloaded tcadm sha256 does NOT match channel manifest (expected $SHA, got $ACTUAL_SHA)"
+    || fatal "downloaded tritonadm sha256 does NOT match channel manifest (expected $SHA, got $ACTUAL_SHA)"
 
 mkdir -p "$INSTALL_DIR"
 note "extracting to $INSTALL_DIR"
@@ -180,12 +180,12 @@ untar_to "$INSTALL_DIR" "$TARBALL"
 # 6. report
 #----------------------------------------------------------------------
 
-if [ -x "$INSTALL_DIR/tcadm" ]; then
-    note "tcadm installed to $INSTALL_DIR/tcadm"
-    note "next step: $INSTALL_DIR/tcadm setup"
+if [ -x "$INSTALL_DIR/tritonadm" ]; then
+    note "tritonadm installed to $INSTALL_DIR/tritonadm"
+    note "next step: $INSTALL_DIR/tritonadm setup"
     if ! echo ":$PATH:" | grep -q ":$INSTALL_DIR:"; then
         printf 'note: %s is not on your PATH; add it to your shell rc.\n' "$INSTALL_DIR" >&2
     fi
 else
-    fatal "tarball extracted but $INSTALL_DIR/tcadm is not present"
+    fatal "tarball extracted but $INSTALL_DIR/tritonadm is not present"
 fi

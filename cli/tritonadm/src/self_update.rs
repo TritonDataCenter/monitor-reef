@@ -4,7 +4,7 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! `tcadm self-update` — fetch the latest tcadm tarball for this
+//! `tritonadm self-update` — fetch the latest tritonadm tarball for this
 //! host's target triple from the Manta-hosted release channel,
 //! verify the channel's minisign signature against the embedded
 //! publisher pubkey, verify the tarball's SHA-256 against the
@@ -15,9 +15,9 @@
 //!
 //! ## Atomicity
 //!
-//! New binary goes to `<install-dir>/tcadm.new`, then is renamed over
-//! `<install-dir>/tcadm`. The old binary survives one cycle as
-//! `<install-dir>/tcadm.prev` so a bad release can be rolled back by
+//! New binary goes to `<install-dir>/tritonadm.new`, then is renamed over
+//! `<install-dir>/tritonadm`. The old binary survives one cycle as
+//! `<install-dir>/tritonadm.prev` so a bad release can be rolled back by
 //! hand without re-fetching anything.
 //!
 //! ## Compatibility check
@@ -36,10 +36,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use sha2::{Digest, Sha256};
 use tracing::{info, warn};
-use triton_channel::{TcadmEntry, parse_channel, verify_minisign, verify_sha256};
+use triton_channel::{TritonadmEntry, parse_channel, verify_minisign, verify_sha256};
 
 /// Embedded publisher pubkey. Committed at
-/// `monitor-reef/cli/tcadm/publisher.pub`; install.sh embeds the same
+/// `monitor-reef/cli/tritonadm/publisher.pub`; install.sh embeds the same
 /// bytes via a heredoc so both consumers verify against the same
 /// trust root.
 const PUBLISHER_PUBKEY: &str = include_str!("../publisher.pub");
@@ -52,7 +52,7 @@ const DEFAULT_CHANNEL_URL: &str = "https://us-central.manta.mnx.io/nick.wilkens@
 /// Build stamp baked in at compile time. Populated by `build.rs` from
 /// the current UTC time; matches the `--stamp` value the publisher
 /// used when pushing this binary to Manta.
-const BUILD_STAMP: &str = env!("TCADM_BUILD_STAMP");
+const BUILD_STAMP: &str = env!("TRITONADM_BUILD_STAMP");
 
 /// Self-update options surfaced to the CLI dispatcher.
 pub struct SelfUpdateOpts {
@@ -60,7 +60,7 @@ pub struct SelfUpdateOpts {
     pub channel_url: Option<String>,
 
     /// Override the install dir. Defaults to the directory containing
-    /// the currently-running tcadm executable.
+    /// the currently-running tritonadm executable.
     pub install_dir: Option<PathBuf>,
 
     /// Report current vs latest and exit non-zero if outdated, but do
@@ -83,9 +83,9 @@ pub fn run(opts: SelfUpdateOpts) -> Result<()> {
     let channel = parse_channel(&manifest_bytes)?;
 
     let entry = channel
-        .tcadm
+        .tritonadm
         .get(&target)
-        .ok_or_else(|| anyhow!("channel has no tcadm entry for target {target}"))?;
+        .ok_or_else(|| anyhow!("channel has no tritonadm entry for target {target}"))?;
 
     println!("installed: {}", BUILD_STAMP);
     println!("candidate: {} ({} bytes)", entry.stamp, entry.size_bytes);
@@ -97,7 +97,7 @@ pub fn run(opts: SelfUpdateOpts) -> Result<()> {
 
     if opts.check {
         bail!(
-            "tcadm is outdated (installed {}, candidate {})",
+            "tritonadm is outdated (installed {}, candidate {})",
             BUILD_STAMP,
             entry.stamp
         );
@@ -115,10 +115,10 @@ pub fn run(opts: SelfUpdateOpts) -> Result<()> {
 /// into the binary at build time via `build.rs` so this never relies
 /// on runtime detection that could disagree with what cargo built.
 fn current_target() -> Result<String> {
-    Ok(env!("TCADM_TARGET").to_string())
+    Ok(env!("TRITONADM_TARGET").to_string())
 }
 
-/// Return the directory containing the currently-running tcadm
+/// Return the directory containing the currently-running tritonadm
 /// executable. Falls back to `/opt/triton/bin` if we cannot read
 /// `/proc/self/exe`-equivalent on illumos.
 fn current_install_dir() -> Result<PathBuf> {
@@ -154,10 +154,10 @@ fn http_get(url: &str) -> Result<Vec<u8>> {
 }
 
 /// Download the candidate tarball, verify sha256, extract the
-/// `tcadm` binary, and atomically swap it onto the install path.
-fn download_and_swap(entry: &TcadmEntry, install_dir: &Path) -> Result<()> {
+/// `tritonadm` binary, and atomically swap it onto the install path.
+fn download_and_swap(entry: &TritonadmEntry, install_dir: &Path) -> Result<()> {
     let workdir = tempfile::tempdir().context("tempdir")?;
-    let tarball_path = workdir.path().join("tcadm.tar.gz");
+    let tarball_path = workdir.path().join("tritonadm.tar.gz");
 
     // Stream the tarball into memory + disk, computing sha256 as we
     // go so we don't read the bytes twice.
@@ -168,10 +168,10 @@ fn download_and_swap(entry: &TcadmEntry, install_dir: &Path) -> Result<()> {
         .with_context(|| format!("writing {}", tarball_path.display()))?;
     drop(bytes);
 
-    extract_tcadm(&tarball_path, workdir.path())?;
-    let extracted = workdir.path().join("tcadm");
+    extract_tritonadm(&tarball_path, workdir.path())?;
+    let extracted = workdir.path().join("tritonadm");
     if !extracted.exists() {
-        bail!("tarball did not contain a `tcadm` binary at the top level");
+        bail!("tarball did not contain a `tritonadm` binary at the top level");
     }
 
     // Make sure the new binary is executable; some tar configurations
@@ -183,7 +183,7 @@ fn download_and_swap(entry: &TcadmEntry, install_dir: &Path) -> Result<()> {
     swap_atomically(&extracted, install_dir)
 }
 
-fn extract_tcadm(tarball: &Path, into: &Path) -> Result<()> {
+fn extract_tritonadm(tarball: &Path, into: &Path) -> Result<()> {
     let f = fs::File::open(tarball).with_context(|| format!("open {}", tarball.display()))?;
     let gz = flate2_decoder(f)?;
     let mut archive = tar::Archive::new(gz);
@@ -198,13 +198,13 @@ fn flate2_decoder<R: Read>(r: R) -> Result<impl Read> {
     Ok(flate2::read::GzDecoder::new(r))
 }
 
-/// Atomically replace `<install_dir>/tcadm` with the binary at
-/// `new_binary`. The current binary survives as `tcadm.prev` for one
+/// Atomically replace `<install_dir>/tritonadm` with the binary at
+/// `new_binary`. The current binary survives as `tritonadm.prev` for one
 /// cycle so a bad release can be hand-rolled-back.
 fn swap_atomically(new_binary: &Path, install_dir: &Path) -> Result<()> {
-    let live = install_dir.join("tcadm");
-    let prev = install_dir.join("tcadm.prev");
-    let staged = install_dir.join("tcadm.new");
+    let live = install_dir.join("tritonadm");
+    let prev = install_dir.join("tritonadm.prev");
+    let staged = install_dir.join("tritonadm.new");
 
     fs::copy(new_binary, &staged)
         .with_context(|| format!("copying {} -> {}", new_binary.display(), staged.display()))?;
@@ -212,7 +212,7 @@ fn swap_atomically(new_binary: &Path, install_dir: &Path) -> Result<()> {
     perms.set_mode(0o755);
     fs::set_permissions(&staged, perms)?;
 
-    // If a prior tcadm exists, move it to .prev so we have a rollback
+    // If a prior tritonadm exists, move it to .prev so we have a rollback
     // path. Ignore the "no live binary" case (first install via
     // install.sh, then self-update before anything else ran).
     if live.exists() {
@@ -227,7 +227,10 @@ fn swap_atomically(new_binary: &Path, install_dir: &Path) -> Result<()> {
             )
         })?;
     } else {
-        warn!("no existing tcadm at {}; installing fresh", live.display());
+        warn!(
+            "no existing tritonadm at {}; installing fresh",
+            live.display()
+        );
     }
 
     fs::rename(&staged, &live).with_context(|| {
@@ -238,7 +241,7 @@ fn swap_atomically(new_binary: &Path, install_dir: &Path) -> Result<()> {
         )
     })?;
 
-    println!("tcadm updated at {}", live.display());
+    println!("tritonadm updated at {}", live.display());
     println!(
         "previous binary preserved at {} (manually delete when satisfied)",
         prev.display()

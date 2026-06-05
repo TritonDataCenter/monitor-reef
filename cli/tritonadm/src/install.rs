@@ -4,19 +4,19 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! `tcadm install` — fetch and install artifacts from the Manta
+//! `tritonadm install` — fetch and install artifacts from the Manta
 //! release channel.
 //!
 //! One verb covers both kinds:
 //!
-//! - `tcadm install <name>` resolves `<name>` in the channel
+//! - `tritonadm install <name>` resolves `<name>` in the channel
 //!   manifest. If it appears under `images`, the artifact is a
 //!   SmartOS zone-dataset image and we drive `imgadm install`. If it
 //!   appears under `agents`, it's a GZ tarball and we extract at `/`,
 //!   `svccfg import` any new manifests, and `svcadm enable` any
 //!   newly-imported site/<name> services.
 //!
-//! - `tcadm install --list` enumerates everything in the channel
+//! - `tritonadm install --list` enumerates everything in the channel
 //!   alongside what's currently installed on this host (for images:
 //!   `imgadm list`; for agents: `/opt/triton/<name>/etc/version`).
 //!
@@ -35,7 +35,7 @@ use triton_channel::{
     AgentEntry, ChannelManifest, ImageEntry, parse_channel, verify_minisign, verify_sha256,
 };
 
-/// Embedded publisher pubkey. Same trust root as `tcadm self-update`.
+/// Embedded publisher pubkey. Same trust root as `tritonadm self-update`.
 const PUBLISHER_PUBKEY: &str = include_str!("../publisher.pub");
 
 /// Default channel URL when `--channel-url` is not given. Operators
@@ -43,7 +43,7 @@ const PUBLISHER_PUBKEY: &str = include_str!("../publisher.pub");
 /// pre-release testing.
 const DEFAULT_CHANNEL_URL: &str = "https://us-central.manta.mnx.io/nick.wilkens@mnxsolutions.com/public/tritoncloud/channels/stable.json";
 
-/// The default (stable) channel URL, shared with `tcadm setup`.
+/// The default (stable) channel URL, shared with `tritonadm setup`.
 pub(crate) fn default_channel_url() -> String {
     DEFAULT_CHANNEL_URL.to_string()
 }
@@ -68,7 +68,7 @@ pub fn run(opts: InstallOpts) -> Result<()> {
 
     let name = opts
         .name
-        .ok_or_else(|| anyhow!("usage: tcadm install <name> | tcadm install --list"))?;
+        .ok_or_else(|| anyhow!("usage: tritonadm install <name> | tritonadm install --list"))?;
 
     // Refuse to act on a channel-side pin mismatch — if the operator
     // specified --stamp, the channel entry must match. We do not
@@ -84,7 +84,7 @@ pub fn run(opts: InstallOpts) -> Result<()> {
     }
     bail!(
         "no image or agent named `{name}` in channel {channel_url}. \
-         try `tcadm install --list` to see what is available."
+         try `tritonadm install --list` to see what is available."
     )
 }
 
@@ -151,8 +151,8 @@ fn show_listing(manifest: &ChannelManifest) -> Result<()> {
         println!("  {:<24}  stamp={}  {}", name, agent.stamp, status);
     }
     println!();
-    println!("=== tcadm ===");
-    for (target, t) in &manifest.tcadm {
+    println!("=== tritonadm ===");
+    for (target, t) in &manifest.tritonadm {
         println!("  {:<32}  stamp={}", target, t.stamp);
     }
     Ok(())
