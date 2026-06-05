@@ -94,7 +94,7 @@ pub(crate) async fn list_storage_cluster_buckets(
     let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let id = path.into_inner().id;
     let with_stats = query.into_inner().stats.unwrap_or(false);
-    let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, id).await?;
     let buckets = client
         .list_buckets(with_stats, scope.workspace_name())
         .await
@@ -122,7 +122,7 @@ pub(crate) async fn get_storage_cluster_bucket(
     .await?;
     let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let p = path.into_inner();
-    let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, p.id).await?;
     let b = client
         .get_bucket(&p.bucket, scope.workspace_name())
         .await
@@ -152,7 +152,7 @@ pub(crate) async fn create_storage_cluster_bucket(
         "name": req.name,
         "owner": req.owner,
     });
-    let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, id).await?;
     let mantad_req = crate::storage::create_bucket_request_to(req);
     match client
         .create_bucket(&mantad_req, scope.workspace_name())
@@ -207,7 +207,7 @@ pub(crate) async fn delete_storage_cluster_bucket(
     let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
-    let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, p.id).await?;
     match client
         .delete_bucket(&p.bucket, scope.workspace_name())
         .await
@@ -308,7 +308,7 @@ pub(crate) async fn list_silo_tenant_storage_buckets(
 
     let workspace_name = format!("t-{}", workspace_uuid.simple());
     let with_stats = query.into_inner().stats.unwrap_or(false);
-    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, cluster_id).await?;
     let buckets = client
         .list_buckets(with_stats, Some(workspace_name.as_str()))
         .await
@@ -394,7 +394,7 @@ pub(crate) async fn list_silo_tenant_storage_bucket_objects(
 
     let workspace_name = format!("t-{}", workspace_uuid.simple());
     let mantad_query = crate::storage::objects_query_to(query.into_inner());
-    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, cluster_id).await?;
     let page = client
         .list_objects(&bucket, Some(workspace_name.as_str()), &mantad_query)
         .await
@@ -419,7 +419,7 @@ pub(crate) async fn list_storage_cluster_objects(
     let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let p = path.into_inner();
     let q = crate::storage::objects_query_to(query.into_inner());
-    let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, p.id).await?;
     let page = client
         .list_objects(&p.bucket, scope.workspace_name(), &q)
         .await
@@ -498,7 +498,7 @@ pub(crate) async fn create_silo_tenant_storage_bucket(
         "name": req.name,
         "owner": req.owner,
     });
-    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, cluster_id).await?;
     let mantad_req = crate::storage::create_bucket_request_to(req);
     match client
         .create_bucket(&mantad_req, Some(workspace_name.as_str()))
@@ -607,7 +607,7 @@ pub(crate) async fn delete_silo_tenant_storage_bucket(
         "tenant_id": tenant_id,
         "bucket": bucket,
     });
-    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, cluster_id).await?;
     match client
         .delete_bucket(&bucket, Some(workspace_name.as_str()))
         .await

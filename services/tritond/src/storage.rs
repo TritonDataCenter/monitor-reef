@@ -206,6 +206,23 @@ pub async fn client_for(
     Ok((cluster, client))
 }
 
+/// Same as [`client_for`] but consults the [`crate::context::ApiContext`]
+/// for an installed cap-token mint context. When `ctx.mantad_cap_token`
+/// is set (f365 slice T1), the returned client attaches
+/// `X-Manta-Capability` on every outgoing admin RPC; otherwise it
+/// matches `client_for`'s pre-T1 behaviour. Handlers that have an
+/// `&ctx` in scope should prefer this variant.
+pub async fn client_for_with_context(
+    ctx: &crate::context::ApiContext,
+    cluster_id: Uuid,
+) -> Result<(StorageCluster, MantadClient), HttpError> {
+    let (cluster, mut client) = client_for(&ctx.store, cluster_id).await?;
+    if let Some(auth) = ctx.mantad_cap_token.clone() {
+        client = client.with_cap_auth(auth);
+    }
+    Ok((cluster, client))
+}
+
 /// Translate a [`MantadClientError`] into a paired tritond
 /// [`AuditOutcome`] + HTTP [`HttpError`] for handlers that need to
 /// emit a failure audit event AND return a useful HTTP response.

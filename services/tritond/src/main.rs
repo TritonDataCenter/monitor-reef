@@ -133,6 +133,21 @@ async fn serve(boot: BootstrapConfig) -> Result<()> {
     let mut context = ApiContext::new(Arc::clone(&store), auth, audit)
         .with_identity_hmac_key(Arc::clone(&identity_hmac_key));
 
+    // f365 slice T1: if a cap-token key is provisioned on this host,
+    // install a signing context so every outbound MantadClient
+    // (storage::client_for_with_context) attaches X-Manta-Capability.
+    // When unset, tritond falls back to the legacy Authorization:
+    // Bearer admin-token flow (pre-T1 behaviour).
+    if let Some(auth) = build_mantad_cap_token_auth()? {
+        context = context.with_mantad_cap_token(auth);
+        info!("mantad cap-token mint enabled for outbound admin RPCs (f365 slice T1)");
+    } else {
+        info!(
+            "MANTAD_CAP_TOKEN_KEY_PATH unset; outbound mantad RPCs will use bearer-only auth \
+             (pre-f365-slice-T1 behaviour)"
+        );
+    }
+
     // when running with FDB, swap the default
     // MemSecStore-backed executor for one backed by the same FDB
     // Database the store and audit chain use. Sagas in FDB land in
@@ -461,4 +476,36 @@ mod tests {
     fn unknown_command_errors() {
         assert!(parse_command(["bogus".to_string()].into_iter()).is_err());
     }
+}
+
+/// Build the cap-token signing context for outbound mantad admin
+/// calls, if one is configured. Reads `MANTAD_CAP_TOKEN_KEY_PATH`
+/// (32-byte key file, same one mantad reads) and
+/// `MANTAD_CAP_TOKEN_REGION` (numeric region for the cluster-
+/// service TenantContext). Returns `Ok(None)` when no key is
+/// configured — that's the back-compat path. Errors are fatal
+/// (operator must fix the deployment).
+///
+/// See `monitor-reef-f365` slice T1 for the protocol; the helper
+/// in `mantad/src/main.rs::build_cap_token_setup` is the mantad-
+/// side mirror.
+fn build_mantad_cap_token_auth() -> anyhow::Result<Option<mantad_client::CapTokenAuth>> {
+    let Ok(path) = std::env::var("MANTAD_CAP_TOKEN_KEY_PATH") else {
+        return Ok(None);
+    };
+    if path.is_empty() {
+        return Ok(None);
+    }
+    let region: u16 = match std::env::var("MANTAD_CAP_TOKEN_REGION") {
+        Ok(s) if !s.is_empty() => s
+            .parse()
+            .map_err(|e| anyhow::anyhow!("MANTAD_CAP_TOKEN_REGION not a u16: {e}"))?,
+        _ => 0,
+    };
+    let key = manta_common::cap_token::CapabilityKey::load_from_file(&path).map_err(|e| {
+        anyhow::anyhow!("loading MANTAD_CAP_TOKEN_KEY_PATH={path}: {e}")
+    })?;
+    let signer = Arc::new(manta_common::cap_token::CapabilitySigner::new(key));
+    let auth = mantad_client::CapTokenAuth::new(signer, "cluster-bootstrap", region);
+    Ok(Some(auth))
 }

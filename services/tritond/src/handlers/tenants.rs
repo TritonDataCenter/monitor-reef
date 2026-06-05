@@ -248,7 +248,7 @@ pub(crate) async fn create_silo_tenant(
             // `client_for` resolves the cluster row, refuses non-S3
             // surfaces with 409, and builds a ready-to-call mantad
             // client.
-            let (cluster, client) = match crate::storage::client_for(&ctx.store, cluster_id).await {
+            let (cluster, client) = match crate::storage::client_for_with_context(ctx, cluster_id).await {
                 Ok(pair) => pair,
                 Err(http_err) => {
                     ctx.audit
@@ -904,7 +904,7 @@ pub(crate) async fn init_silo_tenant_storage(
         )
     })?;
 
-    let (cluster, client) = match crate::storage::client_for(&ctx.store, cluster_id).await {
+    let (cluster, client) = match crate::storage::client_for_with_context(ctx, cluster_id).await {
         Ok(pair) => pair,
         Err(http_err) => {
             ctx.audit

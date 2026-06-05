@@ -44,6 +44,7 @@ hex = { workspace = true }
 hmac = { workspace = true }
 http = { workspace = true }
 mantad-client = { path = "../../../manta-storage/crates/mantad-client" }
+manta-common = { path = "../../../manta-storage/crates/manta-common" }
 postcard = { workspace = true }
 proteus-api = { path = "../../../proteus/crates/proteus-api", features = ["std"] }
 reqwest = { workspace = true }

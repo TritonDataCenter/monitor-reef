@@ -92,7 +92,7 @@ pub(crate) async fn list_storage_cluster_access_keys(
     .await?;
     let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let p = path.into_inner();
-    let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, p.id).await?;
     let keys = client
         .list_access_keys(&p.user, scope.workspace_name())
         .await
@@ -158,7 +158,7 @@ pub(crate) async fn list_silo_tenant_storage_user_access_keys(
         };
 
     let workspace_name = format!("t-{}", workspace_uuid.simple());
-    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, cluster_id).await?;
     let keys = client
         .list_access_keys(&user, Some(workspace_name.as_str()))
         .await
@@ -187,7 +187,7 @@ pub(crate) async fn create_storage_cluster_access_key(
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
     let payload = serde_json::json!({ "user": p.user });
-    let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, p.id).await?;
     match client
         .create_access_key(&p.user, scope.workspace_name())
         .await
@@ -247,7 +247,7 @@ pub(crate) async fn delete_storage_cluster_access_key(
     let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
-    let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, p.id).await?;
     match client
         .delete_access_key(&p.access_key_id, scope.workspace_name())
         .await
@@ -344,7 +344,7 @@ pub(crate) async fn create_silo_tenant_storage_user_access_key(
         "silo_id": silo_id,
         "tenant_id": tenant_id,
     });
-    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, cluster_id).await?;
     match client
         .create_access_key(&user, Some(workspace_name.as_str()))
         .await
@@ -447,7 +447,7 @@ pub(crate) async fn delete_silo_tenant_storage_user_access_key(
         };
 
     let workspace_name = format!("t-{}", workspace_uuid.simple());
-    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, cluster_id).await?;
     match client
         .delete_access_key(&access_key_id, Some(workspace_name.as_str()))
         .await
@@ -572,7 +572,7 @@ pub(crate) async fn create_silo_tenant_storage_scoped_access_key(
         "scope": scope_audit,
     });
     let mantad_req = crate::storage::scoped_access_key_request_to(req);
-    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, cluster_id).await?;
     match client
         .create_scoped_access_key(&user, Some(workspace_name.as_str()), &mantad_req)
         .await

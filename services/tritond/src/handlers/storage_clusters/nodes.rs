@@ -91,7 +91,7 @@ pub(crate) async fn list_storage_cluster_nodes(
     )
     .await?;
     let id = path.into_inner().id;
-    let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, id).await?;
     let nodes = client
         .list_nodes()
         .await
@@ -115,7 +115,7 @@ pub(crate) async fn get_storage_cluster_node(
     )
     .await?;
     let p = path.into_inner();
-    let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, p.id).await?;
     let node = client
         .get_node(p.node_id)
         .await
@@ -145,7 +145,7 @@ pub(crate) async fn add_storage_cluster_node(
         "rack": req.rack,
         "internal_url": req.internal_url,
     });
-    let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, id).await?;
     let mantad_req = crate::storage::add_node_request_to(req);
     match client.add_node(&mantad_req).await {
         Ok(m) => {
@@ -195,7 +195,7 @@ pub(crate) async fn remove_storage_cluster_node(
     .await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
-    let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, p.id).await?;
     let payload = serde_json::json!({ "node_id": p.node_id });
     match client.remove_node(p.node_id).await {
         Ok(m) => {
@@ -277,7 +277,7 @@ pub(crate) async fn reweight_storage_cluster_node(
         "node_id": p.node_id,
         "factor": req.factor,
     });
-    let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, p.id).await?;
     let mantad_req = crate::storage::reweight_request_to(req);
     match client.reweight_node(p.node_id, &mantad_req).await {
         Ok(m) => {
@@ -326,7 +326,7 @@ pub(crate) async fn get_storage_cluster_membership(
     )
     .await?;
     let id = path.into_inner().id;
-    let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, id).await?;
     let m = client
         .membership()
         .await

@@ -92,7 +92,7 @@ pub(crate) async fn list_storage_cluster_users(
     .await?;
     let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let id = path.into_inner().id;
-    let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, id).await?;
     let users = client
         .list_users(scope.workspace_name())
         .await
@@ -154,7 +154,7 @@ pub(crate) async fn list_silo_tenant_storage_users(
         };
 
     let workspace_name = format!("t-{}", workspace_uuid.simple());
-    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, cluster_id).await?;
     let users = client
         .list_users(Some(workspace_name.as_str()))
         .await
@@ -183,7 +183,7 @@ pub(crate) async fn create_storage_cluster_user(
     let id = path.into_inner().id;
     let req = body.into_inner();
     let payload = serde_json::json!({ "name": req.name });
-    let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, id).await?;
     let mantad_req = crate::storage::create_user_request_to(req);
     match client
         .create_user(&mantad_req, scope.workspace_name())
@@ -237,7 +237,7 @@ pub(crate) async fn get_storage_cluster_user(
     .await?;
     let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let p = path.into_inner();
-    let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, p.id).await?;
     let u = client
         .get_user(&p.user, scope.workspace_name())
         .await
@@ -261,7 +261,7 @@ pub(crate) async fn delete_storage_cluster_user(
     let scope = crate::storage::resolve_workspace_scope(&ctx.auth, &ctx.store, &principal).await?;
     let request_id = parse_request_id(&rqctx);
     let p = path.into_inner();
-    let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, p.id).await?;
     match client.delete_user(&p.user, scope.workspace_name()).await {
         Ok(()) => {
             ctx.audit
@@ -355,7 +355,7 @@ pub(crate) async fn create_silo_tenant_storage_user(
         "silo_id": silo_id,
         "tenant_id": tenant_id,
     });
-    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, cluster_id).await?;
     let mantad_req = crate::storage::create_user_request_to(req);
     match client
         .create_user(&mantad_req, Some(workspace_name.as_str()))
@@ -451,7 +451,7 @@ pub(crate) async fn delete_silo_tenant_storage_user(
 
     let workspace_name = format!("t-{}", workspace_uuid.simple());
     let request_id = parse_request_id(&rqctx);
-    let (_, client) = crate::storage::client_for(&ctx.store, cluster_id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, cluster_id).await?;
     match client
         .delete_user(&user, Some(workspace_name.as_str()))
         .await

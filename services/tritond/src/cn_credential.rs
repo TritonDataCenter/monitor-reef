@@ -42,7 +42,7 @@ where
         authenticate_and_authorize(rqctx, &ctx.auth, &ctx.audit, &ctx.store, action).await?;
     let request_id = parse_request_id(rqctx);
     let p = path.into_inner();
-    let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, p.id).await?;
     let payload = serde_json::json!({ "node_id": p.node_id });
     match op(client, p.node_id).await {
         Ok(m) => {

@@ -241,7 +241,7 @@ pub(crate) async fn probe_storage_cluster_health(
     .await?;
     let request_id = parse_request_id(&rqctx);
     let id = path.into_inner().id;
-    let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, id).await?;
     let observed_at = chrono::Utc::now();
     let new_status = match client.cluster_summary().await {
         Ok(summary) => {
@@ -290,7 +290,7 @@ pub(crate) async fn get_storage_cluster_summary(
     )
     .await?;
     let id = path.into_inner().id;
-    let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
+    let (_, client) = crate::storage::client_for_with_context(ctx, id).await?;
     let summary = client
         .cluster_summary()
         .await

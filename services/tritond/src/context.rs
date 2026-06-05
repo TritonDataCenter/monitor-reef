@@ -127,6 +127,12 @@ pub struct ApiContext {
     /// [`crate::presigner_cache::PresignerCache`] for the threat
     /// model and TTL.
     pub presigner_cache: crate::presigner_cache::SharedPresignerCache,
+    /// Cap-token-v2 mint context for outbound calls to mantad's
+    /// `/admin/v1/*` (f365 slice T1). `None` falls back to the
+    /// legacy `Authorization: Bearer admin-token` flow (pre-T1
+    /// behaviour). Loaded at startup from
+    /// `MANTAD_CAP_TOKEN_KEY_PATH`.
+    pub mantad_cap_token: Option<mantad_client::CapTokenAuth>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -220,7 +226,18 @@ impl ApiContext {
             saga_wait_for_agent: true,
             peer_invalidations: Arc::new(crate::peer_invalidations::Ring::new()),
             presigner_cache: Arc::new(crate::presigner_cache::PresignerCache::new()),
+            mantad_cap_token: None,
         }
+    }
+
+    /// Install a cap-token-v2 mint context for outbound mantad
+    /// admin calls (f365 slice T1). When set, every MantadClient
+    /// constructed via [`crate::storage::client_for`] carries the
+    /// `X-Manta-Capability` header on each request.
+    #[must_use]
+    pub fn with_mantad_cap_token(mut self, auth: mantad_client::CapTokenAuth) -> Self {
+        self.mantad_cap_token = Some(auth);
+        self
     }
 
     /// Disable the `await_provision_terminal` action on the
