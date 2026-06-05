@@ -8,7 +8,7 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
+use triton_gateway_client::TypedClient;
 
 #[derive(Args, Clone)]
 pub struct ResizeArgs {
@@ -43,7 +43,7 @@ async fn wait_for_resize(
     loop {
         let machine = client.get_machine(account, machine_id).await?;
 
-        if machine.state == cloudapi_client::types::MachineState::Running
+        if machine.state == triton_gateway_client::types::MachineState::Running
             && machine.package == target_package
         {
             return Ok(());
@@ -70,7 +70,7 @@ pub async fn run(args: ResizeArgs, client: &TypedClient) -> Result<()> {
         .resize_machine(
             account,
             &machine_id,
-            &cloudapi_client::ResizeMachineRequest {
+            &triton_gateway_client::ResizeMachineRequest {
                 package: package_id,
                 origin: None,
             },

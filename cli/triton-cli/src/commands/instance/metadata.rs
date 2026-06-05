@@ -10,9 +10,9 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::AddMetadataRequest;
 use dialoguer::Confirm;
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::AddMetadataRequest;
 
 use crate::output::{enum_to_display, json, table};
 

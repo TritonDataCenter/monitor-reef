@@ -18,7 +18,7 @@ mod user;
 
 use anyhow::Result;
 use clap::Subcommand;
-use cloudapi_client::TypedClient;
+use triton_gateway_client::TypedClient;
 
 use crate::output::table::TableFormatArgs;
 

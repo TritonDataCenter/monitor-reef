@@ -1011,8 +1011,11 @@ async fn main() -> Result<()> {
             macs,
         } => {
             let request = AddNicsRequest {
-                networks: networks
-                    .map(|s| s.split(',').filter_map(|v| v.trim().parse().ok()).collect()),
+                networks: networks.map(|s| {
+                    s.split(',')
+                        .map(|v| serde_json::Value::String(v.trim().to_string()))
+                        .collect()
+                }),
                 macs: macs.map(|s| s.split(',').map(|v| v.trim().to_string()).collect()),
             };
             let result = typed_client.add_nics(&uuid, &request).await?;

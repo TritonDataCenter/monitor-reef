@@ -1,0 +1,2137 @@
+{
+  "components": {
+    "responses": {
+      "Error": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "Error"
+      }
+    },
+    "schemas": {
+      "AclAction": {
+        "description": "Actions available via POST /images/:uuid/acl",
+        "oneOf": [
+          {
+            "description": "Add UUIDs to the ACL",
+            "enum": [
+              "add"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Remove UUIDs from the ACL",
+            "enum": [
+              "remove"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "AddImageFileFromUrlRequest": {
+        "description": "Request body for adding an image file from a URL",
+        "properties": {
+          "compression": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FileCompression"
+              }
+            ],
+            "default": null,
+            "description": "Compression of the file at the URL",
+            "nullable": true
+          },
+          "dataset_guid": {
+            "default": null,
+            "description": "Dataset GUID",
+            "nullable": true,
+            "type": "string"
+          },
+          "file_url": {
+            "description": "URL to fetch the image file from",
+            "type": "string"
+          },
+          "sha1": {
+            "default": null,
+            "description": "SHA-1 hash for verification",
+            "nullable": true,
+            "type": "string"
+          },
+          "size": {
+            "default": null,
+            "description": "File size for verification",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "storage": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageType"
+              }
+            ],
+            "default": null,
+            "description": "Storage backend to use",
+            "nullable": true
+          }
+        },
+        "required": [
+          "file_url"
+        ],
+        "type": "object"
+      },
+      "Channel": {
+        "description": "Channel configuration\n\nChannels allow organizing images into release tracks (e.g., \"release\", \"staging\", \"dev\"). Only available when IMGAPI is configured with channels.",
+        "properties": {
+          "default": {
+            "description": "Whether this is the default channel",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "description": {
+            "description": "Human-readable description",
+            "type": "string"
+          },
+          "name": {
+            "description": "Channel name (unique identifier)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "name"
+        ],
+        "type": "object"
+      },
+      "CreateImageAction": {
+        "description": "Actions available via POST /images (in addition to the default create)",
+        "oneOf": [
+          {
+            "description": "Create image from an existing VM",
+            "enum": [
+              "create-from-vm"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Import a Docker image (admin-only, streaming)",
+            "enum": [
+              "import-docker-image"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Import an LXD image (admin-only, streaming)",
+            "enum": [
+              "import-lxd-image"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Import from another datacenter",
+            "enum": [
+              "import-from-datacenter"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "Error": {
+        "description": "Error response from a Node.js Triton service",
+        "properties": {
+          "code": {
+            "description": "Error code (e.g., \"ResourceNotFound\", \"InvalidArgument\")",
+            "type": "string"
+          },
+          "message": {
+            "description": "Human-readable error message",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Request ID for tracing (optional, not always present)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "FileCompression": {
+        "description": "File compression type",
+        "oneOf": [
+          {
+            "enum": [
+              "gzip",
+              "bzip2",
+              "xz",
+              "none"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Catch-all for compression types added after this client was compiled",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "Image": {
+        "description": "Full image manifest as returned by IMGAPI\n\nAll fields use snake_case wire format (standard for Triton internal APIs).",
+        "properties": {
+          "acl": {
+            "description": "Access control list (account UUIDs granted access)",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "billing_tags": {
+            "description": "Billing tags (non-public mode only)",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "channels": {
+            "description": "Channels this image belongs to",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "cpu_type": {
+            "description": "CPU type (zvol images only)",
+            "nullable": true,
+            "type": "string"
+          },
+          "description": {
+            "description": "Image description",
+            "nullable": true,
+            "type": "string"
+          },
+          "disabled": {
+            "description": "Whether the image is disabled",
+            "type": "boolean"
+          },
+          "disk_driver": {
+            "description": "Disk driver (zvol images only)",
+            "nullable": true,
+            "type": "string"
+          },
+          "error": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageErrorInfo"
+              }
+            ],
+            "description": "Error details (only when state=failed)",
+            "nullable": true
+          },
+          "eula": {
+            "description": "End-user license agreement URL",
+            "nullable": true,
+            "type": "string"
+          },
+          "files": {
+            "default": [],
+            "description": "Image files (storage artifacts)",
+            "items": {
+              "$ref": "#/components/schemas/ImageFile"
+            },
+            "type": "array"
+          },
+          "generate_passwords": {
+            "description": "Whether to generate random passwords for users",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "homepage": {
+            "description": "Homepage URL",
+            "nullable": true,
+            "type": "string"
+          },
+          "icon": {
+            "description": "Whether this image has an icon",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "image_size": {
+            "description": "Image size in MB (zvol images only)",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "inherited_directories": {
+            "description": "Directories to inherit from the delegated dataset",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "name": {
+            "description": "Image name",
+            "type": "string"
+          },
+          "nic_driver": {
+            "description": "NIC driver (zvol images only)",
+            "nullable": true,
+            "type": "string"
+          },
+          "origin": {
+            "description": "Origin image UUID (for incremental images)",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "os": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageOs"
+              }
+            ],
+            "description": "Operating system (absent if originally \"null\")",
+            "nullable": true
+          },
+          "owner": {
+            "description": "Owner account UUID",
+            "format": "uuid",
+            "type": "string"
+          },
+          "public": {
+            "description": "Whether the image is public",
+            "type": "boolean"
+          },
+          "published_at": {
+            "description": "ISO 8601 timestamp when the image was published (present if activated)",
+            "nullable": true,
+            "type": "string"
+          },
+          "requirements": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageRequirements"
+              }
+            ],
+            "description": "Image requirements (min RAM, networks, platform, etc.)",
+            "nullable": true
+          },
+          "state": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageState"
+              }
+            ],
+            "description": "Image lifecycle state"
+          },
+          "tags": {
+            "description": "Key-value tags",
+            "nullable": true
+          },
+          "traits": {
+            "description": "Traits for placement (non-public mode only)",
+            "nullable": true
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageType"
+              }
+            ],
+            "description": "Image type (absent if originally \"null\")",
+            "nullable": true
+          },
+          "urn": {
+            "description": "Legacy URN identifier",
+            "nullable": true,
+            "type": "string"
+          },
+          "users": {
+            "description": "Default user accounts to create",
+            "items": {
+              "$ref": "#/components/schemas/ImageUser"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "uuid": {
+            "description": "Image UUID",
+            "format": "uuid",
+            "type": "string"
+          },
+          "v": {
+            "description": "Manifest version",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "version": {
+            "description": "Image version string",
+            "type": "string"
+          }
+        },
+        "required": [
+          "disabled",
+          "name",
+          "owner",
+          "public",
+          "state",
+          "uuid",
+          "v",
+          "version"
+        ],
+        "type": "object"
+      },
+      "ImageAction": {
+        "description": "Actions available via POST /images/:uuid",
+        "oneOf": [
+          {
+            "description": "Import an image manifest (admin-only)",
+            "enum": [
+              "import"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Import an image from a remote IMGAPI (admin-only, creates workflow job)",
+            "enum": [
+              "import-remote"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Import an image from another datacenter (creates workflow job)",
+            "enum": [
+              "import-from-datacenter"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Import a Docker image (admin-only, streaming response)",
+            "enum": [
+              "import-docker-image"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Import an LXD image (admin-only, streaming response)",
+            "enum": [
+              "import-lxd-image"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Change storage backend (admin-only)",
+            "enum": [
+              "change-stor"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Export image to Manta",
+            "enum": [
+              "export"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Activate an unactivated image",
+            "enum": [
+              "activate"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Enable a disabled image",
+            "enum": [
+              "enable"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Disable an active image",
+            "enum": [
+              "disable"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Add image to a channel",
+            "enum": [
+              "channel-add"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Update mutable image fields",
+            "enum": [
+              "update"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "ImageErrorInfo": {
+        "description": "Error information for failed images",
+        "properties": {
+          "code": {
+            "description": "Error code",
+            "nullable": true,
+            "type": "string"
+          },
+          "message": {
+            "description": "Error message",
+            "nullable": true,
+            "type": "string"
+          },
+          "url": {
+            "description": "URL with more information",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ImageFile": {
+        "description": "Image file metadata\n\nRepresents a single file artifact associated with an image.",
+        "properties": {
+          "compression": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FileCompression"
+              }
+            ],
+            "description": "Compression type used"
+          },
+          "dataset_guid": {
+            "description": "ZFS dataset GUID (if applicable)",
+            "nullable": true,
+            "type": "string"
+          },
+          "digest": {
+            "description": "Docker content digest",
+            "nullable": true,
+            "type": "string"
+          },
+          "sha1": {
+            "description": "SHA-1 hash of the file",
+            "type": "string"
+          },
+          "size": {
+            "description": "File size in bytes",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "stor": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageType"
+              }
+            ],
+            "description": "Storage backend (admin-only)",
+            "nullable": true
+          },
+          "uncompressedDigest": {
+            "description": "Docker uncompressed content digest (deprecated, camelCase exception)",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "compression",
+          "sha1",
+          "size"
+        ],
+        "type": "object"
+      },
+      "ImageOs": {
+        "description": "Image operating system",
+        "oneOf": [
+          {
+            "enum": [
+              "smartos",
+              "linux",
+              "windows",
+              "bsd",
+              "illumos",
+              "other"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Catch-all for OS types added after this client was compiled",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "ImageRequirements": {
+        "description": "Image requirements",
+        "properties": {
+          "bootrom": {
+            "description": "Required bootrom firmware",
+            "nullable": true,
+            "type": "string"
+          },
+          "brand": {
+            "description": "Required VM brand",
+            "nullable": true,
+            "type": "string"
+          },
+          "max_platform": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Maximum platform version per SDC version",
+            "nullable": true,
+            "type": "object"
+          },
+          "max_ram": {
+            "description": "Maximum RAM in MB",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "min_platform": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Minimum platform version per SDC version",
+            "nullable": true,
+            "type": "object"
+          },
+          "min_ram": {
+            "description": "Minimum RAM in MB",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "networks": {
+            "description": "Required networks",
+            "items": {
+              "$ref": "#/components/schemas/NetworkRequirement"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "ssh_key": {
+            "description": "Whether SSH key is required",
+            "nullable": true,
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "ImageState": {
+        "description": "Image lifecycle state",
+        "oneOf": [
+          {
+            "enum": [
+              "active",
+              "unactivated",
+              "disabled",
+              "creating",
+              "failed"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Catch-all for states added after this client was compiled",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "ImageType": {
+        "description": "Image type (virtualization/container technology)",
+        "oneOf": [
+          {
+            "enum": [
+              "zone-dataset",
+              "lx-dataset",
+              "zvol",
+              "docker",
+              "lxd",
+              "other"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Catch-all for types added after this client was compiled",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "ImageUser": {
+        "description": "User entry in image manifest",
+        "properties": {
+          "name": {
+            "description": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "NetworkRequirement": {
+        "description": "Network requirement",
+        "properties": {
+          "description": {
+            "description": "Network description",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "Network name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "PingResponse": {
+        "description": "Ping response",
+        "properties": {
+          "imgapi": {
+            "description": "Always true (identifies this as an IMGAPI instance)",
+            "type": "boolean"
+          },
+          "pid": {
+            "description": "Process ID (only for authenticated/datacenter requests)",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "ping": {
+            "description": "Always \"pong\"",
+            "type": "string"
+          },
+          "user": {
+            "description": "Running user (only for authenticated requests)",
+            "nullable": true,
+            "type": "string"
+          },
+          "version": {
+            "description": "IMGAPI version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "imgapi",
+          "ping",
+          "version"
+        ],
+        "type": "object"
+      },
+      "StateAction": {
+        "description": "Actions available via POST /state",
+        "oneOf": [
+          {
+            "description": "Drop all caches",
+            "enum": [
+              "dropcaches"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "StorageType": {
+        "description": "Storage backend type",
+        "oneOf": [
+          {
+            "enum": [
+              "local",
+              "manta"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Catch-all for storage types added after this client was compiled",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      }
+    }
+  },
+  "info": {
+    "description": "Triton IMGAPI - internal HTTP API for managing virtual machine images in a Triton datacenter",
+    "title": "Triton IMGAPI",
+    "version": "4.13.1"
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/authkeys/reload": {
+      "post": {
+        "description": "Triggers a reload of authentication keys from the configured source. Returns an empty object `{}`.",
+        "operationId": "admin_reload_auth_keys",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Reload authentication keys (admin-only)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/channels": {
+      "get": {
+        "description": "Returns the configured channels. Only available when IMGAPI is configured with channel support.",
+        "operationId": "list_channels",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Channel"
+                  },
+                  "title": "Array_of_Channel",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List channels",
+        "tags": [
+          "channels"
+        ]
+      }
+    },
+    "/datasets": {
+      "get": {
+        "description": "Redirects to /images for backward compatibility with DSAPI.",
+        "operationId": "list_datasets",
+        "responses": {
+          "default": {
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "List datasets (legacy redirect)",
+        "tags": [
+          "legacy"
+        ]
+      }
+    },
+    "/datasets/{arg}": {
+      "get": {
+        "description": "Redirects to /images based on URN parsing. The `arg` parameter can be a UUID or a URN.",
+        "operationId": "get_dataset",
+        "parameters": [
+          {
+            "description": "Dataset UUID or URN",
+            "in": "path",
+            "name": "arg",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Get a dataset (legacy redirect)",
+        "tags": [
+          "legacy"
+        ]
+      }
+    },
+    "/images": {
+      "get": {
+        "description": "Returns a filtered list of images.",
+        "operationId": "list_images",
+        "parameters": [
+          {
+            "description": "Account UUID for scoping",
+            "in": "query",
+            "name": "account",
+            "schema": {
+              "format": "uuid",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by billing tag",
+            "in": "query",
+            "name": "billing_tag",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Channel name",
+            "in": "query",
+            "name": "channel",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Pagination limit",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "uint64",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Pagination marker (UUID of last image in previous page)",
+            "in": "query",
+            "name": "marker",
+            "schema": {
+              "format": "uuid",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by name",
+            "in": "query",
+            "name": "name",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by OS",
+            "in": "query",
+            "name": "os",
+            "schema": {
+              "$ref": "#/components/schemas/ImageOs"
+            }
+          },
+          {
+            "description": "Filter by owner UUID",
+            "in": "query",
+            "name": "owner",
+            "schema": {
+              "format": "uuid",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter public images only",
+            "in": "query",
+            "name": "public",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Filter by state",
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "$ref": "#/components/schemas/ImageState"
+            }
+          },
+          {
+            "description": "Filter by tag (key=value format)",
+            "in": "query",
+            "name": "tag",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by type",
+            "in": "query",
+            "name": "type",
+            "schema": {
+              "$ref": "#/components/schemas/ImageType"
+            }
+          },
+          {
+            "description": "Filter by version",
+            "in": "query",
+            "name": "version",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Image"
+                  },
+                  "title": "Array_of_Image",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List images",
+        "tags": [
+          "images"
+        ]
+      },
+      "post": {
+        "description": "When no `action` query parameter is provided, creates an image from the manifest in the request body.\n\nSupported actions: - (no action): Create image from manifest body - `create-from-vm`: Create image from an existing VM - `import-docker-image`: Import a Docker image (streaming, admin-only) - `import-lxd-image`: Import an LXD image (streaming, admin-only) - `import-from-datacenter`: Import from another datacenter\n\nFor streaming actions (import-docker-image, import-lxd-image), the response is newline-delimited JSON progress messages.",
+        "operationId": "create_image",
+        "parameters": [
+          {
+            "description": "Account UUID",
+            "in": "query",
+            "name": "account",
+            "schema": {
+              "format": "uuid",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Action to perform (if omitted, creates from manifest body)",
+            "in": "query",
+            "name": "action",
+            "schema": {
+              "$ref": "#/components/schemas/CreateImageAction"
+            }
+          },
+          {
+            "description": "Channel name",
+            "in": "query",
+            "name": "channel",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Create a new image (action dispatch)",
+        "tags": [
+          "images"
+        ]
+      }
+    },
+    "/images/{uuid}": {
+      "delete": {
+        "description": "Deletes the specified image and its files. Returns 204 No Content.",
+        "operationId": "delete_image",
+        "parameters": [
+          {
+            "description": "Image UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Account UUID",
+            "in": "query",
+            "name": "account",
+            "schema": {
+              "format": "uuid",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Channel name",
+            "in": "query",
+            "name": "channel",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Force delete even if there are dependent images",
+            "in": "query",
+            "name": "force_all_channels",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Delete an image",
+        "tags": [
+          "images"
+        ]
+      },
+      "get": {
+        "description": "Returns the image manifest for the specified UUID. Supports ETag/conditional requests (implemented in service layer).",
+        "operationId": "get_image",
+        "parameters": [
+          {
+            "description": "Image UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Account UUID for ownership scoping",
+            "in": "query",
+            "name": "account",
+            "schema": {
+              "format": "uuid",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Channel name",
+            "in": "query",
+            "name": "channel",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get a single image",
+        "tags": [
+          "images"
+        ]
+      },
+      "post": {
+        "description": "This endpoint dispatches to different handlers based on the `action` query parameter. The action may also be sent in the request body.\n\nSupported actions: - `import`: Import image manifest (admin-only) - `import-remote`: Import from remote IMGAPI (admin-only, creates job) - `import-from-datacenter`: Import from datacenter (creates job) - `import-docker-image`: Import Docker image (streaming, admin-only) - `import-lxd-image`: Import LXD image (streaming, admin-only) - `change-stor`: Change storage backend (admin-only) - `export`: Export to Manta - `activate`: Activate an unactivated image - `enable`: Enable a disabled image - `disable`: Disable an active image - `channel-add`: Add image to a channel - `update`: Update mutable image fields\n\nResponse varies by action (Image, JobResponse, ExportImageResponse, or streaming JSON).",
+        "operationId": "image_action",
+        "parameters": [
+          {
+            "description": "Image UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Account UUID",
+            "in": "query",
+            "name": "account",
+            "schema": {
+              "format": "uuid",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Action to perform",
+            "in": "query",
+            "name": "action",
+            "schema": {
+              "$ref": "#/components/schemas/ImageAction"
+            }
+          },
+          {
+            "description": "Channel name",
+            "in": "query",
+            "name": "channel",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Skip owner check (used by import-remote and import actions)",
+            "in": "query",
+            "name": "skip_owner_check",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Source IMGAPI URL (used by import-remote and import actions)",
+            "in": "query",
+            "name": "source",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Update/action on an existing image (action dispatch)",
+        "tags": [
+          "images"
+        ]
+      }
+    },
+    "/images/{uuid}/acl": {
+      "post": {
+        "description": "Adds or removes account UUIDs from the image's access control list. Default action is \"add\" if not specified.\n\nBody is a JSON array of account UUIDs.",
+        "operationId": "image_acl_action",
+        "parameters": [
+          {
+            "description": "Image UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Account UUID",
+            "in": "query",
+            "name": "account",
+            "schema": {
+              "format": "uuid",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Action to perform (defaults to \"add\" if omitted)",
+            "in": "query",
+            "name": "action",
+            "schema": {
+              "$ref": "#/components/schemas/AclAction"
+            }
+          },
+          {
+            "description": "Channel name",
+            "in": "query",
+            "name": "channel",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "title": "Array_of_Uuid",
+                "type": "array"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Modify image ACL (action dispatch)",
+        "tags": [
+          "image-acl"
+        ]
+      }
+    },
+    "/images/{uuid}/clone": {
+      "post": {
+        "description": "Creates a copy of the image for a different account. Only available in datacenter (dc) mode.",
+        "operationId": "clone_image",
+        "parameters": [
+          {
+            "description": "Image UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Account UUID (required for clone)",
+            "in": "query",
+            "name": "account",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Channel name",
+            "in": "query",
+            "name": "channel",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Clone an image",
+        "tags": [
+          "images"
+        ]
+      }
+    },
+    "/images/{uuid}/file": {
+      "get": {
+        "description": "Returns the raw binary content of the image file. Supports ETag/conditional requests.",
+        "operationId": "get_image_file",
+        "parameters": [
+          {
+            "description": "Image UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Account UUID",
+            "in": "query",
+            "name": "account",
+            "schema": {
+              "format": "uuid",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Channel name",
+            "in": "query",
+            "name": "channel",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Index of the file to retrieve (default: 0)",
+            "in": "query",
+            "name": "index",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Download an image file",
+        "tags": [
+          "image-files"
+        ]
+      },
+      "put": {
+        "description": "Uploads a raw binary file for the specified image. If the `source` query parameter is set, fetches the file from a remote IMGAPI instead of reading from the request body.",
+        "operationId": "add_image_file",
+        "parameters": [
+          {
+            "description": "Image UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Account UUID",
+            "in": "query",
+            "name": "account",
+            "schema": {
+              "format": "uuid",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Channel name",
+            "in": "query",
+            "name": "channel",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Compression of the uploaded file",
+            "in": "query",
+            "name": "compression",
+            "schema": {
+              "$ref": "#/components/schemas/FileCompression"
+            }
+          },
+          {
+            "description": "Dataset GUID",
+            "in": "query",
+            "name": "dataset_guid",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "SHA-1 hash for verification",
+            "in": "query",
+            "name": "sha1",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "File size for verification",
+            "in": "query",
+            "name": "size",
+            "schema": {
+              "format": "uint64",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Source IMGAPI URL to fetch the file from (mutually exclusive with body upload)",
+            "in": "query",
+            "name": "source",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Storage backend to use",
+            "in": "query",
+            "name": "storage",
+            "schema": {
+              "$ref": "#/components/schemas/StorageType"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Upload an image file",
+        "tags": [
+          "image-files"
+        ]
+      }
+    },
+    "/images/{uuid}/file/from-url": {
+      "post": {
+        "description": "Instructs IMGAPI to fetch the image file from the specified URL.",
+        "operationId": "add_image_file_from_url",
+        "parameters": [
+          {
+            "description": "Image UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Account UUID",
+            "in": "query",
+            "name": "account",
+            "schema": {
+              "format": "uuid",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Channel name",
+            "in": "query",
+            "name": "channel",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Storage backend to use",
+            "in": "query",
+            "name": "storage",
+            "schema": {
+              "$ref": "#/components/schemas/StorageType"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddImageFileFromUrlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Add an image file from a URL",
+        "tags": [
+          "image-files"
+        ]
+      }
+    },
+    "/images/{uuid}/icon": {
+      "delete": {
+        "description": "Removes the icon from the specified image. Returns the updated image.",
+        "operationId": "delete_image_icon",
+        "parameters": [
+          {
+            "description": "Image UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Account UUID",
+            "in": "query",
+            "name": "account",
+            "schema": {
+              "format": "uuid",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Channel name",
+            "in": "query",
+            "name": "channel",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Delete an image icon",
+        "tags": [
+          "image-icons"
+        ]
+      },
+      "get": {
+        "description": "Returns the raw binary content of the image icon.",
+        "operationId": "get_image_icon",
+        "parameters": [
+          {
+            "description": "Image UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Account UUID",
+            "in": "query",
+            "name": "account",
+            "schema": {
+              "format": "uuid",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Channel name",
+            "in": "query",
+            "name": "channel",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Download an image icon",
+        "tags": [
+          "image-icons"
+        ]
+      },
+      "put": {
+        "description": "Uploads a raw binary icon (image/*) for the specified image.",
+        "operationId": "add_image_icon",
+        "parameters": [
+          {
+            "description": "Image UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Account UUID",
+            "in": "query",
+            "name": "account",
+            "schema": {
+              "format": "uuid",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Channel name",
+            "in": "query",
+            "name": "channel",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Upload an image icon",
+        "tags": [
+          "image-icons"
+        ]
+      }
+    },
+    "/images/{uuid}/jobs": {
+      "get": {
+        "description": "Returns workflow jobs associated with the specified image.",
+        "operationId": "list_image_jobs",
+        "parameters": [
+          {
+            "description": "Image UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Account UUID",
+            "in": "query",
+            "name": "account",
+            "schema": {
+              "format": "uuid",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Channel name",
+            "in": "query",
+            "name": "channel",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by job task name",
+            "in": "query",
+            "name": "task",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {},
+                  "title": "Array_of_AnyValue",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List jobs for an image",
+        "tags": [
+          "image-jobs"
+        ]
+      }
+    },
+    "/images/{uuid}/push": {
+      "post": {
+        "description": "Pushes a Docker image to a remote registry. Returns streaming JSON progress messages.",
+        "operationId": "admin_push_image",
+        "parameters": [
+          {
+            "description": "Image UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Channel name",
+            "in": "query",
+            "name": "channel",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Push a Docker image (admin-only)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/ping": {
+      "get": {
+        "description": "Returns a ping response with version information. If `?error=<name>` is set, triggers an error response for testing purposes.",
+        "operationId": "ping",
+        "parameters": [
+          {
+            "description": "If set, triggers an error response for testing (e.g., \"true\")",
+            "in": "query",
+            "name": "error",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PingResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Ping the IMGAPI service",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/state": {
+      "get": {
+        "description": "Returns the internal state of the IMGAPI service (admin-only).",
+        "operationId": "admin_get_state",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get admin state snapshot",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Currently only supports `?action=dropcaches` which drops all internal caches. Returns 202 Accepted. Admin-only.",
+        "operationId": "admin_update_state",
+        "parameters": [
+          {
+            "description": "Action to perform",
+            "in": "query",
+            "name": "action",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/StateAction"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "enum": [
+                    null
+                  ],
+                  "title": "Null",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "successfully enqueued operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Update admin state (action dispatch)",
+        "tags": [
+          "admin"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "admin"
+    },
+    {
+      "name": "channels"
+    },
+    {
+      "name": "health"
+    },
+    {
+      "name": "image-acl"
+    },
+    {
+      "name": "image-files"
+    },
+    {
+      "name": "image-icons"
+    },
+    {
+      "name": "image-jobs"
+    },
+    {
+      "name": "images"
+    },
+    {
+      "name": "legacy"
+    }
+  ]
+}

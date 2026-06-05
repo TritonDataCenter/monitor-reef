@@ -1,0 +1,91 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Mahi Sitter API",
+    "description": "Mahi sitter - internal replicator admin server running alongside the Mahi replicator. Exposes /ping and /snapshot (binary RDB streaming).",
+    "version": "2.1.0"
+  },
+  "paths": {
+    "/ping": {
+      "get": {
+        "tags": [
+          "sitter"
+        ],
+        "summary": "Health check. Returns 204 on success; 500/503 if the sitter is not",
+        "description": "caught up or Redis is unavailable.",
+        "operationId": "sitter_ping",
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/snapshot": {
+      "get": {
+        "tags": [
+          "sitter"
+        ],
+        "summary": "Stream the Redis `dump.rdb` snapshot as `application/octet-stream`.",
+        "description": "Upstream terminates the response with `res.send(201)` after piping the file into the socket. The trait uses `Result<Response<Body>, HttpError>` and relies on a Phase-2b spec patch to declare the binary content type and 201 status.",
+        "operationId": "sitter_snapshot",
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "description": "Error information from a response.",
+        "type": "object",
+        "properties": {
+          "error_code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "request_id"
+        ]
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "sitter"
+    }
+  ]
+}

@@ -8,7 +8,7 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
+use triton_gateway_client::TypedClient;
 
 use crate::output::enum_to_display;
 use crate::output::json;
@@ -203,7 +203,7 @@ async fn get_rule(args: FwruleGetArgs, client: &TypedClient, use_json: bool) -> 
 async fn create_rule(args: FwruleCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
 
-    let request = cloudapi_client::types::CreateFirewallRuleRequest {
+    let request = triton_gateway_client::types::CreateFirewallRuleRequest {
         rule: args.rule.clone(),
         enabled: Some(!args.disabled),
         log: if args.log { Some(true) } else { None },
@@ -366,7 +366,7 @@ async fn update_rule(args: FwruleUpdateArgs, client: &TypedClient, use_json: boo
         updated_fields.push("log");
     }
 
-    let request = cloudapi_client::types::UpdateFirewallRuleRequest {
+    let request = triton_gateway_client::types::UpdateFirewallRuleRequest {
         rule,
         enabled,
         log,

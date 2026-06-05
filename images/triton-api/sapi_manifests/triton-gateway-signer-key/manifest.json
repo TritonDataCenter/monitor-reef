@@ -1,0 +1,5 @@
+{
+    "name": "triton-gateway-signer-key",
+    "path": "/opt/smartdc/triton-gateway/etc/cloudapi-signer-key.pem",
+    "post_cmd": "chown nobody:nobody /opt/smartdc/triton-gateway/etc/cloudapi-signer-key.pem && chmod 0400 /opt/smartdc/triton-gateway/etc/cloudapi-signer-key.pem && /usr/sbin/svcadm restart triton/application/triton-gateway"
+}

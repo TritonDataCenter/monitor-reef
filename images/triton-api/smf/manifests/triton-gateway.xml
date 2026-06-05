@@ -1,0 +1,60 @@
+<?xml version="1.0"?>
+<!DOCTYPE service_bundle SYSTEM "/usr/share/lib/xml/dtd/service_bundle.dtd.1">
+<!--
+    This Source Code Form is subject to the terms of the Mozilla Public
+    License, v. 2.0. If a copy of the MPL was not distributed with this
+    file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+    Copyright 2026 Edgecast Cloud LLC.
+-->
+<service_bundle type="manifest" name="triton-gateway">
+    <service name="triton/application/triton-gateway" type="service" version="1">
+        <create_default_instance enabled="true"/>
+        <single_instance/>
+
+        <dependency name="network" grouping="require_all" restart_on="error"
+            type="service">
+            <service_fmri value="svc:/milestone/network:default"/>
+        </dependency>
+
+        <!-- Gateway depends on triton-api being available -->
+        <dependency name="triton-api" grouping="require_all" restart_on="none"
+            type="service">
+            <service_fmri value="svc:/triton/application/triton-api:default"/>
+        </dependency>
+
+        <dependency name="config-agent" grouping="require_all" restart_on="none"
+            type="service">
+            <service_fmri value="svc:/smartdc/application/config-agent:default"/>
+        </dependency>
+
+        <exec_method type="method" name="start"
+            exec="/opt/smartdc/triton-api/triton-gateway &amp;"
+            timeout_seconds="60">
+            <method_context>
+                <method_credential user="nobody" group="nobody"
+                    privileges="basic,net_privaddr"/>
+                <method_environment>
+                    <envvar name="TRITON__CONFIG_FILE"
+                        value="/opt/smartdc/triton-api/etc/gateway-config.json"/>
+                </method_environment>
+            </method_context>
+        </exec_method>
+
+        <exec_method type="method" name="stop" exec=":kill"
+            timeout_seconds="60">
+            <method_context/>
+        </exec_method>
+
+        <exec_method type="method" name="refresh" exec=":kill -HUP"
+            timeout_seconds="60">
+            <method_context/>
+        </exec_method>
+
+        <property_group name="startd" type="framework">
+            <propval name="duration" type="astring" value="contract"/>
+        </property_group>
+
+        <stability value="Evolving"/>
+    </service>
+</service_bundle>

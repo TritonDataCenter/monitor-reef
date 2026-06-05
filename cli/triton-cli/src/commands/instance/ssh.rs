@@ -15,9 +15,9 @@ use std::process::Command;
 
 use anyhow::{Context, Result};
 use clap::Args;
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::Machine;
 use serde_json::Value;
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::Machine;
 
 /// Tag constants for SSH configuration on instances
 const TAG_SSH_IP: &str = "tritoncli.ssh.ip";
@@ -279,7 +279,7 @@ async fn fetch_image_default_user(
 }
 
 /// Extract a string value from tags.
-fn get_tag_string(tags: &cloudapi_client::Tags, key: &str) -> Option<String> {
+fn get_tag_string(tags: &triton_gateway_client::Tags, key: &str) -> Option<String> {
     tags.get(key).and_then(|v| match v {
         Value::String(s) => Some(s.clone()),
         // Also handle if someone stored it as a number

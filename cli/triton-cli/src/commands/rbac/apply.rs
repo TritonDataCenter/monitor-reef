@@ -8,11 +8,11 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
+use triton_gateway_client::TypedClient;
 
 use crate::config::{Config, Profile, paths};
 use crate::output::{json, table};
@@ -243,9 +243,9 @@ struct ApplySummary {
 /// RBAC info JSON output structure
 #[derive(serde::Serialize)]
 pub struct RbacInfo {
-    users: Vec<cloudapi_client::types::User>,
-    roles: Vec<cloudapi_client::types::Role>,
-    policies: Vec<cloudapi_client::types::Policy>,
+    users: Vec<triton_gateway_client::types::User>,
+    roles: Vec<triton_gateway_client::types::Role>,
+    policies: Vec<triton_gateway_client::types::Policy>,
 }
 
 pub async fn rbac_info(args: InfoArgs, client: &TypedClient, use_json: bool) -> Result<()> {
@@ -264,7 +264,7 @@ pub async fn rbac_info(args: InfoArgs, client: &TypedClient, use_json: bool) -> 
 
     // If --all flag is set, fetch keys for each user
     let mut key_fetch_errors: Vec<String> = Vec::new();
-    let user_keys: HashMap<String, Vec<cloudapi_client::types::SshKey>> = if args.all {
+    let user_keys: HashMap<String, Vec<triton_gateway_client::types::SshKey>> = if args.all {
         let mut keys_map = HashMap::new();
         for user in &users {
             let keys_result = client
@@ -457,7 +457,7 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
     let current_policies = policies_result?.into_inner();
 
     // Fetch current SSH keys for each user
-    let mut current_user_keys: HashMap<String, Vec<cloudapi_client::types::SshKey>> =
+    let mut current_user_keys: HashMap<String, Vec<triton_gateway_client::types::SshKey>> =
         HashMap::new();
     for user in &current_users {
         if let Ok(keys) = client
@@ -1146,7 +1146,7 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             last_name,
             company_name,
         } => {
-            let request = cloudapi_client::types::CreateUserRequest {
+            let request = triton_gateway_client::types::CreateUserRequest {
                 login: login.clone(),
                 email: email.clone(),
                 password: generate_password()?,
@@ -1177,7 +1177,7 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             company_name,
         } => {
             let user_id = resolve_user(login, client).await?;
-            let request = cloudapi_client::types::UpdateUserRequest {
+            let request = triton_gateway_client::types::UpdateUserRequest {
                 email: email.clone(),
                 company_name: company_name.clone(),
                 first_name: first_name.clone(),
@@ -1215,7 +1215,7 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             description,
             rules,
         } => {
-            let request = cloudapi_client::types::CreatePolicyRequest {
+            let request = triton_gateway_client::types::CreatePolicyRequest {
                 name: name.clone(),
                 rules: rules.clone().into(),
                 description: description.clone(),
@@ -1234,7 +1234,7 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             description,
             rules,
         } => {
-            let request = cloudapi_client::types::UpdatePolicyRequest {
+            let request = triton_gateway_client::types::UpdatePolicyRequest {
                 name: None,
                 rules: rules.clone().map(Into::into),
                 description: description.clone(),
@@ -1266,27 +1266,25 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             policies,
         } => {
             // Merge members (default=false) and default_members (default=true)
-            let mut member_refs: Vec<cloudapi_client::types::MemberRef> = members
+            let mut member_refs: Vec<triton_gateway_client::types::MemberRef> = members
                 .iter()
-                .map(|m| cloudapi_client::types::MemberRef {
-                    type_: cloudapi_client::types::MemberType::Subuser,
+                .map(|m| triton_gateway_client::types::MemberRef {
+                    type_: triton_gateway_client::types::MemberType::Subuser,
                     login: Some(m.clone()),
                     id: None,
                     default: Some(false),
                 })
                 .collect();
-            member_refs.extend(
-                default_members
-                    .iter()
-                    .map(|m| cloudapi_client::types::MemberRef {
-                        type_: cloudapi_client::types::MemberType::Subuser,
-                        login: Some(m.clone()),
-                        id: None,
-                        default: Some(true),
-                    }),
-            );
+            member_refs.extend(default_members.iter().map(|m| {
+                triton_gateway_client::types::MemberRef {
+                    type_: triton_gateway_client::types::MemberType::Subuser,
+                    login: Some(m.clone()),
+                    id: None,
+                    default: Some(true),
+                }
+            }));
 
-            let request = cloudapi_client::types::CreateRoleRequest {
+            let request = triton_gateway_client::types::CreateRoleRequest {
                 name: name.clone(),
                 policies: if policies.is_empty() {
                     None
@@ -1294,7 +1292,7 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
                     Some(
                         policies
                             .iter()
-                            .map(|p| cloudapi_client::types::PolicyRef {
+                            .map(|p| triton_gateway_client::types::PolicyRef {
                                 name: Some(p.clone()),
                                 id: None,
                             })
@@ -1323,16 +1321,16 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             policies,
         } => {
             // Convert members + default_members to MemberRef vec
-            let member_refs: Option<Vec<cloudapi_client::types::MemberRef>> =
+            let member_refs: Option<Vec<triton_gateway_client::types::MemberRef>> =
                 match (members, default_members) {
                     (None, None) => None,
                     _ => {
-                        let mut refs: Vec<cloudapi_client::types::MemberRef> = members
+                        let mut refs: Vec<triton_gateway_client::types::MemberRef> = members
                             .as_ref()
                             .map(|ms| {
                                 ms.iter()
-                                    .map(|m| cloudapi_client::types::MemberRef {
-                                        type_: cloudapi_client::types::MemberType::Subuser,
+                                    .map(|m| triton_gateway_client::types::MemberRef {
+                                        type_: triton_gateway_client::types::MemberType::Subuser,
                                         login: Some(m.clone()),
                                         id: None,
                                         default: Some(false),
@@ -1341,28 +1339,30 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
                             })
                             .unwrap_or_default();
                         if let Some(dms) = default_members {
-                            refs.extend(dms.iter().map(|m| cloudapi_client::types::MemberRef {
-                                type_: cloudapi_client::types::MemberType::Subuser,
-                                login: Some(m.clone()),
-                                id: None,
-                                default: Some(true),
+                            refs.extend(dms.iter().map(|m| {
+                                triton_gateway_client::types::MemberRef {
+                                    type_: triton_gateway_client::types::MemberType::Subuser,
+                                    login: Some(m.clone()),
+                                    id: None,
+                                    default: Some(true),
+                                }
                             }));
                         }
                         Some(refs)
                     }
                 };
 
-            let policy_refs: Option<Vec<cloudapi_client::types::PolicyRef>> =
+            let policy_refs: Option<Vec<triton_gateway_client::types::PolicyRef>> =
                 policies.as_ref().map(|ps| {
                     ps.iter()
-                        .map(|p| cloudapi_client::types::PolicyRef {
+                        .map(|p| triton_gateway_client::types::PolicyRef {
                             name: Some(p.clone()),
                             id: None,
                         })
                         .collect()
                 });
 
-            let request = cloudapi_client::types::UpdateRoleRequest {
+            let request = triton_gateway_client::types::UpdateRoleRequest {
                 name: None,
                 policies: policy_refs,
                 members: member_refs,
@@ -1393,7 +1393,7 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             key_material,
         } => {
             let user_id = resolve_user(user_login, client).await?;
-            let request = cloudapi_client::types::CreateSshKeyRequest {
+            let request = triton_gateway_client::types::CreateSshKeyRequest {
                 name: key_name.clone(),
                 key: key_material.clone(),
             };
@@ -1557,7 +1557,7 @@ async fn execute_dev_actions(
             );
         }
 
-        let request = cloudapi_client::types::CreateSshKeyRequest {
+        let request = triton_gateway_client::types::CreateSshKeyRequest {
             name: key_name.clone(),
             key: public_key,
         };

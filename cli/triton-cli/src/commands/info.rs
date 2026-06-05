@@ -7,7 +7,7 @@
 //! Account info/overview command
 
 use anyhow::Result;
-use cloudapi_client::{ClientInfo, TypedClient};
+use triton_gateway_client::{ClientInfo, TypedClient};
 
 use crate::output::{enum_to_display, json};
 

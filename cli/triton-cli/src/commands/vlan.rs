@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
+use triton_gateway_client::TypedClient;
 
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
@@ -254,7 +254,7 @@ async fn resolve_vlan(id_or_name: &str, client: &TypedClient) -> Result<u16> {
 async fn create_vlan(args: VlanCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
 
-    let request = cloudapi_client::types::CreateFabricVlanRequest {
+    let request = triton_gateway_client::types::CreateFabricVlanRequest {
         vlan_id: args.vlan_id,
         name: args.name.clone(),
         description: args.description.clone(),
@@ -374,7 +374,7 @@ async fn update_vlan(args: VlanUpdateArgs, client: &TypedClient, use_json: bool)
         }
     }
 
-    let request = cloudapi_client::types::UpdateFabricVlanRequest { name, description };
+    let request = triton_gateway_client::types::UpdateFabricVlanRequest { name, description };
 
     let response = client
         .inner()

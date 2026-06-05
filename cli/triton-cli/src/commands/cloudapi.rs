@@ -12,8 +12,8 @@
 
 use anyhow::Result;
 use clap::{Args, ValueEnum};
-use cloudapi_client::{ClientInfo, TypedClient};
 use reqwest::header::{AUTHORIZATION, DATE};
+use triton_gateway_client::{ClientInfo, TypedClient};
 
 #[derive(Clone, Copy, Debug, ValueEnum, Default)]
 pub enum HttpMethod {
@@ -70,7 +70,14 @@ pub struct CloudApiArgs {
 }
 
 pub async fn run(args: CloudApiArgs, client: &TypedClient) -> Result<()> {
-    let auth_config = client.auth_config();
+    // Raw CloudAPI passthrough signs with the SSH key directly; it has
+    // no Bearer/JWT analogue, so require an SSH-auth profile.
+    let auth_config = client.ssh_auth_config().ok_or_else(|| {
+        anyhow::anyhow!(
+            "`triton cloudapi` requires an SSH-key profile; Bearer/JWT profiles \
+             are not supported by this command."
+        )
+    })?;
     let account = &auth_config.account;
 
     // Ensure path starts with /

@@ -7,7 +7,7 @@
 //! Common utilities for RBAC commands
 
 use anyhow::Result;
-use cloudapi_client::TypedClient;
+use triton_gateway_client::TypedClient;
 
 /// Resolve a user login name or UUID to a UUID string
 pub async fn resolve_user(id_or_login: &str, client: &TypedClient) -> Result<String> {

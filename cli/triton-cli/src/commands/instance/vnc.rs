@@ -29,7 +29,6 @@ use axum::{
     routing::get,
 };
 use clap::Args;
-use cloudapi_client::{ClientInfo, TypedClient};
 use futures_util::{SinkExt, StreamExt};
 use http::Uri;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -38,6 +37,7 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
     tungstenite::{Message, handshake::client::generate_key, protocol::WebSocketConfig},
 };
+use triton_gateway_client::{ClientInfo, TypedClient};
 
 use super::get::resolve_instance;
 
@@ -146,7 +146,13 @@ async fn run_tcp_mode(
 
                 // Connect to CloudAPI WebSocket
                 println!("Connecting to CloudAPI VNC endpoint...");
-                match connect_authenticated_websocket(&vnc_url, client.auth_config()).await {
+                let Some(ssh_cfg) = client.ssh_auth_config() else {
+                    return Err(anyhow!(
+                        "VNC proxy requires an SSH-key profile; Bearer/JWT profiles \
+                         are not supported for WebSocket upgrade."
+                    ));
+                };
+                match connect_authenticated_websocket(&vnc_url, ssh_cfg).await {
                     Ok(ws_stream) => {
                         println!("Connected! Bridging VNC traffic...");
 
@@ -178,9 +184,15 @@ async fn run_websocket_mode(
     client: &TypedClient,
     _json: bool,
 ) -> Result<()> {
+    let ssh_cfg = client.ssh_auth_config().ok_or_else(|| {
+        anyhow!(
+            "VNC WebSocket proxy requires an SSH-key profile; Bearer/JWT profiles \
+             are not supported for WebSocket upgrade."
+        )
+    })?;
     let state = Arc::new(WsProxyState {
         vnc_url: vnc_url.clone(),
-        auth_config: client.auth_config().clone(),
+        auth_config: ssh_cfg.clone(),
     });
 
     // noVNC connects to /websockify by default, but also support root path

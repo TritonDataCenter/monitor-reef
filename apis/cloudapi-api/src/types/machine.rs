@@ -117,7 +117,7 @@ pub enum MachineType {
 }
 
 /// Machine information
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Machine {
     /// Machine UUID
@@ -226,7 +226,7 @@ pub struct Machine {
 ///
 /// CloudAPI may omit `size` for the boot disk (which inherits its size
 /// from the image) and may return `"remaining"` for flexible disks.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MachineDisk {
     /// Disk UUID
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -246,7 +246,7 @@ pub struct MachineDisk {
 }
 
 /// Network interface on a machine
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MachineNic {
     /// MAC address
     pub mac: String,

@@ -17,6 +17,8 @@ pub mod image;
 pub mod info;
 pub mod instance;
 pub mod key;
+pub mod login;
+pub mod logout;
 pub mod network;
 pub mod package;
 pub mod profile;
@@ -24,6 +26,7 @@ pub mod rbac;
 pub mod services;
 pub mod vlan;
 pub mod volume;
+pub mod whoami;
 
 pub use accesskey::AccesskeyCommand;
 pub use account::AccountCommand;

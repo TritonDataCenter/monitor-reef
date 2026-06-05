@@ -102,6 +102,41 @@ pub struct Package {
     pub role_tag: Option<RoleTags>,
 }
 
+/// Query parameters for listing packages
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListPackagesQuery {
+    /// Filter by package name
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Filter by memory (MiB)
+    #[serde(default)]
+    pub memory: Option<u64>,
+    /// Filter by disk (MiB)
+    #[serde(default)]
+    pub disk: Option<u64>,
+    /// Filter by swap (MiB)
+    #[serde(default)]
+    pub swap: Option<u64>,
+    /// Filter by max lightweight processes
+    #[serde(default)]
+    pub lwps: Option<u32>,
+    /// Filter by virtual CPUs
+    #[serde(default)]
+    pub vcpus: Option<u32>,
+    /// Filter by version
+    #[serde(default)]
+    pub version: Option<String>,
+    /// Filter by group
+    #[serde(default)]
+    pub group: Option<String>,
+    /// Filter by flexible disk flag
+    #[serde(default)]
+    pub flexible_disk: Option<bool>,
+    /// Filter by brand
+    #[serde(default)]
+    pub brand: Option<String>,
+}
+
 /// Datacenter map: name -> URL
 ///
 /// The CloudAPI returns datacenters as a map where keys are datacenter names
@@ -109,14 +144,10 @@ pub struct Package {
 /// ```json
 /// {"us-central-1": "https://us-central-1.api.mnx.io"}
 /// ```
-///
-/// This is a newtype wrapper rather than a type alias because schemars
-/// (the JSON Schema generator used by Dropshot) erases type aliases at
-/// compile time. A `pub type Datacenters = HashMap<String, String>` produces
-/// an anonymous `Map_of_String` schema in OpenAPI, causing code generators
-/// (Progenitor, oapi-codegen) to emit unnamed map types. The newtype
-/// preserves the name in the schema so generated clients get a proper
-/// named type (e.g. `type Datacenters map[string]string` in Go).
+// Newtype rather than a type alias so the OpenAPI spec carries `Datacenters`
+// as a named schema rather than an anonymous map. Type aliases are erased
+// before schema generation, which would produce unnamed map types in
+// downstream-generated clients.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Datacenters(pub HashMap<String, String>);
 
@@ -158,14 +189,10 @@ pub struct AddForeignDatacenterRequest {
 /// ```json
 /// {"cmon": "https://cmon.example.com:9163", "docker": "tcp://docker.example.com:2376"}
 /// ```
-///
-/// This is a newtype wrapper rather than a type alias because schemars
-/// (the JSON Schema generator used by Dropshot) erases type aliases at
-/// compile time. A `pub type Services = HashMap<String, String>` produces
-/// an anonymous `Map_of_String` schema in OpenAPI, causing code generators
-/// (Progenitor, oapi-codegen) to emit unnamed map types. The newtype
-/// preserves the name in the schema so generated clients get a proper
-/// named type (e.g. `type Services map[string]string` in Go).
+// Newtype rather than a type alias so the OpenAPI spec carries `Services`
+// as a named schema rather than an anonymous map. Type aliases are erased
+// before schema generation, which would produce unnamed map types in
+// downstream-generated clients.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Services(pub HashMap<String, String>);
 

@@ -1,0 +1,2358 @@
+{
+  "components": {
+    "responses": {
+      "Error": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "Error"
+      }
+    },
+    "schemas": {
+      "AccessKeySecret": {
+        "description": "Secret material stored alongside an access key id.\n\nLives under `user.accesskeys[keyId]`. For temporary credentials, the `sessionToken`, `expiration`, `principalUuid`, and `assumedRole` fields are populated; for permanent credentials only `secret` and `type` are present.",
+        "properties": {
+          "assumedRole": {
+            "description": "Assumed-role metadata for MSAR-prefixed temporary credentials.",
+            "nullable": true
+          },
+          "expiration": {
+            "description": "Expiration timestamp (ISO8601) for temporary credentials.",
+            "nullable": true,
+            "type": "string"
+          },
+          "principalUuid": {
+            "description": "Uuid of the principal (user) the temporary credential belongs to.",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "secret": {
+            "description": "Secret access key (base64).",
+            "type": "string"
+          },
+          "sessionToken": {
+            "description": "Opaque session-token blob returned to clients using STS credentials.",
+            "nullable": true,
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/CredentialType"
+          }
+        },
+        "required": [
+          "secret",
+          "type"
+        ],
+        "type": "object"
+      },
+      "Account": {
+        "additionalProperties": true,
+        "description": "Redis-backed account blob (UFDS passthrough).\n\nThe concrete set of fields on accounts varies by deployment and UFDS schema. We model the commonly-observed fields explicitly and capture any extras via `#[serde(flatten)]` into a catch-all map.",
+        "properties": {
+          "address": {
+            "nullable": true,
+            "type": "string"
+          },
+          "approved_for_provisioning": {
+            "nullable": true,
+            "type": "boolean"
+          },
+          "city": {
+            "nullable": true,
+            "type": "string"
+          },
+          "cn": {
+            "nullable": true,
+            "type": "string"
+          },
+          "company": {
+            "nullable": true,
+            "type": "string"
+          },
+          "country": {
+            "nullable": true,
+            "type": "string"
+          },
+          "email": {
+            "nullable": true,
+            "type": "string"
+          },
+          "given_name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "isOperator": {
+            "description": "Set by `redislib.getAccount`. Camel-cased on the wire (UFDS bool).",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "key_info": {
+            "additionalProperties": true,
+            "description": "Per-fingerprint attestation metadata (`attested`, `pin`, `touch`) replicated from UFDS `sdckey` entries. Keyed by the same fingerprint as `keys`.",
+            "nullable": true,
+            "type": "object"
+          },
+          "keys": {
+            "additionalProperties": true,
+            "description": "Key fingerprints -> key blobs. Shape is deployment-specific.",
+            "nullable": true,
+            "type": "object"
+          },
+          "login": {
+            "type": "string"
+          },
+          "phone": {
+            "nullable": true,
+            "type": "string"
+          },
+          "postal_code": {
+            "nullable": true,
+            "type": "string"
+          },
+          "roles": {
+            "description": "Role uuids attached at the account level.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "s": {
+            "nullable": true,
+            "type": "string"
+          },
+          "sn": {
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "nullable": true,
+            "type": "string"
+          },
+          "triton_cns_enabled": {
+            "nullable": true,
+            "type": "boolean"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ObjectTypeTag"
+          },
+          "uuid": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "login",
+          "type",
+          "uuid"
+        ],
+        "type": "object"
+      },
+      "AssumeRoleRequest": {
+        "description": "Request body for `POST /sts/assume-role`.",
+        "properties": {
+          "DurationSeconds": {
+            "description": "Desired lifetime in seconds. Upstream validates the range 900..=43200.",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "RoleArn": {
+            "type": "string"
+          },
+          "RoleSessionName": {
+            "type": "string"
+          },
+          "caller": {
+            "$ref": "#/components/schemas/Caller"
+          }
+        },
+        "required": [
+          "RoleArn",
+          "RoleSessionName",
+          "caller"
+        ],
+        "type": "object"
+      },
+      "AssumeRoleResponse": {
+        "description": "Outer response envelope returned by `POST /sts/assume-role`.\n\nMahi emulates AWS's XML envelope with a JSON object of the same shape, so callers must navigate two nested `AssumeRoleResponse` / `AssumeRoleResult` keys.",
+        "properties": {
+          "AssumeRoleResponse": {
+            "$ref": "#/components/schemas/AssumeRoleResponseInner"
+          }
+        },
+        "required": [
+          "AssumeRoleResponse"
+        ],
+        "type": "object"
+      },
+      "AssumeRoleResponseInner": {
+        "description": "Middle envelope wrapping the result.",
+        "properties": {
+          "AssumeRoleResult": {
+            "$ref": "#/components/schemas/AssumeRoleResult"
+          }
+        },
+        "required": [
+          "AssumeRoleResult"
+        ],
+        "type": "object"
+      },
+      "AssumeRoleResult": {
+        "description": "Inner `AssumeRoleResult` object.",
+        "properties": {
+          "AssumedRoleUser": {
+            "$ref": "#/components/schemas/AssumedRoleUser"
+          },
+          "Credentials": {
+            "$ref": "#/components/schemas/StsCredentials"
+          }
+        },
+        "required": [
+          "AssumedRoleUser",
+          "Credentials"
+        ],
+        "type": "object"
+      },
+      "AssumedRole": {
+        "description": "Assumed-role context attached to temporary credentials.",
+        "properties": {
+          "arn": {
+            "type": "string"
+          },
+          "policies": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyEntry"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "roleUuid": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "sessionName": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "arn"
+        ],
+        "type": "object"
+      },
+      "AssumedRoleUser": {
+        "description": "Assumed-role principal returned by `AssumeRole`.",
+        "properties": {
+          "Arn": {
+            "type": "string"
+          },
+          "AssumedRoleId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "Arn",
+          "AssumedRoleId"
+        ],
+        "type": "object"
+      },
+      "AuthInfo": {
+        "description": "Auth payload returned by most lookup endpoints.\n\nMahi builds this up progressively as `req.auth` and sends it back verbatim. `user` is optional because several routes (and the `fallback=true` branch of `GET /users`) only populate `account` + `roles`. `role` is only populated by `GET /roles`.",
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/Account"
+          },
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Role"
+              }
+            ],
+            "description": "Single role populated only by `GET /roles`.",
+            "nullable": true
+          },
+          "roles": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Role"
+            },
+            "default": {},
+            "description": "Roles map keyed by role uuid.",
+            "type": "object"
+          },
+          "user": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/User"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "account"
+        ],
+        "type": "object"
+      },
+      "AwsAuthResult": {
+        "description": "Result of `GET /aws-auth/:accesskeyid`.\n\nContains the full principal context plus, when applicable, assumed-role / temporary-credential metadata.",
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/Account"
+          },
+          "assumedRole": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssumedRole"
+              }
+            ],
+            "nullable": true
+          },
+          "isTemporaryCredential": {
+            "nullable": true,
+            "type": "boolean"
+          },
+          "roles": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Role"
+            },
+            "default": {},
+            "type": "object"
+          },
+          "sessionName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "user": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/User"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "account"
+        ],
+        "type": "object"
+      },
+      "Caller": {
+        "description": "The `caller` object every STS endpoint expects in its body.",
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/CallerAccount"
+          },
+          "user": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CallerUser"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "account"
+        ],
+        "type": "object"
+      },
+      "CallerAccount": {
+        "additionalProperties": true,
+        "description": "Account identifier attached to STS calls.",
+        "properties": {
+          "email": {
+            "nullable": true,
+            "type": "string"
+          },
+          "login": {
+            "type": "string"
+          },
+          "uuid": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "login",
+          "uuid"
+        ],
+        "type": "object"
+      },
+      "CallerUser": {
+        "additionalProperties": true,
+        "description": "Optional sub-user identifier attached to STS calls.",
+        "properties": {
+          "email": {
+            "nullable": true,
+            "type": "string"
+          },
+          "login": {
+            "type": "string"
+          },
+          "uuid": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "login",
+          "uuid"
+        ],
+        "type": "object"
+      },
+      "CreateRoleRequest": {
+        "description": "Request body for `POST /iam/create-role`.",
+        "properties": {
+          "accountUuid": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "assumeRolePolicyDocument": {
+            "description": "Trust policy document (JSON-encoded string).",
+            "nullable": true,
+            "type": "string"
+          },
+          "description": {
+            "nullable": true,
+            "type": "string"
+          },
+          "path": {
+            "description": "IAM path. Upstream defaults to `\"/\"` when absent.",
+            "nullable": true,
+            "type": "string"
+          },
+          "roleName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountUuid",
+          "roleName"
+        ],
+        "type": "object"
+      },
+      "CreateRoleResponse": {
+        "description": "Response for `POST /iam/create-role`.",
+        "properties": {
+          "Role": {
+            "$ref": "#/components/schemas/IamRole"
+          }
+        },
+        "required": [
+          "Role"
+        ],
+        "type": "object"
+      },
+      "CredentialType": {
+        "description": "Credential type for access keys.\n\nWire format values are `\"permanent\"` and `\"temporary\"`. Temporary credentials are produced by the STS endpoints (MSAR/MSTS prefixes).",
+        "oneOf": [
+          {
+            "enum": [
+              "permanent",
+              "temporary"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Catch-all for credential types added after this client was compiled.",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "DeleteRolePolicyResponse": {
+        "description": "Response for `DEL /iam/delete-role-policy`.",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "policyName": {
+            "type": "string"
+          },
+          "roleName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "policyName",
+          "roleName"
+        ],
+        "type": "object"
+      },
+      "DeleteRoleResponse": {
+        "description": "Response for `DEL /iam/delete-role/{roleName}`.",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "roleName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "roleName"
+        ],
+        "type": "object"
+      },
+      "Error": {
+        "description": "Error information from a response.",
+        "properties": {
+          "error_code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "GetCallerIdentityRequest": {
+        "description": "Request body for `POST /sts/get-caller-identity`.\n\nThe response is emitted as raw XML with `Content-Type: text/xml`; the trait therefore uses `Result<Response<Body>, HttpError>` for this endpoint and a Phase-2b spec patch reshapes the response schema accordingly.",
+        "properties": {
+          "caller": {
+            "$ref": "#/components/schemas/Caller"
+          }
+        },
+        "required": [
+          "caller"
+        ],
+        "type": "object"
+      },
+      "GetRolePolicyResponse": {
+        "description": "Response for `GET /iam/get-role-policy/{roleName}/{policyName}`.",
+        "properties": {
+          "PolicyDocument": {
+            "description": "Policy document (JSON string).",
+            "type": "string"
+          },
+          "PolicyName": {
+            "type": "string"
+          },
+          "RoleName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "PolicyDocument",
+          "PolicyName",
+          "RoleName"
+        ],
+        "type": "object"
+      },
+      "GetRoleResponse": {
+        "description": "Response for `GET /iam/get-role/{roleName}`.",
+        "properties": {
+          "Role": {
+            "$ref": "#/components/schemas/IamRole"
+          }
+        },
+        "required": [
+          "Role"
+        ],
+        "type": "object"
+      },
+      "GetSessionTokenRequest": {
+        "description": "Request body for `POST /sts/get-session-token`.",
+        "properties": {
+          "DurationSeconds": {
+            "description": "Desired lifetime in seconds. Upstream validates 900..=129600.",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "caller": {
+            "$ref": "#/components/schemas/Caller"
+          }
+        },
+        "required": [
+          "caller"
+        ],
+        "type": "object"
+      },
+      "GetSessionTokenResponse": {
+        "description": "Outer response envelope for `POST /sts/get-session-token`.",
+        "properties": {
+          "GetSessionTokenResponse": {
+            "$ref": "#/components/schemas/GetSessionTokenResponseInner"
+          }
+        },
+        "required": [
+          "GetSessionTokenResponse"
+        ],
+        "type": "object"
+      },
+      "GetSessionTokenResponseInner": {
+        "description": "Middle envelope wrapping the result.",
+        "properties": {
+          "GetSessionTokenResult": {
+            "$ref": "#/components/schemas/GetSessionTokenResult"
+          }
+        },
+        "required": [
+          "GetSessionTokenResult"
+        ],
+        "type": "object"
+      },
+      "GetSessionTokenResult": {
+        "description": "Inner `GetSessionTokenResult` object.",
+        "properties": {
+          "Credentials": {
+            "$ref": "#/components/schemas/StsCredentials"
+          }
+        },
+        "required": [
+          "Credentials"
+        ],
+        "type": "object"
+      },
+      "IamRole": {
+        "description": "IAM role object (PascalCase on the wire).",
+        "properties": {
+          "Arn": {
+            "type": "string"
+          },
+          "AssumeRolePolicyDocument": {
+            "description": "JSON-stringified trust policy document.",
+            "type": "string"
+          },
+          "CreateDate": {
+            "description": "RFC3339 create date.",
+            "type": "string"
+          },
+          "Description": {
+            "nullable": true,
+            "type": "string"
+          },
+          "MaxSessionDuration": {
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "Path": {
+            "description": "IAM path (default `\"/\"`).",
+            "type": "string"
+          },
+          "RoleId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "RoleName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "Arn",
+          "AssumeRolePolicyDocument",
+          "CreateDate",
+          "Path",
+          "RoleId",
+          "RoleName"
+        ],
+        "type": "object"
+      },
+      "ListRolePoliciesResponse": {
+        "description": "Response for `GET /iam/list-role-policies/{roleName}`.",
+        "properties": {
+          "IsTruncated": {
+            "type": "boolean"
+          },
+          "Marker": {
+            "nullable": true,
+            "type": "string"
+          },
+          "PolicyNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "IsTruncated",
+          "PolicyNames"
+        ],
+        "type": "object"
+      },
+      "ListRolesResponse": {
+        "description": "Response for `GET /iam/list-roles`.\n\n**Mixed casing** at the top level: `roles` is lowercase, `IsTruncated` and `Marker` are PascalCase. Apply field-level renames rather than a struct `rename_all`.",
+        "properties": {
+          "IsTruncated": {
+            "type": "boolean"
+          },
+          "Marker": {
+            "nullable": true,
+            "type": "string"
+          },
+          "roles": {
+            "description": "Lowercase on the wire.",
+            "items": {
+              "$ref": "#/components/schemas/IamRole"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "IsTruncated",
+          "roles"
+        ],
+        "type": "object"
+      },
+      "LookupEntry": {
+        "description": "Entry value for `GET /lookup` responses (map keyed by account uuid).",
+        "properties": {
+          "approved": {
+            "type": "boolean"
+          },
+          "login": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approved",
+          "login"
+        ],
+        "type": "object"
+      },
+      "MantaPolicy": {
+        "description": "Mahi-native policy payload attached to a role via `PutRolePolicy`.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rules": {
+            "description": "Aperture rule strings.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "rules"
+        ],
+        "type": "object"
+      },
+      "NameToUuidBody": {
+        "description": "Body of the deprecated `POST /getUuid`.",
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "name": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StringOrVec"
+              }
+            ],
+            "default": null,
+            "description": "Single name or array of names.",
+            "nullable": true
+          },
+          "type": {
+            "$ref": "#/components/schemas/ObjectType"
+          }
+        },
+        "required": [
+          "account",
+          "type"
+        ],
+        "type": "object"
+      },
+      "NameToUuidResponse": {
+        "description": "Response for `GET /uuids` and `POST /getUuid`.\n\nWhen no `name=` was supplied, only `account` is populated. Otherwise `uuids` contains a map of `name -> uuid` for each requested name.",
+        "properties": {
+          "account": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "uuids": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "account"
+        ],
+        "type": "object"
+      },
+      "ObjectType": {
+        "description": "Object types accepted by `GET /uuids?type=`.\n\nThe set is asserted in upstream `redislib.getUuid` and is lowercase on the wire.",
+        "enum": [
+          "role",
+          "user",
+          "policy"
+        ],
+        "type": "string"
+      },
+      "ObjectTypeTag": {
+        "description": "Internal `type` field stored on every Redis blob. Mahi may grow additional object types over time, so include a catch-all `Unknown` variant.",
+        "oneOf": [
+          {
+            "enum": [
+              "account",
+              "user",
+              "role",
+              "policy",
+              "accesskey"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Catch-all for object types added after this client was compiled.",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "PolicyEntry": {
+        "description": "Policy entry attached to an assumed role.",
+        "properties": {
+          "name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "uuid": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PutRolePolicyRequest": {
+        "description": "Request body for `POST /iam/put-role-policy`.",
+        "properties": {
+          "accountUuid": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "mantaPolicy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MantaPolicy"
+              }
+            ],
+            "description": "Mahi-native policy object stored under `/policy/:id`."
+          },
+          "policyDocument": {
+            "description": "Raw IAM policy document (JSON string).",
+            "type": "string"
+          },
+          "policyName": {
+            "type": "string"
+          },
+          "roleName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountUuid",
+          "mantaPolicy",
+          "policyDocument",
+          "policyName",
+          "roleName"
+        ],
+        "type": "object"
+      },
+      "PutRolePolicyResponse": {
+        "description": "Response for `POST /iam/put-role-policy`.",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "policyName": {
+            "type": "string"
+          },
+          "roleName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "policyName",
+          "roleName"
+        ],
+        "type": "object"
+      },
+      "Role": {
+        "additionalProperties": true,
+        "description": "Redis-backed role blob.",
+        "properties": {
+          "account": {
+            "description": "Owning account uuid.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "assumerolepolicydocument": {
+            "description": "STS assume-role policy document (JSON string).",
+            "nullable": true,
+            "type": "string"
+          },
+          "createtime": {
+            "description": "RFC3339/UFDS create timestamp.",
+            "nullable": true,
+            "type": "string"
+          },
+          "description": {
+            "nullable": true,
+            "type": "string"
+          },
+          "members": {
+            "items": {},
+            "nullable": true,
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "description": "IAM path (default `\"/\"`).",
+            "nullable": true,
+            "type": "string"
+          },
+          "permissionPolicies": {
+            "description": "Policy metadata attached for STS evaluation. Shape is internal. Wire name is camelCase (`permissionPolicies`); it is the only camelCase field on this otherwise-lowercase Redis blob.",
+            "nullable": true
+          },
+          "policies": {
+            "default": [],
+            "description": "Policy uuids attached to this role.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "rules": {
+            "description": "Inline rules (aperture policy expressions).",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ObjectTypeTag"
+          },
+          "uuid": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "name",
+          "type",
+          "uuid"
+        ],
+        "type": "object"
+      },
+      "SigV4VerifyResult": {
+        "description": "Result of `POST /aws-verify` on a valid signature.\n\nThe handler always responds with `valid: true` on success (invalid signatures come back as HTTP errors).",
+        "properties": {
+          "accessKeyId": {
+            "type": "string"
+          },
+          "assumedRole": {
+            "description": "Assumed-role metadata (present only for MSAR temporary credentials).",
+            "nullable": true
+          },
+          "isTemporaryCredential": {
+            "nullable": true,
+            "type": "boolean"
+          },
+          "principalUuid": {
+            "description": "Principal uuid for temporary credentials.",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "signingKey": {
+            "description": "Derived signing key. Upstream JSON-encodes a Node `Buffer`, so the on-the-wire shape is `{\"type\":\"Buffer\",\"data\":[...]}`. Phase 5 should confirm whether any caller actually consumes this; we keep it opaque for now.",
+            "nullable": true
+          },
+          "userUuid": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "valid": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accessKeyId",
+          "userUuid",
+          "valid"
+        ],
+        "type": "object"
+      },
+      "StringOrVec": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        ],
+        "description": "Accepts either a single value or a JSON array of values (both forms are used by the deprecated `POST /getUuid` and `POST /getName` endpoints)."
+      },
+      "StsCredentials": {
+        "description": "Temporary credentials returned by `AssumeRole` and `GetSessionToken`.",
+        "properties": {
+          "AccessKeyId": {
+            "type": "string"
+          },
+          "Expiration": {
+            "description": "RFC3339/ISO8601 expiration timestamp.",
+            "type": "string"
+          },
+          "SecretAccessKey": {
+            "type": "string"
+          },
+          "SessionToken": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "AccessKeyId",
+          "Expiration",
+          "SecretAccessKey",
+          "SessionToken"
+        ],
+        "type": "object"
+      },
+      "User": {
+        "additionalProperties": true,
+        "description": "Redis-backed sub-user blob.",
+        "properties": {
+          "accesskeys": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AccessKeySecret"
+            },
+            "description": "Access keys keyed by access-key id. Values contain secret material.",
+            "nullable": true,
+            "type": "object"
+          },
+          "account": {
+            "description": "Owning account uuid.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "cn": {
+            "nullable": true,
+            "type": "string"
+          },
+          "company": {
+            "nullable": true,
+            "type": "string"
+          },
+          "email": {
+            "nullable": true,
+            "type": "string"
+          },
+          "given_name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "key_info": {
+            "additionalProperties": true,
+            "description": "Per-fingerprint attestation metadata (`attested`, `pin`, `touch`) replicated from UFDS `sdckey` entries. Keyed by the same fingerprint as `keys`.",
+            "nullable": true,
+            "type": "object"
+          },
+          "keys": {
+            "additionalProperties": true,
+            "description": "SSH public-key fingerprints -> key blobs, replicated from UFDS `sdckey` entries attached to the sub-user. Shape mirrors [`Account::keys`]: the blob is deployment-specific (PEM SubjectPublicKeyInfo on the Triton deployments we've seen, `ssh-rsa AAAA...` on some others) and verifiers should parse both.\n\nMust be modeled explicitly here — if it lived only in `#[serde(flatten)] extra`, Progenitor's regenerated client type would silently drop it at the wire boundary, since the generated client has no catch-all.",
+            "nullable": true,
+            "type": "object"
+          },
+          "login": {
+            "type": "string"
+          },
+          "roles": {
+            "description": "Role uuids attached at the user level.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "s": {
+            "nullable": true,
+            "type": "string"
+          },
+          "sn": {
+            "nullable": true,
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ObjectTypeTag"
+          },
+          "uuid": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "login",
+          "type",
+          "uuid"
+        ],
+        "type": "object"
+      },
+      "UuidToNameBody": {
+        "description": "Body of the deprecated `POST /getName`.",
+        "properties": {
+          "uuid": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StringOrVec"
+              }
+            ],
+            "description": "Single uuid or array of uuids. Kept as `String` here because the body may carry either a bare string or a JSON array of strings; UUID parsing happens in the service layer so we can surface a clean 400 for malformed input."
+          }
+        },
+        "required": [
+          "uuid"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Mahi - Manta Auth Cache. Redis-backed auth cache exposing UFDS-sourced account/user/role/policy lookups plus AWS SigV4/STS/IAM endpoints.",
+    "title": "Mahi (Manta Auth Cache) API",
+    "version": "2.1.0"
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/account/{account}": {
+      "get": {
+        "operationId": "get_account_old",
+        "parameters": [
+          {
+            "description": "Account login (not uuid).",
+            "in": "path",
+            "name": "account",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthInfo"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Deprecated alias for `/accounts?login=`.",
+        "tags": [
+          "lookup-deprecated"
+        ]
+      }
+    },
+    "/accounts": {
+      "get": {
+        "operationId": "get_account",
+        "parameters": [
+          {
+            "description": "Account login. Upstream also accepts the historical alias `account=` for the same value.",
+            "in": "query",
+            "name": "login",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthInfo"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Look up an account by login (`?login=` or legacy alias `?account=`).",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/accounts/{accountid}": {
+      "get": {
+        "description": "metadata and the account's roles.",
+        "operationId": "get_account_by_uuid",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accountid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthInfo"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Look up an account by UUID. Returns `AuthInfo` populated with account",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/aws-auth/{accesskeyid}": {
+      "get": {
+        "description": "MSAR/MSTS temporary credentials.",
+        "operationId": "get_user_by_access_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accesskeyid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AwsAuthResult"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Resolve a principal by AWS access key id. Falls back to UFDS for",
+        "tags": [
+          "aws-sigv4"
+        ]
+      }
+    },
+    "/aws-verify": {
+      "post": {
+        "description": "The original method / URL are delivered in the query string. The service implementation must inspect the incoming request's headers directly (via `RequestContext::request`); the request body is opaque here.",
+        "operationId": "verify_sig_v4",
+        "parameters": [
+          {
+            "description": "HTTP method of the original (to-be-verified) request.",
+            "in": "query",
+            "name": "method",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "URL (path + query) of the original (to-be-verified) request.",
+            "in": "query",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SigV4VerifyResult"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Verify an AWS SigV4 signature over the original client request.",
+        "tags": [
+          "aws-sigv4"
+        ]
+      }
+    },
+    "/getName": {
+      "post": {
+        "operationId": "uuid_to_name_old",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UuidToNameBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Map_of_String",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Deprecated POST-body variant of `GET /names`.",
+        "tags": [
+          "lookup-deprecated"
+        ]
+      }
+    },
+    "/getUuid": {
+      "post": {
+        "operationId": "name_to_uuid_old",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NameToUuidBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NameToUuidResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Deprecated POST-body variant of `GET /uuids`.",
+        "tags": [
+          "lookup-deprecated"
+        ]
+      }
+    },
+    "/iam/create-role": {
+      "post": {
+        "description": "Returns 200 (despite the upstream JSDoc claiming 201).",
+        "operationId": "iam_create_role",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateRoleResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Create a new IAM role. Writes Redis synchronously, UFDS asynchronously.",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/iam/delete-role-policy": {
+      "delete": {
+        "description": "string, not the path (mirrors upstream).",
+        "operationId": "iam_delete_role_policy",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "accountUuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "policyName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "roleName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteRolePolicyResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Detach a policy from a role. All identifiers come from the query",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/iam/delete-role/{role_name}": {
+      "delete": {
+        "operationId": "iam_delete_role",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "accountUuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteRoleResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Delete a role. Writes Redis synchronously, UFDS asynchronously.",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/iam/get-role-policy/{role_name}/{policy_name}": {
+      "get": {
+        "operationId": "iam_get_role_policy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "policy_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "role_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "accountUuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetRolePolicyResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Retrieve a specific role policy document (as a JSON-encoded string).",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/iam/get-role/{role_name}": {
+      "get": {
+        "operationId": "iam_get_role",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "accountUuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetRoleResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get a single role by name.",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/iam/list-role-policies/{role_name}": {
+      "get": {
+        "description": "parameter (an upstream quirk; `maxItems` is accepted as an alias).",
+        "operationId": "iam_list_role_policies",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "accountUuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "marker",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum number of policy names to return. Upstream is `maxitems` (lowercase) in the handler; this alias accepts the typo-free spelling for forward compatibility.",
+            "in": "query",
+            "name": "maxitems",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListRolePoliciesResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List policies attached to a role. Note the lowercase `maxitems` query",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/iam/list-roles": {
+      "get": {
+        "operationId": "iam_list_roles",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "accountUuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "marker",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Upstream default is 100; server caps at 1000.",
+            "in": "query",
+            "name": "maxItems",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Alternate name accepted by upstream (`?startingToken=`).",
+            "in": "query",
+            "name": "startingToken",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListRolesResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List roles within an account.",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/iam/put-role-policy": {
+      "post": {
+        "operationId": "iam_put_role_policy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutRolePolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PutRolePolicyResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Attach a policy to a role.",
+        "tags": [
+          "iam"
+        ]
+      }
+    },
+    "/lookup": {
+      "get": {
+        "description": "UUID, not an array.",
+        "operationId": "lookup",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/LookupEntry"
+                  },
+                  "title": "Map_of_LookupEntry",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Bulk lookup of all known accounts. Response is a map keyed by account",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/names": {
+      "get": {
+        "description": "keyed by UUID, not an array.",
+        "operationId": "uuid_to_name",
+        "parameters": [
+          {
+            "description": "UUIDs to resolve. Repeat the parameter, e.g. `?uuid=x&uuid=y`.",
+            "explode": true,
+            "in": "query",
+            "name": "uuid",
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Map_of_String",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Resolve a set of UUIDs to their names/logins. The response is a map",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/ping": {
+      "get": {
+        "description": "the replicator is not caught up.",
+        "operationId": "ping",
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Health check. Returns 204 on success; 503 if Redis is unavailable or",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/roles": {
+      "get": {
+        "description": "returned `AuthInfo.role` field is populated for this endpoint.",
+        "operationId": "get_role_members",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "account",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Role name. Upstream also accepts the alias `name=`.",
+            "in": "query",
+            "name": "role",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthInfo"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List members of a role identified by `(account, role-name)`. The",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/sts/assume-role": {
+      "post": {
+        "description": "policy of the target role.",
+        "operationId": "sts_assume_role",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssumeRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssumeRoleResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Mint MSAR-prefixed temporary credentials after validating the trust",
+        "tags": [
+          "sts"
+        ]
+      }
+    },
+    "/sts/get-caller-identity": {
+      "post": {
+        "description": "`Content-Type: text/xml`, so this endpoint uses `Response<Body>` and relies on a Phase-2b OpenAPI spec patch to declare the correct content type and a `string` schema.",
+        "operationId": "sts_get_caller_identity",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetCallerIdentityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "XML body with Content-Type: text/xml"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Return caller-identity information. The wire response is XML with",
+        "tags": [
+          "sts"
+        ]
+      }
+    },
+    "/sts/get-session-token": {
+      "post": {
+        "operationId": "sts_get_session_token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetSessionTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetSessionTokenResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Mint MSTS-prefixed temporary credentials for the caller.",
+        "tags": [
+          "sts"
+        ]
+      }
+    },
+    "/user/{account}/{user}": {
+      "get": {
+        "operationId": "get_user_old",
+        "parameters": [
+          {
+            "description": "Account login.",
+            "in": "path",
+            "name": "account",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sub-user login.",
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthInfo"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Deprecated alias for `/users?account=&login=`.",
+        "tags": [
+          "lookup-deprecated"
+        ]
+      }
+    },
+    "/users": {
+      "get": {
+        "description": "When `fallback=true` (the upstream default) and the sub-user is missing, the handler returns the account-only `AuthInfo` with `user=None` and an empty `roles` map.",
+        "operationId": "get_user",
+        "parameters": [
+          {
+            "description": "Account login.",
+            "in": "query",
+            "name": "account",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "When `true`, missing sub-users are swallowed and the account-only `AuthInfo` (no `user`, empty `roles`) is returned with HTTP 200. Defaults to `true` upstream. Accepts boolean `true`/`false` or the strings `\"true\"`/`\"false\"`.",
+            "in": "query",
+            "name": "fallback",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Sub-user login.",
+            "in": "query",
+            "name": "login",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthInfo"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Look up a sub-user by (account-login, sub-user-login).",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/users/{userid}": {
+      "get": {
+        "operationId": "get_user_by_uuid",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthInfo"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Look up a sub-user by UUID. Also loads the owning account.",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/uuids": {
+      "get": {
+        "description": "`{account}` alone when no `name=` query is supplied.",
+        "operationId": "name_to_uuid",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "account",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Names to resolve. Repeat the parameter, e.g. `?name=a&name=b`.",
+            "explode": true,
+            "in": "query",
+            "name": "name",
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "style": "form"
+          },
+          {
+            "description": "Type of object to look up.",
+            "in": "query",
+            "name": "type",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ObjectType"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NameToUuidResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Resolve a set of names to their UUIDs within an account. Returns",
+        "tags": [
+          "lookup"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "aws-sigv4"
+    },
+    {
+      "name": "iam"
+    },
+    {
+      "name": "lookup"
+    },
+    {
+      "name": "lookup-deprecated"
+    },
+    {
+      "name": "sts"
+    }
+  ]
+}

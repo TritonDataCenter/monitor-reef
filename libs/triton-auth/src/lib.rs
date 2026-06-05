@@ -72,9 +72,11 @@
 //! ```
 
 pub mod agent;
+pub mod auth_scheme;
 pub mod certgen;
 pub mod error;
 pub mod fingerprint;
+pub mod http_sig;
 pub mod key_loader;
 pub mod legacy_pem;
 pub mod signature;

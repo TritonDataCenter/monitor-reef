@@ -1,0 +1,23 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "triton-tls"
+version = "0.1.0"
+edition.workspace = true
+description = "TLS certificate loading for Triton CLI tools on illumos"
+
+[lints]
+workspace = true
+
+[dependencies]
+reqwest = { workspace = true }
+rustls = { workspace = true }
+rustls-native-certs = { workspace = true }
+rustls-pemfile = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+webpki-roots = { workspace = true }

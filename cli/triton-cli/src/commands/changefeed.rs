@@ -10,16 +10,16 @@
 
 use anyhow::{Result, anyhow};
 use clap::Args;
-use cloudapi_client::{
-    ChangefeedMessage, ChangefeedResource, ChangefeedSubResource, ChangefeedSubscription,
-    ClientInfo, TypedClient,
-};
 use futures_util::{SinkExt, StreamExt};
 use http::Uri;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
     tungstenite::{Message, handshake::client::generate_key, protocol::WebSocketConfig},
+};
+use triton_gateway_client::{
+    ChangefeedMessage, ChangefeedResource, ChangefeedSubResource, ChangefeedSubscription,
+    ClientInfo, TypedClient,
 };
 
 use crate::output::enum_to_display;
@@ -43,8 +43,13 @@ pub async fn run(args: ChangefeedArgs, client: &TypedClient, use_json: bool) -> 
 
     // Connect to CloudAPI WebSocket
     println!("Connecting to CloudAPI changefeed...");
-    let mut ws_stream =
-        connect_authenticated_websocket(&changefeed_url, client.auth_config()).await?;
+    let ssh_cfg = client.ssh_auth_config().ok_or_else(|| {
+        anyhow!(
+            "`triton changefeed` requires an SSH-key profile; Bearer/JWT profiles \
+             are not supported for WebSocket upgrade."
+        )
+    })?;
+    let mut ws_stream = connect_authenticated_websocket(&changefeed_url, ssh_cfg).await?;
     println!("Connected. Subscribing to VM changes...");
 
     // Send subscription message

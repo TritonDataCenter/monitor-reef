@@ -1,0 +1,100 @@
+{
+  "components": {
+    "responses": {
+      "Error": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "Error"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "description": "Error information from a response.",
+        "properties": {
+          "error_code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "request_id"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Mahi sitter - internal replicator admin server running alongside the Mahi replicator. Exposes /ping and /snapshot (binary RDB streaming).",
+    "title": "Mahi Sitter API",
+    "version": "2.1.0"
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/ping": {
+      "get": {
+        "description": "caught up or Redis is unavailable.",
+        "operationId": "sitter_ping",
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Health check. Returns 204 on success; 500/503 if the sitter is not",
+        "tags": [
+          "sitter"
+        ]
+      }
+    },
+    "/snapshot": {
+      "get": {
+        "description": "Upstream terminates the response with `res.send(201)` after piping the file into the socket. The trait uses `Result<Response<Body>, HttpError>` and relies on a Phase-2b spec patch to declare the binary content type and 201 status.",
+        "operationId": "sitter_snapshot",
+        "responses": {
+          "201": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Streaming Redis dump.rdb body"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Stream the Redis `dump.rdb` snapshot as `application/octet-stream`.",
+        "tags": [
+          "sitter"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "sitter"
+    }
+  ]
+}

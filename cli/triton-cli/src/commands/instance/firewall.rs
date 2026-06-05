@@ -8,8 +8,8 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::FirewallRule;
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::FirewallRule;
 
 use crate::define_columns;
 use crate::output::json;
@@ -47,7 +47,7 @@ pub async fn enable(args: EnableFirewallArgs, client: &TypedClient) -> Result<()
             .enable_firewall(
                 account,
                 &machine_id,
-                &cloudapi_client::EnableFirewallRequest::default(),
+                &triton_gateway_client::EnableFirewallRequest::default(),
             )
             .await?;
 
@@ -68,7 +68,7 @@ pub async fn disable(args: DisableFirewallArgs, client: &TypedClient) -> Result<
             .disable_firewall(
                 account,
                 &machine_id,
-                &cloudapi_client::DisableFirewallRequest::default(),
+                &triton_gateway_client::DisableFirewallRequest::default(),
             )
             .await?;
 

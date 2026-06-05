@@ -1,0 +1,31 @@
+# Plan 9 from Bell Labs — fossil-only QEMU image (stanleylieber mirror).
+#
+# The upstream is a bz2-wrapped qcow2 served over plain HTTP without
+# a published per-file checksum:
+#
+#   http://plan9.stanleylieber.com/qemu/fossil.qcow2.img.bz2
+#
+# Two reasons we go through `file://` instead of pinning the URL
+# directly: (1) the pipeline's SourceFormat enum doesn't include
+# `bz2` wrappers, and (2) HTTP without a checksum is exactly the
+# situation where computing the hash locally on inspected bytes IS
+# the trust anchor — there is nothing better to compare against.
+#
+# Operator workflow (one-time):
+#
+#   curl -LO http://plan9.stanleylieber.com/qemu/fossil.qcow2.img.bz2
+#   bunzip2 fossil.qcow2.img.bz2
+#   mv fossil.qcow2.img /var/tmp/tritonadm/staging/fossil.qcow2
+#   sha256sum /var/tmp/tritonadm/staging/fossil.qcow2
+#
+# Paste the resulting hex into `sha256` below.
+
+url         = "file:///var/tmp/tritonadm/staging/fossil.qcow2"
+format      = "qcow2"
+os          = "plan9"
+series      = "plan9-fossil"
+version     = "stanleylieber-snapshot"
+sha256      = "0000000000000000000000000000000000000000000000000000000000000000"  # replace
+description = "Plan 9 from Bell Labs, fossil-only install (stanleylieber mirror, decompressed locally)."
+homepage    = "https://9p.io/wiki/plan9/Installing_Plan_9_on_Qemu/index.html"
+ssh_key     = false

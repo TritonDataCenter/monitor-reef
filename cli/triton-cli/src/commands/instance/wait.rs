@@ -10,9 +10,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::{AuditSuccess, Machine, MachineState};
 use tokio::time::sleep;
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::{AuditSuccess, Machine, MachineState};
 
 use crate::output::{enum_to_display, json};
 

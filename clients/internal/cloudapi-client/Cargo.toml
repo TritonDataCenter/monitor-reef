@@ -31,6 +31,8 @@ base64 = { workspace = true }
 rand = { workspace = true }
 # Authentication support
 triton-auth = { workspace = true }
+# Generic list-endpoint paginator (shared with triton-gateway-client)
+triton-pagination = { workspace = true }
 thiserror = { workspace = true }
 # clap::ValueEnum on generated enum types for CLI consumers
 clap = { workspace = true }

@@ -598,7 +598,7 @@ func findPublicNetwork(t *testing.T, ctx context.Context) *cloudapi.Network {
 func findSmallPackage(t *testing.T, ctx context.Context) *cloudapi.Package {
 	t.Helper()
 
-	resp, err := testClient.ListPackagesWithResponse(ctx, testAccount)
+	resp, err := testClient.ListPackagesWithResponse(ctx, testAccount, nil)
 	if err != nil {
 		t.Fatalf("ListPackages: %v", err)
 	}

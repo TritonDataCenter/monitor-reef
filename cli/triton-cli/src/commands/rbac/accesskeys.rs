@@ -8,8 +8,8 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::AccessKeyStatus;
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::AccessKeyStatus;
 
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
@@ -192,7 +192,7 @@ async fn create_user_access_key(
     let account = client.effective_account();
     let user_id = resolve_user(user, client).await?;
 
-    let request = cloudapi_client::types::CreateAccessKeyRequest {
+    let request = triton_gateway_client::types::CreateAccessKeyRequest {
         status,
         description,
     };
@@ -231,7 +231,7 @@ async fn update_user_access_key(
     let account = client.effective_account();
     let user_id = resolve_user(user, client).await?;
 
-    let request = cloudapi_client::types::UpdateAccessKeyRequest {
+    let request = triton_gateway_client::types::UpdateAccessKeyRequest {
         status,
         description,
     };

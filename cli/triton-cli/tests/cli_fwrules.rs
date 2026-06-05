@@ -277,8 +277,8 @@ fn test_fwrule_list_json() {
 // Write operation tests - require config.json with allowWriteActions: true
 // =============================================================================
 
-use cloudapi_client::FirewallRule;
 use regex::Regex;
+use triton_gateway_client::FirewallRule;
 
 /// Extract rule ID from "Created firewall rule <uuid>" message
 fn extract_rule_id(stdout: &str) -> Option<String> {

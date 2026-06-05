@@ -8,9 +8,9 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::{MemberRef, MemberType, PolicyRef};
 use serde::Deserialize;
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::{MemberRef, MemberType, PolicyRef};
 
 use crate::define_columns;
 use crate::output::json;
@@ -214,7 +214,7 @@ pub async fn list_roles(
         json::print_json_stream(&roles)?;
     } else {
         define_columns! {
-            RoleColumn for cloudapi_client::types::Role, long_from: 3, {
+            RoleColumn for triton_gateway_client::types::Role, long_from: 3, {
                 Name("NAME") => |role| role.name.clone(),
                 Policies("POLICIES") => |role| role.policies.iter().filter_map(|p| p.name.as_deref()).collect::<Vec<_>>().join(", "),
                 Members("MEMBERS") => |role| member_names(&role.members).join(", "),
@@ -307,7 +307,7 @@ async fn create_role(args: RoleCreateArgs, client: &TypedClient, use_json: bool)
         args.member.iter().map(|m| member_ref(m, false)).collect();
     member_refs.extend(args.default_member.iter().map(|m| member_ref(m, true)));
 
-    let request = cloudapi_client::types::CreateRoleRequest {
+    let request = triton_gateway_client::types::CreateRoleRequest {
         name: args.name.clone(),
         policies: if args.policy.is_empty() {
             None
@@ -347,7 +347,7 @@ async fn update_role(args: RoleUpdateArgs, client: &TypedClient, use_json: bool)
         args.member.iter().map(|m| member_ref(m, false)).collect();
     member_refs.extend(args.default_member.iter().map(|m| member_ref(m, true)));
 
-    let request = cloudapi_client::types::UpdateRoleRequest {
+    let request = triton_gateway_client::types::UpdateRoleRequest {
         name: args.name,
         policies: if args.policy.is_empty() {
             None
@@ -589,7 +589,7 @@ async fn add_role_from_file(
 
     // Create the role
     let account = client.effective_account();
-    let request = cloudapi_client::types::CreateRoleRequest {
+    let request = triton_gateway_client::types::CreateRoleRequest {
         name: name.clone(),
         policies,
         members,
@@ -630,7 +630,7 @@ struct RoleEdit {
 }
 
 /// Convert a Role to commented YAML for editing
-fn role_to_commented_yaml(role: &cloudapi_client::types::Role, account: &str) -> String {
+fn role_to_commented_yaml(role: &triton_gateway_client::types::Role, account: &str) -> String {
     let member_strs = member_names(&role.members);
     let members = editor::format_yaml_list(&member_strs, "  ");
     let policy_names: Vec<String> = role
@@ -709,7 +709,7 @@ async fn edit_role_in_editor(role_ref: &str, client: &TypedClient) -> Result<()>
                 member_refs.extend(edited.default_members.iter().map(|m| member_ref(m, true)));
 
                 // Build update request
-                let request = cloudapi_client::types::UpdateRoleRequest {
+                let request = triton_gateway_client::types::UpdateRoleRequest {
                     name: Some(edited.name.clone()),
                     members: if member_refs.is_empty() {
                         None

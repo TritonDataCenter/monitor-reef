@@ -33,6 +33,211 @@ func TestIntegration_ListVolumeSizes(t *testing.T) {
 	}
 }
 
+func TestIntegration_ListVolumes_FilterByName(t *testing.T) {
+	if !testConfig.AllowVolumesTests {
+		t.Skip("volumes tests disabled (set allowVolumesTests in testconfig.json)")
+	}
+	ctx := context.Background()
+
+	// List all volumes to find a known name.
+	allResp, err := testClient.ListVolumesWithResponse(ctx, testAccount, nil)
+	if err != nil {
+		t.Fatalf("ListVolumes (unfiltered): %v", err)
+	}
+	if allResp.JSON200 == nil || len(*allResp.JSON200) == 0 {
+		t.Skip("no volumes available")
+	}
+
+	targetName := (*allResp.JSON200)[0].Name
+
+	// Now filter by that name.
+	resp, err := testClient.ListVolumesWithResponse(ctx, testAccount, &cloudapi.ListVolumesParams{
+		Name: ptr(targetName),
+	})
+	if err != nil {
+		t.Fatalf("ListVolumes filtered by name: %v", err)
+	}
+	requireOK(t, resp.StatusCode(), resp.Body)
+
+	if resp.JSON200 == nil || len(*resp.JSON200) == 0 {
+		t.Fatalf("expected at least one volume with name %q", targetName)
+	}
+	for _, v := range *resp.JSON200 {
+		if v.Name != targetName {
+			t.Errorf("expected volume name %q, got %q", targetName, v.Name)
+		}
+	}
+}
+
+func TestIntegration_ListVolumes_FilterByState(t *testing.T) {
+	if !testConfig.AllowVolumesTests {
+		t.Skip("volumes tests disabled (set allowVolumesTests in testconfig.json)")
+	}
+	ctx := context.Background()
+
+	// List all volumes to find a known state.
+	allResp, err := testClient.ListVolumesWithResponse(ctx, testAccount, nil)
+	if err != nil {
+		t.Fatalf("ListVolumes (unfiltered): %v", err)
+	}
+	if allResp.JSON200 == nil || len(*allResp.JSON200) == 0 {
+		t.Skip("no volumes available")
+	}
+
+	targetState := (*allResp.JSON200)[0].State
+
+	resp, err := testClient.ListVolumesWithResponse(ctx, testAccount, &cloudapi.ListVolumesParams{
+		State: ptr(string(targetState)),
+	})
+	if err != nil {
+		t.Fatalf("ListVolumes filtered by state: %v", err)
+	}
+	requireOK(t, resp.StatusCode(), resp.Body)
+
+	if resp.JSON200 == nil || len(*resp.JSON200) == 0 {
+		t.Fatalf("expected at least one volume with state %q", targetState)
+	}
+	for _, v := range *resp.JSON200 {
+		if v.State != targetState {
+			t.Errorf("expected volume state %q, got %q", targetState, v.State)
+		}
+	}
+}
+
+func TestIntegration_ListVolumes_FilterBySize(t *testing.T) {
+	if !testConfig.AllowVolumesTests {
+		t.Skip("volumes tests disabled (set allowVolumesTests in testconfig.json)")
+	}
+	ctx := context.Background()
+
+	// List all volumes to find a known size.
+	allResp, err := testClient.ListVolumesWithResponse(ctx, testAccount, nil)
+	if err != nil {
+		t.Fatalf("ListVolumes (unfiltered): %v", err)
+	}
+	if allResp.JSON200 == nil || len(*allResp.JSON200) == 0 {
+		t.Skip("no volumes available")
+	}
+
+	targetSize := (*allResp.JSON200)[0].Size
+
+	resp, err := testClient.ListVolumesWithResponse(ctx, testAccount, &cloudapi.ListVolumesParams{
+		Size: ptr(targetSize),
+	})
+	if err != nil {
+		t.Fatalf("ListVolumes filtered by size: %v", err)
+	}
+	requireOK(t, resp.StatusCode(), resp.Body)
+
+	if resp.JSON200 == nil || len(*resp.JSON200) == 0 {
+		t.Fatalf("expected at least one volume with size %d", targetSize)
+	}
+	for _, v := range *resp.JSON200 {
+		if v.Size != targetSize {
+			t.Errorf("expected volume size %d, got %d", targetSize, v.Size)
+		}
+	}
+}
+
+func TestIntegration_ListVolumes_FilterByType(t *testing.T) {
+	if !testConfig.AllowVolumesTests {
+		t.Skip("volumes tests disabled (set allowVolumesTests in testconfig.json)")
+	}
+	ctx := context.Background()
+
+	// List all volumes to find a known type.
+	allResp, err := testClient.ListVolumesWithResponse(ctx, testAccount, nil)
+	if err != nil {
+		t.Fatalf("ListVolumes (unfiltered): %v", err)
+	}
+	if allResp.JSON200 == nil || len(*allResp.JSON200) == 0 {
+		t.Skip("no volumes available")
+	}
+
+	// Extract the type string from the first volume's VolumeType union.
+	vol := (*allResp.JSON200)[0]
+	typeBytes, err := vol.Type.MarshalJSON()
+	if err != nil {
+		t.Fatalf("MarshalJSON on VolumeType: %v", err)
+	}
+	// typeBytes is a quoted JSON string like `"tritonnfs"`, trim the quotes.
+	targetType := string(typeBytes)
+	if len(targetType) >= 2 && targetType[0] == '"' {
+		targetType = targetType[1 : len(targetType)-1]
+	}
+
+	resp, err := testClient.ListVolumesWithResponse(ctx, testAccount, &cloudapi.ListVolumesParams{
+		Type: ptr(targetType),
+	})
+	if err != nil {
+		t.Fatalf("ListVolumes filtered by type: %v", err)
+	}
+	requireOK(t, resp.StatusCode(), resp.Body)
+
+	if resp.JSON200 == nil || len(*resp.JSON200) == 0 {
+		t.Fatalf("expected at least one volume with type %q", targetType)
+	}
+}
+
+func TestIntegration_ListVolumes_FilterByPredicate(t *testing.T) {
+	if !testConfig.AllowVolumesTests {
+		t.Skip("volumes tests disabled (set allowVolumesTests in testconfig.json)")
+	}
+	ctx := context.Background()
+
+	// List all volumes to get a known name for the predicate.
+	allResp, err := testClient.ListVolumesWithResponse(ctx, testAccount, nil)
+	if err != nil {
+		t.Fatalf("ListVolumes (unfiltered): %v", err)
+	}
+	if allResp.JSON200 == nil || len(*allResp.JSON200) == 0 {
+		t.Skip("no volumes available")
+	}
+
+	targetName := (*allResp.JSON200)[0].Name
+
+	// Krill predicate: {"eq": ["name", "<name>"]}
+	predicate := `{"eq": ["name", "` + targetName + `"]}`
+	resp, err := testClient.ListVolumesWithResponse(ctx, testAccount, &cloudapi.ListVolumesParams{
+		Predicate: ptr(predicate),
+	})
+	if err != nil {
+		t.Fatalf("ListVolumes filtered by predicate: %v", err)
+	}
+	requireOK(t, resp.StatusCode(), resp.Body)
+
+	if resp.JSON200 == nil || len(*resp.JSON200) == 0 {
+		t.Fatalf("expected at least one volume matching predicate for name %q", targetName)
+	}
+	for _, v := range *resp.JSON200 {
+		if v.Name != targetName {
+			t.Errorf("predicate filter: expected volume name %q, got %q", targetName, v.Name)
+		}
+	}
+}
+
+func TestIntegration_ListVolumes_FilterNoMatch(t *testing.T) {
+	if !testConfig.AllowVolumesTests {
+		t.Skip("volumes tests disabled (set allowVolumesTests in testconfig.json)")
+	}
+	ctx := context.Background()
+
+	resp, err := testClient.ListVolumesWithResponse(ctx, testAccount, &cloudapi.ListVolumesParams{
+		Name: ptr("nonexistent-volume-name-zzz"),
+	})
+	if err != nil {
+		t.Fatalf("ListVolumes filtered (no match): %v", err)
+	}
+	requireOK(t, resp.StatusCode(), resp.Body)
+
+	if resp.JSON200 == nil {
+		t.Fatal("expected JSON200 to be non-nil")
+	}
+	if len(*resp.JSON200) != 0 {
+		t.Errorf("expected empty result for bogus filter, got %d volumes", len(*resp.JSON200))
+	}
+}
+
 func TestIntegration_Volumes_CRUD(t *testing.T) {
 	skipUnlessWriteActions(t)
 	if !testConfig.AllowVolumesTests {
@@ -87,7 +292,7 @@ func TestIntegration_Volumes_CRUD(t *testing.T) {
 	}
 
 	// List volumes.
-	listResp, err := testClient.ListVolumesWithResponse(ctx, testAccount)
+	listResp, err := testClient.ListVolumesWithResponse(ctx, testAccount, nil)
 	if err != nil {
 		t.Fatalf("ListVolumes: %v", err)
 	}

@@ -115,7 +115,7 @@ fn test_net_ip_list_help() {
 // These tests are ignored by default and run with `make triton-test-api`
 // =============================================================================
 
-use cloudapi_client::{Network, NetworkIp};
+use triton_gateway_client::{Network, NetworkIp};
 
 /// Get a fabric network for testing
 fn get_fabric_network() -> Option<Network> {

@@ -1,0 +1,24 @@
+# AlmaLinux 9.4 pinned profile.
+#
+# The built-in `alma` vendor enumerates the live tree at
+# `https://repo.almalinux.org/almalinux/`, which only carries the
+# current 9.x series (9.7+ as of 2026-05-06). Older majors and dot
+# releases live in `vault.almalinux.org`. To pin a specific dated
+# 9.4 build, point a TOML profile at the vault URL with the sha256
+# from that build's CHECKSUM file.
+#
+# Source: https://vault.almalinux.org/9.4/cloud/x86_64/images/CHECKSUM
+#
+# Usage (once the loader lands):
+#   tritonadm image fetch-nocloud \
+#     --vendor-toml docs/design/examples/nocloud-vendors/alma-9.4-pinned.toml
+
+url         = "https://vault.almalinux.org/9.4/cloud/x86_64/images/AlmaLinux-9-GenericCloud-9.4-20240805.x86_64.qcow2"
+format      = "qcow2"
+os          = "linux"
+series      = "alma9"
+version     = "9.4-20240805"
+sha256      = "4f2984589020c0d82b9a410cf9e29715a607c948dfdca652025cdc79ddb5e816"
+description = "AlmaLinux 9.4 GenericCloud (vaulted; final 9.4 build, pinned). Built to run on bhyve virtual machines."
+homepage    = "https://almalinux.org/"
+ssh_key     = true

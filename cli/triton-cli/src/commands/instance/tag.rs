@@ -10,9 +10,9 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::TagsRequest;
 use serde_json::{Map, Value};
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::TagsRequest;
 
 #[derive(Subcommand, Clone)]
 pub enum TagCommand {

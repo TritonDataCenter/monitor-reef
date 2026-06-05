@@ -1,0 +1,52 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "triton-gateway-client"
+version = "0.1.0"
+edition.workspace = true
+description = "Triton Gateway client library (Progenitor-generated, Bearer/SSH pluggable auth)"
+
+[lints]
+workspace = true
+
+[lib]
+name = "triton_gateway_client"
+path = "src/lib.rs"
+
+[dependencies]
+chrono = { workspace = true }
+progenitor-client = { workspace = true }
+reqwest = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+# API-type re-exports (canonical source of truth for enums / structs)
+cloudapi-api = { workspace = true }
+triton-api = { workspace = true }
+# Required for WebSocket endpoints (Progenitor-generated code)
+base64 = { workspace = true }
+rand = { workspace = true }
+# HTTP Signature fallback path delegates to triton-auth
+triton-auth = { workspace = true }
+# Generic list-endpoint paginator (shared with cloudapi-client)
+triton-pagination = { workspace = true }
+# TokenProvider is a dyn-compatible async trait; needs async-trait for dynamic dispatch
+async-trait = { workspace = true }
+# TokenProvider errors bubble out as anyhow::Error
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+# Progenitor patches enums with `#[derive(clap::ValueEnum)]` so CLI consumers
+# can use generated types directly (mirrors cloudapi-client).
+clap = { workspace = true }
+# Constructing fake HTTP responses in emit-payload mode (debug builds only)
+http = { workspace = true }
+# Bearer and SSH both stamp headers on reqwest::Request
+# (reqwest re-exports http's HeaderValue / HeaderName)
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

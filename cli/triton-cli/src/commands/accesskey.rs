@@ -8,8 +8,8 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::AccessKeyStatus;
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::AccessKeyStatus;
 
 use crate::output::enum_to_display;
 use crate::output::json;
@@ -160,7 +160,7 @@ async fn create_access_key(
 ) -> Result<()> {
     let account = client.effective_account();
 
-    let request = cloudapi_client::types::CreateAccessKeyRequest {
+    let request = triton_gateway_client::types::CreateAccessKeyRequest {
         status: args.status,
         description: args.description,
     };
@@ -205,7 +205,7 @@ async fn update_access_key(
         };
         serde_json::from_str(&content)?
     } else {
-        cloudapi_client::types::UpdateAccessKeyRequest {
+        triton_gateway_client::types::UpdateAccessKeyRequest {
             status: args.status,
             description: args.description,
         }

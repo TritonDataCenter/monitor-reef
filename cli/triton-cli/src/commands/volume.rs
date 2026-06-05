@@ -8,9 +8,9 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
+use triton_gateway_client::TypedClient;
 
-use cloudapi_client::types::{VolumeState, VolumeType};
+use triton_gateway_client::types::{VolumeState, VolumeType};
 
 use crate::output::enum_to_display;
 use crate::output::table::{TableBuilder, TableFormatArgs};
@@ -269,7 +269,7 @@ async fn get_volume(args: VolumeGetArgs, client: &TypedClient, use_json: bool) -
 /// Progenitor's generated `Volume` type uses `skip_serializing_if = "Map::is_empty"`
 /// on `tags`, which omits the field when empty. Node.js `triton` always outputs
 /// `"tags": {}`, so we normalize here at the output layer.
-fn volume_to_json(vol: &cloudapi_client::types::Volume) -> Result<serde_json::Value> {
+fn volume_to_json(vol: &triton_gateway_client::types::Volume) -> Result<serde_json::Value> {
     let mut v = serde_json::to_value(vol)?;
     if let Some(obj) = v.as_object_mut() {
         obj.entry("tags")
@@ -403,7 +403,7 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
     // Always validate via GET (matches node-triton's getNetwork call in createVolume).
     let networks = if let Some(net) = &args.network {
         let network_id = crate::commands::network::resolve_network_with_get(net, client).await?;
-        Some(cloudapi_client::NetworkIds(vec![network_id]))
+        Some(triton_gateway_client::NetworkIds(vec![network_id]))
     } else {
         None
     };
@@ -412,10 +412,10 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
     let tags = args
         .tags
         .as_ref()
-        .map(|t| parse_tags(t).map(cloudapi_client::Tags::from))
+        .map(|t| parse_tags(t).map(triton_gateway_client::Tags::from))
         .transpose()?;
 
-    let request = cloudapi_client::types::CreateVolumeRequest {
+    let request = triton_gateway_client::types::CreateVolumeRequest {
         name: args.name.clone(),
         type_: Some(args.r#type),
         size: Some(size),
@@ -474,7 +474,7 @@ async fn wait_for_volume_ready(
     volume_id: &str,
     client: &TypedClient,
     timeout_secs: u64,
-) -> Result<cloudapi_client::types::Volume> {
+) -> Result<triton_gateway_client::types::Volume> {
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
 

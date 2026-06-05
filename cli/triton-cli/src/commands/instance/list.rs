@@ -10,10 +10,10 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
-use cloudapi_client::pagination::{DEFAULT_PAGE_SIZE, paginate_all};
-use cloudapi_client::types::{Machine, VmBrand};
 use serde::Serialize;
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::pagination::{DEFAULT_PAGE_SIZE, paginate_all};
+use triton_gateway_client::types::{Machine, VmBrand};
 
 use crate::output::table::{TableBuilder, TableFormatArgs, col};
 use crate::output::{self, enum_to_display, json, parse_filter_enum};
@@ -88,7 +88,7 @@ pub struct ListArgs {
 
     /// Filter by state
     #[arg(long, value_enum)]
-    pub state: Option<cloudapi_client::types::MachineState>,
+    pub state: Option<triton_gateway_client::types::MachineState>,
 
     /// Filter by image
     #[arg(long)]
@@ -100,7 +100,7 @@ pub struct ListArgs {
 
     /// Filter by brand
     #[arg(long, value_enum)]
-    pub brand: Option<cloudapi_client::types::VmBrand>,
+    pub brand: Option<triton_gateway_client::types::VmBrand>,
 
     /// Filter by memory size in MB
     #[arg(long)]
@@ -151,7 +151,7 @@ fn is_valid_filter(key: &str) -> bool {
 /// Returns an optional MachineType filter (from `type=` positional arg).
 fn apply_positional_filters(
     args: &mut ListArgs,
-) -> Result<Option<cloudapi_client::types::MachineType>> {
+) -> Result<Option<triton_gateway_client::types::MachineType>> {
     let mut machine_type = None;
     for filter in std::mem::take(&mut args.filters) {
         let (key, value) = filter
@@ -275,7 +275,9 @@ pub async fn run(
             req = req.limit(limit).offset(offset);
 
             let resp = req.send().await?;
-            Ok::<_, cloudapi_client::Error<cloudapi_client::types::Error>>(resp.into_inner())
+            Ok::<_, triton_gateway_client::Error<triton_gateway_client::types::Error>>(
+                resp.into_inner(),
+            )
         }
     });
 
@@ -299,7 +301,7 @@ pub async fn run(
             .inner()
             .list_images()
             .account(account)
-            .state(cloudapi_client::types::ImageState::All)
+            .state(triton_gateway_client::types::ImageState::All)
             .send();
         let (machines_result, images_response) = tokio::join!(fetch_machines, images_req);
         let machines = machines_result?;

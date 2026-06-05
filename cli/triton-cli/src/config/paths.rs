@@ -158,6 +158,21 @@ pub fn profile_path(name: &str) -> Result<PathBuf> {
     Ok(profiles_dir().join(format!("{}.json", name)))
 }
 
+/// Get the tokens directory. Used by `triton login` to stash the
+/// JWT issued by `/v1/auth/login-ssh` outside the profile file so
+/// older CLIs don't trip over unknown profile fields and so future
+/// storage backends (Keychain, libsecret) can slot in without
+/// churning the profile format.
+pub fn tokens_dir() -> PathBuf {
+    config_dir().join("tokens")
+}
+
+/// Get the path to the cached token for a specific profile.
+pub fn token_path(profile_name: &str) -> Result<PathBuf> {
+    validate_profile_name(profile_name)?;
+    Ok(tokens_dir().join(format!("{}.json", profile_name)))
+}
+
 /// Ensure config directories exist
 pub async fn ensure_config_dirs() -> std::io::Result<()> {
     let config = config_dir();

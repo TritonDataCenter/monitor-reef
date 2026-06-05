@@ -8,25 +8,46 @@
 members = [
     "apis/bugview-api",
     "apis/cloudapi-api",
+    "apis/imgapi-api",
     "apis/jira-api",
+    "apis/mahi-api",
+    "apis/napi-api",
+    "apis/papi-api",
+    "apis/sapi-api",
+    "apis/triton-api",
     "apis/tritond-api",
     "apis/vmapi-api",
     "cli/bugview-cli",
     "cli/triton-cli",
+    "cli/tritonadm",
+    "cli/napi-cli",
+    "cli/papi-cli",
     "cli/vmapi-cli",
     "clients/internal/bugview-client",
     "clients/internal/cloudapi-client",
+    "clients/internal/imgapi-client",
     "clients/internal/jira-client",
+    "clients/internal/mahi-client",
+    "clients/internal/mahi-sitter-client",
+    "clients/internal/napi-client",
+    "clients/internal/papi-client",
+    "clients/internal/sapi-client",
+    "clients/internal/triton-gateway-client",
     "clients/internal/tritond-client",
     "clients/internal/vmapi-client",
+    "libs/edge-manifest",
     "libs/identity-store",
+    "libs/imgapi-blob-manta",
+    "libs/imgapi-manifest",
+    "libs/qcow",
     "libs/triton-auth",
+    "libs/triton-auth-session",
+    "libs/triton-channel",
+    "libs/triton-pagination",
+    "libs/triton-tls",
     "libs/tritond-audit",
     "libs/tritond-auth",
     "libs/tritond-cn-platform",
-    "libs/edge-manifest",
-    "libs/imgapi-manifest",
-    "libs/imgapi-blob-manta",
     "libs/tritond-image-manifest",
     "libs/tritond-logs",
     "libs/tritond-metrics",
@@ -34,12 +55,14 @@ members = [
     "libs/tritond-saga",
     "libs/tritond-store",
     "libs/tritond-vmm-migrate",
-    "libs/triton-channel",
+    "libs/vmdk",
     "client-generator",
     "openapi-manager",
     "services/bugview-service",
     "services/jira-stub-server",
     "services/mantas3-prober",
+    "services/triton-api-server",
+    "services/triton-gateway",
     "services/tritond",
     "services/tritonagent",
     "cli/tcadm",
@@ -102,6 +125,7 @@ axum = { version = "0.8", features = ["ws"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 base64 = "0.22"
 build-data = "0.3"
+bytes = "1"
 camino = "1.1"
 cargo_toml = "0.22"
 cbc = "0.1"
@@ -109,6 +133,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 clap = { version = "4.5", features = ["derive", "env"] }
 clap_complete = "4.4"
 comfy-table = "7.0"
+config = "0.14"
 der = "0.7"
 des = "0.8"
 dialoguer = "0.12"
@@ -122,6 +147,7 @@ foundationdb = { version = "0.10", default-features = false, features = ["fdb-7_
 dropshot-api-manager = "0.3"
 dropshot-api-manager-types = "0.3"
 dsa = "0.6"
+ed25519-dalek = { version = "2", features = ["rand_core", "pkcs8", "pem"] }
 futures-util = "0.3"
 getrandom = "0.4"
 # Production-quality token-bucket rate limiter. Used by tritond's
@@ -133,8 +159,8 @@ hmac = "0.12"
 hostname = "0.4"
 http = "1"
 http-body-util = "0.1"
-hyper = { version = "1", features = ["server", "http1"] }
-hyper-util = { version = "0.1", features = ["tokio", "server", "http1"] }
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "server", "tokio"] }
 indexmap = "2"
 indicatif = "0.18"
 # CIDR types for VPC ipv4/ipv6 blocks. We rely on the serde
@@ -142,7 +168,9 @@ indicatif = "0.18"
 # structs (see tritond-store::types::Vpc) so we don't depend on
 # ipnetwork's schemars feature.
 ipnetwork = { version = "0.21", default-features = false, features = ["serde"] }
+ldap3 = { version = "0.12", default-features = false, features = ["tls-rustls-ring"] }
 libc = "0.2"
+lzma-rs = "0.3"
 md-5 = "0.10"
 # Minisign signature verification (Ed25519). Pure Rust, tiny, no
 # additional crypto dependencies. Used by triton-channel to verify
@@ -150,8 +178,8 @@ md-5 = "0.10"
 minisign-verify = "0.2"
 notify = "8.2"
 openapiv3 = "2.0"
-p256 = { version = "0.13", features = ["ecdsa"] }
-p384 = { version = "0.13", features = ["ecdsa"] }
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "jwk", "pem", "std"] }
+p384 = { version = "0.13", default-features = false, features = ["ecdsa", "pem", "pkcs8", "std"] }
 pem-rfc7468 = { version = "1.0", features = ["alloc"] }
 pkcs8 = "0.10"
 postcard = { version = "1.1", features = ["use-std"] }
@@ -168,21 +196,46 @@ pretty_assertions = "1.4"
 progenitor = "0.13"
 progenitor-client = "0.13"
 progenitor-impl = "0.13"
+# Vendored fork at libs/qcow that drops flate2's zlib-ng-compat feature;
+# upstream forces a CMake build of zlib-ng which breaks hermetic builds.
+qcow = { path = "libs/qcow" }
 rand = { version = "0.9", features = ["os_rng"] }
 # rand_core pinned to 0.6 because the workspace's crypto stack (p256,
-# p384, rsa, ssh-key) uses rand_core 0.6 internally.
+# p384, rsa, ed25519-dalek, ssh-key) uses rand_core 0.6 internally.
 # See libs/triton-auth/Cargo.toml for the longer explanation.
 rand_core = { version = "0.6", features = ["std", "getrandom"] }
 rcgen = { version = "0.14", features = ["pem"] }
 regex = "1.10"
 rpassword = "7"
-rsa = { version = "0.9", features = ["sha2"] }
+rsa = { version = "0.9", features = ["sha2", "pem"] }
 rustfmt-wrapper = "0.2"
-# reqwest needs to track with progenitor-client
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
-rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }
 rustls-native-certs = "0.8"
 rustls-pemfile = "2"
+
+#
+# rustls crypto provider selection -- EDIT ALL FIVE PLACES TOGETHER.
+#
+# This repo standardises on the `ring` provider. Rustls refuses to
+# auto-select a provider when more than one is feature-enabled in the
+# build, so every crate that brings rustls in transitively must agree.
+#
+# To switch to `aws-lc-rs`:
+#   1) Change `ring` -> `aws-lc-rs` in `hyper-rustls` below.
+#   2) Change `ring` -> `aws-lc-rs` in `rustls` below.
+#   3) Change `ring` -> `aws-lc-rs` in `tokio-rustls` below.
+#   4) Change reqwest's feature `rustls-no-provider` -> `rustls`
+#      (reqwest's `rustls` feature activates `aws-lc-rs` automatically).
+#   5) Change `rustls::crypto::ring::default_provider()` to
+#      `rustls::crypto::aws_lc_rs::default_provider()` in
+#      `services/triton-gateway/src/main.rs` (the explicit install
+#      before any ClientConfig is built).
+#
+# reqwest also needs to track with progenitor-client.
+#
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "logging", "native-tokio", "tls12", "ring"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
 # schemars version is tied to dropshot/progenitor compatibility.
 # Dropshot 0.16.x requires schemars 0.8.x. Do not upgrade to
 # schemars 1.x without also upgrading dropshot AND progenitor.
@@ -206,6 +259,7 @@ petgraph = "0.6"
 slog = "2"
 slog-stdlog = "4"
 sec1 = { version = "0.7", features = ["pem"] }
+secrecy = { version = "0.10", features = ["serde"] }
 semver = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -215,21 +269,30 @@ sha1 = "0.10"
 sha2 = "0.10"
 signature = "2.2"
 ssh-encoding = "0.2"
-ssh-key = { version = "0.6", features = ["ed25519", "rsa", "ecdsa", "encryption"] }
+ssh-key = { version = "0.6", features = ["ed25519", "rsa", "ecdsa", "p256", "p384", "encryption"] }
 strum = { version = "0.28", features = ["derive"] }
 # Used by `tritond-image-manifest` to read/write Triton image
 # bundles (uncompressed .tar with manifest.json + content.zfs.gz).
+# Also used by the SmartOS fetch path in tritonimg-build, where the
+# upstream artifact is a gzipped tarball of a VMware VM directory.
 # Pure-Rust, no system tar dep, fine on illumos.
 tar = "0.4"
+# Companion to `tar` for the SmartOS fetch path. Pure-Rust; the
+# default `miniz_oxide` backend is already in the dep tree via libs/qcow.
+flate2 = "1"
 syn = "2.0"
 tempfile = "3"
 test-case = "3.3"
 thiserror = "2.0"
 time = "0.3"
 tokio = { version = "1.48", features = ["full"] }
-tokio-rustls = "0.26"
 tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
 toml = "0.8"
+# TOTP / RFC 6238 verification for the password-login 2FA path. We
+# disable default features (none anyway) and avoid `gen_secret` /
+# `qr` / `otpauth` since tritonapi only verifies, never generates or
+# encodes secrets -- enrollment lives in piranha today.
+totp-rs = { version = "5.7", default-features = false }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 url = { version = "2", features = ["serde"] }
@@ -248,21 +311,37 @@ x509-parser = "0.17"
 bugview-api = { path = "apis/bugview-api" }
 bugview-client = { path = "clients/internal/bugview-client" }
 cloudapi-api = { path = "apis/cloudapi-api" }
-cloudapi-client = { path = "clients/internal/cloudapi-client" }
+imgapi-api = { path = "apis/imgapi-api" }
+imgapi-client = { path = "clients/internal/imgapi-client" }
 jira-api = { path = "apis/jira-api" }
 jira-client = { path = "clients/internal/jira-client" }
 jira-stub-server = { path = "services/jira-stub-server" }
 edge-manifest = { path = "libs/edge-manifest" }
 identity-store = { path = "libs/identity-store" }
+imgapi-blob-manta = { path = "libs/imgapi-blob-manta" }
+imgapi-manifest = { path = "libs/imgapi-manifest" }
+mahi-api = { path = "apis/mahi-api" }
+mahi-client = { path = "clients/internal/mahi-client" }
+mahi-sitter-client = { path = "clients/internal/mahi-sitter-client" }
+napi-api = { path = "apis/napi-api" }
+napi-client = { path = "clients/internal/napi-client" }
+papi-api = { path = "apis/papi-api" }
+papi-client = { path = "clients/internal/papi-client" }
+sapi-api = { path = "apis/sapi-api" }
+sapi-client = { path = "clients/internal/sapi-client" }
+triton-api = { path = "apis/triton-api" }
 triton-auth = { path = "libs/triton-auth" }
+triton-auth-session = { path = "libs/triton-auth-session" }
+triton-channel = { path = "libs/triton-channel" }
+triton-gateway-client = { path = "clients/internal/triton-gateway-client" }
+triton-pagination = { path = "libs/triton-pagination" }
+triton-tls = { path = "libs/triton-tls" }
 tritond = { path = "services/tritond" }
 tritond-api = { path = "apis/tritond-api" }
 tritond-audit = { path = "libs/tritond-audit" }
 tritond-auth = { path = "libs/tritond-auth" }
 tritond-client = { path = "clients/internal/tritond-client" }
 tritond-cn-platform = { path = "libs/tritond-cn-platform" }
-imgapi-manifest = { path = "libs/imgapi-manifest" }
-imgapi-blob-manta = { path = "libs/imgapi-blob-manta" }
 tritond-image-manifest = { path = "libs/tritond-image-manifest" }
 tritond-logs = { path = "libs/tritond-logs" }
 tritond-metrics = { path = "libs/tritond-metrics" }
@@ -271,6 +350,9 @@ tritond-saga = { path = "libs/tritond-saga" }
 tritond-store = { path = "libs/tritond-store" }
 tritond-vmm-migrate = { path = "libs/tritond-vmm-migrate" }
 tritonagent = { path = "services/tritonagent" }
-triton-channel = { path = "libs/triton-channel" }
+# Vendored fork at libs/vmdk that drops the upstream s3 / foyer-cache /
+# CLI layers, keeping just the file-backed disk reader. See
+# libs/vmdk/Cargo.toml for the full rationale.
+vmdk-rs = { path = "libs/vmdk" }
 vmapi-api = { path = "apis/vmapi-api" }
 vmapi-client = { path = "clients/internal/vmapi-client" }

@@ -21,8 +21,8 @@
 mod common;
 
 use assert_cmd::Command;
-use cloudapi_client::{Snapshot, SnapshotState};
 use predicates::prelude::*;
+use triton_gateway_client::{Snapshot, SnapshotState};
 
 fn triton_cmd() -> Command {
     Command::cargo_bin("triton").expect("Failed to find triton binary")

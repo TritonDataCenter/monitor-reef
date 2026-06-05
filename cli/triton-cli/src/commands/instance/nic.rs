@@ -8,9 +8,9 @@
 
 use anyhow::{Result, anyhow};
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
 use dialoguer::Confirm;
 use serde::{Deserialize, Serialize};
+use triton_gateway_client::TypedClient;
 
 use crate::define_columns;
 use crate::output::table::{TableBuilder, TableFormatArgs};
@@ -114,8 +114,8 @@ struct NicOutput {
     network: String,
 }
 
-impl From<&cloudapi_client::types::Nic> for NicOutput {
-    fn from(nic: &cloudapi_client::types::Nic) -> Self {
+impl From<&triton_gateway_client::types::Nic> for NicOutput {
+    fn from(nic: &triton_gateway_client::types::Nic) -> Self {
         NicOutput {
             ip: nic.ip.clone(),
             mac: nic.mac.clone(),
@@ -161,7 +161,8 @@ pub async fn list_nics(args: NicListArgs, client: &TypedClient, use_json: bool) 
         if let Some((key, value)) = filter.split_once('=') {
             // Validate typed filter values upfront so invalid input is rejected early
             let value = if key == "state" {
-                let target: cloudapi_client::types::NicState = parse_filter_enum("state", value)?;
+                let target: triton_gateway_client::types::NicState =
+                    parse_filter_enum("state", value)?;
                 enum_to_display(&target)
             } else {
                 value.to_string()
@@ -286,7 +287,7 @@ async fn add_nic(args: NicAddArgs, client: &TypedClient, use_json: bool) -> Resu
 
     let network: uuid::Uuid = network_str.parse()?;
 
-    let request = cloudapi_client::types::AddNicRequest {
+    let request = triton_gateway_client::types::AddNicRequest {
         network,
         primary: Some(args.primary),
     };
@@ -309,7 +310,7 @@ async fn add_nic(args: NicAddArgs, client: &TypedClient, use_json: bool) -> Resu
     if args.wait {
         super::wait::wait_for_state(
             machine_id,
-            cloudapi_client::types::MachineState::Running,
+            triton_gateway_client::types::MachineState::Running,
             args.wait_timeout,
             client,
         )

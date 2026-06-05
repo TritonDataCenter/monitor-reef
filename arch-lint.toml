@@ -21,6 +21,10 @@ exclude = [
     "client-generator/**",
     # Progenitor-generated code:
     "**/src/generated.rs",
+    # Vendored upstream code (panda-re/qcow-rs, MIT):
+    "libs/qcow",
+    # Vendored upstream code (strozfriedberg/vmdk-rs, Apache-2.0):
+    "libs/vmdk",
     # To be modernized:
     "cli/manatee-echo-resolver",
     "libs/cueball-dns-resolver",

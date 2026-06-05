@@ -15,20 +15,25 @@ license = "MPL-2.0"
 workspace = true
 
 [dependencies]
+# ssh-key's p256/p384 features pull in the TryFrom conversions into
+# p256/p384 VerifyingKey that the HTTP-Sig verifier needs.
 ssh-key = { workspace = true }
 ssh-encoding = { workspace = true }
 base64 = { workspace = true }
 md-5 = { workspace = true }
 chrono = { workspace = true }
+http = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 dirs = { workspace = true }
 
-# Traditional PEM format support (PKCS#1, SEC1, DSA)
+# Traditional PEM format support (PKCS#1, SEC1, DSA) and server-side
+# HTTP-Sig verification (RSA PKCS#1 v1.5, P-256/P-384 ECDSA, Ed25519).
 rsa = { workspace = true }
 p256 = { workspace = true }
 p384 = { workspace = true }
+ed25519-dalek = { workspace = true }
 dsa = { workspace = true }
 sha1 = { workspace = true }
 sha2 = { workspace = true }
@@ -45,9 +50,9 @@ des = { workspace = true }
 # X.509 certificate generation for Docker/CMON setup
 rcgen = { workspace = true }
 # rand_core (not rand) because the crypto-stack crates (p256, p384,
-# rsa, ssh-key) pin rand_core 0.6 and their `*::random(&mut _)` APIs
-# want the 0.6 `RngCore` / `CryptoRng` traits. Using `rand` 0.9 here
-# would pull a second rand_core (0.9) into the graph and fail to
+# rsa, ed25519-dalek) pin rand_core 0.6 and their `*::random(&mut _)`
+# APIs want the 0.6 `RngCore` / `CryptoRng` traits. Using `rand` 0.9
+# here would pull a second rand_core (0.9) into the graph and fail to
 # satisfy those trait bounds.
 rand_core = { workspace = true }
 der = { workspace = true }

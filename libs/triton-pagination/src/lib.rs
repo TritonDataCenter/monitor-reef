@@ -9,6 +9,10 @@
 //! Node.js triton uses LOMStream to automatically page through results in
 //! 1000-item chunks (limit+offset) until the server returns fewer items
 //! than the page size. This module provides the equivalent for Rust.
+//!
+//! The helper is generic over the item type, error type, and fetch closure,
+//! so it is reused by every Triton list command (both cloudapi-direct and
+//! triton-gateway routes) from a single source.
 
 use std::future::Future;
 
