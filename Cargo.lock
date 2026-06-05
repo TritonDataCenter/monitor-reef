@@ -6463,6 +6463,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "triton-cli-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "comfy-table",
+ "dirs",
+ "reqwest 0.13.2",
+ "rustls 0.23.38",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "webpki-roots 1.0.6",
+]
+
+[[package]]
 name = "triton-vpc"
 version = "0.1.0"
 dependencies = [
@@ -6584,6 +6601,26 @@ dependencies = [
  "tracing-subscriber",
  "triton-channel",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "tritonctl"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "chrono",
+ "clap",
+ "dialoguer",
+ "rpassword",
+ "rustls 0.23.38",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing-subscriber",
+ "triton-cli-core",
+ "tritond-client",
  "uuid",
 ]
 

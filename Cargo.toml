@@ -40,6 +40,7 @@ members = [
     "libs/tritond-store",
     "libs/tritond-vmm-migrate",
     "libs/triton-channel",
+    "libs/triton-cli-core",
     "client-generator",
     "openapi-manager",
     "services/bugview-service",
@@ -48,6 +49,7 @@ members = [
     "services/tritond",
     "services/tritonagent",
     "cli/tritonadm",
+    "cli/tritonctl",
     "cli/tritoncloud-publish",
     "cli/tritonimg-build",
 
@@ -269,5 +271,6 @@ tritond-store = { path = "libs/tritond-store" }
 tritond-vmm-migrate = { path = "libs/tritond-vmm-migrate" }
 tritonagent = { path = "services/tritonagent" }
 triton-channel = { path = "libs/triton-channel" }
+triton-cli-core = { path = "libs/triton-cli-core" }
 vmapi-api = { path = "apis/vmapi-api" }
 vmapi-client = { path = "clients/internal/vmapi-client" }
