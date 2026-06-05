@@ -319,6 +319,16 @@ pub(crate) async fn create_silo_tenant(
                 quota_bytes: Some(settings.storage_default_workspace_quota_bytes),
                 quota_objects: None,
                 tenant_uuid: Some(tenant_id),
+                // f365 slice 2 prereq: persist the Triton tenant
+                // context on the mantad Workspace row so the
+                // SigV4 verify path can build a real TenantContext
+                // when slice 2 starts minting customer-facing cap-
+                // tokens. silo_id comes from the parent silo; the
+                // tenant_shard + region default to 0 today (the
+                // sharding + region plumbing isn't ramped yet).
+                silo_id: Some(silo_id),
+                tenant_shard: 0,
+                region: 0,
             };
             match client.create_workspace(&mantad_req).await {
                 Ok(_workspace) => (Some(tenant_id), Some(cluster.id)),
@@ -967,6 +977,10 @@ pub(crate) async fn init_silo_tenant_storage(
         quota_bytes: Some(settings.storage_default_workspace_quota_bytes),
         quota_objects: None,
         tenant_uuid: Some(tenant_id),
+        // f365 slice 2 prereq: same as the create-tenant path.
+        silo_id: Some(silo_id),
+        tenant_shard: 0,
+        region: 0,
     };
     if let Err(e) = client.create_workspace(&mantad_req).await {
         let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
