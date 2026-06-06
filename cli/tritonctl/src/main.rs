@@ -17,13 +17,25 @@ use clap::{Parser, Subcommand};
 use triton_cli_core::{App, Config, OutputFormat, Session, Table, emit, login};
 use uuid::Uuid;
 
+mod disk;
+mod firewall;
+mod floating_ip;
+mod image;
+mod meta;
+mod nat_gateway;
+mod route;
+mod route_table;
+mod ssh_key;
+mod subnet;
+mod vpc;
+
 /// Per-binary identity: config under `~/.config/triton/tritonctl/`,
 /// env vars `TRITONCTL_*`.
 const APP: App = App::new("tritonctl", "TRITONCTL");
 
 #[derive(Parser)]
 #[command(name = "tritonctl", version, about = "Triton Cloud tenant CLI")]
-struct Cli {
+pub(crate) struct Cli {
     /// Cluster endpoint. Falls back to TRITONCTL_ENDPOINT, then config.
     #[arg(long, global = true)]
     endpoint: Option<String>,
@@ -82,6 +94,61 @@ enum Command {
     Instance {
         #[command(subcommand)]
         cmd: InstanceCmd,
+    },
+    /// Manage disks.
+    Disk {
+        #[command(subcommand)]
+        cmd: disk::DiskCmd,
+    },
+    /// Manage VPCs.
+    Vpc {
+        #[command(subcommand)]
+        cmd: vpc::VpcCmd,
+    },
+    /// Manage subnets.
+    Subnet {
+        #[command(subcommand)]
+        cmd: subnet::SubnetCmd,
+    },
+    /// Manage floating IPs.
+    FloatingIp {
+        #[command(subcommand)]
+        cmd: floating_ip::FloatingIpCmd,
+    },
+    /// Manage firewall rules.
+    FirewallRule {
+        #[command(subcommand)]
+        cmd: firewall::FirewallRuleCmd,
+    },
+    /// Manage NAT gateways.
+    NatGateway {
+        #[command(subcommand)]
+        cmd: nat_gateway::NatGatewayCmd,
+    },
+    /// Manage route tables.
+    RouteTable {
+        #[command(subcommand)]
+        cmd: route_table::RouteTableCmd,
+    },
+    /// Manage routes.
+    Route {
+        #[command(subcommand)]
+        cmd: route::RouteCmd,
+    },
+    /// Browse images.
+    Image {
+        #[command(subcommand)]
+        cmd: image::ImageCmd,
+    },
+    /// Manage SSH keys.
+    SshKey {
+        #[command(subcommand)]
+        cmd: ssh_key::SshKeyCmd,
+    },
+    /// Project and instance metadata.
+    Meta {
+        #[command(subcommand)]
+        cmd: meta::MetaCmd,
     },
 }
 
@@ -169,12 +236,23 @@ async fn main() -> Result<()> {
         Command::Whoami => whoami(&cli).await,
         Command::Env => env_cmd(&cli).await,
         Command::Instance { cmd } => instance(&cli, cmd, format).await,
+        Command::Disk { cmd } => disk::run(&cli, cmd, format).await,
+        Command::Vpc { cmd } => vpc::run(&cli, cmd, format).await,
+        Command::Subnet { cmd } => subnet::run(&cli, cmd, format).await,
+        Command::FloatingIp { cmd } => floating_ip::run(&cli, cmd, format).await,
+        Command::FirewallRule { cmd } => firewall::run(&cli, cmd, format).await,
+        Command::NatGateway { cmd } => nat_gateway::run(&cli, cmd, format).await,
+        Command::RouteTable { cmd } => route_table::run(&cli, cmd, format).await,
+        Command::Route { cmd } => route::run(&cli, cmd, format).await,
+        Command::Image { cmd } => image::run(&cli, cmd, format).await,
+        Command::SshKey { cmd } => ssh_key::run(&cli, cmd, format).await,
+        Command::Meta { cmd } => meta::run(&cli, cmd, format).await,
     }
 }
 
 /// Resolve the session and build a tritond client on top of the shared
 /// SmartOS-safe HTTPS client.
-async fn connect(cli: &Cli) -> Result<tritond_client::Client> {
+pub(crate) async fn connect(cli: &Cli) -> Result<tritond_client::Client> {
     let session = Session::resolve(&APP, cli.endpoint.clone(), cli.api_key.clone()).await?;
     let http = session.http_client()?;
     Ok(tritond_client::Client::new_with_client(
@@ -468,10 +546,23 @@ fn render_claim(v: &serde_json::Value) -> String {
 
 /// Render a serde enum as its wire string (e.g. `Running` -> `running`),
 /// avoiding Debug format in user-facing output.
-fn wire<T: serde::Serialize>(v: &T) -> String {
+pub(crate) fn wire<T: serde::Serialize>(v: &T) -> String {
     match serde_json::to_value(v) {
         Ok(serde_json::Value::String(s)) => s,
         Ok(other) => other.to_string(),
         Err(_) => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::CommandFactory;
+
+    /// Validate the whole clap command tree (no duplicate subcommands,
+    /// no conflicting args) without needing a server.
+    #[test]
+    fn cli_structure_is_valid() {
+        Cli::command().debug_assert();
     }
 }
