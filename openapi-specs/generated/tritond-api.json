@@ -201,6 +201,48 @@
         }
       }
     },
+    "/v1/agent/capacity": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Publish the calling CN's structured capacity (static hardware +",
+        "description": "live instantaneous usage). Auth: requires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. tritond keys the `cn-capacity` row by the *authenticated* CN (never a body value) and stamps `reported_at` server-side. This is the placement engine's capacity floor (RFD 00005) — a CN with no capacity row is rejected by every placement filter. State-sample traffic posted on the heartbeat cadence; always `200 OK`.",
+        "operationId": "agent_report_capacity",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentCapacityReport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Null",
+                  "type": "string",
+                  "enum": [
+                    null
+                  ]
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/agent/claim": {
       "post": {
         "tags": [
@@ -11143,6 +11185,111 @@
           "wins"
         ]
       },
+      "AgentCapacityReport": {
+        "description": "Request body for `POST /v1/agent/capacity`. The bound CN agent publishes its structured capacity: static hardware plus the live instantaneous usage that forms the placement engine's ClickHouse-independent floor (RFD 00005). tritond keys the resulting [`tritond_store::CnCapacity`] by the *authenticated* CN (the key's `bound_cn`), never by a value in this body, and stamps `reported_at` server-side. A CN that never posts capacity is rejected by every placement filter (`cn-capacity row absent`).",
+        "type": "object",
+        "properties": {
+          "cpu_cores_physical": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "cpu_features": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cpu_threads_logical": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "cpu_utilization_pct": {
+            "description": "Live CPU utilisation (0.0 ..= 1.0). `0.0` = not reported.",
+            "default": 0.0,
+            "type": "number",
+            "format": "float"
+          },
+          "devices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeviceCapacity"
+            }
+          },
+          "hvm_supported": {
+            "default": false,
+            "type": "boolean"
+          },
+          "nic_tags": {
+            "description": "Local nic_tags this CN provides; authoritative for the `cn-nic-tags` placement filter.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "numa_nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NumaNode"
+            }
+          },
+          "platform_version": {
+            "type": "string"
+          },
+          "ram_available_mb": {
+            "description": "Live instantaneous available RAM (MB). `0` = not reported.",
+            "default": 0,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "ram_total_mb": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "tsc_offset_ns": {
+            "nullable": true,
+            "default": null,
+            "type": "integer",
+            "format": "int64"
+          },
+          "underlay": {
+            "$ref": "#/components/schemas/UnderlayCapability"
+          },
+          "vmm_protocol_version": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "zpool_props": {
+            "default": {},
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ZpoolPropFingerprint"
+            }
+          },
+          "zpools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ZpoolCapacity"
+            }
+          }
+        },
+        "required": [
+          "cpu_cores_physical",
+          "cpu_threads_logical",
+          "devices",
+          "nic_tags",
+          "numa_nodes",
+          "platform_version",
+          "ram_total_mb",
+          "underlay",
+          "zpools"
+        ]
+      },
       "AgentConfigResponse": {
         "description": "Response body for `GET /v1/agent/config`.\n\nThe effective per-CN configuration tritonagent pulls at startup and periodically thereafter. tritond resolves any per-CN override against the cluster defaults, so the agent receives flat, ready-to-apply values. Extensible: future per-CN agent config joins this struct.",
         "type": "object",
@@ -11936,6 +12083,34 @@
               "not_evaluated"
             ]
           }
+        ]
+      },
+      "DeviceCapacity": {
+        "type": "object",
+        "properties": {
+          "free_count": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DeviceKind"
+          },
+          "model": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "free_count",
+          "kind",
+          "model"
+        ]
+      },
+      "DeviceKind": {
+        "type": "string",
+        "enum": [
+          "gpu",
+          "sr-iov-vf"
         ]
       },
       "DhcpLease": {
@@ -16101,6 +16276,31 @@
           "vlan_id"
         ]
       },
+      "NumaNode": {
+        "type": "object",
+        "properties": {
+          "cores": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "node_id": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0
+          },
+          "ram_mb": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "cores",
+          "node_id",
+          "ram_mb"
+        ]
+      },
       "OpenAutoApproveRequest": {
         "description": "Request body for `POST /v1/cns/auto-approve`.\n\nOpens (or replaces) the global auto-approve window. Bounded by both wall-time and a remaining-count budget so a forgotten window can't stay open forever; tritond clamps `duration_secs` to the 24h hard cap server-side.",
         "type": "object",
@@ -18904,6 +19104,15 @@
           "factor"
         ]
       },
+      "StorageTier": {
+        "type": "string",
+        "enum": [
+          "ssd",
+          "nvme",
+          "hdd",
+          "mixed"
+        ]
+      },
       "StorageUser": {
         "description": "Mirror of `mantad_client::types::User`. Returned by IAM list + per-user GET.",
         "type": "object",
@@ -19121,6 +19330,21 @@
           "refresh_token"
         ]
       },
+      "UnderlayCapability": {
+        "type": "object",
+        "properties": {
+          "ipv4": {
+            "type": "boolean"
+          },
+          "ipv6": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ipv4",
+          "ipv6"
+        ]
+      },
       "User": {
         "description": "A default user present in the guest image (zvol-only).",
         "type": "object",
@@ -19314,6 +19538,58 @@
           "project_id",
           "tenant_id",
           "vni"
+        ]
+      },
+      "ZpoolCapacity": {
+        "type": "object",
+        "properties": {
+          "free_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "tier": {
+            "$ref": "#/components/schemas/StorageTier"
+          },
+          "total_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "free_bytes",
+          "name",
+          "tier",
+          "total_bytes"
+        ]
+      },
+      "ZpoolPropFingerprint": {
+        "description": "Per-zpool ZFS properties the live-migration designate filter compares between source and target. Only the values that affect on-disk-format compatibility live here — performance-only knobs (`atime`, `sync`, etc.) are out of scope.",
+        "type": "object",
+        "properties": {
+          "compression": {
+            "description": "`zfs get compression`: `\"off\"`, `\"lz4\"`, `\"zstd\"`, etc.",
+            "type": "string"
+          },
+          "encryption": {
+            "description": "`zfs get encryption`: `\"off\"`, `\"on\"`, `\"aes-256-gcm\"`, etc.",
+            "type": "string"
+          },
+          "recordsize_bytes": {
+            "description": "`zfs get recordsize` in bytes (e.g. `131072` for 128K).",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "compression",
+          "encryption",
+          "recordsize_bytes"
         ]
       },
       "ConsoleKind": {

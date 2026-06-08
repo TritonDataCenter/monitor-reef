@@ -708,6 +708,56 @@ pub(crate) async fn agent_report_nic_tags(
     Ok(HttpResponseOk(()))
 }
 
+pub(crate) async fn agent_report_capacity(
+    rqctx: RequestContext<ApiContext>,
+    body: TypedBody<tritond_api::AgentCapacityReport>,
+) -> Result<HttpResponseOk<()>, HttpError> {
+    let ctx = rqctx.context();
+    let principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::CnCapacityReport,
+    )
+    .await?;
+    // Keyed by the credential's bound CN, never the request body: a
+    // bound key can only ever publish its own CN's capacity (the row
+    // is a placement input, so it must not be settable by server_uuid
+    // on any path).
+    let cn = require_bound_cn(&principal)?;
+    let r = body.into_inner();
+    let row = tritond_store::CnCapacity {
+        server_uuid: cn,
+        cpu_cores_physical: r.cpu_cores_physical,
+        cpu_threads_logical: r.cpu_threads_logical,
+        numa_nodes: r.numa_nodes,
+        ram_total_mb: r.ram_total_mb,
+        ram_available_mb: r.ram_available_mb,
+        cpu_utilization_pct: r.cpu_utilization_pct,
+        zpools: r.zpools,
+        nic_tags: r.nic_tags,
+        underlay: r.underlay,
+        devices: r.devices,
+        platform_version: r.platform_version,
+        hvm_supported: r.hvm_supported,
+        // Server-stamped: staleness is judged against the agent
+        // heartbeat (`Cn.last_seen`), so we don't trust the agent
+        // clock here.
+        reported_at: chrono::Utc::now(),
+        vmm_protocol_version: r.vmm_protocol_version,
+        cpu_features: r.cpu_features,
+        tsc_offset_ns: r.tsc_offset_ns,
+        zpool_props: r.zpool_props,
+    };
+    ctx.store
+        .put_cn_capacity(row)
+        .await
+        .map_err(store_error_to_http)?;
+    // State-sample traffic, not an operator mutation — not audited.
+    Ok(HttpResponseOk(()))
+}
+
 /// Enqueue a `FipClaim` for every FIP hosted on `cn` (C-4b invariant
 /// 13). Split out from the handler so it is unit-testable against a
 /// `MemStore`. Skips a hosted FIP that has lost its `attached_to`

@@ -452,6 +452,160 @@ pub mod types {
         }
     }
 
+    #[doc = "Request body for `POST /v1/agent/capacity`. The bound CN agent publishes its structured capacity: static hardware plus the live instantaneous usage that forms the placement engine's ClickHouse-independent floor (RFD 00005). tritond keys the resulting [`tritond_store::CnCapacity`] by the *authenticated* CN (the key's `bound_cn`), never by a value in this body, and stamps `reported_at` server-side. A CN that never posts capacity is rejected by every placement filter (`cn-capacity row absent`)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v1/agent/capacity`. The bound CN agent publishes its structured capacity: static hardware plus the live instantaneous usage that forms the placement engine's ClickHouse-independent floor (RFD 00005). tritond keys the resulting [`tritond_store::CnCapacity`] by the *authenticated* CN (the key's `bound_cn`), never by a value in this body, and stamps `reported_at` server-side. A CN that never posts capacity is rejected by every placement filter (`cn-capacity row absent`).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"cpu_cores_physical\","]
+    #[doc = "    \"cpu_threads_logical\","]
+    #[doc = "    \"devices\","]
+    #[doc = "    \"nic_tags\","]
+    #[doc = "    \"numa_nodes\","]
+    #[doc = "    \"platform_version\","]
+    #[doc = "    \"ram_total_mb\","]
+    #[doc = "    \"underlay\","]
+    #[doc = "    \"zpools\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"cpu_cores_physical\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"cpu_features\": {"]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"cpu_threads_logical\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"cpu_utilization_pct\": {"]
+    #[doc = "      \"description\": \"Live CPU utilisation (0.0 ..= 1.0). `0.0` = not reported.\","]
+    #[doc = "      \"default\": 0.0,"]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"float\""]
+    #[doc = "    },"]
+    #[doc = "    \"devices\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/DeviceCapacity\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"hvm_supported\": {"]
+    #[doc = "      \"default\": false,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"nic_tags\": {"]
+    #[doc = "      \"description\": \"Local nic_tags this CN provides; authoritative for the `cn-nic-tags` placement filter.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"numa_nodes\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/NumaNode\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"platform_version\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"ram_available_mb\": {"]
+    #[doc = "      \"description\": \"Live instantaneous available RAM (MB). `0` = not reported.\","]
+    #[doc = "      \"default\": 0,"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"ram_total_mb\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"tsc_offset_ns\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"underlay\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/UnderlayCapability\""]
+    #[doc = "    },"]
+    #[doc = "    \"vmm_protocol_version\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"zpool_props\": {"]
+    #[doc = "      \"default\": {},"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"additionalProperties\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/ZpoolPropFingerprint\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"zpools\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/ZpoolCapacity\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct AgentCapacityReport {
+        pub cpu_cores_physical: u32,
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub cpu_features: ::std::vec::Vec<::std::string::String>,
+        pub cpu_threads_logical: u32,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub cpu_utilization_pct: ::std::option::Option<f32>,
+        pub devices: ::std::vec::Vec<DeviceCapacity>,
+        #[serde(default)]
+        pub hvm_supported: bool,
+        #[doc = "Local nic_tags this CN provides; authoritative for the `cn-nic-tags` placement filter."]
+        pub nic_tags: ::std::vec::Vec<::std::string::String>,
+        pub numa_nodes: ::std::vec::Vec<NumaNode>,
+        pub platform_version: ::std::string::String,
+        #[doc = "Live instantaneous available RAM (MB). `0` = not reported."]
+        #[serde(default)]
+        pub ram_available_mb: u64,
+        pub ram_total_mb: u64,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub tsc_offset_ns: ::std::option::Option<i64>,
+        pub underlay: UnderlayCapability,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub vmm_protocol_version: ::std::option::Option<::std::string::String>,
+        #[serde(
+            default,
+            skip_serializing_if = ":: std :: collections :: HashMap::is_empty"
+        )]
+        pub zpool_props: ::std::collections::HashMap<::std::string::String, ZpoolPropFingerprint>,
+        pub zpools: ::std::vec::Vec<ZpoolCapacity>,
+    }
+
+    impl AgentCapacityReport {
+        pub fn builder() -> builder::AgentCapacityReport {
+            Default::default()
+        }
+    }
+
     #[doc = "Response body for `GET /v1/agent/config`.\n\nThe effective per-CN configuration tritonagent pulls at startup and periodically thereafter. tritond resolves any per-CN override against the cluster defaults, so the agent receives flat, ready-to-apply values. Extensible: future per-CN agent config joins this struct."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -2337,6 +2491,128 @@ pub mod types {
     }
 
     impl ::std::convert::TryFrom<::std::string::String> for Decision {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    #[doc = "`DeviceCapacity`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"free_count\","]
+    #[doc = "    \"kind\","]
+    #[doc = "    \"model\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"free_count\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"kind\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/DeviceKind\""]
+    #[doc = "    },"]
+    #[doc = "    \"model\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct DeviceCapacity {
+        pub free_count: u32,
+        pub kind: DeviceKind,
+        pub model: ::std::string::String,
+    }
+
+    impl DeviceCapacity {
+        pub fn builder() -> builder::DeviceCapacity {
+            Default::default()
+        }
+    }
+
+    #[doc = "`DeviceKind`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"gpu\","]
+    #[doc = "    \"sr-iov-vf\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum DeviceKind {
+        #[serde(rename = "gpu")]
+        Gpu,
+        #[serde(rename = "sr-iov-vf")]
+        SrIovVf,
+    }
+
+    impl ::std::fmt::Display for DeviceKind {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Gpu => f.write_str("gpu"),
+                Self::SrIovVf => f.write_str("sr-iov-vf"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for DeviceKind {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "gpu" => Ok(Self::Gpu),
+                "sr-iov-vf" => Ok(Self::SrIovVf),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for DeviceKind {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for DeviceKind {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for DeviceKind {
         type Error = self::error::ConversionError;
         fn try_from(
             value: ::std::string::String,
@@ -10131,6 +10407,53 @@ pub mod types {
         }
     }
 
+    #[doc = "`NumaNode`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"cores\","]
+    #[doc = "    \"node_id\","]
+    #[doc = "    \"ram_mb\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"cores\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"node_id\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint8\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"ram_mb\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NumaNode {
+        pub cores: u32,
+        pub node_id: u8,
+        pub ram_mb: u64,
+    }
+
+    impl NumaNode {
+        pub fn builder() -> builder::NumaNode {
+            Default::default()
+        }
+    }
+
     #[doc = "Request body for `POST /v1/cns/auto-approve`.\n\nOpens (or replaces) the global auto-approve window. Bounded by both wall-time and a remaining-count budget so a forgotten window can't stay open forever; tritond clamps `duration_secs` to the 24h hard cap server-side."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -15472,6 +15795,95 @@ pub mod types {
         }
     }
 
+    #[doc = "`StorageTier`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"ssd\","]
+    #[doc = "    \"nvme\","]
+    #[doc = "    \"hdd\","]
+    #[doc = "    \"mixed\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum StorageTier {
+        #[serde(rename = "ssd")]
+        Ssd,
+        #[serde(rename = "nvme")]
+        Nvme,
+        #[serde(rename = "hdd")]
+        Hdd,
+        #[serde(rename = "mixed")]
+        Mixed,
+    }
+
+    impl ::std::fmt::Display for StorageTier {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Ssd => f.write_str("ssd"),
+                Self::Nvme => f.write_str("nvme"),
+                Self::Hdd => f.write_str("hdd"),
+                Self::Mixed => f.write_str("mixed"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for StorageTier {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "ssd" => Ok(Self::Ssd),
+                "nvme" => Ok(Self::Nvme),
+                "hdd" => Ok(Self::Hdd),
+                "mixed" => Ok(Self::Mixed),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for StorageTier {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for StorageTier {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for StorageTier {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
     #[doc = "Mirror of `mantad_client::types::User`. Returned by IAM list + per-user GET."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -15780,6 +16192,42 @@ pub mod types {
 
     impl TokenResponse {
         pub fn builder() -> builder::TokenResponse {
+            Default::default()
+        }
+    }
+
+    #[doc = "`UnderlayCapability`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"ipv4\","]
+    #[doc = "    \"ipv6\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"ipv4\": {"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"ipv6\": {"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct UnderlayCapability {
+        pub ipv4: bool,
+        pub ipv6: bool,
+    }
+
+    impl UnderlayCapability {
+        pub fn builder() -> builder::UnderlayCapability {
             Default::default()
         }
     }
@@ -16194,6 +16642,106 @@ pub mod types {
         }
     }
 
+    #[doc = "`ZpoolCapacity`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"free_bytes\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"tier\","]
+    #[doc = "    \"total_bytes\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"free_bytes\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"tier\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/StorageTier\""]
+    #[doc = "    },"]
+    #[doc = "    \"total_bytes\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ZpoolCapacity {
+        pub free_bytes: u64,
+        pub name: ::std::string::String,
+        pub tier: StorageTier,
+        pub total_bytes: u64,
+    }
+
+    impl ZpoolCapacity {
+        pub fn builder() -> builder::ZpoolCapacity {
+            Default::default()
+        }
+    }
+
+    #[doc = "Per-zpool ZFS properties the live-migration designate filter compares between source and target. Only the values that affect on-disk-format compatibility live here — performance-only knobs (`atime`, `sync`, etc.) are out of scope."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Per-zpool ZFS properties the live-migration designate filter compares between source and target. Only the values that affect on-disk-format compatibility live here — performance-only knobs (`atime`, `sync`, etc.) are out of scope.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"compression\","]
+    #[doc = "    \"encryption\","]
+    #[doc = "    \"recordsize_bytes\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"compression\": {"]
+    #[doc = "      \"description\": \"`zfs get compression`: `\\\"off\\\"`, `\\\"lz4\\\"`, `\\\"zstd\\\"`, etc.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"encryption\": {"]
+    #[doc = "      \"description\": \"`zfs get encryption`: `\\\"off\\\"`, `\\\"on\\\"`, `\\\"aes-256-gcm\\\"`, etc.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"recordsize_bytes\": {"]
+    #[doc = "      \"description\": \"`zfs get recordsize` in bytes (e.g. `131072` for 128K).\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ZpoolPropFingerprint {
+        #[doc = "`zfs get compression`: `\"off\"`, `\"lz4\"`, `\"zstd\"`, etc."]
+        pub compression: ::std::string::String,
+        #[doc = "`zfs get encryption`: `\"off\"`, `\"on\"`, `\"aes-256-gcm\"`, etc."]
+        pub encryption: ::std::string::String,
+        #[doc = "`zfs get recordsize` in bytes (e.g. `131072` for 128K)."]
+        pub recordsize_bytes: u32,
+    }
+
+    impl ZpoolPropFingerprint {
+        pub fn builder() -> builder::ZpoolPropFingerprint {
+            Default::default()
+        }
+    }
+
     #[doc = r" Types for composing complex structures."]
     pub mod builder {
         #[derive(Clone, Debug)]
@@ -16420,6 +16968,286 @@ pub mod types {
                     shadowed: Ok(value.shadowed),
                     value_at_scope: Ok(value.value_at_scope),
                     wins: Ok(value.wins),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct AgentCapacityReport {
+            cpu_cores_physical: ::std::result::Result<u32, ::std::string::String>,
+            cpu_features: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            cpu_threads_logical: ::std::result::Result<u32, ::std::string::String>,
+            cpu_utilization_pct:
+                ::std::result::Result<::std::option::Option<f32>, ::std::string::String>,
+            devices: ::std::result::Result<
+                ::std::vec::Vec<super::DeviceCapacity>,
+                ::std::string::String,
+            >,
+            hvm_supported: ::std::result::Result<bool, ::std::string::String>,
+            nic_tags: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            numa_nodes:
+                ::std::result::Result<::std::vec::Vec<super::NumaNode>, ::std::string::String>,
+            platform_version: ::std::result::Result<::std::string::String, ::std::string::String>,
+            ram_available_mb: ::std::result::Result<u64, ::std::string::String>,
+            ram_total_mb: ::std::result::Result<u64, ::std::string::String>,
+            tsc_offset_ns: ::std::result::Result<::std::option::Option<i64>, ::std::string::String>,
+            underlay: ::std::result::Result<super::UnderlayCapability, ::std::string::String>,
+            vmm_protocol_version: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            zpool_props: ::std::result::Result<
+                ::std::collections::HashMap<::std::string::String, super::ZpoolPropFingerprint>,
+                ::std::string::String,
+            >,
+            zpools:
+                ::std::result::Result<::std::vec::Vec<super::ZpoolCapacity>, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for AgentCapacityReport {
+            fn default() -> Self {
+                Self {
+                    cpu_cores_physical: Err("no value supplied for cpu_cores_physical".to_string()),
+                    cpu_features: Ok(Default::default()),
+                    cpu_threads_logical: Err(
+                        "no value supplied for cpu_threads_logical".to_string()
+                    ),
+                    cpu_utilization_pct: Ok(Default::default()),
+                    devices: Err("no value supplied for devices".to_string()),
+                    hvm_supported: Ok(Default::default()),
+                    nic_tags: Err("no value supplied for nic_tags".to_string()),
+                    numa_nodes: Err("no value supplied for numa_nodes".to_string()),
+                    platform_version: Err("no value supplied for platform_version".to_string()),
+                    ram_available_mb: Ok(Default::default()),
+                    ram_total_mb: Err("no value supplied for ram_total_mb".to_string()),
+                    tsc_offset_ns: Ok(Default::default()),
+                    underlay: Err("no value supplied for underlay".to_string()),
+                    vmm_protocol_version: Ok(Default::default()),
+                    zpool_props: Ok(Default::default()),
+                    zpools: Err("no value supplied for zpools".to_string()),
+                }
+            }
+        }
+
+        impl AgentCapacityReport {
+            pub fn cpu_cores_physical<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.cpu_cores_physical = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for cpu_cores_physical: {e}")
+                });
+                self
+            }
+            pub fn cpu_features<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.cpu_features = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for cpu_features: {e}"));
+                self
+            }
+            pub fn cpu_threads_logical<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.cpu_threads_logical = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for cpu_threads_logical: {e}")
+                });
+                self
+            }
+            pub fn cpu_utilization_pct<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<f32>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.cpu_utilization_pct = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for cpu_utilization_pct: {e}")
+                });
+                self
+            }
+            pub fn devices<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::DeviceCapacity>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.devices = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for devices: {e}"));
+                self
+            }
+            pub fn hvm_supported<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.hvm_supported = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for hvm_supported: {e}"));
+                self
+            }
+            pub fn nic_tags<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.nic_tags = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for nic_tags: {e}"));
+                self
+            }
+            pub fn numa_nodes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::NumaNode>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.numa_nodes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for numa_nodes: {e}"));
+                self
+            }
+            pub fn platform_version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.platform_version = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for platform_version: {e}")
+                });
+                self
+            }
+            pub fn ram_available_mb<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ram_available_mb = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for ram_available_mb: {e}")
+                });
+                self
+            }
+            pub fn ram_total_mb<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ram_total_mb = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ram_total_mb: {e}"));
+                self
+            }
+            pub fn tsc_offset_ns<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<i64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tsc_offset_ns = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tsc_offset_ns: {e}"));
+                self
+            }
+            pub fn underlay<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::UnderlayCapability>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.underlay = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for underlay: {e}"));
+                self
+            }
+            pub fn vmm_protocol_version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.vmm_protocol_version = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for vmm_protocol_version: {e}")
+                });
+                self
+            }
+            pub fn zpool_props<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::collections::HashMap<
+                            ::std::string::String,
+                            super::ZpoolPropFingerprint,
+                        >,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.zpool_props = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for zpool_props: {e}"));
+                self
+            }
+            pub fn zpools<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::ZpoolCapacity>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.zpools = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for zpools: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<AgentCapacityReport> for super::AgentCapacityReport {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: AgentCapacityReport,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    cpu_cores_physical: value.cpu_cores_physical?,
+                    cpu_features: value.cpu_features?,
+                    cpu_threads_logical: value.cpu_threads_logical?,
+                    cpu_utilization_pct: value.cpu_utilization_pct?,
+                    devices: value.devices?,
+                    hvm_supported: value.hvm_supported?,
+                    nic_tags: value.nic_tags?,
+                    numa_nodes: value.numa_nodes?,
+                    platform_version: value.platform_version?,
+                    ram_available_mb: value.ram_available_mb?,
+                    ram_total_mb: value.ram_total_mb?,
+                    tsc_offset_ns: value.tsc_offset_ns?,
+                    underlay: value.underlay?,
+                    vmm_protocol_version: value.vmm_protocol_version?,
+                    zpool_props: value.zpool_props?,
+                    zpools: value.zpools?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::AgentCapacityReport> for AgentCapacityReport {
+            fn from(value: super::AgentCapacityReport) -> Self {
+                Self {
+                    cpu_cores_physical: Ok(value.cpu_cores_physical),
+                    cpu_features: Ok(value.cpu_features),
+                    cpu_threads_logical: Ok(value.cpu_threads_logical),
+                    cpu_utilization_pct: Ok(value.cpu_utilization_pct),
+                    devices: Ok(value.devices),
+                    hvm_supported: Ok(value.hvm_supported),
+                    nic_tags: Ok(value.nic_tags),
+                    numa_nodes: Ok(value.numa_nodes),
+                    platform_version: Ok(value.platform_version),
+                    ram_available_mb: Ok(value.ram_available_mb),
+                    ram_total_mb: Ok(value.ram_total_mb),
+                    tsc_offset_ns: Ok(value.tsc_offset_ns),
+                    underlay: Ok(value.underlay),
+                    vmm_protocol_version: Ok(value.vmm_protocol_version),
+                    zpool_props: Ok(value.zpool_props),
+                    zpools: Ok(value.zpools),
                 }
             }
         }
@@ -18297,6 +19125,79 @@ pub mod types {
                     key: Ok(value.key),
                     restart_required: Ok(value.restart_required),
                     value: Ok(value.value),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct DeviceCapacity {
+            free_count: ::std::result::Result<u32, ::std::string::String>,
+            kind: ::std::result::Result<super::DeviceKind, ::std::string::String>,
+            model: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for DeviceCapacity {
+            fn default() -> Self {
+                Self {
+                    free_count: Err("no value supplied for free_count".to_string()),
+                    kind: Err("no value supplied for kind".to_string()),
+                    model: Err("no value supplied for model".to_string()),
+                }
+            }
+        }
+
+        impl DeviceCapacity {
+            pub fn free_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.free_count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for free_count: {e}"));
+                self
+            }
+            pub fn kind<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::DeviceKind>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kind = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kind: {e}"));
+                self
+            }
+            pub fn model<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.model = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for model: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<DeviceCapacity> for super::DeviceCapacity {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: DeviceCapacity,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    free_count: value.free_count?,
+                    kind: value.kind?,
+                    model: value.model?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::DeviceCapacity> for DeviceCapacity {
+            fn from(value: super::DeviceCapacity) -> Self {
+                Self {
+                    free_count: Ok(value.free_count),
+                    kind: Ok(value.kind),
+                    model: Ok(value.model),
                 }
             }
         }
@@ -26536,6 +27437,79 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct NumaNode {
+            cores: ::std::result::Result<u32, ::std::string::String>,
+            node_id: ::std::result::Result<u8, ::std::string::String>,
+            ram_mb: ::std::result::Result<u64, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NumaNode {
+            fn default() -> Self {
+                Self {
+                    cores: Err("no value supplied for cores".to_string()),
+                    node_id: Err("no value supplied for node_id".to_string()),
+                    ram_mb: Err("no value supplied for ram_mb".to_string()),
+                }
+            }
+        }
+
+        impl NumaNode {
+            pub fn cores<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.cores = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for cores: {e}"));
+                self
+            }
+            pub fn node_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u8>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.node_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for node_id: {e}"));
+                self
+            }
+            pub fn ram_mb<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ram_mb = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ram_mb: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NumaNode> for super::NumaNode {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NumaNode,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    cores: value.cores?,
+                    node_id: value.node_id?,
+                    ram_mb: value.ram_mb?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NumaNode> for NumaNode {
+            fn from(value: super::NumaNode) -> Self {
+                Self {
+                    cores: Ok(value.cores),
+                    node_id: Ok(value.node_id),
+                    ram_mb: Ok(value.ram_mb),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct OpenAutoApproveRequest {
             count: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
             duration_secs: ::std::result::Result<u64, ::std::string::String>,
@@ -33221,6 +34195,65 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct UnderlayCapability {
+            ipv4: ::std::result::Result<bool, ::std::string::String>,
+            ipv6: ::std::result::Result<bool, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for UnderlayCapability {
+            fn default() -> Self {
+                Self {
+                    ipv4: Err("no value supplied for ipv4".to_string()),
+                    ipv6: Err("no value supplied for ipv6".to_string()),
+                }
+            }
+        }
+
+        impl UnderlayCapability {
+            pub fn ipv4<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ipv4 = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ipv4: {e}"));
+                self
+            }
+            pub fn ipv6<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ipv6 = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ipv6: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<UnderlayCapability> for super::UnderlayCapability {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: UnderlayCapability,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    ipv4: value.ipv4?,
+                    ipv6: value.ipv6?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::UnderlayCapability> for UnderlayCapability {
+            fn from(value: super::UnderlayCapability) -> Self {
+                Self {
+                    ipv4: Ok(value.ipv4),
+                    ipv6: Ok(value.ipv6),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct User {
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
         }
@@ -33544,6 +34577,166 @@ pub mod types {
                 }
             }
         }
+
+        #[derive(Clone, Debug)]
+        pub struct ZpoolCapacity {
+            free_bytes: ::std::result::Result<u64, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            tier: ::std::result::Result<super::StorageTier, ::std::string::String>,
+            total_bytes: ::std::result::Result<u64, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ZpoolCapacity {
+            fn default() -> Self {
+                Self {
+                    free_bytes: Err("no value supplied for free_bytes".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    tier: Err("no value supplied for tier".to_string()),
+                    total_bytes: Err("no value supplied for total_bytes".to_string()),
+                }
+            }
+        }
+
+        impl ZpoolCapacity {
+            pub fn free_bytes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.free_bytes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for free_bytes: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn tier<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::StorageTier>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tier = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tier: {e}"));
+                self
+            }
+            pub fn total_bytes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.total_bytes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for total_bytes: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ZpoolCapacity> for super::ZpoolCapacity {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ZpoolCapacity,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    free_bytes: value.free_bytes?,
+                    name: value.name?,
+                    tier: value.tier?,
+                    total_bytes: value.total_bytes?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ZpoolCapacity> for ZpoolCapacity {
+            fn from(value: super::ZpoolCapacity) -> Self {
+                Self {
+                    free_bytes: Ok(value.free_bytes),
+                    name: Ok(value.name),
+                    tier: Ok(value.tier),
+                    total_bytes: Ok(value.total_bytes),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct ZpoolPropFingerprint {
+            compression: ::std::result::Result<::std::string::String, ::std::string::String>,
+            encryption: ::std::result::Result<::std::string::String, ::std::string::String>,
+            recordsize_bytes: ::std::result::Result<u32, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ZpoolPropFingerprint {
+            fn default() -> Self {
+                Self {
+                    compression: Err("no value supplied for compression".to_string()),
+                    encryption: Err("no value supplied for encryption".to_string()),
+                    recordsize_bytes: Err("no value supplied for recordsize_bytes".to_string()),
+                }
+            }
+        }
+
+        impl ZpoolPropFingerprint {
+            pub fn compression<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.compression = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for compression: {e}"));
+                self
+            }
+            pub fn encryption<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.encryption = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for encryption: {e}"));
+                self
+            }
+            pub fn recordsize_bytes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.recordsize_bytes = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for recordsize_bytes: {e}")
+                });
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ZpoolPropFingerprint> for super::ZpoolPropFingerprint {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ZpoolPropFingerprint,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    compression: value.compression?,
+                    encryption: value.encryption?,
+                    recordsize_bytes: value.recordsize_bytes?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ZpoolPropFingerprint> for ZpoolPropFingerprint {
+            fn from(value: super::ZpoolPropFingerprint) -> Self {
+                Self {
+                    compression: Ok(value.compression),
+                    encryption: Ok(value.encryption),
+                    recordsize_bytes: Ok(value.recordsize_bytes),
+                }
+            }
+        }
     }
 
     #[doc = r" Generation of default values for serde."]
@@ -33661,6 +34854,11 @@ impl Client {
     #[doc = "Materialise the Proteus per-port blueprint for a NIC. Auth:\n\nrequires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. The bound CN must have an in-progress claim for the port's instance.\n\nSends a `GET` request to `/v1/agent/blueprints/{port_id}`\n\n```ignore\nlet response = client.agent_port_blueprint()\n    .port_id(port_id)\n    .send()\n    .await;\n```"]
     pub fn agent_port_blueprint(&self) -> builder::AgentPortBlueprint<'_> {
         builder::AgentPortBlueprint::new(self)
+    }
+
+    #[doc = "Publish the calling CN's structured capacity (static hardware +\n\nlive instantaneous usage). Auth: requires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. tritond keys the `cn-capacity` row by the *authenticated* CN (never a body value) and stamps `reported_at` server-side. This is the placement engine's capacity floor (RFD 00005) — a CN with no capacity row is rejected by every placement filter. State-sample traffic posted on the heartbeat cadence; always `200 OK`.\n\nSends a `POST` request to `/v1/agent/capacity`\n\n```ignore\nlet response = client.agent_report_capacity()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn agent_report_capacity(&self) -> builder::AgentReportCapacity<'_> {
+        builder::AgentReportCapacity::new(self)
     }
 
     #[doc = "Atomically claim the next Pending provisioning job\n\nReturns `200 OK` with `{\"job\": null}` when the queue is empty (the agent should sleep before its next poll), and `200 OK` with `{\"job\": {...}}` when a job was claimed and transitioned to `InProgress`. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].\n\nThe path is `/v1/agent/claim` rather than `/v1/agent/jobs/claim` because Dropshot's router cannot disambiguate a literal `claim` segment from a `{job_id}` path parameter at the same level.\n\nSends a `POST` request to `/v1/agent/claim`\n\n```ignore\nlet response = client.agent_claim_job()\n    .body(body)\n    .send()\n    .await;\n```"]
@@ -35158,6 +36356,86 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "agent_port_blueprint",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::agent_report_capacity`]\n\n[`Client::agent_report_capacity`]: super::Client::agent_report_capacity"]
+    #[derive(Debug, Clone)]
+    pub struct AgentReportCapacity<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::AgentCapacityReport, String>,
+    }
+
+    impl<'a> AgentReportCapacity<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::AgentCapacityReport>,
+            <V as std::convert::TryInto<types::AgentCapacityReport>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `AgentCapacityReport` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::AgentCapacityReport,
+                ) -> types::builder::AgentCapacityReport,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/agent/capacity`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::AgentCapacityReport::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/agent/capacity", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "agent_report_capacity",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

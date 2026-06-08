@@ -1275,6 +1275,13 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::agents::agent_report_nic_tags(rqctx, body).await
     }
 
+    async fn agent_report_capacity(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<tritond_api::AgentCapacityReport>,
+    ) -> Result<HttpResponseOk<()>, HttpError> {
+        crate::handlers::agents::agent_report_capacity(rqctx, body).await
+    }
+
     // ----- CN registration / approval (slice C) -----
 
     async fn agent_register(

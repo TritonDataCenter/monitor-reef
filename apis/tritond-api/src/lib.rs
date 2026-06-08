@@ -950,6 +950,48 @@ pub struct NicTagInventoryReport {
     pub nic_tags: Vec<RegisterNicTagProvision>,
 }
 
+/// Request body for `POST /v1/agent/capacity`. The bound CN agent
+/// publishes its structured capacity: static hardware plus the live
+/// instantaneous usage that forms the placement engine's
+/// ClickHouse-independent floor (RFD 00005). tritond keys the
+/// resulting [`tritond_store::CnCapacity`] by the *authenticated* CN
+/// (the key's `bound_cn`), never by a value in this body, and stamps
+/// `reported_at` server-side. A CN that never posts capacity is
+/// rejected by every placement filter (`cn-capacity row absent`).
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct AgentCapacityReport {
+    pub cpu_cores_physical: u32,
+    pub cpu_threads_logical: u32,
+    pub numa_nodes: Vec<tritond_store::NumaNode>,
+    pub ram_total_mb: u64,
+    /// Live instantaneous available RAM (MB). `0` = not reported.
+    #[serde(default)]
+    pub ram_available_mb: u64,
+    /// Live CPU utilisation (0.0 ..= 1.0). `0.0` = not reported.
+    #[serde(default)]
+    pub cpu_utilization_pct: f32,
+    pub zpools: Vec<tritond_store::ZpoolCapacity>,
+    /// Local nic_tags this CN provides; authoritative for the
+    /// `cn-nic-tags` placement filter.
+    pub nic_tags: Vec<String>,
+    pub underlay: tritond_store::UnderlayCapability,
+    pub devices: Vec<tritond_store::DeviceCapacity>,
+    pub platform_version: String,
+    #[serde(default)]
+    pub hvm_supported: bool,
+    // Live-migration compatibility fingerprint (LM-0). Default-shaped
+    // so an agent that hasn't run the capability probe still posts a
+    // valid report; the migration filters Skip when a field is absent.
+    #[serde(default)]
+    pub vmm_protocol_version: Option<String>,
+    #[serde(default)]
+    pub cpu_features: Vec<String>,
+    #[serde(default)]
+    pub tsc_offset_ns: Option<i64>,
+    #[serde(default)]
+    pub zpool_props: std::collections::BTreeMap<String, tritond_store::ZpoolPropFingerprint>,
+}
+
 /// Request body for `POST /v1/agent/register`. Anonymous endpoint
 /// (no auth header required); the agent has no credentials yet at
 /// this point in its lifecycle.
@@ -2505,6 +2547,24 @@ pub trait TritondApi {
     async fn agent_report_nic_tags(
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<NicTagInventoryReport>,
+    ) -> Result<HttpResponseOk<()>, HttpError>;
+
+    /// Publish the calling CN's structured capacity (static hardware +
+    /// live instantaneous usage). Auth: requires a CN-bound API key
+    /// with [`tritond_store::ApiKeyScope::Agent`]. tritond keys the
+    /// `cn-capacity` row by the *authenticated* CN (never a body value)
+    /// and stamps `reported_at` server-side. This is the placement
+    /// engine's capacity floor (RFD 00005) — a CN with no capacity row
+    /// is rejected by every placement filter. State-sample traffic
+    /// posted on the heartbeat cadence; always `200 OK`.
+    #[endpoint {
+        method = POST,
+        path = "/v1/agent/capacity",
+        tags = ["agent"],
+    }]
+    async fn agent_report_capacity(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<AgentCapacityReport>,
     ) -> Result<HttpResponseOk<()>, HttpError>;
 
     /// Self-register a compute node. Anonymous endpoint (no API
