@@ -9,11 +9,13 @@
 //! status loops. The transport is pluggable via [`StatusSink`] so this
 //! crate stays independent of any specific control-plane HTTP client.
 
+pub mod capacity;
 pub mod collector;
 pub mod disk_usage;
 pub mod heartbeater;
 pub mod watchers;
 
+pub use capacity::{CapacitySample, ZpoolSample, collect_capacity};
 pub use collector::{LiveSysinfo, StatusCollector, StatusReport, SysinfoLoader};
 pub use disk_usage::{
     AcceptAllImageFilter, DiskUsage, DiskUsageError, DiskUsageSampler, ImageDatasetFilter,

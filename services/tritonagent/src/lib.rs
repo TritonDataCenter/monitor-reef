@@ -24,6 +24,7 @@ pub mod imds_bindings;
 pub mod imds_creds;
 pub mod imds_data;
 pub mod imds_ratelimit;
+pub mod capacity;
 pub mod log_tailer;
 pub mod metrics;
 pub mod migrate;
@@ -353,6 +354,23 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
         None
     };
 
+    // Capacity ticker: publishes the placement engine's cn-capacity
+    // floor (static hardware + live RAM/CPU/zpool-free). Gated on the
+    // same flag as the heartbeater so quiet integration tests stay
+    // quiet. nic_tags travel on the capacity row too (authoritative for
+    // the cn-nic-tags placement filter), so carry the same names the
+    // nic-tag inventory publish used above.
+    let mut capacity_handle = if cfg.spawn_heartbeater {
+        let nic_tag_names: Vec<String> = cfg.nic_tags.iter().map(|t| t.name.clone()).collect();
+        Some(capacity::spawn(
+            Arc::clone(&client),
+            nic_tag_names,
+            capacity::DEFAULT_CAPACITY_INTERVAL,
+        ))
+    } else {
+        None
+    };
+
     // Metrics ticker rides on the same `spawn_heartbeater` flag so
     // integration tests that disable the heartbeater don't get
     // metrics chatter either. The CN UUID is parsed from
@@ -415,6 +433,9 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
     }
 
     if let Some(h) = metrics_handle.take() {
+        h.shutdown().await;
+    }
+    if let Some(h) = capacity_handle.take() {
         h.shutdown().await;
     }
     if let Some(h) = log_handle.take() {
