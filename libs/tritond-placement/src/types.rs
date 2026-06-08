@@ -496,6 +496,20 @@ pub struct CapacityView {
     pub numa_nodes: Vec<NumaNodeView>,
     pub ram_total_mb: u64,
 
+    /// Live instantaneous available RAM (MB) the CN reports each
+    /// capacity post. `0` = unknown (older agent); scorers treat it
+    /// as no-signal and fall back to declared-residual math. The
+    /// ClickHouse-independent RAM floor used by `score-ram-headroom`.
+    #[serde(default)]
+    pub ram_available_mb: u64,
+
+    /// Live CPU utilisation (0.0 ..= 1.0) the CN reports each
+    /// capacity post. `0.0` = unknown. The ClickHouse-independent
+    /// "hot now" signal `score-avoid-hot-now` falls back to when the
+    /// `cn-load-summary` rollup is stale or absent.
+    #[serde(default)]
+    pub cpu_utilization_pct: f32,
+
     pub zpools: Vec<ZpoolView>,
     pub nic_tags: Vec<String>,
     pub underlay: UnderlayCapability,

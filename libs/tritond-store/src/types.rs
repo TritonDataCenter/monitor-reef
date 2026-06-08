@@ -4212,6 +4212,23 @@ pub struct CnCapacity {
     /// Length == 1 on a UMA box.
     pub numa_nodes: Vec<NumaNode>,
     pub ram_total_mb: u64,
+    /// Live instantaneous *available* RAM in MB as the CN itself
+    /// reports it (kstat / sysinfo), refreshed every capacity post.
+    /// This is the ClickHouse-independent floor the scorers fall back
+    /// to during a metrics outage: `ram_total_mb` minus declared
+    /// footprints is the planning view, but this is what's actually
+    /// free right now. `#[serde(default)]` so reports from agents
+    /// predating the live fields still deserialise (0 = "unknown",
+    /// scorers treat it as no-signal).
+    #[serde(default)]
+    pub ram_available_mb: u64,
+    /// Live CPU utilisation (0.0 ..= 1.0) over the last capacity
+    /// interval, as the CN reports it (load average / kstat). The
+    /// ClickHouse-independent "hot right now" signal; the
+    /// `score-avoid-hot-now` scorer falls back to it when the
+    /// `cn-load-summary` rollup is stale or absent. `0.0` = unknown.
+    #[serde(default)]
+    pub cpu_utilization_pct: f32,
     pub zpools: Vec<ZpoolCapacity>,
     /// Authoritative for the `cn-nic-tags` filter; tritond does not
     /// re-derive NIC tags from `Cn.sysinfo`.

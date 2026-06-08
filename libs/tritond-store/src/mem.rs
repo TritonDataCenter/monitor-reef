@@ -11745,6 +11745,8 @@ mod tests {
                 ram_mb: 65_536,
             }],
             ram_total_mb: 65_536,
+            ram_available_mb: 60_000,
+            cpu_utilization_pct: 0.10,
             zpools: vec![ZpoolCapacity {
                 name: "zones".into(),
                 total_bytes: 1_000_000_000_000,

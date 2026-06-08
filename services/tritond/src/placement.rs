@@ -44,9 +44,18 @@ pub const DEFAULT_LOAD_STALENESS_SECS: u64 = 180;
 pub fn snapshot_to_cn_view(snap: CnPickSnapshot) -> CnView {
     let capacity = snap.capacity.map(capacity_view);
     let placement = placement_policy_view(snap.placement);
+    // Backstop for crashed/leaked reservations: a saga that dies after
+    // writing its `cn-reservation` row but before its success/undo
+    // release would otherwise wedge the CN's capacity forever (no
+    // reaper exists yet, and the snapshot reads every row for the CN).
+    // Dropping past-deadline rows here lets the residual self-heal once
+    // the reservation TTL lapses. The healthy path still releases
+    // explicitly on saga success/unwind, so this only catches crashes.
+    let now = Utc::now();
     let active_reservations = snap
         .reservations
         .into_iter()
+        .filter(|r| r.expires_at > now)
         .map(reservation_view)
         .collect();
     let load_summary = snap.load_summary.map(load_summary_view);
@@ -339,6 +348,8 @@ fn capacity_view(c: tritond_store::CnCapacity) -> CapacityView {
             })
             .collect(),
         ram_total_mb: c.ram_total_mb,
+        ram_available_mb: c.ram_available_mb,
+        cpu_utilization_pct: c.cpu_utilization_pct,
         zpools: c
             .zpools
             .into_iter()
@@ -549,6 +560,8 @@ mod tests {
                 ram_mb: 32_768,
             }],
             ram_total_mb: 32_768,
+            ram_available_mb: 30_000,
+            cpu_utilization_pct: 0.10,
             zpools: vec![ZpoolCapacity {
                 name: "zones".into(),
                 total_bytes: 500_000_000_000,
@@ -744,6 +757,8 @@ mod tests {
                 ram_mb: 65_536,
             }],
             ram_total_mb: 65_536,
+            ram_available_mb: 60_000,
+            cpu_utilization_pct: 0.10,
             zpools: vec![ZpoolCapacity {
                 name: "zones".into(),
                 total_bytes: 1_000_000_000_000,
