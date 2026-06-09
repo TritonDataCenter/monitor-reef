@@ -40,6 +40,10 @@ struct TestServer {
 
 impl TestServer {
     async fn start() -> Self {
+        // Reqwest builds an internal rustls client even for http://
+        // probes; without a process-default crypto provider it panics
+        // (see monitor-reef-1pk2 for the centralized fix).
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         let store: Arc<dyn Store> = Arc::new(MemStore::new());
 
         let root_id = Uuid::new_v4();
