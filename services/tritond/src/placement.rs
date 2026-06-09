@@ -118,9 +118,9 @@ pub fn build_runner_with_weights(strategy: Strategy, weights: &StrategyWeights) 
 fn resolve_pick_weights(
     request_override: Option<Strategy>,
     profiles: &tritond_store::PlacementProfiles,
-) -> (Strategy, StrategyWeights) {
+) -> (Strategy, StrategyWeights, Option<String>) {
     if let Some(s) = request_override {
-        return (s, resolved_weights(s));
+        return (s, resolved_weights(s), None);
     }
     if let Some(p) = profiles.active_profile() {
         // Key the weights by the engine's own &'static scorer names
@@ -134,9 +134,9 @@ fn resolve_pick_weights(
                 w.set(name, *weight);
             }
         }
-        return (Strategy::Spread, w);
+        return (Strategy::Spread, w, Some(p.name.clone()));
     }
-    (Strategy::Spread, resolved_weights(Strategy::Spread))
+    (Strategy::Spread, resolved_weights(Strategy::Spread), None)
 }
 
 pub fn build_chain_context<'a>(
@@ -242,11 +242,14 @@ pub async fn pick(
     // a profile change takes effect on the next pick without a
     // restart); a per-request strategy_override still wins.
     let settings = store.get_settings().await?;
-    let (strategy, weights) =
+    let (strategy, weights, profile) =
         resolve_pick_weights(request.strategy_override, &settings.placement_profiles);
     let runner = build_runner_with_weights(strategy, &weights);
     let ctx = build_chain_context(Utc::now(), &weights, &siblings);
-    let (chosen, report) = runner.pick(&cn_views, &request, &ctx);
+    let (chosen, mut report) = runner.pick(&cn_views, &request, &ctx);
+    // Record which named profile produced these weights (the runner
+    // only knows the Strategy label, not the profile name).
+    report.profile = profile;
 
     // Commit: reservation + Instance pin run as two sequential
     // writes (single FDB txn wrapper not landed).

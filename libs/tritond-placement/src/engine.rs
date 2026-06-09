@@ -195,6 +195,10 @@ impl ChainRunner {
         let report = ExplainReport {
             request: req.clone(),
             strategy: self.strategy,
+            // The runner doesn't know the named profile; the caller
+            // (`placement::pick`) fills it from the active cluster
+            // setting after pick returns.
+            profile: None,
             weights: ctx
                 .strategy_weights
                 .to_report()
@@ -216,6 +220,12 @@ impl ChainRunner {
 pub struct ExplainReport {
     pub request: PlacementRequest,
     pub strategy: Strategy,
+
+    /// Name of the active placement profile whose weights were applied
+    /// (e.g. `performance`). `None` when a per-request strategy override
+    /// was used instead of a named profile. Filled by `placement::pick`.
+    #[serde(default)]
+    pub profile: Option<String>,
 
     /// Resolved weight vector applied to the score phase. Keys are
     /// scorer `name()`s.
