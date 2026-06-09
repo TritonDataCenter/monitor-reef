@@ -20,7 +20,7 @@
 //! | # | Action                       | Output      | Undo                                                       |
 //! |---|------------------------------|-------------|------------------------------------------------------------|
 //! | 1 | `create_instance_record`     | `Instance`  | `delete_instance(force=true)` — releases NICs/IPs/disks    |
-//! | 2 | `pin_host_cn` (optional)     | `Instance`  | `set_instance_host_cn(None)` — clears the pin              |
+//! | 2 | `designate`                  | `Uuid`      | release `cn-reservation` (the host-CN pin clears with the instance delete) |
 //! | 3 | `persist_root_pw_meta`       | `()`        | (none — meta survives an instance delete; cleared with it) |
 //! | 4 | `enqueue_provision_job`      | `Instance`  | enqueue `Delete` job (best-effort)                         |
 //!
@@ -49,11 +49,14 @@ use tritond_saga::{
     ActionContext, ActionError, ActionFunc, ActionRegistry, DagBuilder, Node, ResourceRef,
     ResourceScope, SagaDag, SagaError, SagaName, SagaResult, TritondSagaType,
 };
+use tritond_placement::PlacementRequest;
 use tritond_store::{
-    Instance, InstanceCreateResult, JobKind, JobStatusKind, MetaScope, MetaValue, NewInstance,
-    NewJob,
+    Instance, InstanceAffinity, InstanceBrand, InstanceCreateResult, JobKind, JobStatusKind,
+    MetaScope, MetaValue, NewInstance, NewJob,
 };
 use uuid::Uuid;
+
+use crate::placement::{Commit, PickError, pick, release_reservation};
 
 /// Saga `NAME` (kebab-case, matches Steno's `SagaName` convention).
 pub const SAGA_NAME: &str = "instance-create";
@@ -66,24 +69,39 @@ pub const SAGA_NAME: &str = "instance-create";
 /// `2` adds the `await_provision_terminal` + `finish` actions and
 /// the `await_provision_terminal: bool` param field (defaults
 /// to `true`).
-pub const SAGA_VERSION: u32 = 2;
+///
+/// `3` (PL-5e) replaces the handler's eager bin-packer pre-pick with
+/// an in-DAG `designate` action that runs the placement engine
+/// (reservation + host-CN pin). The `target_cn_uuid` param is
+/// replaced by `force_cn_override` + `allow_unrouted_stub`.
+pub const SAGA_VERSION: u32 = 3;
 
 /// Parameters the handler hands to `SagaExecutor::saga_execute`.
 /// Carries everything that doesn't change during the saga: the
-/// destination tenant/project, the validated request, and the
-/// pre-selected host CN (chosen by the handler before the saga
-/// starts so placement-failure surfaces as a `409`/`503` and not as
-/// a partial-saga unwind).
+/// destination tenant/project and the validated request. Placement is
+/// decided inside the saga by the `designate` action, not pre-chosen
+/// by the handler.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstanceCreateParams {
     pub tenant_id: Uuid,
     pub project_id: Uuid,
     pub request: NewInstance,
-    /// `Some(cn)` if the handler picked a tenant CN. `None` when
-    /// the in-process stub provisioner is the only consumer (which
-    /// happens in `make docker-up` and most integration tests; the
-    /// stub claims unrouted jobs).
-    pub target_cn_uuid: Option<Uuid>,
+    /// Operator-forced placement target. `None` is the normal path:
+    /// the `designate` action runs the placement engine to score every
+    /// eligible CN. `Some(cn)` pins that CN (mapped to the engine's
+    /// `force_cn`, still subject to the hard capacity / availability
+    /// filters). The handler currently always sends `None`; this is
+    /// the hook for an operator-pinned create.
+    #[serde(default)]
+    pub force_cn_override: Option<Uuid>,
+    /// When the engine finds no eligible CN, leave the instance
+    /// unrouted (host CN unpinned, job enqueued with no target) instead
+    /// of unwinding the saga. Set from the handler's
+    /// `spawn_in_process_provisioner` flag so `make docker-up` and the
+    /// integration tests whose in-process stub claims unrouted jobs
+    /// keep working when no approved CN exists.
+    #[serde(default)]
+    pub allow_unrouted_stub: bool,
     /// Idempotency-Key carried through to a future replay-dedup
     /// table (SG-4). Threading it now keeps the wire shape stable so
     /// SG-4 doesn't bump the saga version.
@@ -121,9 +139,9 @@ pub fn register(reg: &mut ActionRegistry) {
         create_instance_record_undo,
     ));
     reg.register(ActionFunc::new_action(
-        "instance_create.pin_host_cn",
-        pin_host_cn,
-        pin_host_cn_undo,
+        "instance_create.designate",
+        designate,
+        designate_undo,
     ));
     reg.register(ActionFunc::new_action(
         "instance_create.persist_root_pw_meta",
@@ -169,9 +187,9 @@ pub fn build_dag(params: &InstanceCreateParams) -> SagaResult<Arc<SagaDag>> {
         ),
     ));
     b.append(Node::action(
-        "instance_after_pin",
-        "pin_host_cn",
-        &*ActionFunc::new_action("instance_create.pin_host_cn", pin_host_cn, pin_host_cn_undo),
+        "host_cn_uuid",
+        "designate",
+        &*ActionFunc::new_action("instance_create.designate", designate, designate_undo),
     ));
     b.append(Node::action(
         "root_pw",
@@ -230,7 +248,10 @@ pub fn build_references(params: &InstanceCreateParams) -> Vec<ResourceRef> {
     let mut out = Vec::new();
     out.push(ResourceRef::new(ResourceScope::Tenant, params.tenant_id));
     out.push(ResourceRef::new(ResourceScope::Project, params.project_id));
-    if let Some(cn) = params.target_cn_uuid {
+    // The CN the engine designates isn't known until the saga runs, so
+    // it can't be in the create-time ref set. An operator-forced target
+    // is the one case we know up front.
+    if let Some(cn) = params.force_cn_override {
         out.push(ResourceRef::new(ResourceScope::Cn, cn));
     }
     out.push(ResourceRef::new(
@@ -278,9 +299,68 @@ async fn create_instance_record_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
     }
 }
 
-async fn pin_host_cn(ctx: Ctx) -> Result<Instance, ActionError> {
+/// Reservation TTL: the engine stamps `cn-reservation.expires_at` from
+/// the request deadline. Sized past the provision-await cap so a
+/// healthy provision never outlives its own reservation; a crashed
+/// saga's row self-heals out of the capacity residual once it lapses
+/// (see `placement::snapshot_to_cn_view`).
+const RESERVATION_TTL: chrono::Duration = chrono::Duration::minutes(20);
+
+/// Build a [`PlacementRequest`] for the just-created instance. Models
+/// the construction in `handlers/cns.rs` (the drain dry-run) and the
+/// migration saga: the realised `Instance` row supplies cpu / ram /
+/// brand, and the tenant's silo is looked up for scope pinning.
+async fn placement_request_for(
+    store: &std::sync::Arc<dyn tritond_store::Store>,
+    instance: &Instance,
+    params: &InstanceCreateParams,
+) -> Result<PlacementRequest, ActionError> {
+    let silo_uuid = store
+        .get_tenant(instance.tenant_id)
+        .await
+        .map_err(store_err_to_action_err)?
+        .silo_id;
+    Ok(PlacementRequest {
+        instance_id: instance.id,
+        silo_uuid,
+        tenant_uuid: instance.tenant_id,
+        project_uuid: instance.project_id,
+        role: tritond_placement::types::CnRoleView::Tenant,
+        cpu_units: (instance.cpu as u32) * 100,
+        ram_mb: (instance.memory_bytes / (1024 * 1024)) as u64,
+        disk: std::collections::BTreeMap::new(),
+        required_traits: std::collections::BTreeMap::new(),
+        required_nic_tags: Vec::new(),
+        required_underlay: tritond_placement::types::UnderlayCapability {
+            ipv4: true,
+            ipv6: false,
+        },
+        required_devices: Vec::new(),
+        needs_hvm: matches!(instance.brand, InstanceBrand::Bhyve),
+        min_platform: None,
+        affinity: InstanceAffinity::empty(
+            instance.id,
+            instance.tenant_id,
+            chrono::Utc::now(),
+        ),
+        strategy_override: None,
+        force_cn: params.force_cn_override,
+        ignore_scope_pin: false,
+        deadline: chrono::Utc::now() + RESERVATION_TTL,
+        avoid_cn: Vec::new(),
+        migration: None,
+    })
+}
+
+/// Run the placement engine for the created instance, committing the
+/// `cn-reservation` row and pinning `Instance.host_cn_uuid`. Returns
+/// the chosen CN. On no-eligible-CN: when `allow_unrouted_stub` is set
+/// (the in-process stub path) returns `Uuid::nil()` so the instance
+/// stays unrouted; otherwise fails the action so the saga unwinds and
+/// the handler renders a `503`.
+async fn designate(ctx: Ctx) -> Result<Uuid, ActionError> {
     crate::sagas::with_action_timeout(
-        "instance_create.pin_host_cn",
+        "instance_create.designate",
         ACTION_TIMEOUT_STORE,
         async move {
             let user_ctx = ctx.user_data();
@@ -288,33 +368,68 @@ async fn pin_host_cn(ctx: Ctx) -> Result<Instance, ActionError> {
             let store = user_ctx.store().clone();
             let params: InstanceCreateParams = ctx.saga_params()?;
             let instance: Instance = ctx.lookup("instance")?;
-            match params.target_cn_uuid {
-                Some(cn) => {
-                    let updated: Instance = store
-                        .set_instance_host_cn(instance.id, Some(cn))
-                        .await
-                        .map_err(store_err_to_action_err)?;
-                    Ok(updated)
+            let request = placement_request_for(&store, &instance, &params).await?;
+            let commit = Commit::Yes {
+                saga_id: user_ctx.saga_id().0,
+                sec_id: user_ctx.sec_id().0,
+                sec_epoch: user_ctx.sec_epoch().0,
+            };
+            match pick(&store, request, commit).await {
+                Ok(outcome) => outcome.chosen.ok_or_else(|| {
+                    ActionError::action_failed(serde_json::json!({
+                        "kind": "designate.no_eligible_cn",
+                        "reason": "internal: chosen was None on a commit-success path",
+                    }))
+                }),
+                Err(PickError::NoEligibleCn { report }) => {
+                    if params.allow_unrouted_stub {
+                        Ok(Uuid::nil())
+                    } else {
+                        Err(ActionError::action_failed(serde_json::json!({
+                            "kind": "designate.no_eligible_cn",
+                            "audit": report.bounded_for_audit(),
+                        })))
+                    }
                 }
-                None => Ok(instance),
+                // A `CapacityExhausted` here means the chain chose a CN
+                // but the reservation write lost a race to a concurrent
+                // provision. Treat it like no-eligible-CN so the caller
+                // retries (503) rather than seeing a 500.
+                Err(PickError::Store(tritond_store::StoreError::CapacityExhausted {
+                    server_uuid,
+                    reason,
+                })) => {
+                    if params.allow_unrouted_stub {
+                        Ok(Uuid::nil())
+                    } else {
+                        Err(ActionError::action_failed(serde_json::json!({
+                            "kind": "designate.no_eligible_cn",
+                            "reason": format!("capacity raced on {server_uuid}: {reason}"),
+                        })))
+                    }
+                }
+                Err(PickError::Store(e)) => Err(store_err_to_action_err(e)),
             }
         },
     )
     .await
 }
 
-async fn pin_host_cn_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
+async fn designate_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
     let store = ctx.user_data().store().clone();
-    let params: InstanceCreateParams = ctx.saga_params()?;
-    if params.target_cn_uuid.is_none() {
+    let cn: Uuid = ctx.lookup("host_cn_uuid").unwrap_or(Uuid::nil());
+    if cn == Uuid::nil() {
+        // Unrouted (stub) path wrote no reservation; the host-CN pin,
+        // if any, clears when `create_instance_record`'s undo deletes
+        // the instance row.
         return Ok(());
     }
     let instance: Instance = ctx.lookup("instance")?;
-    match store.set_instance_host_cn(instance.id, None).await {
-        Ok(_) => Ok(()),
-        Err(tritond_store::StoreError::NotFound) => Ok(()),
-        Err(e) => Err(anyhow::anyhow!("set_instance_host_cn(None): {e}")),
-    }
+    let saga_id = ctx.user_data().saga_id().0;
+    release_reservation(&store, cn, saga_id, instance.id)
+        .await
+        .map_err(|e| anyhow::anyhow!("designate undo: release_reservation: {e}"))?;
+    Ok(())
 }
 
 async fn persist_root_pw_meta(ctx: Ctx) -> Result<(), ActionError> {
@@ -370,14 +485,13 @@ async fn enqueue_provision_job(ctx: Ctx) -> Result<tritond_store::ProvisioningJo
             let user_ctx = ctx.user_data();
             fence_check(user_ctx).await?;
             let store = user_ctx.store().clone();
-            let params: InstanceCreateParams = ctx.saga_params()?;
-            let instance: Instance = ctx.lookup("instance_after_pin")?;
+            let instance: Instance = ctx.lookup("instance")?;
             let job: tritond_store::ProvisioningJob = store
                 .enqueue_job(NewJob {
                     kind: JobKind::Provision {
                         instance_id: instance.id,
                     },
-                    target_cn_uuid: params.target_cn_uuid,
+                    target_cn_uuid: designated_cn(&ctx),
                 })
                 .await
                 .map_err(store_err_to_action_err)?;
@@ -390,8 +504,7 @@ async fn enqueue_provision_job(ctx: Ctx) -> Result<tritond_store::ProvisioningJo
 async fn enqueue_provision_job_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
     let log = ctx.user_data().log().clone();
     let store = ctx.user_data().store().clone();
-    let params: InstanceCreateParams = ctx.saga_params()?;
-    let instance: Instance = ctx.lookup("instance_after_pin")?;
+    let instance: Instance = ctx.lookup("instance")?;
     // Best-effort: enqueue a Delete job so the agent (or stub) tears
     // any half-started zone down. SG-2's saga doesn't await the
     // Delete; the `create_instance_record` undo (one step earlier in
@@ -402,7 +515,7 @@ async fn enqueue_provision_job_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
             kind: JobKind::Delete {
                 instance_id: instance.id,
             },
-            target_cn_uuid: params.target_cn_uuid,
+            target_cn_uuid: designated_cn(&ctx),
         })
         .await
     {
@@ -475,12 +588,31 @@ async fn await_provision_terminal(ctx: Ctx) -> Result<(), ActionError> {
 /// Pending → Provisioning → Running). The saga has no `Instance`
 /// output before this action because action 4's output became the
 /// `ProvisioningJob` once SG-2b added the await step.
+///
+/// This is also the success-path release point for the `designate`
+/// reservation: once the zone is provisioned, the instance is pinned
+/// (`host_cn_uuid` set) and counts against capacity as a realised
+/// instance, so the in-flight `cn-reservation` ticket would otherwise
+/// double-count. Release is idempotent (`NotFound` → `Ok`); the undo
+/// path releases the same row, so every terminal saga state clears it.
 async fn finish(ctx: Ctx) -> Result<Instance, ActionError> {
     crate::sagas::with_action_timeout("instance_create.finish", ACTION_TIMEOUT_STORE, async move {
         let user_ctx = ctx.user_data();
         fence_check(user_ctx).await?;
         let store = user_ctx.store().clone();
-        let instance: Instance = ctx.lookup("instance_after_pin")?;
+        let instance: Instance = ctx.lookup("instance")?;
+        if let Some(cn) = designated_cn(&ctx) {
+            // Release the in-flight reservation now that the instance is
+            // realized (host-CN pinned and counted as an assigned
+            // instance). Release the reservation row ONLY -- not via
+            // `release_reservation`, which also clears the host_cn pin
+            // (correct for the unwind path, fatal here: it would unpin
+            // the instance we just placed).
+            match store.release_cn_reservation(cn, user_ctx.saga_id().0).await {
+                Ok(()) | Err(tritond_store::StoreError::NotFound) => {}
+                Err(e) => return Err(store_err_to_action_err(e)),
+            }
+        }
         let refreshed: Instance = store
             .get_instance(instance.id)
             .await
@@ -488,6 +620,16 @@ async fn finish(ctx: Ctx) -> Result<Instance, ActionError> {
         Ok(refreshed)
     })
     .await
+}
+
+/// The CN the `designate` action chose, or `None` for the unrouted
+/// stub path (`Uuid::nil()` sentinel). Looks up the `host_cn_uuid`
+/// node output; returns `None` if designate hasn't run.
+fn designated_cn(ctx: &Ctx) -> Option<Uuid> {
+    match ctx.lookup::<Uuid>("host_cn_uuid") {
+        Ok(cn) if cn != Uuid::nil() => Some(cn),
+        _ => None,
+    }
 }
 
 async fn no_op_undo(_ctx: Ctx) -> Result<(), anyhow::Error> {
@@ -563,4 +705,11 @@ pub fn decode_store_error_kind(value: &serde_json::Value) -> Option<&'static str
         "backend" => Some("backend"),
         _ => None,
     }
+}
+
+/// `true` when an `action_failed` payload is the `designate` action's
+/// no-eligible-CN outcome (including a lost reservation race). The
+/// handler maps this to a `503`.
+pub fn decode_no_eligible_cn(value: &serde_json::Value) -> bool {
+    value.get("kind").and_then(|k| k.as_str()) == Some("designate.no_eligible_cn")
 }

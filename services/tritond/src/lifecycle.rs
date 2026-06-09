@@ -445,36 +445,6 @@ pub(crate) async fn reject_audit(
     HttpError::for_bad_request(Some("BadRequest".to_string()), message.to_string())
 }
 
-pub(crate) async fn select_tenant_cn_for_instance(
-    store: &dyn Store,
-    allow_unrouted_stub: bool,
-) -> Result<Option<Uuid>, StoreError> {
-    let cns = store.list_cns(Some(CnState::Approved)).await?;
-    let mut best: Option<(usize, u128, Uuid)> = None;
-
-    for cn in cns.iter().filter(|cn| cn_accepts_tenant_jobs(cn)) {
-        let assigned = store.list_instances_for_cn(cn.server_uuid).await?.len();
-        let key = (assigned, cn.server_uuid.as_u128(), cn.server_uuid);
-        if best.is_none_or(|current| key < current) {
-            best = Some(key);
-        }
-    }
-
-    match best {
-        Some((_, _, cn)) => Ok(Some(cn)),
-        None if allow_unrouted_stub => Ok(None),
-        None => Err(StoreError::Conflict(
-            "no eligible tenant CN available for instance placement".to_string(),
-        )),
-    }
-}
-
-pub(crate) fn cn_accepts_tenant_jobs(cn: &Cn) -> bool {
-    cn.state == CnState::Approved
-        && cn.last_seen.is_some()
-        && matches!(cn.role, CnRole::Tenant | CnRole::Both)
-}
-
 /// Drive the instance lifecycle forward in response to an agent
 /// claiming a job. For Provision: Pending → Provisioning. Start
 /// stays Pending (there is no Provisioning step when booting an

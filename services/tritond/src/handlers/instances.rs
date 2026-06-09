@@ -492,35 +492,21 @@ async fn create_instance_inner(
     )
     .await?;
 
-    let target_cn_uuid =
-        match select_tenant_cn_for_instance(ctx.store.as_ref(), ctx.spawn_in_process_provisioner)
-            .await
-        {
-            Ok(target) => target,
-            Err(e) => {
-                ctx.audit
-                    .record_mutation(
-                        &principal,
-                        Action::InstanceCreate,
-                        request_id,
-                        None,
-                        store_error_to_audit_outcome(&e),
-                        serde_json::Value::Null,
-                    )
-                    .await;
-                return Err(store_error_to_http(e));
-            }
-        };
-
     // Allocation through enqueue runs as the `instance-create` saga so
     // any failure unwinds without leaking Instance / NIC / IP / Disk /
     // DhcpLease rows. `Idempotency-Key` is captured on the saga record
-    // so operators can correlate retries.
+    // so operators can correlate retries. Placement is no longer
+    // pre-decided here: the saga's `designate` action runs the
+    // placement engine (reservation + host-CN pin under the saga's
+    // fencing), so a capacity shortage unwinds cleanly and surfaces as
+    // a `503`. `allow_unrouted_stub` preserves the in-process stub
+    // path (docker-up / integration tests) where no approved CN exists.
     let saga_params = crate::sagas::instance_create::InstanceCreateParams {
         tenant_id,
         project_id,
         request: req,
-        target_cn_uuid,
+        force_cn_override: None,
+        allow_unrouted_stub: ctx.spawn_in_process_provisioner,
         idempotency_key: idempotency_key_from_headers(&rqctx),
         await_provision_terminal: ctx.saga_wait_for_agent,
     };
@@ -615,13 +601,22 @@ async fn create_instance_inner(
             // `tcadm sagas get` (SG-4).
             let store_kind_msg: Option<(&'static str, String)> = match &err.error_source {
                 tritond_saga::ActionError::ActionFailed { source_error } => {
-                    let kind = crate::sagas::instance_create::decode_store_error_kind(source_error);
-                    let msg = source_error
-                        .get("message")
-                        .and_then(|m| m.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    kind.map(|k| (k, msg))
+                    // The `designate` action surfaces a no-eligible-CN
+                    // outcome as its own payload kind; map it to 503 so
+                    // a capacity shortage reads as "try again", not a
+                    // server fault.
+                    if crate::sagas::instance_create::decode_no_eligible_cn(source_error) {
+                        Some(("no_eligible_cn", "no eligible compute node for placement; capacity, traits, affinity, or scope pinning rejected every candidate".to_string()))
+                    } else {
+                        let kind =
+                            crate::sagas::instance_create::decode_store_error_kind(source_error);
+                        let msg = source_error
+                            .get("message")
+                            .and_then(|m| m.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        kind.map(|k| (k, msg))
+                    }
                 }
                 _ => None,
             };
@@ -648,6 +643,7 @@ async fn create_instance_inner(
                     msg,
                 ),
                 Some(("not_found", _msg)) => not_found(),
+                Some(("no_eligible_cn", msg)) => HttpError::for_unavail(None, msg),
                 _ => HttpError::for_internal_error(full_msg),
             });
         }

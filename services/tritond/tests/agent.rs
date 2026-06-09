@@ -189,6 +189,46 @@ async fn register_and_approve_with_sysinfo(
     status.api_key.unwrap()
 }
 
+/// Publish a generous `cn-capacity` row for a registered CN so the
+/// placement engine treats it as eligible. Without a capacity row the
+/// `cn-capacity-present` filter rejects the CN and placement returns
+/// 503. Real agents post this via `/v1/agent/capacity`; tests write it
+/// straight to the store.
+async fn publish_capacity(test: &TestServer, cn_uuid: Uuid) {
+    use tritond_store::{CnCapacity, StorageTier, UnderlayCapability, ZpoolCapacity};
+    test.store
+        .put_cn_capacity(CnCapacity {
+            server_uuid: cn_uuid,
+            cpu_cores_physical: 16,
+            cpu_threads_logical: 32,
+            numa_nodes: Vec::new(),
+            ram_total_mb: 65_536,
+            ram_available_mb: 60_000,
+            cpu_utilization_pct: 0.1,
+            zpools: vec![ZpoolCapacity {
+                name: "zones".to_string(),
+                total_bytes: 1_000_000_000_000,
+                free_bytes: 800_000_000_000,
+                tier: StorageTier::Ssd,
+            }],
+            nic_tags: Vec::new(),
+            underlay: UnderlayCapability {
+                ipv4: true,
+                ipv6: false,
+            },
+            devices: Vec::new(),
+            platform_version: "20260101T000000Z".to_string(),
+            hvm_supported: true,
+            reported_at: chrono::Utc::now(),
+            vmm_protocol_version: None,
+            cpu_features: Vec::new(),
+            tsc_offset_ns: None,
+            zpool_props: Default::default(),
+        })
+        .await
+        .expect("put_cn_capacity");
+}
+
 async fn create_nat_gateway(test: &TestServer, silo_name: &str) -> NatGateway {
     let root = root_client(test).await;
     let silo = root
@@ -488,12 +528,16 @@ async fn agent_claim_returns_null_on_empty_queue() {
 }
 
 #[tokio::test]
-async fn instance_create_routes_jobs_to_least_assigned_tenant_cn() {
+async fn instance_create_spreads_across_tenant_cns_via_placement_engine() {
     let test = TestServer::start().await;
     let cn_a = Uuid::from_u128(1);
     let cn_b = Uuid::from_u128(2);
     let key_a = register_and_approve(&test, cn_a, "cn-a").await;
     let key_b = register_and_approve(&test, cn_b, "cn-b").await;
+    // Both CNs must publish capacity or the placement engine rejects
+    // them (cn-capacity-present filter) and create returns 503.
+    publish_capacity(&test, cn_a).await;
+    publish_capacity(&test, cn_b).await;
     let (tenant_id, project_id, image_id, subnet_id) =
         http_instance_fixture(&test, "agent-placement").await;
     let root = root_client(&test).await;
@@ -517,47 +561,42 @@ async fn instance_create_routes_jobs_to_least_assigned_tenant_cn() {
         .unwrap()
         .into_inner();
 
-    assert_eq!(first.host_cn_uuid, Some(cn_a));
-    assert_eq!(second.host_cn_uuid, Some(cn_b));
+    // The default Spread strategy places the two instances on distinct
+    // CNs (the second avoids the first's now-cotenant host). Which CN
+    // the first lands on is a scoring tiebreak, so assert the pair
+    // covers both CNs rather than a fixed order.
+    let first_cn = first.host_cn_uuid.expect("first instance placed");
+    let second_cn = second.host_cn_uuid.expect("second instance placed");
+    let placed: std::collections::HashSet<Uuid> = [first_cn, second_cn].into_iter().collect();
+    assert_eq!(
+        placed,
+        [cn_a, cn_b].into_iter().collect::<std::collections::HashSet<_>>(),
+        "the two instances should spread across both CNs",
+    );
 
-    let agent_b = test.bearer_client(&key_b);
-    let claimed_b = agent_b
-        .agent_claim_job()
-        .body(ClaimJobRequest {
-            claimed_by: cn_b.to_string(),
-        })
-        .send()
-        .await
-        .unwrap()
-        .into_inner()
-        .job
-        .expect("cn-b should claim the second routed job");
-    assert_eq!(claimed_b.target_cn_uuid, Some(cn_b));
-    match claimed_b.kind {
-        tritond_client::types::JobKind::Provision { instance_id } => {
-            assert_eq!(instance_id, second.id);
+    // Each CN's agent claims the Provision job for the instance placed
+    // on it. Map CN -> expected instance from the placement above.
+    let instance_for = |cn: Uuid| if first_cn == cn { first.id } else { second.id };
+    for (cn, key) in [(cn_a, &key_a), (cn_b, &key_b)] {
+        let claimed = test
+            .bearer_client(key)
+            .agent_claim_job()
+            .body(ClaimJobRequest {
+                claimed_by: cn.to_string(),
+            })
+            .send()
+            .await
+            .unwrap()
+            .into_inner()
+            .job
+            .unwrap_or_else(|| panic!("{cn} should claim its routed job"));
+        assert_eq!(claimed.target_cn_uuid, Some(cn));
+        match claimed.kind {
+            tritond_client::types::JobKind::Provision { instance_id } => {
+                assert_eq!(instance_id, instance_for(cn));
+            }
+            other => panic!("expected provision job, got {other:?}"),
         }
-        other => panic!("expected provision job, got {other:?}"),
-    }
-
-    let agent_a = test.bearer_client(&key_a);
-    let claimed_a = agent_a
-        .agent_claim_job()
-        .body(ClaimJobRequest {
-            claimed_by: cn_a.to_string(),
-        })
-        .send()
-        .await
-        .unwrap()
-        .into_inner()
-        .job
-        .expect("cn-a should claim the first routed job");
-    assert_eq!(claimed_a.target_cn_uuid, Some(cn_a));
-    match claimed_a.kind {
-        tritond_client::types::JobKind::Provision { instance_id } => {
-            assert_eq!(instance_id, first.id);
-        }
-        other => panic!("expected provision job, got {other:?}"),
     }
 
     test.close().await;
