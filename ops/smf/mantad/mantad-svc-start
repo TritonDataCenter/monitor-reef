@@ -1,0 +1,52 @@
+#!/bin/bash
+# SMF start method for mantad.
+#
+# Reads SigV4 root creds from /opt/mantad/etc/root-creds (one line,
+# space-separated AKID SECRET — see monitor-reef-98lj closure note
+# for the format gotcha) and the admin bearer token from
+# /opt/mantad/etc/admin-token. LD_LIBRARY_PATH and MANTAD_ENDPOINT
+# come from the manifest's <method_environment> block.
+#
+# Filed under monitor-reef-98lj.
+
+set -e
+
+# Read AKID + SECRET from the one-line space-separated creds file.
+# The format is not KEY=VALUE; using `read -r` avoids the
+# `source` parsing trap that wasted an SSH session on 2026-06-08.
+if [ ! -r /opt/mantad/etc/root-creds ]; then
+    echo "mantad-svc-start: /opt/mantad/etc/root-creds missing or unreadable" >&2
+    exit 1
+fi
+read -r AKID SECRET < /opt/mantad/etc/root-creds
+if [ -z "$AKID" ] || [ -z "$SECRET" ]; then
+    echo "mantad-svc-start: failed to parse AKID/SECRET from /opt/mantad/etc/root-creds" >&2
+    exit 1
+fi
+export MANTAD_ROOT_ACCESS_KEY_ID="$AKID"
+export MANTAD_ROOT_SECRET_ACCESS_KEY="$SECRET"
+
+# Admin token is optional but expected in this deployment.
+if [ -r /opt/mantad/etc/admin-token ]; then
+    MANTAD_ADMIN_TOKEN=$(cat /opt/mantad/etc/admin-token)
+    export MANTAD_ADMIN_TOKEN
+fi
+
+# Background mantad and exit 0. With startd/duration=contract SMF
+# tracks the contracted daemon process: if mantad crashes or is
+# killed, the contract closes and SMF restarts the service. The
+# `&` puts mantad in the background relative to this script, but
+# the daemon stays in the start method's process contract — which
+# is what SMF watches.
+#
+# stdout/stderr go to SMF's per-service log at
+# /var/svc/log/site-mantad:default.log via redirection on the
+# backgrounded daemon. Without redirect, the daemon's stdio would
+# be tied to this script's fds and die when the script exits.
+
+exec >/var/svc/log/site-mantad:default-daemon.log 2>&1 < /dev/null
+/opt/mantad/bin/mantad \
+    --meta-plane=fdb \
+    --fdb-cluster-file=/etc/fdb/fdb.cluster &
+disown
+exit 0

@@ -1,0 +1,98 @@
+<?xml version="1.0"?>
+<!DOCTYPE service_bundle SYSTEM "/usr/share/lib/xml/dtd/service_bundle.dtd.1">
+<!--
+    SMF manifest for mantad on SmartOS / illumos.
+
+    Companion files (must be present BEFORE svccfg import):
+      /opt/mantad/bin/mantad-svc-start    start-method wrapper
+      /opt/mantad/bin/mantad              the daemon binary
+      /opt/mantad/etc/root-creds          SigV4 root creds (mode 600)
+      /opt/mantad/etc/admin-token         admin bearer token (mode 600)
+      /etc/fdb/fdb.cluster                FDB cluster file
+      /opt/fdb/lib/libfdb_c.so            FDB C client (loaded via LD_LIBRARY_PATH)
+
+    Filed under monitor-reef-98lj.
+-->
+<service_bundle type="manifest" name="mantad">
+
+  <service name="site/mantad" type="service" version="1">
+
+    <!-- Single-node single-instance for now. When we go multi-node
+         this manifest can be reused unchanged because instance state
+         is in FDB, not in the SMF service. -->
+    <create_default_instance enabled="false"/>
+    <single_instance/>
+
+    <dependency name="network"
+                grouping="require_all"
+                restart_on="error"
+                type="service">
+      <service_fmri value="svc:/milestone/network:default"/>
+    </dependency>
+
+    <dependency name="filesystem-local"
+                grouping="require_all"
+                restart_on="error"
+                type="service">
+      <service_fmri value="svc:/system/filesystem/local:default"/>
+    </dependency>
+
+    <!-- FDB has no SMF manifest yet (see /opt/fdb/bin/fdb-svc-start.sh).
+         When that lands, add:
+           <dependency name="fdb"
+                       grouping="require_all"
+                       restart_on="error"
+                       type="service">
+             <service_fmri value="svc:/site/fdb:default"/>
+           </dependency>
+         For now mantad will fail to start if FDB is down; the daemon
+         logs a clear "metadata plane: foundationdb" line on startup
+         and connection refused if FDB isn't listening. SMF will retry
+         per startd/ignore_error. -->
+
+    <exec_method type="method"
+                 name="start"
+                 exec="/opt/mantad/bin/mantad-svc-start"
+                 timeout_seconds="60">
+      <method_context>
+        <method_credential user="root" group="root"/>
+        <method_environment>
+          <envvar name="LD_LIBRARY_PATH" value="/opt/fdb/lib"/>
+          <envvar name="MANTAD_ENDPOINT" value="http://192.168.1.182:7443"/>
+        </method_environment>
+      </method_context>
+    </exec_method>
+
+    <exec_method type="method"
+                 name="stop"
+                 exec=":kill"
+                 timeout_seconds="30"/>
+
+    <!-- contract (default for daemons in illumos SMF): the start
+         method backgrounds mantad and exits 0; SMF tracks the
+         contracted daemon process. If the daemon dies (crash, kill)
+         the contract closes and SMF restarts the service.
+
+         ignore_error keeps the service alive across core dumps and
+         operator-issued SIGTERM (so a `pkill -TERM mantad` is
+         treated as a restart trigger, not a permanent failure). -->
+    <property_group name="startd" type="framework">
+      <propval name="duration" type="astring" value="contract"/>
+      <propval name="ignore_error" type="astring" value="core,signal"/>
+    </property_group>
+
+    <stability value="Evolving"/>
+
+    <template>
+      <common_name>
+        <loctext xml:lang="C">Manta S3 surface daemon (mantad)</loctext>
+      </common_name>
+      <documentation>
+        <doc_link name="monitor-reef-98lj"
+                  uri="https://github.com/TritonDataCenter/monitor-reef"/>
+      </documentation>
+    </template>
+
+  </service>
+
+</service_bundle>
