@@ -49,7 +49,7 @@ use tritond_saga::{
     ActionContext, ActionError, ActionFunc, ActionRegistry, DagBuilder, Node, ResourceRef,
     ResourceScope, SagaDag, SagaError, SagaName, SagaResult, TritondSagaType,
 };
-use tritond_placement::PlacementRequest;
+use tritond_placement::{ExplainReport, PlacementRequest};
 use tritond_store::{
     Instance, InstanceAffinity, InstanceBrand, InstanceCreateResult, JobKind, JobStatusKind,
     MetaScope, MetaValue, NewInstance, NewJob,
@@ -74,7 +74,7 @@ pub const SAGA_NAME: &str = "instance-create";
 /// an in-DAG `designate` action that runs the placement engine
 /// (reservation + host-CN pin). The `target_cn_uuid` param is
 /// replaced by `force_cn_override` + `allow_unrouted_stub`.
-pub const SAGA_VERSION: u32 = 3;
+pub const SAGA_VERSION: u32 = 4;
 
 /// Parameters the handler hands to `SagaExecutor::saga_execute`.
 /// Carries everything that doesn't change during the saga: the
@@ -118,6 +118,19 @@ pub struct InstanceCreateParams {
 
 fn default_true() -> bool {
     true
+}
+
+/// Output of the `designate` saga node. Carries the chosen CN plus the
+/// full placement `ExplainReport` (every CN's filter verdicts + scorer
+/// contributions) so the operator surface can render the real decision
+/// in the task log and the Placement explain view. `chosen` is `None`
+/// on the unrouted-stub path. The report rides the saga node output,
+/// which the operations API already exposes — no separate keyspace.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DesignateOutcome {
+    pub chosen: Option<Uuid>,
+    #[serde(default)]
+    pub report: Option<ExplainReport>,
 }
 
 /// Per-action timeouts. The `await` cap mirrors
@@ -187,7 +200,7 @@ pub fn build_dag(params: &InstanceCreateParams) -> SagaResult<Arc<SagaDag>> {
         ),
     ));
     b.append(Node::action(
-        "host_cn_uuid",
+        "placement",
         "designate",
         &*ActionFunc::new_action("instance_create.designate", designate, designate_undo),
     ));
@@ -358,7 +371,7 @@ async fn placement_request_for(
 /// (the in-process stub path) returns `Uuid::nil()` so the instance
 /// stays unrouted; otherwise fails the action so the saga unwinds and
 /// the handler renders a `503`.
-async fn designate(ctx: Ctx) -> Result<Uuid, ActionError> {
+async fn designate(ctx: Ctx) -> Result<DesignateOutcome, ActionError> {
     crate::sagas::with_action_timeout(
         "instance_create.designate",
         ACTION_TIMEOUT_STORE,
@@ -375,15 +388,27 @@ async fn designate(ctx: Ctx) -> Result<Uuid, ActionError> {
                 sec_epoch: user_ctx.sec_epoch().0,
             };
             match pick(&store, request, commit).await {
-                Ok(outcome) => outcome.chosen.ok_or_else(|| {
-                    ActionError::action_failed(serde_json::json!({
-                        "kind": "designate.no_eligible_cn",
-                        "reason": "internal: chosen was None on a commit-success path",
-                    }))
-                }),
+                Ok(outcome) => {
+                    let chosen = outcome.chosen.ok_or_else(|| {
+                        ActionError::action_failed(serde_json::json!({
+                            "kind": "designate.no_eligible_cn",
+                            "reason": "internal: chosen was None on a commit-success path",
+                        }))
+                    })?;
+                    Ok(DesignateOutcome {
+                        chosen: Some(chosen),
+                        report: Some(outcome.report),
+                    })
+                }
                 Err(PickError::NoEligibleCn { report }) => {
                     if params.allow_unrouted_stub {
-                        Ok(Uuid::nil())
+                        // Unrouted stub path: no CN pinned, but keep the
+                        // report so the operator can see why nothing was
+                        // eligible.
+                        Ok(DesignateOutcome {
+                            chosen: None,
+                            report: Some(*report),
+                        })
                     } else {
                         Err(ActionError::action_failed(serde_json::json!({
                             "kind": "designate.no_eligible_cn",
@@ -400,7 +425,10 @@ async fn designate(ctx: Ctx) -> Result<Uuid, ActionError> {
                     reason,
                 })) => {
                     if params.allow_unrouted_stub {
-                        Ok(Uuid::nil())
+                        Ok(DesignateOutcome {
+                            chosen: None,
+                            report: None,
+                        })
                     } else {
                         Err(ActionError::action_failed(serde_json::json!({
                             "kind": "designate.no_eligible_cn",
@@ -417,13 +445,16 @@ async fn designate(ctx: Ctx) -> Result<Uuid, ActionError> {
 
 async fn designate_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
     let store = ctx.user_data().store().clone();
-    let cn: Uuid = ctx.lookup("host_cn_uuid").unwrap_or(Uuid::nil());
-    if cn == Uuid::nil() {
+    let cn = ctx
+        .lookup::<DesignateOutcome>("placement")
+        .ok()
+        .and_then(|d| d.chosen);
+    let Some(cn) = cn else {
         // Unrouted (stub) path wrote no reservation; the host-CN pin,
         // if any, clears when `create_instance_record`'s undo deletes
         // the instance row.
         return Ok(());
-    }
+    };
     let instance: Instance = ctx.lookup("instance")?;
     let saga_id = ctx.user_data().saga_id().0;
     release_reservation(&store, cn, saga_id, instance.id)
@@ -623,13 +654,13 @@ async fn finish(ctx: Ctx) -> Result<Instance, ActionError> {
 }
 
 /// The CN the `designate` action chose, or `None` for the unrouted
-/// stub path (`Uuid::nil()` sentinel). Looks up the `host_cn_uuid`
-/// node output; returns `None` if designate hasn't run.
+/// stub path. Reads the `placement` node's [`DesignateOutcome`]
+/// output; returns `None` if designate hasn't run.
 fn designated_cn(ctx: &Ctx) -> Option<Uuid> {
-    match ctx.lookup::<Uuid>("host_cn_uuid") {
-        Ok(cn) if cn != Uuid::nil() => Some(cn),
-        _ => None,
-    }
+    ctx.lookup::<DesignateOutcome>("placement")
+        .ok()
+        .and_then(|d| d.chosen)
+        .filter(|cn| *cn != Uuid::nil())
 }
 
 async fn no_op_undo(_ctx: Ctx) -> Result<(), anyhow::Error> {
