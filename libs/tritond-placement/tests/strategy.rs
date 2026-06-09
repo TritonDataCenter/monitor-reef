@@ -53,6 +53,8 @@ fn make_cn(uuid: Uuid, fault_domain: Option<&str>) -> CnView {
                 ram_mb: 65_536,
             }],
             ram_total_mb: 65_536,
+            ram_available_mb: 60_000,
+            cpu_utilization_pct: 0.10,
             zpools: vec![ZpoolView {
                 name: "zones".into(),
                 total_bytes: 1_000_000_000_000,
@@ -261,8 +263,8 @@ fn explain_report_per_cn_carries_filter_and_scorer_breakdown() {
     // Default chain ships 23 filters (18 RFD-00005 + 5 LM-0
     // migration filters); every one ran.
     assert_eq!(entry.filter_results.len(), 23);
-    // Default scorer chain has 12 entries; all 12 contributions land.
-    assert_eq!(entry.scorer_results.len(), 12);
+    // Default scorer chain has 11 entries; all 11 contributions land.
+    assert_eq!(entry.scorer_results.len(), 11);
     // Total score is the sum of contributions.
     let sum: f32 = entry.scorer_results.iter().map(|c| c.contribution).sum();
     let total = entry.total_score.unwrap_or(0.0);
@@ -272,7 +274,7 @@ fn explain_report_per_cn_carries_filter_and_scorer_breakdown() {
     // Bounded audit projection shape.
     let audit = report.bounded_for_audit();
     assert_eq!(audit.chosen, Some(cn.server_uuid));
-    assert_eq!(audit.chosen_breakdown.len(), 12);
+    assert_eq!(audit.chosen_breakdown.len(), 11);
 }
 
 #[test]

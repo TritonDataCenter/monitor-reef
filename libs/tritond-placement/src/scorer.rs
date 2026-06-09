@@ -23,14 +23,13 @@
 //! * [`ScoreFewerCotenantZones`]
 //! * [`ScoreUniformRandom`]
 //!
-//! ## CH-load-based (4)
+//! ## CH-load-based (3)
 //!
 //! Each gates on `cn-load-summary.stale` -- when stale (or
 //! absent), the contribution is `0.0` and the chain runner /
 //! `ExplainReport` notes the skip.
 //!
 //! * [`ScoreAvoidHotNow`]
-//! * [`ScoreAvoidPeaky`]
 //! * [`ScorePreferLowBaseline`]
 //! * [`ScoreDiurnalFit`] -- off by default (input signal rare)
 //!
@@ -390,30 +389,7 @@ impl Scorer for ScoreAvoidHotNow {
 }
 
 // ---------------------------------------------------------------------------
-// 10. score-avoid-peaky
-// ---------------------------------------------------------------------------
-
-pub struct ScoreAvoidPeaky;
-impl Scorer for ScoreAvoidPeaky {
-    fn name(&self) -> &'static str {
-        "score-avoid-peaky"
-    }
-    fn default_weight(&self) -> f32 {
-        1.0
-    }
-    fn score(&self, cn: &CnView, _req: &PlacementRequest, _ctx: &ChainContext) -> f32 {
-        let Some(load) = cn.load_summary.as_ref() else {
-            return 0.0;
-        };
-        if load.stale {
-            return 0.0;
-        }
-        (1.0 - load.cpu_p95_7d.clamp(0.0, 1.0)).clamp(0.0, 1.0)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// 11. score-prefer-low-baseline
+// 10. score-prefer-low-baseline
 // ---------------------------------------------------------------------------
 
 pub struct ScorePreferLowBaseline;
@@ -436,7 +412,7 @@ impl Scorer for ScorePreferLowBaseline {
 }
 
 // ---------------------------------------------------------------------------
-// 12. score-diurnal-fit (off by default)
+// 11. score-diurnal-fit (off by default)
 //
 // Per the RFD: "When request.affinity carries an expected-load
 // hint (or a sibling reference), prefers CNs whose 24-hour quiet
@@ -478,7 +454,6 @@ pub fn default_scorer_chain() -> Vec<(Arc<dyn Scorer>, f32)> {
         Arc::new(ScoreFewerCotenantZones),
         Arc::new(ScoreUniformRandom),
         Arc::new(ScoreAvoidHotNow),
-        Arc::new(ScoreAvoidPeaky),
         Arc::new(ScorePreferLowBaseline),
         Arc::new(ScoreDiurnalFit),
     ];
@@ -882,7 +857,7 @@ mod tests {
 
     // ---- CH-load scorers ----
 
-    fn load(stale: bool, cpu_p95_5m: f32, cpu_p95_7d: f32, cpu_p50_1d: f32) -> CnLoadSummaryView {
+    fn load(stale: bool, cpu_p95_5m: f32, cpu_p50_1d: f32) -> CnLoadSummaryView {
         CnLoadSummaryView {
             last_refreshed_at: now(),
             stale,
@@ -890,7 +865,6 @@ mod tests {
             cpu_p95_5m,
             cpu_p50_1d,
             cpu_p95_1d: 0.0,
-            cpu_p95_7d,
             ram_used_p95_5m: 0.0,
             nic_tx_bps_p95_5m: 0,
             nic_rx_bps_p95_5m: 0,
@@ -904,7 +878,6 @@ mod tests {
         let w = StrategyWeights::new();
         let ctx = make_ctx(&w, &[]);
         assert_eq!(ScoreAvoidHotNow.score(&cn, &req, &ctx), 0.0);
-        assert_eq!(ScoreAvoidPeaky.score(&cn, &req, &ctx), 0.0);
         assert_eq!(ScorePreferLowBaseline.score(&cn, &req, &ctx), 0.0);
         assert_eq!(ScoreDiurnalFit.score(&cn, &req, &ctx), 0.0);
     }
@@ -912,19 +885,18 @@ mod tests {
     #[test]
     fn ch_load_scorers_return_zero_when_summary_is_stale() {
         let mut cn = make_cn();
-        cn.load_summary = Some(load(true, 0.10, 0.10, 0.10));
+        cn.load_summary = Some(load(true, 0.10, 0.10));
         let req = make_req();
         let w = StrategyWeights::new();
         let ctx = make_ctx(&w, &[]);
         assert_eq!(ScoreAvoidHotNow.score(&cn, &req, &ctx), 0.0);
-        assert_eq!(ScoreAvoidPeaky.score(&cn, &req, &ctx), 0.0);
         assert_eq!(ScorePreferLowBaseline.score(&cn, &req, &ctx), 0.0);
     }
 
     #[test]
     fn score_avoid_hot_now_higher_when_quiet() {
         let mut cn = make_cn();
-        cn.load_summary = Some(load(false, 0.10, 0.0, 0.0));
+        cn.load_summary = Some(load(false, 0.10, 0.0));
         let req = make_req();
         let w = StrategyWeights::new();
         let ctx = make_ctx(&w, &[]);
@@ -933,20 +905,9 @@ mod tests {
     }
 
     #[test]
-    fn score_avoid_peaky_lower_when_weekly_peak_high() {
-        let mut cn = make_cn();
-        cn.load_summary = Some(load(false, 0.10, 0.95, 0.10));
-        let req = make_req();
-        let w = StrategyWeights::new();
-        let ctx = make_ctx(&w, &[]);
-        let s = ScoreAvoidPeaky.score(&cn, &req, &ctx);
-        assert!(s < 0.1);
-    }
-
-    #[test]
     fn score_prefer_low_baseline_lower_when_24h_median_high() {
         let mut cn = make_cn();
-        cn.load_summary = Some(load(false, 0.10, 0.0, 0.85));
+        cn.load_summary = Some(load(false, 0.10, 0.85));
         let req = make_req();
         let w = StrategyWeights::new();
         let ctx = make_ctx(&w, &[]);
@@ -988,7 +949,9 @@ mod tests {
     // ---- default chain integration ----
 
     #[test]
-    fn default_scorer_chain_has_twelve_entries() {
-        assert_eq!(default_scorer_chain().len(), 12);
+    fn default_scorer_chain_has_eleven_entries() {
+        // PL-6 retired `score-avoid-peaky` (it read only the dropped
+        // 7-day window), taking the chain from 12 to 11.
+        assert_eq!(default_scorer_chain().len(), 11);
     }
 }

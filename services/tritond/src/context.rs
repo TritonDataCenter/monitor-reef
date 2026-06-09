@@ -99,6 +99,10 @@ pub struct ApiContext {
     /// `None` by default so tests don't get unexpected lease deletes
     /// interleaved with their IPAM assertions.
     pub dhcp_reconciler: Option<crate::dhcp_reconciler::ReconcilerConfig>,
+    /// `None` by default; `main` enables it (RFD 00005 PL-6) only when
+    /// a ClickHouse URL resolves. Tests leave it off so background
+    /// roll-up writes don't race their placement assertions.
+    pub load_materializer: Option<crate::load_materializer::LoadMaterializerConfig>,
     /// HMAC-SHA256 key for managed-zone identity (provision-time
     /// stamping into SmartOS `internal_metadata` + verification in
     /// CN status reports). `ApiContext::new` generates fresh per
@@ -208,6 +212,7 @@ impl ApiContext {
             spawn_in_process_provisioner: true,
             sweeper: None,
             dhcp_reconciler: None,
+            load_materializer: None,
             identity_hmac_key,
             metrics: Arc::new(tritond_metrics::store::RingBufferStore::new()),
             logs: Arc::new(tritond_logs::RingBufferLogStore::new()),
@@ -280,6 +285,18 @@ impl ApiContext {
     #[must_use]
     pub fn with_dhcp_reconciler(mut self, cfg: crate::dhcp_reconciler::ReconcilerConfig) -> Self {
         self.dhcp_reconciler = Some(cfg);
+        self
+    }
+
+    /// Enable the placement load materializer (RFD 00005 PL-6). `main`
+    /// calls this only when a ClickHouse URL resolves; tests leave it
+    /// off. Defaults to `None`.
+    #[must_use]
+    pub fn with_load_materializer(
+        mut self,
+        cfg: crate::load_materializer::LoadMaterializerConfig,
+    ) -> Self {
+        self.load_materializer = Some(cfg);
         self
     }
 

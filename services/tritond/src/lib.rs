@@ -26,6 +26,7 @@ pub mod dhcp_reconciler;
 pub mod edge;
 pub mod identityd_verify;
 pub mod legacy_classify;
+pub mod load_materializer;
 pub mod peer_invalidations;
 pub mod placement;
 pub mod provisioner;

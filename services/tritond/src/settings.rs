@@ -89,6 +89,21 @@ fn apply_env_overrides(mut s: Settings, env: impl Fn(&str) -> Option<String>) ->
     if let Some(v) = u64v(env_str_key(ConfigKey::SagaRetentionSecs)) {
         s.saga_retention_secs = v;
     }
+    if let Some(v) = u64v(env_str_key(
+        ConfigKey::PlacementLoadMaterialiserIntervalSecs,
+    )) {
+        s.placement_load_materialiser_interval_secs = v;
+    }
+    if let Some(v) = u64v(env_str_key(
+        ConfigKey::PlacementLoadMaterialiserStalenessTicks,
+    )) {
+        s.placement_load_materialiser_staleness_ticks = v;
+    }
+    if let Some(url) = strv(env_str_key(
+        ConfigKey::PlacementLoadMaterialiserClickhouseUrl,
+    )) {
+        s.placement_load_materialiser_clickhouse_url = Some(url);
+    }
     s
 }
 

@@ -32,7 +32,9 @@ use chrono::{DateTime, Utc};
 use reqwest::Client as HttpClient;
 
 use super::ring::bucket_samples;
-use super::{MetricsHealth, MetricsStore, MetricsStoreError, RangeQuery, RangeResult, SeriesPoints};
+use super::{
+    MetricsHealth, MetricsStore, MetricsStoreError, RangeQuery, RangeResult, SeriesPoints,
+};
 use crate::sample::{Datum, Sample, SampleIdentity};
 use crate::schema::SchemaName;
 
@@ -101,6 +103,17 @@ impl ClickHouseStore {
             )));
         }
         Ok(text)
+    }
+
+    /// Run an aggregation query and return the raw response body.
+    ///
+    /// The caller composes the SQL (typically ending in `FORMAT
+    /// JSONEachRow`) and parses the body; this is just the transport.
+    /// Used by the placement load-materializer (RFD 00005 PL-6), whose
+    /// roll-up SQL has no home on the `MetricsStore` trait. Public
+    /// because [`post`](Self::post) is private to the module.
+    pub async fn query_jsoneachrow(&self, sql: String) -> Result<String, MetricsStoreError> {
+        self.post(sql).await
     }
 
     /// Run the embedded schema migrations (idempotent). Call once at
@@ -386,11 +399,17 @@ fn schema_table(schema: &str) -> &'static str {
             || x == s::DISK_LATENCY_PER_CN
             || x == s::ZFS_ARC_SIZE_PER_CN
             || x == s::ZPOOL_CAPACITY_PER_CN
-            || x == s::DISK_TEMP_PER_CN =>
+            || x == s::DISK_TEMP_PER_CN
+            || x == s::PLACEMENT_LOAD_SUMMARY_STALE_ROWS =>
         {
             "measurements_gauge_u64"
         }
-        x if x == s::LOAD_PER_CN || x == s::DISK_BUSY_PER_CN => "measurements_gauge_f64",
+        x if x == s::LOAD_PER_CN
+            || x == s::DISK_BUSY_PER_CN
+            || x == s::PLACEMENT_LOAD_MATERIALIZER_SECONDS =>
+        {
+            "measurements_gauge_f64"
+        }
         _ => "measurements_gauge_f64",
     }
 }

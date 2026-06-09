@@ -129,6 +129,25 @@ pub mod schemas {
     /// Datum `GaugeU64` (degrees C). (Phase B2, with the SMART reader.)
     pub const DISK_TEMP_PER_CN: &str = "triton.disk_temp_per_cn";
 
+    // ── Placement load materializer (RFD 00005 PL-6) ────────────────
+    // Control-plane self-metrics emitted by tritond's load-materializer
+    // tick (not agent-sourced). No `series`. The Prometheus exposition
+    // maps the schema name verbatim (`.` -> `_`), so the `tritond.`
+    // prefix here renders the exposed `tritond_*` names the operator
+    // scrapes (cf. `prometheus::prom_metric_name`).
+
+    /// Materializer pass duration, seconds (fractional). Datum
+    /// `GaugeF64`. One sample per tick. Exposed as
+    /// `tritond_placement_load_materializer_seconds` -- seconds, per the
+    /// Prometheus base-unit convention.
+    pub const PLACEMENT_LOAD_MATERIALIZER_SECONDS: &str =
+        "tritond.placement_load_materializer_seconds";
+    /// Count of `cn-load-summary` rows written `stale` in the latest
+    /// pass. Datum `GaugeU64` (a current count, not a monotonic total --
+    /// every pass rewrites all rows, so the value rises and falls).
+    /// Exposed as `tritond_placement_load_summary_stale_rows`.
+    pub const PLACEMENT_LOAD_SUMMARY_STALE_ROWS: &str = "tritond.placement_load_summary_stale_rows";
+
     /// Every schema tritond knows how to ingest + serve, so a client can
     /// ask tritond "what can I query?" rather than reading source. Keep
     /// in sync with the consts above.
@@ -151,6 +170,8 @@ pub mod schemas {
         ZFS_ARC_SIZE_PER_CN,
         ZPOOL_CAPACITY_PER_CN,
         DISK_TEMP_PER_CN,
+        PLACEMENT_LOAD_MATERIALIZER_SECONDS,
+        PLACEMENT_LOAD_SUMMARY_STALE_ROWS,
     ];
 }
 

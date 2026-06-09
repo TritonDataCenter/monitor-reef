@@ -68,7 +68,7 @@ pub use filter::{
     CnUnderlay, CnZpoolHasSpace, default_filter_chain,
 };
 pub use scorer::{
-    ScoreAffinityPreferred, ScoreAvoidHotNow, ScoreAvoidPeaky, ScoreDiskHeadroom, ScoreDiurnalFit,
+    ScoreAffinityPreferred, ScoreAvoidHotNow, ScoreDiskHeadroom, ScoreDiurnalFit,
     ScoreFewerCotenantZones, ScorePackByFaultDomain, ScorePlatformCurrent, ScorePreferLowBaseline,
     ScoreRamHeadroom, ScoreSpreadByFaultDomain, ScoreUniformRandom, default_scorer_chain,
     resolved_weights, strategy_overrides,

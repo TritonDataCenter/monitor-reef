@@ -3565,6 +3565,13 @@ pub const DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS: u64 = 7 * 24 * 60 * 60;
 /// RFD 00004 SG-4.
 pub const DEFAULT_SAGA_RETENTION_SECS: u64 = 30 * 24 * 60 * 60;
 
+/// Default cadence of the placement load materializer, in seconds
+/// (RFD 00005 PL-6).
+pub const DEFAULT_PLACEMENT_LOAD_MATERIALISER_INTERVAL_SECS: u64 = 60;
+/// Default number of materializer ticks a `cn-load-summary` row may go
+/// un-refreshed before the row is treated as stale.
+pub const DEFAULT_PLACEMENT_LOAD_MATERIALISER_STALENESS_TICKS: u64 = 3;
+
 /// Which metrics backend `tritond` stores timeseries in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -3663,6 +3670,36 @@ pub struct Settings {
     /// managed from the admin console's Placement surface (RFD 00005).
     #[serde(rename = "placement.profiles", default)]
     pub placement_profiles: PlacementProfiles,
+    /// Cadence, in seconds, of the placement load materializer
+    /// (RFD 00005 PL-6). The materializer rolls per-CN ClickHouse load
+    /// metrics into `cn-load-summary` rows for the load-history
+    /// scorers. Default 60s.
+    #[serde(
+        rename = "placement.load_materialiser.interval_seconds",
+        default = "default_placement_load_materialiser_interval_secs"
+    )]
+    pub placement_load_materialiser_interval_secs: u64,
+    /// Number of materializer ticks a `cn-load-summary` row may go
+    /// un-refreshed before the row is treated as stale. Default 3.
+    #[serde(
+        rename = "placement.load_materialiser.staleness_ticks",
+        default = "default_placement_load_materialiser_staleness_ticks"
+    )]
+    pub placement_load_materialiser_staleness_ticks: u64,
+    /// ClickHouse HTTP base URL the materializer queries. When `None`
+    /// (the default) the materializer falls back to
+    /// [`Settings::metrics_clickhouse_url`]; if that is also `None` the
+    /// materializer task is not spawned.
+    #[serde(rename = "placement.load_materialiser.clickhouse_url", default)]
+    pub placement_load_materialiser_clickhouse_url: Option<String>,
+}
+
+fn default_placement_load_materialiser_interval_secs() -> u64 {
+    DEFAULT_PLACEMENT_LOAD_MATERIALISER_INTERVAL_SECS
+}
+
+fn default_placement_load_materialiser_staleness_ticks() -> u64 {
+    DEFAULT_PLACEMENT_LOAD_MATERIALISER_STALENESS_TICKS
 }
 
 impl Default for Settings {
@@ -3682,6 +3719,11 @@ impl Default for Settings {
             saga_retention_secs: DEFAULT_SAGA_RETENTION_SECS,
             identityd_issuer_url: None,
             placement_profiles: PlacementProfiles::default(),
+            placement_load_materialiser_interval_secs:
+                DEFAULT_PLACEMENT_LOAD_MATERIALISER_INTERVAL_SECS,
+            placement_load_materialiser_staleness_ticks:
+                DEFAULT_PLACEMENT_LOAD_MATERIALISER_STALENESS_TICKS,
+            placement_load_materialiser_clickhouse_url: None,
         }
     }
 }
@@ -3743,7 +3785,8 @@ fn default_placement_profiles() -> Vec<PlacementProfile> {
     vec![
         PlacementProfile {
             name: "spread".to_string(),
-            description: "Availability-first: distribute across fault domains and hosts.".to_string(),
+            description: "Availability-first: distribute across fault domains and hosts."
+                .to_string(),
             builtin: true,
             weights: w(&[
                 ("score-ram-headroom", 2.0),
@@ -3755,14 +3798,14 @@ fn default_placement_profiles() -> Vec<PlacementProfile> {
                 ("score-fewer-cotenant-zones", 0.5),
                 ("score-uniform-random", 0.1),
                 ("score-avoid-hot-now", 1.5),
-                ("score-avoid-peaky", 1.0),
                 ("score-prefer-low-baseline", 0.75),
                 ("score-diurnal-fit", 0.0),
             ]),
         },
         PlacementProfile {
             name: "consolidate".to_string(),
-            description: "Density-first: bin-pack onto the fewest nodes for power/cost.".to_string(),
+            description: "Density-first: bin-pack onto the fewest nodes for power/cost."
+                .to_string(),
             builtin: true,
             weights: w(&[
                 ("score-ram-headroom", 1.0),
@@ -3774,7 +3817,6 @@ fn default_placement_profiles() -> Vec<PlacementProfile> {
                 ("score-fewer-cotenant-zones", 0.0),
                 ("score-uniform-random", 0.1),
                 ("score-avoid-hot-now", 0.5),
-                ("score-avoid-peaky", 0.5),
                 ("score-prefer-low-baseline", 0.25),
                 ("score-diurnal-fit", 0.0),
             ]),
@@ -3793,7 +3835,6 @@ fn default_placement_profiles() -> Vec<PlacementProfile> {
                 ("score-fewer-cotenant-zones", 0.5),
                 ("score-uniform-random", 0.1),
                 ("score-avoid-hot-now", 1.0),
-                ("score-avoid-peaky", 0.75),
                 ("score-prefer-low-baseline", 0.5),
                 ("score-diurnal-fit", 0.0),
             ]),
@@ -3812,7 +3853,6 @@ fn default_placement_profiles() -> Vec<PlacementProfile> {
                 ("score-fewer-cotenant-zones", 1.0),
                 ("score-uniform-random", 0.0),
                 ("score-avoid-hot-now", 2.5),
-                ("score-avoid-peaky", 2.0),
                 ("score-prefer-low-baseline", 1.5),
                 ("score-diurnal-fit", 0.5),
             ]),
@@ -3831,7 +3871,6 @@ fn default_placement_profiles() -> Vec<PlacementProfile> {
                 ("score-fewer-cotenant-zones", 2.5),
                 ("score-uniform-random", 0.1),
                 ("score-avoid-hot-now", 1.5),
-                ("score-avoid-peaky", 1.0),
                 ("score-prefer-low-baseline", 0.75),
                 ("score-diurnal-fit", 0.0),
             ]),
@@ -3850,7 +3889,6 @@ fn default_placement_profiles() -> Vec<PlacementProfile> {
                 ("score-fewer-cotenant-zones", 0.0),
                 ("score-uniform-random", 0.0),
                 ("score-avoid-hot-now", 0.25),
-                ("score-avoid-peaky", 0.25),
                 ("score-prefer-low-baseline", 0.0),
                 ("score-diurnal-fit", 1.5),
             ]),
@@ -3932,11 +3970,17 @@ pub enum ConfigKey {
     SagaRetentionSecs,
     /// [`Settings::placement_profiles`]
     PlacementProfiles,
+    /// [`Settings::placement_load_materialiser_interval_secs`]
+    PlacementLoadMaterialiserIntervalSecs,
+    /// [`Settings::placement_load_materialiser_staleness_ticks`]
+    PlacementLoadMaterialiserStalenessTicks,
+    /// [`Settings::placement_load_materialiser_clickhouse_url`]
+    PlacementLoadMaterialiserClickhouseUrl,
 }
 
 impl ConfigKey {
     /// Every key, in the order `tcadm config list` displays them.
-    pub const ALL: [ConfigKey; 13] = [
+    pub const ALL: [ConfigKey; 16] = [
         ConfigKey::ProvisionerInprocessDisabled,
         ConfigKey::SweeperIntervalSecs,
         ConfigKey::StaleClaimThresholdSecs,
@@ -3950,6 +3994,9 @@ impl ConfigKey {
         ConfigKey::ReservoirPercentDefault,
         ConfigKey::SagaRetentionSecs,
         ConfigKey::PlacementProfiles,
+        ConfigKey::PlacementLoadMaterialiserIntervalSecs,
+        ConfigKey::PlacementLoadMaterialiserStalenessTicks,
+        ConfigKey::PlacementLoadMaterialiserClickhouseUrl,
     ];
 
     /// Dotted wire name. Must exactly equal the `#[serde(rename = ...)]`
@@ -3969,6 +4016,15 @@ impl ConfigKey {
             ConfigKey::ReservoirPercentDefault => "reservoir.percent_default",
             ConfigKey::SagaRetentionSecs => "saga.retention_secs",
             ConfigKey::PlacementProfiles => "placement.profiles",
+            ConfigKey::PlacementLoadMaterialiserIntervalSecs => {
+                "placement.load_materialiser.interval_seconds"
+            }
+            ConfigKey::PlacementLoadMaterialiserStalenessTicks => {
+                "placement.load_materialiser.staleness_ticks"
+            }
+            ConfigKey::PlacementLoadMaterialiserClickhouseUrl => {
+                "placement.load_materialiser.clickhouse_url"
+            }
         }
     }
 
@@ -4015,6 +4071,15 @@ impl ConfigKey {
             ConfigKey::PlacementProfiles => {
                 "placement strategy profiles + active selection (managed from the Placement console)"
             }
+            ConfigKey::PlacementLoadMaterialiserIntervalSecs => {
+                "placement load-materializer cadence, in seconds (default 60)"
+            }
+            ConfigKey::PlacementLoadMaterialiserStalenessTicks => {
+                "ticks a cn-load-summary row may go un-refreshed before it is marked stale (default 3)"
+            }
+            ConfigKey::PlacementLoadMaterialiserClickhouseUrl => {
+                "ClickHouse HTTP base URL for the load materializer (falls back to metrics.clickhouse_url)"
+            }
         }
     }
 
@@ -4046,6 +4111,15 @@ impl ConfigKey {
             // No env override; placement profiles are managed via the
             // config API / Placement console only.
             ConfigKey::PlacementProfiles => return None,
+            ConfigKey::PlacementLoadMaterialiserIntervalSecs => {
+                "TRITOND_PLACEMENT_LOAD_MATERIALISER_INTERVAL_SECS"
+            }
+            ConfigKey::PlacementLoadMaterialiserStalenessTicks => {
+                "TRITOND_PLACEMENT_LOAD_MATERIALISER_STALENESS_TICKS"
+            }
+            ConfigKey::PlacementLoadMaterialiserClickhouseUrl => {
+                "TRITOND_PLACEMENT_LOAD_MATERIALISER_CLICKHOUSE_URL"
+            }
         })
     }
 }
@@ -4751,36 +4825,27 @@ pub struct CnLoadSummary {
     pub cpu_p50_1d: f32,
     pub cpu_p95_1d: f32,
     pub cpu_max_1d: f32,
-    pub cpu_p50_7d: f32,
-    pub cpu_p95_7d: f32,
-    pub cpu_max_7d: f32,
 
     // RAM used (bytes).
     pub ram_used_p95_5m: u64,
     pub ram_used_p95_1d: u64,
-    pub ram_used_p95_7d: u64,
 
     // Disk used per zpool (bytes). Keys match `CnCapacity.zpools[].name`.
     #[serde(default)]
     pub disk_used_bytes_p95_5m: BTreeMap<String, u64>,
     #[serde(default)]
     pub disk_used_bytes_p95_1d: BTreeMap<String, u64>,
-    #[serde(default)]
-    pub disk_used_bytes_p95_7d: BTreeMap<String, u64>,
 
     // NIC throughput (bytes/sec).
     pub nic_tx_bps_p95_5m: u64,
     pub nic_tx_bps_p95_1d: u64,
-    pub nic_tx_bps_p95_7d: u64,
     pub nic_rx_bps_p95_5m: u64,
     pub nic_rx_bps_p95_1d: u64,
-    pub nic_rx_bps_p95_7d: u64,
 
     // Sample-thinness gate: if any of these is below a per-window
     // minimum, the row is treated as `stale`.
     pub samples_5m: u32,
     pub samples_1d: u32,
-    pub samples_7d: u32,
 
     pub last_refreshed_at: DateTime<Utc>,
     /// Set by the materialiser when (a) the last refresh is older

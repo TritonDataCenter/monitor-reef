@@ -689,12 +689,11 @@ pub struct CnLoadSummaryView {
     pub stale: bool,
 
     /// CPU utilisation (0.0..=1.0) median / 95th percentile over the
-    /// last 5 minutes / 1 day / 7 days.
+    /// last 5 minutes / 1 day.
     pub cpu_p50_5m: f32,
     pub cpu_p95_5m: f32,
     pub cpu_p50_1d: f32,
     pub cpu_p95_1d: f32,
-    pub cpu_p95_7d: f32,
 
     /// RAM utilisation (0.0..=1.0) 95th percentile over the last
     /// 5 minutes.

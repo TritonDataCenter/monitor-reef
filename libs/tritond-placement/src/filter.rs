@@ -1903,7 +1903,6 @@ mod tests {
             cpu_p95_5m: 0.95,
             cpu_p50_1d: 0.3,
             cpu_p95_1d: 0.4,
-            cpu_p95_7d: 0.5,
             ram_used_p95_5m: 0.5,
             nic_tx_bps_p95_5m: 0,
             nic_rx_bps_p95_5m: 0,

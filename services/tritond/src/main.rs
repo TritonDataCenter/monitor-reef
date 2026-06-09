@@ -49,7 +49,7 @@ use tritond::audit::AuditService;
 use tritond::auth::AuthService;
 use tritond::bootstrap_config::BootstrapConfig;
 use tritond::{
-    ApiContext, SweeperConfig, VERSION, bootstrap, dhcp_reconciler, settings,
+    ApiContext, SweeperConfig, VERSION, bootstrap, dhcp_reconciler, load_materializer, settings,
     start_server_with_context,
 };
 use tritond_audit::{Chain, MemChain};
@@ -197,6 +197,43 @@ async fn serve(boot: BootstrapConfig) -> Result<()> {
         interval: dhcp_reconcile_interval,
         gc_threshold: dhcp_gc_threshold,
     });
+
+    // Placement load materializer (RFD 00005 PL-6). Resolve the
+    // ClickHouse URL from its own setting, falling back to
+    // `metrics.clickhouse_url`. When neither resolves, the task is not
+    // spawned (the load-history scorers fall back to the capacity
+    // floor) -- a no-op deployment, logged once.
+    match resolved
+        .placement_load_materialiser_clickhouse_url
+        .clone()
+        .or_else(|| resolved.metrics_clickhouse_url.clone())
+    {
+        Some(url) => {
+            let lm_interval =
+                Duration::from_secs(resolved.placement_load_materialiser_interval_secs.max(1));
+            info!(
+                clickhouse_url = %url,
+                interval_secs = lm_interval.as_secs(),
+                "enabling placement load materializer",
+            );
+            context = context.with_load_materializer(load_materializer::LoadMaterializerConfig {
+                interval: lm_interval,
+                staleness_ticks: resolved.placement_load_materialiser_staleness_ticks as u32,
+                // Per-window sample floors mirror the placement
+                // MaterialiserConfig defaults (RFD 00005 PL-6); not
+                // operator-tunable in this release.
+                min_samples_5m: 3,
+                min_samples_1d: 12,
+                clickhouse_url: url,
+            });
+        }
+        None => {
+            info!(
+                "placement load materializer disabled: no clickhouse url \
+                 (placement.load_materialiser.clickhouse_url / metrics.clickhouse_url)"
+            );
+        }
+    }
 
     // Metrics backend. Default is the in-memory ring buffer (set up by
     // ApiContext::new). When `metrics.backend` is `clickhouse` and

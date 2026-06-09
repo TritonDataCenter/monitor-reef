@@ -106,7 +106,6 @@ pub struct MaterialiserConfig {
 
     pub min_samples_5m: u32,
     pub min_samples_1d: u32,
-    pub min_samples_7d: u32,
 }
 
 impl Default for MaterialiserConfig {
@@ -117,7 +116,6 @@ impl Default for MaterialiserConfig {
             clickhouse_url: String::new(),
             min_samples_5m: 3,
             min_samples_1d: 12,
-            min_samples_7d: 24,
         }
     }
 }

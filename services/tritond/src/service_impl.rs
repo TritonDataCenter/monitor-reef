@@ -13,7 +13,7 @@
 
 use crate::error::*;
 use crate::validate::*;
-use crate::{dhcp_reconciler, provisioner, sweeper};
+use crate::{dhcp_reconciler, load_materializer, provisioner, sweeper};
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -2175,6 +2175,16 @@ pub async fn start_server_with_context(
     if let Some(rc) = context.dhcp_reconciler {
         let _reconciler =
             dhcp_reconciler::spawn(Arc::clone(&context.store), Arc::clone(&context.audit), rc);
+    }
+
+    // The placement load materializer (RFD 00005 PL-6) rolls per-CN
+    // ClickHouse load metrics into cn-load-summary rows for the
+    // load-history scorers. Enabled by `main` only when a ClickHouse
+    // URL resolves; reads its config before `context` is moved into
+    // the HTTP server below.
+    if let Some(lm) = context.load_materializer.clone() {
+        let _materializer =
+            load_materializer::spawn(Arc::clone(&context.store), Arc::clone(&context.metrics), lm);
     }
 
     let server = HttpServerStarter::new(&config_dropshot, api, context, &log)

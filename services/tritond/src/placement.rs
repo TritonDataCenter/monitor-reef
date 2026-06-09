@@ -482,7 +482,6 @@ fn load_summary_view(s: tritond_store::CnLoadSummary) -> CnLoadSummaryView {
         cpu_p95_5m: s.cpu_p95_5m,
         cpu_p50_1d: s.cpu_p50_1d,
         cpu_p95_1d: s.cpu_p95_1d,
-        cpu_p95_7d: s.cpu_p95_7d,
         // Bytes -> ~normalised; refine to a ratio when ram_total_mb arrives.
         ram_used_p95_5m: (s.ram_used_p95_5m as f32) / 1.0e9,
         nic_tx_bps_p95_5m: s.nic_tx_bps_p95_5m,
@@ -707,9 +706,9 @@ mod tests {
         let (chosen, report) = runner.pick(&[view.clone()], &req, &ctx);
         assert_eq!(chosen, Some(view.server_uuid));
         // 23 filters (17 base + cn-capacity-present + 5 migration) +
-        // 12 scorers in the default chain.
+        // 11 scorers in the default chain (PL-6 retired avoid-peaky).
         assert_eq!(report.per_cn[0].filter_results.len(), 23);
-        assert_eq!(report.per_cn[0].scorer_results.len(), 12);
+        assert_eq!(report.per_cn[0].scorer_results.len(), 11);
     }
 
     // ---------------------------------------------------------------------
