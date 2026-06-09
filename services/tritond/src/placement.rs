@@ -92,17 +92,51 @@ pub fn projection_to_sibling_view(p: TenantInstanceProjection) -> SiblingInstanc
 }
 
 pub fn build_default_runner(strategy: Strategy) -> ChainRunner {
+    build_runner_with_weights(strategy, &resolved_weights(strategy))
+}
+
+/// Build the default filter/scorer chain but with explicit scorer
+/// weights (e.g. resolved from the active placement profile). Each
+/// scorer takes its weight from `weights`, falling back to the
+/// scorer's built-in default when the map omits it.
+pub fn build_runner_with_weights(strategy: Strategy, weights: &StrategyWeights) -> ChainRunner {
     let mut runner = ChainRunner::empty(strategy);
     for filter in default_filter_chain() {
         runner = runner.with_filter(filter);
     }
-    let weights = resolved_weights(strategy);
     for (scorer, _default) in default_scorer_chain() {
         let name = scorer.name();
         let w = weights.get(name).unwrap_or_else(|| scorer.default_weight());
         runner = runner.with_scorer(scorer, w);
     }
     runner
+}
+
+/// Resolve the scorer weights for a pick: an explicit per-request
+/// `strategy_override` wins (migration / dry-run intent); otherwise the
+/// cluster's active placement profile; otherwise the Spread default.
+fn resolve_pick_weights(
+    request_override: Option<Strategy>,
+    profiles: &tritond_store::PlacementProfiles,
+) -> (Strategy, StrategyWeights) {
+    if let Some(s) = request_override {
+        return (s, resolved_weights(s));
+    }
+    if let Some(p) = profiles.active_profile() {
+        // Key the weights by the engine's own &'static scorer names
+        // (StrategyWeights::set requires them); look each up in the
+        // profile's map. Profile entries for unknown scorer names are
+        // ignored; scorers the profile omits keep their default weight.
+        let mut w = StrategyWeights::new();
+        for (scorer, _default) in default_scorer_chain() {
+            let name = scorer.name();
+            if let Some(weight) = p.weights.get(name) {
+                w.set(name, *weight);
+            }
+        }
+        return (Strategy::Spread, w);
+    }
+    (Strategy::Spread, resolved_weights(Strategy::Spread))
 }
 
 pub fn build_chain_context<'a>(
@@ -203,10 +237,14 @@ pub async fn pick(
         .map(projection_to_sibling_view)
         .collect();
 
-    // 4. + 5. Runner + chain context, then pick.
-    let strategy = request.strategy_override.unwrap_or(Strategy::Spread);
-    let runner = build_default_runner(strategy);
-    let weights = resolved_weights(strategy);
+    // 4. + 5. Runner + chain context, then pick. Scorer weights come
+    // from the active placement profile (cluster setting, read live so
+    // a profile change takes effect on the next pick without a
+    // restart); a per-request strategy_override still wins.
+    let settings = store.get_settings().await?;
+    let (strategy, weights) =
+        resolve_pick_weights(request.strategy_override, &settings.placement_profiles);
+    let runner = build_runner_with_weights(strategy, &weights);
     let ctx = build_chain_context(Utc::now(), &weights, &siblings);
     let (chosen, report) = runner.pick(&cn_views, &request, &ctx);
 

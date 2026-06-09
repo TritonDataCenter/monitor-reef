@@ -3657,6 +3657,12 @@ pub struct Settings {
     /// for this yet; it is set at boot via `TRITOND_IDENTITYD_ISSUER_URL`.
     #[serde(rename = "identityd.issuer_url")]
     pub identityd_issuer_url: Option<String>,
+    /// Cluster-wide placement strategy profiles + the active one. The
+    /// placement engine resolves the active profile's scorer weights at
+    /// pick time. Surfaced as the `placement.profiles` config key and
+    /// managed from the admin console's Placement surface (RFD 00005).
+    #[serde(rename = "placement.profiles", default)]
+    pub placement_profiles: PlacementProfiles,
 }
 
 impl Default for Settings {
@@ -3675,8 +3681,181 @@ impl Default for Settings {
             reservoir_percent_default: DEFAULT_RESERVOIR_PERCENT,
             saga_retention_secs: DEFAULT_SAGA_RETENTION_SECS,
             identityd_issuer_url: None,
+            placement_profiles: PlacementProfiles::default(),
         }
     }
+}
+
+/// One named placement strategy profile: a per-scorer weight map plus
+/// metadata. The placement engine resolves the *active* profile's
+/// weights at pick time (RFD 00005). `builtin` profiles ship with
+/// tritond and can be cloned/edited but not deleted; operator-created
+/// profiles are `builtin = false`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PlacementProfile {
+    /// Stable lowercase identifier, e.g. `spread`, `consolidate`.
+    pub name: String,
+    /// One-line operator-facing intent.
+    pub description: String,
+    /// Ships with tritond (cannot be deleted; can be cloned/edited).
+    #[serde(default)]
+    pub builtin: bool,
+    /// Scorer name → weight. Names match the `tritond-placement`
+    /// scorer roster; unknown names are ignored by the engine and a
+    /// missing scorer falls back to its built-in default weight.
+    pub weights: std::collections::BTreeMap<String, f32>,
+}
+
+/// The cluster-wide set of placement strategy profiles plus which one
+/// is active. Stored as the `placement.profiles` config key.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PlacementProfiles {
+    /// `name` of the profile the engine uses for every pick.
+    pub active: String,
+    pub profiles: Vec<PlacementProfile>,
+}
+
+impl Default for PlacementProfiles {
+    fn default() -> Self {
+        PlacementProfiles {
+            active: "spread".to_string(),
+            profiles: default_placement_profiles(),
+        }
+    }
+}
+
+impl PlacementProfiles {
+    /// The active profile, or the first one, or `None` if empty.
+    pub fn active_profile(&self) -> Option<&PlacementProfile> {
+        self.profiles
+            .iter()
+            .find(|p| p.name == self.active)
+            .or_else(|| self.profiles.first())
+    }
+}
+
+/// Built-in seed profiles. Weights are keyed by scorer name; the
+/// baseline (Spread) mirrors the engine's default weights.
+fn default_placement_profiles() -> Vec<PlacementProfile> {
+    fn w(pairs: &[(&str, f32)]) -> std::collections::BTreeMap<String, f32> {
+        pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+    }
+    vec![
+        PlacementProfile {
+            name: "spread".to_string(),
+            description: "Availability-first: distribute across fault domains and hosts.".to_string(),
+            builtin: true,
+            weights: w(&[
+                ("score-ram-headroom", 2.0),
+                ("score-disk-headroom", 1.0),
+                ("score-spread-by-fault-domain", 1.5),
+                ("score-pack-by-fault-domain", 0.0),
+                ("score-affinity-preferred", 1.0),
+                ("score-platform-current", 0.5),
+                ("score-fewer-cotenant-zones", 0.5),
+                ("score-uniform-random", 0.1),
+                ("score-avoid-hot-now", 1.5),
+                ("score-avoid-peaky", 1.0),
+                ("score-prefer-low-baseline", 0.75),
+                ("score-diurnal-fit", 0.0),
+            ]),
+        },
+        PlacementProfile {
+            name: "consolidate".to_string(),
+            description: "Density-first: bin-pack onto the fewest nodes for power/cost.".to_string(),
+            builtin: true,
+            weights: w(&[
+                ("score-ram-headroom", 1.0),
+                ("score-disk-headroom", 0.5),
+                ("score-spread-by-fault-domain", 0.0),
+                ("score-pack-by-fault-domain", 1.5),
+                ("score-affinity-preferred", 1.0),
+                ("score-platform-current", 0.5),
+                ("score-fewer-cotenant-zones", 0.0),
+                ("score-uniform-random", 0.1),
+                ("score-avoid-hot-now", 0.5),
+                ("score-avoid-peaky", 0.5),
+                ("score-prefer-low-baseline", 0.25),
+                ("score-diurnal-fit", 0.0),
+            ]),
+        },
+        PlacementProfile {
+            name: "balanced".to_string(),
+            description: "Middle ground between spread and consolidate.".to_string(),
+            builtin: true,
+            weights: w(&[
+                ("score-ram-headroom", 2.0),
+                ("score-disk-headroom", 1.0),
+                ("score-spread-by-fault-domain", 0.75),
+                ("score-pack-by-fault-domain", 0.75),
+                ("score-affinity-preferred", 1.0),
+                ("score-platform-current", 0.5),
+                ("score-fewer-cotenant-zones", 0.5),
+                ("score-uniform-random", 0.1),
+                ("score-avoid-hot-now", 1.0),
+                ("score-avoid-peaky", 0.75),
+                ("score-prefer-low-baseline", 0.5),
+                ("score-diurnal-fit", 0.0),
+            ]),
+        },
+        PlacementProfile {
+            name: "performance".to_string(),
+            description: "Latency-first: prefer cool, roomy nodes; avoid hot/peaky.".to_string(),
+            builtin: true,
+            weights: w(&[
+                ("score-ram-headroom", 2.5),
+                ("score-disk-headroom", 1.5),
+                ("score-spread-by-fault-domain", 1.0),
+                ("score-pack-by-fault-domain", 0.0),
+                ("score-affinity-preferred", 1.0),
+                ("score-platform-current", 0.5),
+                ("score-fewer-cotenant-zones", 1.0),
+                ("score-uniform-random", 0.0),
+                ("score-avoid-hot-now", 2.5),
+                ("score-avoid-peaky", 2.0),
+                ("score-prefer-low-baseline", 1.5),
+                ("score-diurnal-fit", 0.5),
+            ]),
+        },
+        PlacementProfile {
+            name: "isolation".to_string(),
+            description: "Noisy-neighbor averse: minimize co-tenancy and contention.".to_string(),
+            builtin: true,
+            weights: w(&[
+                ("score-ram-headroom", 1.5),
+                ("score-disk-headroom", 1.0),
+                ("score-spread-by-fault-domain", 2.0),
+                ("score-pack-by-fault-domain", 0.0),
+                ("score-affinity-preferred", 1.0),
+                ("score-platform-current", 0.5),
+                ("score-fewer-cotenant-zones", 2.5),
+                ("score-uniform-random", 0.1),
+                ("score-avoid-hot-now", 1.5),
+                ("score-avoid-peaky", 1.0),
+                ("score-prefer-low-baseline", 0.75),
+                ("score-diurnal-fit", 0.0),
+            ]),
+        },
+        PlacementProfile {
+            name: "power-save".to_string(),
+            description: "Aggressive pack + diurnal fit so idle nodes can power down.".to_string(),
+            builtin: true,
+            weights: w(&[
+                ("score-ram-headroom", 0.75),
+                ("score-disk-headroom", 0.5),
+                ("score-spread-by-fault-domain", 0.0),
+                ("score-pack-by-fault-domain", 2.5),
+                ("score-affinity-preferred", 1.0),
+                ("score-platform-current", 0.5),
+                ("score-fewer-cotenant-zones", 0.0),
+                ("score-uniform-random", 0.0),
+                ("score-avoid-hot-now", 0.25),
+                ("score-avoid-peaky", 0.25),
+                ("score-prefer-low-baseline", 0.0),
+                ("score-diurnal-fit", 1.5),
+            ]),
+        },
+    ]
 }
 
 impl Settings {
@@ -3751,11 +3930,13 @@ pub enum ConfigKey {
     ReservoirPercentDefault,
     /// [`Settings::saga_retention_secs`]
     SagaRetentionSecs,
+    /// [`Settings::placement_profiles`]
+    PlacementProfiles,
 }
 
 impl ConfigKey {
     /// Every key, in the order `tcadm config list` displays them.
-    pub const ALL: [ConfigKey; 12] = [
+    pub const ALL: [ConfigKey; 13] = [
         ConfigKey::ProvisionerInprocessDisabled,
         ConfigKey::SweeperIntervalSecs,
         ConfigKey::StaleClaimThresholdSecs,
@@ -3768,6 +3949,7 @@ impl ConfigKey {
         ConfigKey::ReservoirEnabledDefault,
         ConfigKey::ReservoirPercentDefault,
         ConfigKey::SagaRetentionSecs,
+        ConfigKey::PlacementProfiles,
     ];
 
     /// Dotted wire name. Must exactly equal the `#[serde(rename = ...)]`
@@ -3786,6 +3968,7 @@ impl ConfigKey {
             ConfigKey::ReservoirEnabledDefault => "reservoir.enabled_default",
             ConfigKey::ReservoirPercentDefault => "reservoir.percent_default",
             ConfigKey::SagaRetentionSecs => "saga.retention_secs",
+            ConfigKey::PlacementProfiles => "placement.profiles",
         }
     }
 
@@ -3829,6 +4012,9 @@ impl ConfigKey {
             ConfigKey::SagaRetentionSecs => {
                 "how long terminal sagas stay in FDB before the retention pass deletes them (seconds)"
             }
+            ConfigKey::PlacementProfiles => {
+                "placement strategy profiles + active selection (managed from the Placement console)"
+            }
         }
     }
 
@@ -3857,6 +4043,9 @@ impl ConfigKey {
             ConfigKey::ReservoirEnabledDefault => "TRITOND_RESERVOIR_ENABLED_DEFAULT",
             ConfigKey::ReservoirPercentDefault => "TRITOND_RESERVOIR_PERCENT_DEFAULT",
             ConfigKey::SagaRetentionSecs => "TRITOND_SAGA_RETENTION_SECS",
+            // No env override; placement profiles are managed via the
+            // config API / Placement console only.
+            ConfigKey::PlacementProfiles => return None,
         })
     }
 }
