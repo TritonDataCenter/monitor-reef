@@ -822,7 +822,11 @@ fn migration_progress_event_from_report(
     // Prefer the agent's own ETA; derive one from the trailing rate
     // when the agent only shipped the rate.
     let eta_ms = r.eta_ms.or_else(|| {
-        match (r.current_progress, r.total_progress, r.transfer_bytes_second) {
+        match (
+            r.current_progress,
+            r.total_progress,
+            r.transfer_bytes_second,
+        ) {
             (Some(cur), Some(total), Some(rate)) if rate > 0 && total > cur => {
                 Some((total - cur).saturating_mul(1000) / rate)
             }

@@ -263,10 +263,11 @@ async fn run_zfs_send_source(
         .stdout
         .take()
         .ok_or_else(|| anyhow!("zfs send child has no piped stdout"))?;
-    let sender = tritond_vmm_migrate::zfs_stream::ZfsSender::new(transport, stdout)
-        .with_progress(move |total| {
+    let sender = tritond_vmm_migrate::zfs_stream::ZfsSender::new(transport, stdout).with_progress(
+        move |total| {
             counter.store(total, std::sync::atomic::Ordering::Relaxed);
-        });
+        },
+    );
     let bytes = sender.run().await.context("ZfsSender::run")?;
     let status = child.wait().await.context("await zfs send exit")?;
     if !status.success() {

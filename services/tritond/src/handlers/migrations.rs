@@ -164,8 +164,7 @@ pub(crate) async fn migrate_instance_v1(
         _ => Action::InstanceMigrate,
     };
     let principal =
-        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, audit_action)
-            .await?;
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, audit_action).await?;
     let request_id = parse_request_id(&rqctx);
     match body.action {
         MigrationAction::Begin => {
