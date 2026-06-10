@@ -654,14 +654,15 @@ pub(crate) fn create_bhyve_payload_with_nic_tags(
                 "boot": true,
                 "model": "virtio",
                 "image_uuid": image.id,
-                // Grow the boot zvol to fill the flexible-disk pool
-                // (minus the platform's NoCloud seed disk). Without an
-                // explicit size, vmadm creates the boot disk at the
-                // image's content size and strands the rest of
-                // flexible_disk_size as unusable free_space, leaving the
-                // guest a disk far smaller than its package. "remaining"
-                // is the flexible-disk keyword for "consume the pool".
-                "size": "remaining",
+                // Boot zvol = the full flexible-disk budget so the guest
+                // gets its package's disk, not the image's tiny content
+                // size. The platform auto-adds a 16 MiB NoCloud seed disk
+                // AND bumps flexible_disk_size by the same 16 to fit it
+                // (cloudinit/nocloud.js updatePayloadDisks), so a boot
+                // size == flexible_disk_size fills the pool exactly
+                // (boot + seed == bumped flexible). vmadm requires a
+                // numeric MiB size; there is no "remaining" keyword.
+                "size": flexible_disk_size,
             }
         ],
         "nics": nics_json,
@@ -1333,7 +1334,7 @@ mod tests {
                     "boot": true,
                     "model": "virtio",
                     "image_uuid": image.id.to_string(),
-                    "size": "remaining",
+                    "size": 20 * 1024,
                 }
             ],
             "nics": [
