@@ -1280,14 +1280,9 @@ async fn provision_migration_target(
         .await
         .context("destroy vmadm-created dataset tree for migration target")?;
 
-    // The bhyve brand only boots in migration listen mode (LM-7's
-    // inbound RAM stream) when the zone carries this attr.
-    if is_bhyve {
-        vmadm::set_zone_attr(instance_id, "migrate_listen", "true")
-            .await
-            .context("set migrate_listen zonecfg attr on migration target")?;
-    }
-
+    // Listen-mode is a live-path concern set by `MigrateTargetListen`
+    // right before it boots the zone; a cold target boots normally via
+    // `activate_target`, so the unbooted shell carries no listen attr.
     info!(
         %migration_id, %instance_id, is_bhyve,
         "migration-provision-target: zone shell created (unbooted, datasets cleared)",

@@ -319,6 +319,18 @@ pub(crate) async fn target_listen(
         port_ids.push(pb.port_id);
     }
 
+    // Put the zone into bhyve listen mode before booting so it waits
+    // for the inbound RAM stream instead of cold-starting the guest.
+    // Best-effort: the exact PI brand trigger is still being pinned
+    // down (zonecfg attr names reject `_`), and a failure here surfaces
+    // as a clear stream-phase error rather than aborting the cutover.
+    if let Err(err) = vmadm::set_zone_attr(instance_id, "migrate-listen", "true").await {
+        warn!(
+            %migration_id, %instance_id, error = %format!("{err:#}"),
+            "migrate-target-listen: could not set listen-mode attr; \
+             the inbound RAM stream may fail",
+        );
+    }
     vmadm::start_zone(instance_id)
         .await
         .context("vmadm start listen-mode target zone")?;
