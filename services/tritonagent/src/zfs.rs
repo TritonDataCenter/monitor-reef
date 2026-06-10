@@ -212,23 +212,27 @@ fn migration_snapshot_args(snapshot: &str) -> Vec<String> {
 }
 
 fn send_full_args(snapshot: &str) -> Vec<String> {
-    vec!["send".into(), "-w".into(), "-R".into(), snapshot.into()]
+    // No `-R`: each dataset in the tree is sent on its own connection
+    // as a self-contained (flattened) stream. A replication stream
+    // would preserve the boot disk's clone-of-image relationship, and
+    // the receive then fails on a CN whose image snapshot has a
+    // different GUID ("local origin for clone ... does not exist").
+    vec!["send".into(), "-w".into(), snapshot.into()]
 }
 
 fn send_incremental_args(from_snap: &str, to_snap: &str) -> Vec<String> {
     vec![
         "send".into(),
         "-w".into(),
-        "-R".into(),
-        "-I".into(),
+        "-i".into(),
         from_snap.into(),
         to_snap.into(),
     ]
 }
 
 fn send_estimate_args(from_snap: Option<&str>, to_snap: &str) -> Vec<String> {
-    // Mirror the real send flags (-w -R [-I]) so the dry-run sizes
-    // the exact stream we are about to produce; -n makes it a
+    // Mirror the real per-dataset send flags (-w [-i]) so the dry-run
+    // sizes the exact stream we are about to produce; -n makes it a
     // no-op, -P asks for machine-parseable exact byte counts.
     let mut args: Vec<String> = vec!["send".into(), "-n".into(), "-P".into()];
     match from_snap {
@@ -243,12 +247,16 @@ fn send_estimate_args(from_snap: Option<&str>, to_snap: &str) -> Vec<String> {
 }
 
 fn recv_args(dataset: &str) -> Vec<String> {
+    // Only `-x refreservation` (valid for both filesystems and
+    // volumes): the boot/data disks are zvols, and `-x quota` errors
+    // "property 'quota' does not apply to datasets of this type" on a
+    // volume receive. The source's quota is already cleared by the
+    // quota dance before the snapshot, so it never rides the stream;
+    // the saga restores quota + refreservation after the cutover.
     vec![
         "recv".into(),
         "-F".into(),
         "-u".into(),
-        "-x".into(),
-        "quota".into(),
         "-x".into(),
         "refreservation".into(),
         dataset.into(),
@@ -372,6 +380,39 @@ pub fn spawn_recv(dataset: &str) -> Result<Child> {
         .stderr(std::process::Stdio::piped());
     cmd.spawn()
         .with_context(|| format!("spawn zfs recv {dataset}"))
+}
+
+/// List the filesystems and volumes in a dataset tree, parent first
+/// (the order `zfs list -r` returns). The migration sends each as its
+/// own flattened stream, so the zone root must precede its child disk
+/// zvols for every receive's parent to already exist on the target.
+pub async fn list_migration_tree(dataset: &str) -> Result<Vec<String>> {
+    let output = Command::new("zfs")
+        .args([
+            "list",
+            "-H",
+            "-o",
+            "name",
+            "-r",
+            "-t",
+            "filesystem,volume",
+            dataset,
+        ])
+        .output()
+        .await
+        .with_context(|| format!("zfs list -r {dataset}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!(
+            "zfs list -r {dataset} failed (exit {}): {stderr}",
+            output.status,
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect())
 }
 
 /// List the names of `dataset`'s migration snapshots (the

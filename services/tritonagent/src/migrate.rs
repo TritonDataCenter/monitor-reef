@@ -316,6 +316,7 @@ async fn migrate_zfs_ws(
         }
     };
 
+    let mut recv_stderr = child.stderr.take();
     ws.on_upgrade(move |socket| async move {
         let transport = AxumWsTransport::new(socket);
         let receiver = ZfsReceiver::new(transport, stdin);
@@ -339,8 +340,9 @@ async fn migrate_zfs_ws(
                 info!(%migration_id, dataset = %params.dataset, "migrate-zfs: zfs recv exited 0");
             }
             Ok(status) => {
+                let stderr = drain_stderr(recv_stderr.take()).await;
                 warn!(
-                    %migration_id, dataset = %params.dataset, ?status,
+                    %migration_id, dataset = %params.dataset, ?status, %stderr,
                     "migrate-zfs: zfs recv exited non-zero",
                 );
             }
@@ -352,6 +354,19 @@ async fn migrate_zfs_ws(
             }
         }
     })
+}
+
+/// Best-effort read of a finished child's piped stderr, for surfacing
+/// the actual `zfs recv` failure (the process has already exited, so
+/// the pipe holds whatever it wrote).
+async fn drain_stderr(stderr: Option<tokio::process::ChildStderr>) -> String {
+    use tokio::io::AsyncReadExt;
+    let Some(mut s) = stderr else {
+        return String::new();
+    };
+    let mut buf = Vec::new();
+    let _ = s.read_to_end(&mut buf).await;
+    String::from_utf8_lossy(&buf).trim().to_string()
 }
 
 // ──────────────────────────────────────────────────────────────────

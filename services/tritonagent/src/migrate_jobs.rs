@@ -221,64 +221,105 @@ async fn run_zfs_send_source(
 
     let server_uuid = Uuid::parse_str(&cfg.agent_id)
         .context("agent_id is not a UUID; cannot present source_cn in dial")?;
-    let transport = migrate::dial_zfs(migrate::DialZfsParams {
-        base_url: peer_endpoint.to_string(),
-        migration_id,
-        source_cn: server_uuid,
-        vm_uuid: instance_id,
-        target_dataset: dataset.to_string(),
-        ticket: ticket.to_string(),
-        target_spki_sha256_hex: peer_spki.to_string(),
-    })
-    .await
-    .context("dial target /migrate/{id}/zfs")?;
 
-    // Advisory: a failed dry-run estimate degrades the progress
-    // feed to byte counts without a percentage, never the transfer.
-    let total_bytes = match zfs::estimate_send_bytes(from_snap, to_snap).await {
-        Ok(bytes) => Some(bytes),
-        Err(e) => {
-            let chain = format!("{e:#}");
-            warn!(
-                %migration_id, %to_snap, error = %chain,
-                "migrate-zfs-send: size estimate failed; reporting progress without a total",
-            );
-            None
-        }
+    // Each dataset in the tree is sent on its own connection as a
+    // flattened (non-`-R`) stream, parent first so the target's receive
+    // parent always exists. `dataset`/`to_snap`/`from_snap` name the
+    // tree root; per dataset we keep the snapshot suffix and swap the
+    // dataset name.
+    let datasets = zfs::list_migration_tree(dataset)
+        .await
+        .context("enumerate source dataset tree")?;
+    let to_suffix = to_snap
+        .split_once('@')
+        .map(|(_, s)| s.to_string())
+        .ok_or_else(|| anyhow!("to_snap {to_snap} has no @snapshot component"))?;
+    let from_suffix = match from_snap {
+        Some(f) => Some(
+            f.split_once('@')
+                .map(|(_, s)| s.to_string())
+                .ok_or_else(|| anyhow!("from_snap {f} has no @snapshot component"))?,
+        ),
+        None => None,
     };
+
+    // Advisory: per-dataset dry runs summed; a failure degrades the
+    // progress feed to byte counts without a percentage, never the
+    // transfer.
+    let mut total_estimate = 0u64;
+    let mut have_estimate = true;
+    let mut plan: Vec<(String, String, Option<String>)> = Vec::with_capacity(datasets.len());
+    for ds in &datasets {
+        let ds_to = format!("{ds}@{to_suffix}");
+        let ds_from = from_suffix.as_ref().map(|s| format!("{ds}@{s}"));
+        if have_estimate {
+            match zfs::estimate_send_bytes(ds_from.as_deref(), &ds_to).await {
+                Ok(bytes) => total_estimate += bytes,
+                Err(e) => {
+                    warn!(
+                        %migration_id, %ds_to, error = %format!("{e:#}"),
+                        "migrate-zfs-send: size estimate failed; progress without a total",
+                    );
+                    have_estimate = false;
+                }
+            }
+        }
+        plan.push((ds.clone(), ds_to, ds_from));
+    }
+
     let reporter = migrate_progress::ProgressReporter::start(
         Arc::clone(client),
         migration_id,
-        total_bytes,
-        format!("zfs send {to_snap}"),
+        have_estimate.then_some(total_estimate),
+        format!("zfs send {dataset} (flattened tree)"),
     );
     let counter = reporter.observer();
 
-    let mut child = match from_snap {
-        Some(from) => zfs::spawn_send_incremental(from, to_snap)
-            .context("spawn zfs send -I for incremental")?,
-        None => zfs::spawn_send_full(to_snap).context("spawn zfs send for full")?,
-    };
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| anyhow!("zfs send child has no piped stdout"))?;
-    let sender = tritond_vmm_migrate::zfs_stream::ZfsSender::new(transport, stdout).with_progress(
-        move |total| {
-            counter.store(total, std::sync::atomic::Ordering::Relaxed);
-        },
-    );
-    let bytes = sender.run().await.context("ZfsSender::run")?;
-    let status = child.wait().await.context("await zfs send exit")?;
-    if !status.success() {
-        bail!("zfs send exited non-zero: {status}");
+    let mut total_bytes = 0u64;
+    for (ds, ds_to, ds_from) in &plan {
+        let transport = migrate::dial_zfs(migrate::DialZfsParams {
+            base_url: peer_endpoint.to_string(),
+            migration_id,
+            source_cn: server_uuid,
+            vm_uuid: instance_id,
+            target_dataset: ds.clone(),
+            ticket: ticket.to_string(),
+            target_spki_sha256_hex: peer_spki.to_string(),
+        })
+        .await
+        .with_context(|| format!("dial target /migrate/{{id}}/zfs for {ds}"))?;
+
+        let mut child = match ds_from {
+            Some(from) => zfs::spawn_send_incremental(from, ds_to)
+                .context("spawn zfs send -i for incremental")?,
+            None => zfs::spawn_send_full(ds_to).context("spawn zfs send for full")?,
+        };
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow!("zfs send child has no piped stdout"))?;
+        let base = total_bytes;
+        let counter = Arc::clone(&counter);
+        let sender = tritond_vmm_migrate::zfs_stream::ZfsSender::new(transport, stdout)
+            .with_progress(move |n| {
+                counter.store(base + n, std::sync::atomic::Ordering::Relaxed);
+            });
+        let bytes = sender
+            .run()
+            .await
+            .with_context(|| format!("ZfsSender::run for {ds}"))?;
+        let status = child.wait().await.context("await zfs send exit")?;
+        if !status.success() {
+            bail!("zfs send {ds_to} exited non-zero: {status}");
+        }
+        total_bytes += bytes;
     }
     reporter.finish().await;
     info!(
-        %migration_id, %instance_id, %dataset, %to_snap, bytes,
-        "migrate-zfs-send/source: stream completed",
+        %migration_id, %instance_id, %dataset, datasets = plan.len(), bytes = total_bytes,
+        "migrate-zfs-send/source: flattened tree streamed",
     );
-    Ok(bytes)
+    Ok(total_bytes)
 }
 
 /// Report a detached job's terminal outcome. Bounded retry: the
