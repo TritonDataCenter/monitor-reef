@@ -87,9 +87,9 @@ pub struct MigrationSagaParams {
     /// `true` for the cold-migrate path: `quiesce_source` stops
     /// the source guest (if running) before the final incremental
     /// send, and no vmm wire handshake happens. `false` runs the
-    /// live path (pause + RAM stream; the stream itself lands with
-    /// LM-7). The handler forces `cold: true` for non-bhyve brands
-    /// — only bhyve has a live lane.
+    /// live path (pause + RAM/device-state stream). The handler
+    /// forces `cold: true` for non-bhyve brands; only bhyve has a
+    /// live lane.
     #[serde(default)]
     pub cold: bool,
     /// Whether the instance was Running when the operator
@@ -829,6 +829,18 @@ async fn create_target_zone_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
             return Ok(());
         }
     }
+    // An ambiguous live-stream failure means the target may be
+    // RUNNING the guest (import fence completed, handshake didn't);
+    // deleting it could destroy the only live copy. Leave it for
+    // the operator alongside the paused source.
+    if live_failure_is_ambiguous(&store, params.migration_id).await {
+        tracing::warn!(
+            migration_id = %params.migration_id,
+            "migration.create_target_zone undo: ambiguous live failure; \
+             refusing to tear down the possibly-activated target zone",
+        );
+        return Ok(());
+    }
     // Best-effort: enqueue a MigrationCleanupTarget job so the
     // target agent vmadm-deletes the half-started zone. If the
     // target CN is unreachable, the job sits in the queue until
@@ -1187,9 +1199,19 @@ async fn quiesce_source_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
         }
         return Ok(());
     }
-    // Live lane: resume the paused guest. Never reached
-    // post-switch (the nodes after switch_ownership have no
-    // failing paths), so resuming here cannot race the target.
+    // Live lane: resume the paused guest, UNLESS the stream
+    // failure landed inside the Finish window (the target may have
+    // imported and resumed the guest already; resuming the source
+    // too would split-brain the identity). stream_vmm stamps the
+    // record with the ambiguous marker before unwinding.
+    if live_failure_is_ambiguous(&store, params.migration_id).await {
+        tracing::warn!(
+            migration_id = %params.migration_id,
+            "migration.quiesce_source undo: ambiguous live failure; \
+             leaving source guest paused for the operator",
+        );
+        return Ok(());
+    }
     if let Err(e) = store
         .enqueue_job(tritond_store::NewJob {
             kind: tritond_store::JobKind::MigrateResumeSource {
@@ -1252,9 +1274,26 @@ async fn final_zfs_increment(ctx: Ctx) -> Result<(), ActionError> {
 }
 
 /// Live lane: stream RAM + device state from the paused source to
-/// the listening target (LM-7). Cold lane: nothing to stream — the
+/// the listening target. Cold lane: nothing to stream; the
 /// dataset transferred in the ZFS nodes is canonical once the
 /// guest is stopped.
+///
+/// Sequence: boot the target zone in bhyve listen mode
+/// (`MigrateTargetListen`, awaited terminal) and only then hand the
+/// source agent the dial bundle (`MigrateVmmStream { Source }`), so
+/// the dial always finds a registered listener.
+///
+/// Failure policy (the job's `result.last_phase`, reported by the
+/// source agent, encodes the distinction):
+/// * the source never entered the wire's Finish phase: the target
+///   cannot have imported state, so failing the action is safe: the
+///   unwind resumes the paused source (`quiesce_source` undo) and
+///   tears down the target (`create_target_zone` undo);
+/// * the source entered Finish (or the result is missing /
+///   unparseable): the target holds complete device state and may
+///   already be running the guest. Auto-resume could split-brain, so
+///   the record gets a structured ambiguous-failure marker that the
+///   undo chain reads to leave BOTH sides alone for the operator.
 async fn stream_vmm(ctx: Ctx) -> Result<(), ActionError> {
     crate::sagas::with_action_timeout(
         "migration.stream_vmm",
@@ -1262,6 +1301,7 @@ async fn stream_vmm(ctx: Ctx) -> Result<(), ActionError> {
         async move {
             let user_ctx = ctx.user_data();
             fence_check(user_ctx).await?;
+            let store = user_ctx.store().clone();
             let params: MigrationSagaParams = ctx.saga_params()?;
 
             if params.cold {
@@ -1271,15 +1311,116 @@ async fn stream_vmm(ctx: Ctx) -> Result<(), ActionError> {
                 );
                 return Ok(());
             }
+            let target_cn: Uuid = ctx.lookup("designated_target_cn")?;
 
-            // Failing here (rather than silently skipping) keeps a
-            // `cold: false` request from racing into a switch with no
-            // memory transfer; the unwind resumes the paused source
-            // via quiesce_source's undo.
-            Err(ActionError::action_failed(serde_json::json!({
-                "kind": "migration.stream_vmm.live_lane_pending",
-                "reason": "live lane lands with LM-7; pass `cold: true` for now",
-            })))
+            // Boot the target zone in listen mode. Abort is still
+            // honored here: the source is paused but nothing
+            // irreversible has happened (quiesce undo resumes it).
+            let listen_job = store
+                .enqueue_job(tritond_store::NewJob {
+                    kind: tritond_store::JobKind::MigrateTargetListen {
+                        migration_id: params.migration_id,
+                        instance_id: params.instance_id,
+                    },
+                    target_cn_uuid: Some(target_cn),
+                })
+                .await
+                .map_err(store_err_to_action_err)?;
+            tracing::info!(
+                migration_id = %params.migration_id,
+                target_cn = %target_cn,
+                job_id = %listen_job.id,
+                "migration.stream_vmm: enqueued MigrateTargetListen; awaiting terminal",
+            );
+            await_jobs_terminal(
+                store.clone(),
+                Some(params.migration_id),
+                &[listen_job.id],
+                "migration.stream_vmm",
+            )
+            .await?;
+
+            // Fresh Outbound ticket per attempt so the 10-min TTL
+            // covers the stream's handshake regardless of how long
+            // the ZFS legs took.
+            let peer = resolve_migrate_peer(
+                &store,
+                target_cn,
+                params.source_cn,
+                params.instance_id,
+                params.migration_id,
+                tritond_auth::MigrateRole::Outbound,
+            )
+            .await?;
+            let stream_job = store
+                .enqueue_job(tritond_store::NewJob {
+                    kind: tritond_store::JobKind::MigrateVmmStream {
+                        migration_id: params.migration_id,
+                        instance_id: params.instance_id,
+                        role: tritond_store::MigrationJobRole::Source,
+                        peer_endpoint: Some(peer.endpoint),
+                        peer_spki_sha256_hex: Some(peer.spki_hex),
+                        ticket: Some(peer.ticket),
+                    },
+                    target_cn_uuid: Some(params.source_cn),
+                })
+                .await
+                .map_err(store_err_to_action_err)?;
+            tracing::info!(
+                migration_id = %params.migration_id,
+                job_id = %stream_job.id,
+                "migration.stream_vmm: enqueued source MigrateVmmStream; awaiting terminal",
+            );
+
+            // Deliberately NO abort poll for the stream itself: the
+            // agents have no cancel channel, so an unwind racing the
+            // target's import fence could resume the source while
+            // the target activates (split brain). An abort requested
+            // mid-stream is simply too late.
+            let final_row = await_job_final_row(&store, stream_job.id).await?;
+            match final_row.status.kind() {
+                tritond_store::JobStatusKind::Completed => {
+                    tracing::info!(
+                        migration_id = %params.migration_id,
+                        result = ?final_row.result,
+                        "migration.stream_vmm: live stream complete; target activated",
+                    );
+                    Ok(())
+                }
+                _ => {
+                    let reason = match &final_row.status {
+                        tritond_store::JobStatus::Failed { reason } => reason.clone(),
+                        other => format!("unexpected terminal status {other:?}"),
+                    };
+                    let last_phase = final_row
+                        .result
+                        .as_ref()
+                        .and_then(|v| v.get("last_phase"))
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                    if live_failure_is_pre_finish(last_phase.as_deref()) {
+                        return Err(ActionError::action_failed(serde_json::json!({
+                            "kind": "migration.stream_vmm.failed",
+                            "reason": reason,
+                            "last_phase": last_phase,
+                        })));
+                    }
+                    mark_live_failure_ambiguous(
+                        &store,
+                        &params,
+                        target_cn,
+                        last_phase.as_deref(),
+                        &reason,
+                    )
+                    .await;
+                    Err(ActionError::action_failed(serde_json::json!({
+                        "kind": "migration.stream_vmm.ambiguous_failure",
+                        "reason": reason,
+                        "last_phase": last_phase,
+                        "policy": "source left paused, target zone left in place; operator must resolve",
+                    })))
+                }
+            }
         },
     )
     .await
@@ -1306,11 +1447,11 @@ async fn switch_ownership(ctx: Ctx) -> Result<(), ActionError> {
         })?;
 
         // Atomic CAS of Instance.host_cn_uuid from source_cn to
-        // target_cn. LM-7 will wrap this in the
-        // PauseComplete / SwitchComplete WebSocket fence; for the
-        // cold lane the guest is already stopped (quiesce_source)
-        // so there is nothing to fence and the FDB write is the
-        // cutover.
+        // target_cn. On the live lane the guest is already running
+        // on the target (stream_vmm's SwitchComplete fence); this
+        // write makes the control plane agree. On the cold lane the
+        // guest is stopped (quiesce_source) so there is nothing to
+        // fence and the FDB write is the cutover.
         let instance = store
             .get_instance(params.instance_id)
             .await
@@ -1595,15 +1736,88 @@ async fn quiesce_and_stream_v1(_ctx: Ctx) -> Result<(), ActionError> {
 
 // ───────────────────────── Helpers ─────────────────────────────
 
-/// Source-side ZFS-job peer info bundle: the wss base URL, the
+/// Marker prefix on `MigrationRecord.error` for live-stream
+/// failures inside the Finish/SwitchComplete window. The undo
+/// chain ([`quiesce_source_undo`], [`create_target_zone_undo`])
+/// reads it to skip the source resume and the target teardown,
+/// the one non-self-healing state, left for the operator.
+const LIVE_AMBIGUOUS_ERROR_PREFIX: &str = "live migration ambiguous failure";
+
+/// Wire-phase labels the source agent reports in the
+/// `MigrateVmmStream` job result (`last_phase`); mirrors
+/// `tritonagent::migrate_vmm::phase_label`. Anything before the
+/// Finish phase means the device-state send did not complete, so
+/// the target cannot have imported and resuming the source is safe.
+/// "finish"/"complete"/missing/garbage are all treated as ambiguous:
+/// fail closed on the side that cannot split-brain.
+fn live_failure_is_pre_finish(last_phase: Option<&str>) -> bool {
+    matches!(
+        last_phase,
+        Some("sync" | "pause" | "ram_push" | "ram_hash" | "time_data" | "device_state")
+    )
+}
+
+/// Whether the record carries the ambiguous-failure marker.
+async fn live_failure_is_ambiguous(
+    store: &Arc<dyn tritond_store::Store>,
+    migration_id: Uuid,
+) -> bool {
+    store
+        .get_migration(migration_id)
+        .await
+        .ok()
+        .and_then(|r| r.error)
+        .is_some_and(|e| e.starts_with(LIVE_AMBIGUOUS_ERROR_PREFIX))
+}
+
+/// Stamp the ambiguous-failure marker + the operator-facing detail
+/// onto the record BEFORE the action error unwinds, so the undo
+/// chain (which runs next) sees it. Best-effort: if this write
+/// fails the unwind degrades to the resume+cleanup path, which is
+/// the pre-existing behavior.
+async fn mark_live_failure_ambiguous(
+    store: &Arc<dyn tritond_store::Store>,
+    params: &MigrationSagaParams,
+    target_cn: Uuid,
+    last_phase: Option<&str>,
+    reason: &str,
+) {
+    let detail = format!(
+        "{LIVE_AMBIGUOUS_ERROR_PREFIX}: source reported last phase {last_phase:?} ({reason}); \
+         source guest left PAUSED on CN {source}; target zone left in place on CN {target}; \
+         verify which side holds the guest, then resume one side and delete the other",
+        source = params.source_cn,
+        target = target_cn,
+    );
+    match store.get_migration(params.migration_id).await {
+        Ok(mut record) => {
+            record.error = Some(detail);
+            if let Err(e) = store.put_migration(record).await {
+                tracing::warn!(
+                    migration_id = %params.migration_id,
+                    error = %e,
+                    "migration.stream_vmm: writing ambiguous-failure marker failed; \
+                     unwind will fall back to resume+cleanup",
+                );
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                migration_id = %params.migration_id,
+                error = %e,
+                "migration.stream_vmm: record read for ambiguous marker failed",
+            );
+        }
+    }
+}
+
+/// Source-side migrate-job peer info bundle: the wss base URL, the
 /// pinned TLS SPKI, and the freshly-minted migrate ticket the
-/// source agent needs to dial the target's
-/// `/migrate/{id}/zfs` listener route. Built once per send pass
-/// (base, each sync round, final — each mints a fresh ticket so
-/// the 10-min TTL covers each transfer independently) and embedded
-/// into the Source job's
-/// [`tritond_store::JobKind::MigrateZfsSend`] variant.
-struct ZfsPeerInfo {
+/// source agent needs to dial the target's listener. Built once per
+/// transfer leg (each ZFS pass and the vmm stream mint a fresh
+/// ticket so the 10-min TTL covers each leg independently) and
+/// embedded into the Source job's payload.
+struct MigratePeerInfo {
     endpoint: String,
     spki_hex: String,
     ticket: String,
@@ -1618,42 +1832,44 @@ struct ZfsPeerInfo {
 const DEFAULT_AGENT_MIGRATE_PORT: u16 = 4568;
 
 /// Resolve the target CN's reachable migrate endpoint + SPKI pin
-/// + a freshly-minted Source-role migrate ticket for the saga's
-/// ZFS handoff steps. The ticket is bound to
-/// (source_cn, target_cn, instance_id, migration_id,
-/// [`tritond_auth::MigrateRole::ZfsSource`]) using the **target**
-/// CN's migrate-ticket key — the target's listener verifies
-/// against its own key, so the source has to mint with the
+/// + a freshly-minted migrate ticket in the requested `role`
+/// ([`tritond_auth::MigrateRole::ZfsSource`] for the dataset legs,
+/// [`tritond_auth::MigrateRole::Outbound`] for the live RAM
+/// stream). The ticket is bound to
+/// (source_cn, target_cn, instance_id, migration_id, role) using
+/// the **target** CN's migrate-ticket key; the target's listener
+/// verifies against its own key, so the source has to mint with the
 /// target's key. Reading that key out of FDB here is safe: the
 /// saga process is the tritond process and holds the same trust
 /// as the CN approval path that wrote the key.
-async fn resolve_zfs_peer(
+async fn resolve_migrate_peer(
     store: &std::sync::Arc<dyn tritond_store::Store>,
     target_cn: Uuid,
     source_cn: Uuid,
     instance_id: Uuid,
     migration_id: Uuid,
-) -> Result<ZfsPeerInfo, ActionError> {
+    role: tritond_auth::MigrateRole,
+) -> Result<MigratePeerInfo, ActionError> {
     let cn = store
         .get_cn(target_cn)
         .await
         .map_err(store_err_to_action_err)?;
     let admin_ip = cn.admin_ip.ok_or_else(|| {
         ActionError::action_failed(serde_json::json!({
-            "kind": "migration.zfs.target_cn_no_admin_ip",
+            "kind": "migration.peer.target_cn_no_admin_ip",
             "target_cn": target_cn.to_string(),
         }))
     })?;
     let migrate_ticket_key_bytes = cn.migrate_ticket_key.ok_or_else(|| {
         ActionError::action_failed(serde_json::json!({
-            "kind": "migration.zfs.target_cn_no_migrate_ticket_key",
+            "kind": "migration.peer.target_cn_no_migrate_ticket_key",
             "reason": "target CN registered before LM-6c — re-approve to mint a key",
             "target_cn": target_cn.to_string(),
         }))
     })?;
     let spki_bytes = cn.console_tls_spki_sha256.ok_or_else(|| {
         ActionError::action_failed(serde_json::json!({
-            "kind": "migration.zfs.target_cn_no_spki",
+            "kind": "migration.peer.target_cn_no_spki",
             "reason": "target CN never reported a TLS leaf cert SPKI",
             "target_cn": target_cn.to_string(),
         }))
@@ -1664,16 +1880,16 @@ async fn resolve_zfs_peer(
             target_cn,
             instance_id,
             migration_id,
-            tritond_auth::MigrateRole::ZfsSource,
+            role,
             tritond_auth::DEFAULT_MIGRATE_TICKET_TTL_SECS,
         )
         .map_err(|e| {
             ActionError::action_failed(serde_json::json!({
-                "kind": "migration.zfs.ticket_mint_failed",
+                "kind": "migration.peer.ticket_mint_failed",
                 "error": e.to_string(),
             }))
         })?;
-    Ok(ZfsPeerInfo {
+    Ok(MigratePeerInfo {
         endpoint: format!("wss://{admin_ip}:{DEFAULT_AGENT_MIGRATE_PORT}"),
         spki_hex: hex::encode(spki_bytes),
         ticket,
@@ -1699,12 +1915,13 @@ async fn enqueue_zfs_pair(
     // + SPKI pin so the source agent can dial the target's
     // listener directly. The peer info rides on the Source job's
     // payload.
-    let peer = resolve_zfs_peer(
+    let peer = resolve_migrate_peer(
         store,
         target_cn,
         params.source_cn,
         params.instance_id,
         params.migration_id,
+        tritond_auth::MigrateRole::ZfsSource,
     )
     .await?;
 
@@ -1777,6 +1994,31 @@ async fn enqueue_zfs_pair(
 /// cancel, so this poll is the abort path for the long-running
 /// transfer nodes. Pass `None` for post-switch awaits where abort
 /// no longer means anything.
+/// Poll one job to a terminal state and return the final row even
+/// when it Failed; the vmm-stream node applies its own failure
+/// policy from the row's `result` instead of the blanket
+/// fail-the-action conversion in [`await_jobs_terminal`]. No abort
+/// poll on purpose (see the `stream_vmm` comment).
+async fn await_job_final_row(
+    store: &Arc<dyn tritond_store::Store>,
+    job_id: Uuid,
+) -> Result<ProvisioningJob, ActionError> {
+    use std::time::Duration;
+    use tritond_store::JobStatusKind;
+    const POLL: Duration = Duration::from_millis(100);
+    loop {
+        let current = store
+            .get_job(job_id)
+            .await
+            .map_err(store_err_to_action_err)?;
+        match current.status.kind() {
+            JobStatusKind::Completed | JobStatusKind::Failed => return Ok(current),
+            _ => {}
+        }
+        tokio::time::sleep(POLL).await;
+    }
+}
+
 async fn await_jobs_terminal(
     store: Arc<dyn tritond_store::Store>,
     migration_id: Option<Uuid>,
@@ -2117,6 +2359,74 @@ mod tests {
         let parsed: ZfsSendResult =
             serde_json::from_value(finals[1].result.clone().unwrap()).unwrap();
         assert_eq!(parsed.bytes_streamed, 7);
+    }
+
+    /// The live failure policy's phase classifier: everything
+    /// strictly before the wire's Finish phase is safe to unwind
+    /// (resume source + clean target); Finish onward, and any
+    /// missing/garbled report, is ambiguous and fails closed.
+    /// Labels mirror `tritonagent::migrate_vmm::phase_label`.
+    #[test]
+    fn live_failure_phase_classification() {
+        for safe in [
+            "sync",
+            "pause",
+            "ram_push",
+            "ram_hash",
+            "time_data",
+            "device_state",
+        ] {
+            assert!(
+                live_failure_is_pre_finish(Some(safe)),
+                "{safe} must be safe"
+            );
+        }
+        for ambiguous in [Some("finish"), Some("complete"), Some("not-a-phase"), None] {
+            assert!(
+                !live_failure_is_pre_finish(ambiguous),
+                "{ambiguous:?} must be ambiguous",
+            );
+        }
+    }
+
+    /// The ambiguous marker round-trips through the record and is
+    /// what the undo guards key off.
+    #[tokio::test]
+    async fn ambiguous_marker_round_trips_through_record() {
+        let store: Arc<dyn tritond_store::Store> = Arc::new(MemStore::new());
+        let record = store
+            .create_migration(tritond_store::NewMigration {
+                instance_id: Uuid::new_v4(),
+                tenant_id: Uuid::new_v4(),
+                project_id: Uuid::new_v4(),
+                source_cn: Uuid::new_v4(),
+                action_requested: tritond_store::MigrationAction::Begin,
+                automatic: false,
+            })
+            .await
+            .unwrap();
+        assert!(!live_failure_is_ambiguous(&store, record.id).await);
+        let params = MigrationSagaParams {
+            migration_id: record.id,
+            instance_id: record.instance_id,
+            tenant_id: record.tenant_id,
+            project_id: record.project_id,
+            source_cn: record.source_cn,
+            target_cn_hint: None,
+            automatic: false,
+            cold: false,
+            was_running: true,
+        };
+        mark_live_failure_ambiguous(&store, &params, Uuid::new_v4(), Some("finish"), "boom").await;
+        assert!(live_failure_is_ambiguous(&store, record.id).await);
+        let error = store
+            .get_migration(record.id)
+            .await
+            .unwrap()
+            .error
+            .expect("error stamped");
+        assert!(error.starts_with(LIVE_AMBIGUOUS_ERROR_PREFIX));
+        assert!(error.contains(&record.source_cn.to_string()));
     }
 
     /// QuotaDanceOp wire shapes the saga enqueues are the ones the

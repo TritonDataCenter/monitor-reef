@@ -77,6 +77,12 @@ pub enum MigrateError {
     Json(#[from] serde_json::Error),
     #[error("zstd: {0}")]
     Zstd(String),
+    /// A caller-side hook failed (e.g. the target's
+    /// [`TargetHooks::state_received`] import fence). Distinct from
+    /// [`Self::Transport`] so the audit row can tell "the wire
+    /// died" apart from "bhyve refused the import".
+    #[error("cutover hook: {0}")]
+    Hook(String),
 }
 
 /// Wire-side phase the state machine is currently in. The

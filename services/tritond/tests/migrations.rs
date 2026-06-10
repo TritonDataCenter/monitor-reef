@@ -25,7 +25,12 @@
 //!   quota restore jobs are enqueued, the record lands Aborted,
 //!   and the active guard releases;
 //! * the lifecycle guard: stop/delete return 409 while a
-//!   migration is active and work again once it is terminal.
+//!   migration is active and work again once it is terminal;
+//! * the live lane (LM-7): pause before the final send, target
+//!   listen strictly before the source vmm stream, and the stream
+//!   failure policy: pre-Finish failures auto-resume the source
+//!   and tear down the target, Finish-window failures leave both
+//!   sides alone with the ambiguous marker on the record.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -137,7 +142,7 @@ async fn root_client(test: &TestServer) -> tritond_client::Client {
 }
 
 /// Register + approve a CN over HTTP so it carries everything the
-/// migration saga's `resolve_zfs_peer` needs: an admin IP, a
+/// migration saga's `resolve_migrate_peer` needs: an admin IP, a
 /// console-listener SPKI pin, and (minted at approval) a
 /// migrate-ticket key.
 async fn register_and_approve_migration_cn(test: &TestServer, cn_uuid: Uuid, admin_ip: &str) {
@@ -172,6 +177,13 @@ async fn register_and_approve_migration_cn(test: &TestServer, cn_uuid: Uuid, adm
 /// as eligible. Real agents post this via `/v1/agent/capacity`;
 /// tests write it straight to the store.
 async fn publish_capacity(test: &TestServer, cn_uuid: Uuid) {
+    publish_capacity_with_probe(test, cn_uuid, false).await;
+}
+
+/// `probe = true` fills the LM-0b capability-probe fields the live
+/// lane's designate gate + compat filters require (matching values
+/// on both CNs so the filters accept).
+async fn publish_capacity_with_probe(test: &TestServer, cn_uuid: Uuid, probe: bool) {
     use tritond_store::{CnCapacity, StorageTier, UnderlayCapability, ZpoolCapacity};
     test.store
         .put_cn_capacity(CnCapacity {
@@ -197,9 +209,9 @@ async fn publish_capacity(test: &TestServer, cn_uuid: Uuid) {
             platform_version: "20260101T000000Z".to_string(),
             hvm_supported: true,
             reported_at: chrono::Utc::now(),
-            vmm_protocol_version: None,
+            vmm_protocol_version: probe.then(|| "vmm-migrate-ron/0".to_string()),
             cpu_features: Vec::new(),
-            tsc_offset_ns: None,
+            tsc_offset_ns: probe.then_some(0),
             zpool_props: Default::default(),
         })
         .await
@@ -213,6 +225,24 @@ async fn running_instance_on(
     silo_name: &str,
     source_cn: Uuid,
 ) -> (Uuid, Uuid, Instance) {
+    running_instance_on_with_brand(test, silo_name, source_cn, false).await
+}
+
+/// `bhyve = true` gives the image a bhyve compatibility block so
+/// the instance's brand is Bhyve; the migrate handler forces
+/// `cold` for every other brand, and the live tests need the live
+/// lane to actually run.
+async fn running_instance_on_with_brand(
+    test: &TestServer,
+    silo_name: &str,
+    source_cn: Uuid,
+    bhyve: bool,
+) -> (Uuid, Uuid, Instance) {
+    let compatibility = bhyve.then(|| tritond_store::ImageCompatibility {
+        brand: "bhyve".to_string(),
+        arch: "x86_64".to_string(),
+        min_smartos_platform: None,
+    });
     let silo = test
         .store
         .create_silo(tritond_store::NewSilo {
@@ -245,7 +275,7 @@ async fn running_instance_on(
                 sha256: "0".repeat(64),
                 source_url: None,
                 id: None,
-                compatibility: None,
+                compatibility,
             },
         )
         .await
@@ -316,17 +346,28 @@ async fn running_instance_on(
     (silo.default_tenant_id, project.id, instance)
 }
 
+/// How the fake agent plays the migration jobs.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FakeAgentScript {
+    /// Complete everything with the canned results.
+    Normal,
+    /// Flip `action_requested` to Abort before completing the first
+    /// sync round's source job, so the saga's abort poll unwinds.
+    AbortOnSync1,
+    /// Fail the source-role `MigrateVmmStream`, reporting the given
+    /// `last_phase` in the job result; drives the live failure
+    /// policy.
+    FailVmmStream { last_phase: &'static str },
+}
+
 /// Scripted fake agent: claims every CN-routed job for `cns` and
 /// completes it, attaching the result payloads the saga reads.
 /// Sync rounds converge on round 2 (round 1 streams 100 MiB, above
-/// the 50 MiB default threshold; round 2 streams 1 MiB). With
-/// `abort_on_sync1` it flips the migration record's
-/// `action_requested` to Abort before completing the first sync
-/// round's source job, so the saga's next abort poll unwinds.
+/// the 50 MiB default threshold; round 2 streams 1 MiB).
 fn spawn_fake_agent(
     store: Arc<dyn Store>,
     cns: Vec<Uuid>,
-    abort_on_sync1: bool,
+    script: FakeAgentScript,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         loop {
@@ -334,7 +375,7 @@ fn spawn_fake_agent(
             for cn in &cns {
                 while let Ok(job) = store.claim_next_job("fake-agent", Some(*cn)).await {
                     idle = false;
-                    complete_scripted(&store, &job, abort_on_sync1).await;
+                    complete_scripted(&store, &job, script).await;
                 }
             }
             if idle {
@@ -344,7 +385,7 @@ fn spawn_fake_agent(
     })
 }
 
-async fn complete_scripted(store: &Arc<dyn Store>, job: &ProvisioningJob, abort_on_sync1: bool) {
+async fn complete_scripted(store: &Arc<dyn Store>, job: &ProvisioningJob, script: FakeAgentScript) {
     let result = match &job.kind {
         JobKind::MigrateQuotaDance {
             op: QuotaDanceOp::SaveAndClear,
@@ -359,7 +400,7 @@ async fn complete_scripted(store: &Arc<dyn Store>, job: &ProvisioningJob, abort_
             migration_id,
             ..
         } => {
-            if abort_on_sync1 && to_snap.ends_with("@migration-sync-1") {
+            if script == FakeAgentScript::AbortOnSync1 && to_snap.ends_with("@migration-sync-1") {
                 // Operator abort lands while the round is still
                 // in flight; the saga's abort poll must convert
                 // it into an unwind.
@@ -376,6 +417,30 @@ async fn complete_scripted(store: &Arc<dyn Store>, job: &ProvisioningJob, abort_
                 512 * 1024 * 1024
             };
             Some(serde_json::json!({ "bytes_streamed": bytes_streamed }))
+        }
+        JobKind::MigratePauseSource { .. } => {
+            Some(serde_json::json!({ "pause_complete_ts": 1_234_u64 }))
+        }
+        JobKind::MigrateTargetListen { .. } => Some(serde_json::json!({ "listen_ready": true })),
+        JobKind::MigrateVmmStream {
+            role: MigrationJobRole::Source,
+            ..
+        } => {
+            if let FakeAgentScript::FailVmmStream { last_phase } = script {
+                // The real agent ships the phase report alongside
+                // the Failed outcome (StreamFailed carrier).
+                let _ = store
+                    .complete_job(
+                        job.id,
+                        JobOutcome::Failed {
+                            reason: "scripted vmm stream failure".to_string(),
+                        },
+                        Some(serde_json::json!({ "last_phase": last_phase })),
+                    )
+                    .await;
+                return;
+            }
+            Some(serde_json::json!({ "last_phase": "complete" }))
         }
         _ => None,
     };
@@ -440,7 +505,11 @@ async fn cold_migration_of_running_instance_stops_source_before_final_send() {
     let (tenant_id, project_id, instance) =
         running_instance_on(&test, "migrate-cold", source_cn).await;
 
-    let agent = spawn_fake_agent(Arc::clone(&test.store), vec![source_cn, target_cn], false);
+    let agent = spawn_fake_agent(
+        Arc::clone(&test.store),
+        vec![source_cn, target_cn],
+        FakeAgentScript::Normal,
+    );
 
     let root = root_client(&test).await;
     let response = tokio::time::timeout(
@@ -602,7 +671,11 @@ async fn abort_mid_sync_unwinds_cleanup_and_quota_restore() {
     let (tenant_id, project_id, instance) =
         running_instance_on(&test, "migrate-abort", source_cn).await;
 
-    let agent = spawn_fake_agent(Arc::clone(&test.store), vec![source_cn, target_cn], true);
+    let agent = spawn_fake_agent(
+        Arc::clone(&test.store),
+        vec![source_cn, target_cn],
+        FakeAgentScript::AbortOnSync1,
+    );
 
     let root = root_client(&test).await;
     let response = tokio::time::timeout(
@@ -685,6 +758,258 @@ async fn abort_mid_sync_unwinds_cleanup_and_quota_restore() {
 
     agent.abort();
     test.close().await;
+}
+
+/// Shared live-lane setup: two probe-publishing CNs, a running
+/// bhyve instance on the source, a scripted fake agent, and the
+/// live (`cold: false`) migrate POST driven to saga-terminal.
+/// Returns everything the assertions need.
+struct LiveRun {
+    test: TestServer,
+    source_cn: Uuid,
+    target_cn: Uuid,
+    instance: Instance,
+    migration_id: Uuid,
+    agent: tokio::task::JoinHandle<()>,
+}
+
+async fn run_live_migration(silo_name: &str, script: FakeAgentScript) -> LiveRun {
+    let test = TestServer::start().await;
+    let source_cn = Uuid::new_v4();
+    let target_cn = Uuid::new_v4();
+    register_and_approve_migration_cn(&test, source_cn, "10.99.97.1").await;
+    register_and_approve_migration_cn(&test, target_cn, "10.99.97.2").await;
+    publish_capacity_with_probe(&test, source_cn, true).await;
+    publish_capacity_with_probe(&test, target_cn, true).await;
+    let (tenant_id, project_id, instance) =
+        running_instance_on_with_brand(&test, silo_name, source_cn, true).await;
+
+    let agent = spawn_fake_agent(Arc::clone(&test.store), vec![source_cn, target_cn], script);
+
+    let root = root_client(&test).await;
+    let response = tokio::time::timeout(
+        TEST_DEADLINE,
+        root.migrate_project_instance()
+            .tenant_id(tenant_id)
+            .project_id(project_id)
+            .instance_id(instance.id)
+            .body(MigrateInstanceBody {
+                action: ClientMigrationAction::Begin,
+                affinity: None,
+                cold: false,
+                target_server_uuid: Some(target_cn),
+            })
+            .send(),
+    )
+    .await
+    .expect("live migration saga must finish before the deadline")
+    .unwrap()
+    .into_inner();
+
+    LiveRun {
+        test,
+        source_cn,
+        target_cn,
+        instance,
+        migration_id: response.migration_id,
+        agent,
+    }
+}
+
+/// Happy-path live migration: the guest is paused (not stopped)
+/// before the final send, the target listens before the source
+/// streams, ownership flips, and no power-cycle jobs ever run.
+#[tokio::test]
+async fn live_migration_pauses_listens_then_streams() {
+    let run = run_live_migration("migrate-live", FakeAgentScript::Normal).await;
+
+    let record = run
+        .test
+        .store
+        .get_migration(run.migration_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        record.state,
+        MigrationState::Successful,
+        "{:?}",
+        record.error
+    );
+    let migrated = run.test.store.get_instance(run.instance.id).await.unwrap();
+    assert_eq!(migrated.host_cn_uuid, Some(run.target_cn));
+
+    let jobs = run.test.store.list_recent_jobs(200).await.unwrap();
+
+    // Live quiesce is a pause, never a power cycle.
+    assert!(
+        !jobs
+            .iter()
+            .any(|j| matches!(j.kind, JobKind::Stop { .. } | JobKind::Start { .. })),
+        "live migration must not stop/start the guest",
+    );
+    let pause = find_job(
+        &jobs,
+        |j| matches!(j.kind, JobKind::MigratePauseSource { .. }),
+        "MigratePauseSource",
+    );
+    assert_eq!(pause.target_cn_uuid, Some(run.source_cn));
+    let final_send = find_job(
+        &jobs,
+        |j| is_source_send_to(j, "@migration-final"),
+        "final source send",
+    );
+    assert!(
+        pause.completed_at.expect("pause terminal") <= final_send.created_at,
+        "pause must reach terminal before the final send is enqueued",
+    );
+
+    // Target listens strictly before the source streams.
+    let listen = find_job(
+        &jobs,
+        |j| matches!(j.kind, JobKind::MigrateTargetListen { .. }),
+        "MigrateTargetListen",
+    );
+    assert_eq!(listen.target_cn_uuid, Some(run.target_cn));
+    assert!(
+        final_send.seq < listen.seq,
+        "target listen belongs to stream_vmm, after the final send",
+    );
+    let stream = find_job(
+        &jobs,
+        |j| {
+            matches!(
+                j.kind,
+                JobKind::MigrateVmmStream {
+                    role: MigrationJobRole::Source,
+                    ..
+                }
+            )
+        },
+        "source MigrateVmmStream",
+    );
+    assert_eq!(stream.target_cn_uuid, Some(run.source_cn));
+    assert!(
+        listen.seq < stream.seq,
+        "listen (seq {}) must be enqueued before the stream (seq {})",
+        listen.seq,
+        stream.seq,
+    );
+    assert!(
+        listen.completed_at.expect("listen terminal") <= stream.created_at,
+        "listen must reach terminal before the stream is enqueued",
+    );
+    // The source job carries the full dial bundle.
+    if let JobKind::MigrateVmmStream {
+        peer_endpoint,
+        peer_spki_sha256_hex,
+        ticket,
+        ..
+    } = &stream.kind
+    {
+        assert!(
+            peer_endpoint
+                .as_deref()
+                .is_some_and(|e| e.starts_with("wss://"))
+        );
+        assert!(peer_spki_sha256_hex.is_some());
+        assert!(ticket.is_some());
+    }
+
+    run.agent.abort();
+    run.test.close().await;
+}
+
+/// Stream failure BEFORE the wire's Finish phase: the target cannot
+/// have imported, so the saga unwinds: resume the paused source,
+/// tear down the target zone.
+#[tokio::test]
+async fn live_stream_pre_finish_failure_resumes_source() {
+    let run = run_live_migration(
+        "migrate-live-fail",
+        FakeAgentScript::FailVmmStream {
+            last_phase: "ram_push",
+        },
+    )
+    .await;
+
+    let record = run
+        .test
+        .store
+        .get_migration(run.migration_id)
+        .await
+        .unwrap();
+    assert_eq!(record.state, MigrationState::Failed);
+
+    // Ownership never flipped.
+    let untouched = run.test.store.get_instance(run.instance.id).await.unwrap();
+    assert_eq!(untouched.host_cn_uuid, Some(run.source_cn));
+
+    let jobs = run.test.store.list_recent_jobs(200).await.unwrap();
+    let resume = find_job(
+        &jobs,
+        |j| matches!(j.kind, JobKind::MigrateResumeSource { .. }),
+        "MigrateResumeSource",
+    );
+    assert_eq!(resume.target_cn_uuid, Some(run.source_cn));
+    let cleanup = find_job(
+        &jobs,
+        |j| matches!(j.kind, JobKind::MigrationCleanupTarget { .. }),
+        "MigrationCleanupTarget",
+    );
+    assert_eq!(cleanup.target_cn_uuid, Some(run.target_cn));
+
+    run.agent.abort();
+    run.test.close().await;
+}
+
+/// Stream failure inside the Finish window: the target may already
+/// be running the guest, so the unwind must NOT resume the source
+/// and must NOT tear down the target; the record carries the
+/// structured ambiguous-failure marker for the operator instead.
+#[tokio::test]
+async fn live_stream_finish_window_failure_leaves_both_sides() {
+    let run = run_live_migration(
+        "migrate-live-ambig",
+        FakeAgentScript::FailVmmStream {
+            last_phase: "finish",
+        },
+    )
+    .await;
+
+    let record = run
+        .test
+        .store
+        .get_migration(run.migration_id)
+        .await
+        .unwrap();
+    assert_eq!(record.state, MigrationState::Failed);
+    let error = record.error.expect("ambiguous marker stamped");
+    assert!(
+        error.starts_with("live migration ambiguous failure"),
+        "unexpected error: {error}",
+    );
+    assert!(error.contains(&run.source_cn.to_string()));
+    assert!(error.contains(&run.target_cn.to_string()));
+
+    // Ownership never flipped; both sides left alone.
+    let untouched = run.test.store.get_instance(run.instance.id).await.unwrap();
+    assert_eq!(untouched.host_cn_uuid, Some(run.source_cn));
+    let jobs = run.test.store.list_recent_jobs(200).await.unwrap();
+    assert!(
+        !jobs
+            .iter()
+            .any(|j| matches!(j.kind, JobKind::MigrateResumeSource { .. })),
+        "ambiguous failure must not auto-resume the source",
+    );
+    assert!(
+        !jobs
+            .iter()
+            .any(|j| matches!(j.kind, JobKind::MigrationCleanupTarget { .. })),
+        "ambiguous failure must not tear down the target zone",
+    );
+
+    run.agent.abort();
+    run.test.close().await;
 }
 
 /// While the `migration/active/<instance>` guard is held, the

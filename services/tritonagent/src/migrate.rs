@@ -10,11 +10,13 @@
 //! the CN admin IP; tritond pins the listener's SPKI exchanged at
 //! registration. Two HS256 tickets per migration (one per role) bind
 //! `(source_cn, target_cn, vm_uuid, migration_id, role)` and expire
-//! at ~10 min. The placeholder runner closes cleanly so the auth
-//! path is exercisable before the saga orchestrator lands.
+//! at ~10 min. The memory channel hands the upgraded socket to
+//! [`crate::migrate_vmm::run_target`] (the LM-7 inbound driver);
+//! the ZFS channel pipes into `zfs recv`.
 
 use std::io;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -56,12 +58,16 @@ pub struct MigrateListenerConfig {
     /// This CN's server UUID — verifier checks the ticket's
     /// `target_cn` matches.
     pub server_uuid: Uuid,
+    /// Proteus kernel device node; the inbound cutover fence opens
+    /// it to start the target's paused ports.
+    pub proteus_dev: PathBuf,
 }
 
 /// Shared handler state.
 struct MigrateState {
     migrate_ticket_key: [u8; MIGRATE_TICKET_KEY_BYTES],
     server_uuid: Uuid,
+    proteus_dev: PathBuf,
 }
 
 /// Query parameters on `GET /migrate/{migration_id}`.
@@ -115,6 +121,7 @@ pub async fn serve(cfg: MigrateListenerConfig) -> Result<()> {
     let state = Arc::new(MigrateState {
         migrate_ticket_key: cfg.migrate_ticket_key,
         server_uuid: cfg.server_uuid,
+        proteus_dev: cfg.proteus_dev,
     });
     let app = build_router(state);
 
@@ -157,19 +164,55 @@ async fn migrate_ws(
         return (StatusCode::UNAUTHORIZED, "invalid migrate ticket").into_response();
     }
 
+    // Fast-path refusal BEFORE the upgrade (mirrors migrate_zfs_ws's
+    // spawn-before-upgrade): an inbound session is only expected
+    // here after this CN's MigrateTargetListen job registered it,
+    // so a miss gets a real status code instead of an opaque close.
+    match crate::migrate_vmm::peek_inbound_instance(migration_id) {
+        Some(instance) if instance == params.vm => {}
+        Some(instance) => {
+            warn!(
+                %migration_id, registered = %instance, claimed = %params.vm,
+                "migrate: inbound registration does not match the ticket's vm",
+            );
+            return (StatusCode::CONFLICT, "inbound migration instance mismatch").into_response();
+        }
+        None => {
+            warn!(
+                %migration_id,
+                "migrate: no pending inbound migration registered on this CN",
+            );
+            return (StatusCode::CONFLICT, "no pending inbound migration").into_response();
+        }
+    }
+
     info!(
         %migration_id, source_cn = %params.source_cn, vm = %params.vm,
         "migrate: upgrading websocket",
     );
 
+    let proteus_dev = state.proteus_dev.clone();
     ws.on_upgrade(move |socket| async move {
-        // Placeholder: close cleanly so the auth path is testable.
-        // Saga driver wires `InboundMigration::run` here later.
-        let mut transport = AxumWsTransport::new(socket);
-        if let Err(e) = transport.close().await {
-            warn!(error = %e, "migrate: failed to close placeholder socket");
+        let transport: Box<dyn Transport> = Box::new(AxumWsTransport::new(socket));
+        let run = crate::migrate_vmm::run_target(
+            transport,
+            crate::migrate_vmm::RunTargetParams {
+                migration_id,
+                vm_uuid: params.vm,
+                proteus_dev,
+            },
+        )
+        .await;
+        match run {
+            Ok(activated_ts_ns) => info!(
+                %migration_id, activated_ts_ns,
+                "migrate: inbound live migration complete",
+            ),
+            Err(e) => warn!(
+                %migration_id, error = %format!("{e:#}"),
+                "migrate: inbound live migration failed",
+            ),
         }
-        info!(%migration_id, "migrate: placeholder inbound session closed");
     })
 }
 
@@ -283,8 +326,9 @@ async fn migrate_zfs_ws(
 /// Parameters for [`dial`]: everything the source side needs to
 /// open the WebSocket to a target tritonagent.
 pub struct DialParams {
-    /// `https://<target_admin_ip>:<port>` — the listener's base URL.
-    /// The dialer converts this to `wss://...` for the upgrade.
+    /// `wss://<target_admin_ip>:<port>`, the target's migrate
+    /// listener URL prefix. The dialer appends `/migrate/{id}` and
+    /// the query string.
     pub base_url: String,
     /// Migration record id (path parameter).
     pub migration_id: Uuid,
@@ -295,12 +339,38 @@ pub struct DialParams {
     pub vm_uuid: Uuid,
     /// HS256 JWT minted by tritond with `MigrateRole::Outbound`.
     pub ticket: String,
+    /// Lowercase-hex SHA-256 of the target listener's leaf-cert
+    /// SubjectPublicKeyInfo; same pinning contract as
+    /// [`DialZfsParams::target_spki_sha256_hex`].
+    pub target_spki_sha256_hex: String,
 }
 
-/// Source-side dialer stub; signature is stable so the saga driver
-/// can wire it in later.
-pub async fn dial(_params: DialParams) -> io::Result<Box<dyn Transport>> {
-    Err(io::Error::other("migrate::dial not wired yet"))
+/// Open the WebSocket to the target tritonagent's
+/// `GET /migrate/{id}` route (memory channel twin of [`dial_zfs`]),
+/// presenting the Outbound-role migrate ticket and pinning the
+/// target's TLS SPKI fingerprint. The returned [`Transport`] feeds
+/// `OutboundMigration`.
+pub async fn dial(params: DialParams) -> io::Result<Box<dyn Transport>> {
+    let pinned_spki = decode_spki_pin(&params.target_spki_sha256_hex)?;
+    let tls_config = build_pinned_client_config(pinned_spki)?;
+    let connector = tokio_tungstenite::Connector::Rustls(Arc::new(tls_config));
+
+    let url = format!(
+        "{}/migrate/{}?ticket={}&source_cn={}&vm={}",
+        params.base_url.trim_end_matches('/'),
+        params.migration_id,
+        urlencoding::encode(&params.ticket),
+        params.source_cn,
+        params.vm_uuid,
+    );
+
+    let (ws, _resp) =
+        tokio_tungstenite::connect_async_tls_with_config(&url, None, false, Some(connector))
+            .await
+            .map_err(|e| {
+                io::Error::new(io::ErrorKind::ConnectionRefused, format!("dial {url}: {e}"))
+            })?;
+    Ok(Box::new(TungsteniteTransport::new(ws)))
 }
 
 /// Parameters for [`dial_zfs`]: the source side opens the ZFS
@@ -644,18 +714,35 @@ mod tests {
     }
 
     #[test]
-    fn dial_stub_returns_error() {
-        // `dial` must surface a clear error rather than panic or
-        // silently no-op until the saga driver wires it.
+    fn dial_refuses_unreachable_peer() {
+        // Memory-channel twin of the dial_zfs test: fail fast
+        // against an unlistened port, no panic.
         let params = DialParams {
-            base_url: "https://127.0.0.1:4568".to_string(),
+            base_url: "wss://127.0.0.1:1".to_string(),
             migration_id: Uuid::nil(),
             source_cn: Uuid::nil(),
             vm_uuid: Uuid::nil(),
             ticket: String::new(),
+            target_spki_sha256_hex: "00".repeat(32),
         };
         let result = tokio_test_block_on(dial(params));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn dial_rejects_malformed_spki_hex() {
+        let params = DialParams {
+            base_url: "wss://127.0.0.1:4568".to_string(),
+            migration_id: Uuid::nil(),
+            source_cn: Uuid::nil(),
+            vm_uuid: Uuid::nil(),
+            ticket: String::new(),
+            target_spki_sha256_hex: "not-hex".to_string(),
+        };
+        let err = tokio_test_block_on(dial(params))
+            .err()
+            .expect("dial should reject bad hex");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
     }
 
     #[test]

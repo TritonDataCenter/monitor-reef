@@ -21,6 +21,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tracing::{debug, info};
 use tritond_client::types::{Disk, Image, Nic, ProvisioningBlueprint, Subnet};
+use tritond_cn_platform::smartos::zoneadm::ZoneadmTool;
 use uuid::Uuid;
 
 pub(crate) type NicTagMap = BTreeMap<Uuid, String>;
@@ -347,6 +348,50 @@ pub async fn delete_zone(instance_id: Uuid) -> Result<()> {
         "vmadm delete {id} failed (exit {}): {stderr}",
         output.status,
     ))
+}
+
+/// Numeric zoneid of a running zone via `zoneadm -z <uuid> list -p`.
+/// The id is boot-scoped: it only exists while the zone runs and
+/// changes on every boot, so callers must re-resolve rather than
+/// cache it.
+pub async fn zone_id(instance_id: Uuid) -> Result<i64> {
+    zone_id_with(&ZoneadmTool::new(), instance_id).await
+}
+
+/// [`zone_id`] with an injectable `zoneadm` wrapper so tests can
+/// substitute a stub binary.
+pub async fn zone_id_with(tool: &ZoneadmTool, instance_id: Uuid) -> Result<i64> {
+    let info = tool
+        .lookup(&instance_id.to_string())
+        .await
+        .with_context(|| format!("zoneadm lookup for zone {instance_id}"))?;
+    info.zoneid.ok_or_else(|| {
+        anyhow!(
+            "zone {instance_id} has no zoneid (state {}); a vmm device only exists for a running zone",
+            info.state,
+        )
+    })
+}
+
+/// SmartOS names the kernel vmm device after the zoneid, not the
+/// zone UUID (the donor agent grepped `ps` for this; the zoneadm
+/// path is race-free and works for paused guests too).
+pub fn vmm_name_for_zone_id(zoneid: i64) -> String {
+    format!("SYSbhyve-{zoneid}")
+}
+
+/// Resolve the vmm device name for a running bhyve zone and verify
+/// `/dev/vmm/<name>` exists; a freshly booted listen-mode zone can
+/// win the zoneadm race before bhyve has created its vmm instance.
+pub async fn vmm_device_name(instance_id: Uuid) -> Result<String> {
+    let zoneid = zone_id(instance_id).await?;
+    let name = vmm_name_for_zone_id(zoneid);
+    let dev = format!("/dev/vmm/{name}");
+    match tokio::fs::try_exists(&dev).await {
+        Ok(true) => Ok(name),
+        Ok(false) => bail!("vmm device {dev} does not exist for zone {instance_id}"),
+        Err(e) => Err(e).with_context(|| format!("stat {dev}")),
+    }
 }
 
 async fn run_simple(args: &[&str]) -> Result<()> {
@@ -1114,6 +1159,51 @@ mod tests {
 
     fn fixture_uuid(byte: u8) -> Uuid {
         Uuid::from_bytes([byte; 16])
+    }
+
+    /// Write an executable stub that plays `zoneadm` for
+    /// [`zone_id_with`]; mirrors the stub pattern in
+    /// `tritond_cn_platform::smartos::zoneadm`'s own tests.
+    #[cfg(unix)]
+    fn stub_zoneadm(dir: &std::path::Path, script: &str) -> ZoneadmTool {
+        use std::os::unix::fs::PermissionsExt;
+        let bin = dir.join("zoneadm");
+        std::fs::write(&bin, script).expect("write stub");
+        let mut perms = std::fs::metadata(&bin).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&bin, perms).unwrap();
+        ZoneadmTool::with_bin(&bin)
+    }
+
+    #[test]
+    fn vmm_name_uses_zoneid_not_uuid() {
+        assert_eq!(vmm_name_for_zone_id(12), "SYSbhyve-12");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn zone_id_resolves_running_zone() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let id = fixture_uuid(0x5a);
+        let tool = stub_zoneadm(
+            dir.path(),
+            &format!("#!/bin/sh\necho '12:{id}:running:/zones/{id}:{id}:bhyve:excl:-:-'\n"),
+        );
+        assert_eq!(zone_id_with(&tool, id).await.expect("zoneid"), 12);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn zone_id_rejects_non_running_zone() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let id = fixture_uuid(0x5b);
+        let tool = stub_zoneadm(
+            dir.path(),
+            &format!("#!/bin/sh\necho '-:{id}:installed:/zones/{id}:{id}:bhyve:excl:-:-'\n"),
+        );
+        let err = zone_id_with(&tool, id).await.expect_err("must reject");
+        assert!(err.to_string().contains("no zoneid"));
+        assert!(err.to_string().contains("installed"));
     }
 
     fn sample_blueprint() -> ProvisioningBlueprint {

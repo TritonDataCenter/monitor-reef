@@ -6,7 +6,7 @@
 
 //! The migration data-plane lane.
 //!
-//! ZFS replication streams and (with LM-7) RAM streams run for
+//! ZFS replication streams and RAM streams run for
 //! hours; driving them inline in the agent's strictly-serial poll
 //! loop would starve every other job on the CN. Kinds matched by
 //! [`is_data_plane_kind`] are instead detached onto a tokio task
@@ -30,7 +30,7 @@ use tritond_client::types::{
 use uuid::Uuid;
 
 use crate::AgentConfig;
-use crate::{migrate, zfs};
+use crate::{migrate, migrate_vmm, zfs};
 
 /// Build the per-agent data-plane lane (see module docs for why
 /// the permit count is 1).
@@ -71,25 +71,38 @@ pub(crate) fn spawn_data_plane_job(
             return;
         };
         info!(job_id = %job.id, kind = ?job.kind, "migration data plane: starting");
-        let (outcome, result) = match run_data_plane_job(&cfg, &job).await {
+        let (outcome, result) = match run_data_plane_job(&client, &cfg, &job).await {
             Ok(result) => (JobOutcome::Completed, result),
             Err(reason) => {
+                // A failed vmm stream still ships its protocol-phase
+                // report as the job result; the saga's failure policy
+                // (resume the source vs leave it paused) keys off it.
+                let result = failure_result(&reason);
                 let chain = format!("{reason:#}");
                 error!(
                     job_id = %job.id,
                     error = %chain,
                     "migration data-plane job failed; reporting to tritond",
                 );
-                (JobOutcome::Failed(chain), None)
+                (JobOutcome::Failed(chain), result)
             }
         };
         report_completion(&client, job.id, outcome, result).await;
     });
 }
 
+/// Extract the [`migrate_vmm::StreamFailed`] report from an error
+/// chain so a failed stream's completion still carries the
+/// last-phase payload.
+fn failure_result(err: &anyhow::Error) -> Option<serde_json::Value> {
+    err.downcast_ref::<migrate_vmm::StreamFailed>()
+        .map(|f| f.report.clone())
+}
+
 /// Dispatch one data-plane job kind. Returns the optional job
 /// `result` payload to attach to the completion.
 async fn run_data_plane_job(
+    client: &Client,
     cfg: &AgentConfig,
     job: &ProvisioningJob,
 ) -> Result<Option<serde_json::Value>> {
@@ -126,21 +139,37 @@ async fn run_data_plane_job(
             migration_id,
             instance_id,
             role: MigrationJobRole::Source,
-            ..
+            peer_endpoint,
+            peer_spki_sha256_hex,
+            ticket,
         } => {
-            bail!(
-                "MigrateVmmStream source driver lands with LM-7 \
-                 (migration {migration_id}, instance {instance_id})"
-            );
+            let peer_endpoint = peer_endpoint
+                .as_deref()
+                .ok_or_else(|| anyhow!("Source-role MigrateVmmStream missing peer_endpoint"))?;
+            let peer_spki = peer_spki_sha256_hex.as_deref().ok_or_else(|| {
+                anyhow!("Source-role MigrateVmmStream missing peer_spki_sha256_hex")
+            })?;
+            let ticket = ticket
+                .as_deref()
+                .ok_or_else(|| anyhow!("Source-role MigrateVmmStream missing ticket"))?;
+            let report = migrate_vmm::run_source(
+                cfg,
+                *migration_id,
+                *instance_id,
+                peer_endpoint,
+                peer_spki,
+                ticket,
+            )
+            .await?;
+            Ok(Some(report))
         }
         JobKind::MigrateTargetListen {
             migration_id,
             instance_id,
         } => {
-            bail!(
-                "MigrateTargetListen lands with LM-7 \
-                 (migration {migration_id}, instance {instance_id})"
-            );
+            let result =
+                migrate_vmm::target_listen(client, job, *migration_id, *instance_id).await?;
+            Ok(Some(result))
         }
         other => bail!("job kind {other:?} is not a migration data-plane kind"),
     }
@@ -291,6 +320,18 @@ mod tests {
             peer_spki_sha256_hex: None,
             ticket: None,
         }
+    }
+
+    #[test]
+    fn failure_result_extracts_stream_report_through_context() {
+        let report = serde_json::json!({ "last_phase": "ram_push" });
+        let err = anyhow::Error::new(migrate_vmm::StreamFailed {
+            reason: "vmm stream failed: boom".to_string(),
+            report: report.clone(),
+        })
+        .context("outer context must not hide the report");
+        assert_eq!(failure_result(&err), Some(report));
+        assert_eq!(failure_result(&anyhow::anyhow!("plain failure")), None);
     }
 
     #[test]

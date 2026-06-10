@@ -30,6 +30,7 @@ pub mod metrics;
 pub mod migrate;
 pub mod migrate_jobs;
 pub mod migrate_probe;
+pub mod migrate_vmm;
 pub mod nic_tags;
 pub mod platform;
 pub mod proteus;
@@ -554,6 +555,7 @@ fn maybe_spawn_migrate_listener(cfg: &AgentConfig) {
         tls,
         migrate_ticket_key,
         server_uuid,
+        proteus_dev: cfg.proteus_dev.clone(),
     };
     tokio::spawn(async move {
         if let Err(e) = migrate::serve(listener_cfg).await {
@@ -909,21 +911,13 @@ async fn drive_job(
             migration_id,
             instance_id,
         } => {
-            error!(
-                %migration_id, %instance_id,
-                "migrate-pause-source: not implemented; lands with LM-7",
-            );
-            anyhow::bail!("MigratePauseSource lands with LM-7");
+            result = Some(migrate_vmm::pause_source(*migration_id, *instance_id).await?);
         }
         JobKind::MigrateResumeSource {
             migration_id,
             instance_id,
         } => {
-            error!(
-                %migration_id, %instance_id,
-                "migrate-resume-source: not implemented; lands with LM-7",
-            );
-            anyhow::bail!("MigrateResumeSource lands with LM-7");
+            migrate_vmm::resume_source(*migration_id, *instance_id).await?;
         }
         JobKind::MigrateTargetListen {
             migration_id,
@@ -931,12 +925,13 @@ async fn drive_job(
         } => {
             // Routed to the data-plane lane by `poll_once`; reaching
             // the inline path means the diversion predicate and this
-            // match disagree.
+            // match disagree. Fail loudly rather than blocking the
+            // poll loop on a zone boot.
             error!(
                 %migration_id, %instance_id,
-                "migrate-target-listen: reached the inline dispatcher; lands with LM-7",
+                "migrate-target-listen: reached the inline dispatcher",
             );
-            anyhow::bail!("MigrateTargetListen lands with LM-7");
+            anyhow::bail!("MigrateTargetListen must run on the migration data-plane lane");
         }
         JobKind::Start { instance_id } => {
             // Power on an existing stopped zone. The zone and its
@@ -1111,11 +1106,10 @@ async fn drive_job(
         } => match role {
             tritond_client::types::MigrationJobRole::Source => {
                 // Same diversion contract as source-role
-                // MigrateZfsSend; the lane's driver is an LM-7
-                // fail-stub until then.
+                // MigrateZfsSend.
                 anyhow::bail!(
                     "source-role MigrateVmmStream must run on the migration data-plane lane \
-                     (migration {migration_id}, instance {instance_id}); driver lands with LM-7"
+                     (migration {migration_id}, instance {instance_id})"
                 );
             }
             tritond_client::types::MigrationJobRole::Target => {
@@ -1661,6 +1655,12 @@ trait ProteusLifecycle: Send + Sync {
     /// same generation, so the caller must bump the generation first.
     fn apply_blueprint(&self, blueprint: &PortBlueprint) -> Result<()>;
 
+    /// Start packet processing on an existing (paused) port. The
+    /// live-migration cutover fence uses this on the target: the
+    /// port was created paused by `MigrationProvisionTarget` and
+    /// must begin forwarding the instant the imported guest can run.
+    fn start_port(&self, port_id: PortId) -> Result<()>;
+
     fn cleanup_port(&self, port_id: PortId) -> Result<()>;
 
     /// Idempotently register the per-CN external datalink the inbound
@@ -1696,6 +1696,10 @@ where
 
     fn apply_blueprint(&self, blueprint: &PortBlueprint) -> Result<()> {
         proteus::ProteusClient::apply_blueprint(self, blueprint)
+    }
+
+    fn start_port(&self, port_id: PortId) -> Result<()> {
+        proteus::ProteusClient::start_port(self, port_id)
     }
 
     fn cleanup_port(&self, port_id: PortId) -> Result<()> {
@@ -1805,6 +1809,10 @@ impl ProteusLifecycle for KernelProteusLifecycle {
 
     fn apply_blueprint(&self, blueprint: &PortBlueprint) -> Result<()> {
         self.inner.apply_blueprint(blueprint)
+    }
+
+    fn start_port(&self, port_id: PortId) -> Result<()> {
+        self.inner.start_port(port_id)
     }
 
     fn cleanup_port(&self, port_id: PortId) -> Result<()> {
@@ -2452,6 +2460,10 @@ mod tests {
                 anyhow::bail!("simulated apply failure");
             }
             Ok(())
+        }
+
+        fn start_port(&self, _port_id: PortId) -> Result<()> {
+            unreachable!("FIP handler never starts a port")
         }
 
         fn cleanup_port(&self, _port_id: PortId) -> Result<()> {
