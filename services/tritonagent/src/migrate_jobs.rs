@@ -1,0 +1,314 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// Copyright 2026 Edgecast Cloud LLC.
+
+//! The migration data-plane lane.
+//!
+//! ZFS replication streams and (with LM-7) RAM streams run for
+//! hours; driving them inline in the agent's strictly-serial poll
+//! loop would starve every other job on the CN. Kinds matched by
+//! [`is_data_plane_kind`] are instead detached onto a tokio task
+//! behind a `Semaphore(1)` owned by the agent; one migration data
+//! plane per CN, because concurrent streams just split the admin
+//! NIC's bandwidth and double every migration's wall-clock. The
+//! detached task reports its own job completion; the poll loop
+//! keeps claiming other jobs meanwhile. Control-plane migration
+//! jobs (quota dance, provision-target, cleanup, pause/resume)
+//! stay inline; they finish in seconds.
+
+use std::sync::Arc;
+
+use anyhow::{Context, Result, anyhow, bail};
+use tokio::sync::Semaphore;
+use tracing::{error, info, warn};
+use tritond_client::Client;
+use tritond_client::types::{
+    CompleteJobRequest, JobKind, JobOutcome, MigrationJobRole, ProvisioningJob,
+};
+use uuid::Uuid;
+
+use crate::AgentConfig;
+use crate::{migrate, zfs};
+
+/// Build the per-agent data-plane lane (see module docs for why
+/// the permit count is 1).
+pub(crate) fn new_lane() -> Arc<Semaphore> {
+    Arc::new(Semaphore::new(1))
+}
+
+/// Whether a claimed job is a migration data-plane stream that
+/// must run on the detached lane instead of the poll loop.
+pub(crate) fn is_data_plane_kind(kind: &JobKind) -> bool {
+    matches!(
+        kind,
+        JobKind::MigrateZfsSend {
+            role: MigrationJobRole::Source,
+            ..
+        } | JobKind::MigrateVmmStream {
+            role: MigrationJobRole::Source,
+            ..
+        } | JobKind::MigrateTargetListen { .. }
+    )
+}
+
+/// Detach a claimed data-plane job onto the lane. The task itself
+/// reports the terminal outcome to tritond; the caller must not.
+pub(crate) fn spawn_data_plane_job(
+    client: Arc<Client>,
+    cfg: AgentConfig,
+    lane: Arc<Semaphore>,
+    job: ProvisioningJob,
+) {
+    tokio::spawn(async move {
+        // The claim is already held; the permit only serializes
+        // the heavy stream itself. A job queued behind an
+        // in-flight stream simply stays Claimed until its turn.
+        let Ok(_permit) = lane.acquire_owned().await else {
+            // Closed only at process teardown; tritond's stale-claim
+            // sweeper re-queues the job.
+            return;
+        };
+        info!(job_id = %job.id, kind = ?job.kind, "migration data plane: starting");
+        let (outcome, result) = match run_data_plane_job(&cfg, &job).await {
+            Ok(result) => (JobOutcome::Completed, result),
+            Err(reason) => {
+                let chain = format!("{reason:#}");
+                error!(
+                    job_id = %job.id,
+                    error = %chain,
+                    "migration data-plane job failed; reporting to tritond",
+                );
+                (JobOutcome::Failed(chain), None)
+            }
+        };
+        report_completion(&client, job.id, outcome, result).await;
+    });
+}
+
+/// Dispatch one data-plane job kind. Returns the optional job
+/// `result` payload to attach to the completion.
+async fn run_data_plane_job(
+    cfg: &AgentConfig,
+    job: &ProvisioningJob,
+) -> Result<Option<serde_json::Value>> {
+    match &job.kind {
+        JobKind::MigrateZfsSend {
+            migration_id,
+            instance_id,
+            role: MigrationJobRole::Source,
+            dataset,
+            from_snap,
+            to_snap,
+            peer_endpoint,
+            peer_spki_sha256_hex,
+            ticket,
+        } => {
+            let bytes = run_zfs_send_source(
+                cfg,
+                *migration_id,
+                *instance_id,
+                dataset,
+                from_snap.as_deref(),
+                to_snap,
+                peer_endpoint.as_deref(),
+                peer_spki_sha256_hex.as_deref(),
+                ticket.as_deref(),
+            )
+            .await?;
+            // The saga's sync-convergence loop reads this
+            // (`ZfsSendResult`) to decide whether another
+            // incremental round is worth it.
+            Ok(Some(serde_json::json!({ "bytes_streamed": bytes })))
+        }
+        JobKind::MigrateVmmStream {
+            migration_id,
+            instance_id,
+            role: MigrationJobRole::Source,
+            ..
+        } => {
+            bail!(
+                "MigrateVmmStream source driver lands with LM-7 \
+                 (migration {migration_id}, instance {instance_id})"
+            );
+        }
+        JobKind::MigrateTargetListen {
+            migration_id,
+            instance_id,
+        } => {
+            bail!(
+                "MigrateTargetListen lands with LM-7 \
+                 (migration {migration_id}, instance {instance_id})"
+            );
+        }
+        other => bail!("job kind {other:?} is not a migration data-plane kind"),
+    }
+}
+
+/// Source side of a `MigrateZfsSend`: take the (recursive)
+/// migration snapshot, dial the target listener's
+/// `/migrate/{id}/zfs` route, and pump `zfs send` stdout through
+/// the WebSocket. Returns the bytes streamed.
+#[allow(clippy::too_many_arguments)]
+async fn run_zfs_send_source(
+    cfg: &AgentConfig,
+    migration_id: Uuid,
+    instance_id: Uuid,
+    dataset: &str,
+    from_snap: Option<&str>,
+    to_snap: &str,
+    peer_endpoint: Option<&str>,
+    peer_spki_sha256_hex: Option<&str>,
+    ticket: Option<&str>,
+) -> Result<u64> {
+    // Snapshot the source dataset (idempotent; `zfs snapshot`
+    // errors if the snapshot already exists, which a re-claimed
+    // job after a crash hits; we ignore that specific error).
+    if let Err(e) = zfs::snapshot_for_migration(
+        dataset,
+        to_snap.trim_start_matches(&format!("{dataset}@migration-")),
+    )
+    .await
+    {
+        let msg = e.to_string();
+        if !msg.contains("dataset already exists") {
+            bail!("snapshot {to_snap} failed: {msg}");
+        }
+        info!(
+            %migration_id, %to_snap,
+            "migrate-zfs-send: snapshot already exists; reusing",
+        );
+    }
+
+    let peer_endpoint =
+        peer_endpoint.ok_or_else(|| anyhow!("Source-role MigrateZfsSend missing peer_endpoint"))?;
+    let peer_spki = peer_spki_sha256_hex
+        .ok_or_else(|| anyhow!("Source-role MigrateZfsSend missing peer_spki_sha256_hex"))?;
+    let ticket = ticket.ok_or_else(|| anyhow!("Source-role MigrateZfsSend missing ticket"))?;
+
+    let server_uuid = Uuid::parse_str(&cfg.agent_id)
+        .context("agent_id is not a UUID; cannot present source_cn in dial")?;
+    let transport = migrate::dial_zfs(migrate::DialZfsParams {
+        base_url: peer_endpoint.to_string(),
+        migration_id,
+        source_cn: server_uuid,
+        vm_uuid: instance_id,
+        target_dataset: dataset.to_string(),
+        ticket: ticket.to_string(),
+        target_spki_sha256_hex: peer_spki.to_string(),
+    })
+    .await
+    .context("dial target /migrate/{id}/zfs")?;
+
+    let mut child = match from_snap {
+        Some(from) => zfs::spawn_send_incremental(from, to_snap)
+            .context("spawn zfs send -I for incremental")?,
+        None => zfs::spawn_send_full(to_snap).context("spawn zfs send for full")?,
+    };
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow!("zfs send child has no piped stdout"))?;
+    let sender = tritond_vmm_migrate::zfs_stream::ZfsSender::new(transport, stdout);
+    let bytes = sender.run().await.context("ZfsSender::run")?;
+    let status = child.wait().await.context("await zfs send exit")?;
+    if !status.success() {
+        bail!("zfs send exited non-zero: {status}");
+    }
+    info!(
+        %migration_id, %instance_id, %dataset, %to_snap, bytes,
+        "migrate-zfs-send/source: stream completed",
+    );
+    Ok(bytes)
+}
+
+/// Report a detached job's terminal outcome. Bounded retry: the
+/// poll loop's completions ride its claim/complete error path,
+/// but a detached task has no caller to retry for it, and losing
+/// the completion of a multi-hour stream means the stale-claim
+/// sweeper re-queues the entire transfer. A short retry rides out
+/// a tritond restart.
+async fn report_completion(
+    client: &Client,
+    job_id: Uuid,
+    outcome: JobOutcome,
+    result: Option<serde_json::Value>,
+) {
+    const ATTEMPTS: u32 = 5;
+    const BACKOFF: std::time::Duration = std::time::Duration::from_secs(10);
+    for attempt in 1..=ATTEMPTS {
+        match client
+            .agent_complete_job()
+            .job_id(job_id)
+            .body(CompleteJobRequest {
+                outcome: outcome.clone(),
+                result: result.clone(),
+            })
+            .send()
+            .await
+        {
+            Ok(updated) => {
+                let updated = updated.into_inner();
+                info!(
+                    job_id = %updated.id,
+                    status = ?updated.status,
+                    "migration data plane: completed job",
+                );
+                return;
+            }
+            Err(e) if attempt < ATTEMPTS => {
+                warn!(
+                    %job_id, attempt, error = %e,
+                    "migration data plane: completion report failed; retrying",
+                );
+                tokio::time::sleep(BACKOFF).await;
+            }
+            Err(e) => {
+                error!(
+                    %job_id, error = %e,
+                    "migration data plane: completion report failed; giving up \
+                     (the stale-claim sweeper will re-queue the job)",
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn zfs_send(role: MigrationJobRole) -> JobKind {
+        JobKind::MigrateZfsSend {
+            migration_id: Uuid::new_v4(),
+            instance_id: Uuid::new_v4(),
+            role,
+            dataset: "zones/x".to_string(),
+            from_snap: None,
+            to_snap: "zones/x@migration-base".to_string(),
+            peer_endpoint: None,
+            peer_spki_sha256_hex: None,
+            ticket: None,
+        }
+    }
+
+    #[test]
+    fn data_plane_kinds_are_source_streams_and_target_listen() {
+        assert!(is_data_plane_kind(&zfs_send(MigrationJobRole::Source)));
+        // The target side of a ZFS pair is a no-op (the listener
+        // does the work) and must stay on the fast inline path.
+        assert!(!is_data_plane_kind(&zfs_send(MigrationJobRole::Target)));
+        assert!(is_data_plane_kind(&JobKind::MigrateTargetListen {
+            migration_id: Uuid::new_v4(),
+            instance_id: Uuid::new_v4(),
+        }));
+        assert!(!is_data_plane_kind(&JobKind::Stop {
+            instance_id: Uuid::new_v4(),
+        }));
+        assert!(!is_data_plane_kind(&JobKind::MigratePauseSource {
+            migration_id: Uuid::new_v4(),
+            instance_id: Uuid::new_v4(),
+        }));
+    }
+}

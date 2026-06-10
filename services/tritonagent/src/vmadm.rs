@@ -153,6 +153,92 @@ pub(crate) async fn create_zone_with_nic_tags(
     run_create_payload(blueprint, payload).await
 }
 
+/// Create a migration-target zone shell: the zone config and
+/// dataset skeleton only, never a running guest. Used by
+/// `JobKind::MigrationProvisionTarget`.
+pub(crate) async fn create_migration_target_zone(
+    blueprint: &ProvisioningBlueprint,
+    nic_tags: &NicTagMap,
+) -> Result<Uuid> {
+    let payload = build_migration_target_payload(blueprint, nic_tags)?;
+    run_create_payload(blueprint, payload).await
+}
+
+/// Build the `vmadm create` payload for a migration target.
+///
+/// Two deltas against a normal provision:
+///   * `autoboot: false`: booting before the cutover would put a
+///     duplicate-MAC guest on the wire while the source still
+///     owns the identity.
+///   * bhyve disks lose their `image_uuid`: the vmadm-created
+///     datasets are destroyed right after create so the first
+///     `zfs recv` lands clean, so cloning a (possibly absent)
+///     image into them is pure waste. Native zones keep theirs:
+///     vmadm cannot create an OS zone imageless, and the recv
+///     replaces the cloned root anyway.
+///
+/// The reservoir opt-in is intentionally not applied: the target
+/// boots later via a plain `Start` job, which performs no
+/// reservoir capacity check, so a reservoir-backed config could
+/// fail to boot on a full host.
+pub(crate) fn build_migration_target_payload(
+    blueprint: &ProvisioningBlueprint,
+    nic_tags: &NicTagMap,
+) -> Result<serde_json::Value> {
+    let mut payload = build_create_payload_with_nic_tags(blueprint, nic_tags, false)?;
+    let obj = payload
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("vmadm create payload is not a JSON object"))?;
+    obj.insert("autoboot".to_string(), serde_json::Value::Bool(false));
+    if let Some(disks) = obj.get_mut("disks").and_then(|d| d.as_array_mut()) {
+        for disk in disks {
+            if let Some(disk_obj) = disk.as_object_mut() {
+                disk_obj.remove("image_uuid");
+            }
+        }
+    }
+    Ok(payload)
+}
+
+/// Idempotently set a string `attr` resource on a zone's zonecfg
+/// (e.g. the bhyve brand's `migrate_listen` / `migrate_export`
+/// boot flags, which vmadm payloads cannot express). `select`
+/// only succeeds when the attr already exists, so first try an
+/// in-place update and fall back to `add`. Names and values come
+/// from agent code (never tenant input), so shell quoting is not
+/// at risk; zonecfg takes the command string as a single argv
+/// entry anyway.
+pub async fn set_zone_attr(zone: Uuid, name: &str, value: &str) -> Result<()> {
+    let id = zone.to_string();
+    let update = format!("select attr name={name}; set value=\"{value}\"; end");
+    let updated = Command::new("zonecfg")
+        .args(["-z", &id, &update])
+        .output()
+        .await
+        .with_context(|| format!("spawn zonecfg update attr {name} on {id}"))?;
+    if updated.status.success() {
+        return Ok(());
+    }
+    let add = format!("add attr; set name={name}; set type=string; set value=\"{value}\"; end");
+    let added = Command::new("zonecfg")
+        .args(["-z", &id, &add])
+        .output()
+        .await
+        .with_context(|| format!("spawn zonecfg add attr {name} on {id}"))?;
+    if added.status.success() {
+        return Ok(());
+    }
+    let update_stderr = String::from_utf8_lossy(&updated.stderr).into_owned();
+    let add_stderr = String::from_utf8_lossy(&added.stderr).into_owned();
+    Err(anyhow!(
+        "zonecfg set attr {name}={value} on zone {id} failed: update (exit {}): {}; add (exit {}): {}",
+        updated.status,
+        update_stderr.trim(),
+        added.status,
+        add_stderr.trim(),
+    ))
+}
+
 async fn run_create_payload(
     blueprint: &ProvisioningBlueprint,
     payload: serde_json::Value,
@@ -1494,6 +1580,39 @@ mod tests {
         assert_eq!(
             TRITOND_METADATA_IDENTITY_HMAC,
             tritond_store::TRITOND_METADATA_IDENTITY_HMAC
+        );
+    }
+
+    #[test]
+    fn migration_target_payload_bhyve_is_unbooted_and_imageless() {
+        let bp = sample_bhyve_blueprint();
+        let nic_tags = NicTagMap::new();
+        let payload = build_migration_target_payload(&bp, &nic_tags).unwrap();
+        assert_eq!(payload["brand"], "bhyve");
+        assert_eq!(payload["autoboot"], false);
+        // The disks are destroyed right after create (the recv
+        // replaces them), so no image clone; and the disk budget
+        // must survive image_uuid removal so the zvol skeleton has
+        // the right size.
+        let disk0 = &payload["disks"][0];
+        assert!(disk0.get("image_uuid").is_none());
+        assert_eq!(disk0["size"], 20 * 1024);
+        assert_eq!(disk0["boot"], true);
+        // Never reservoir-backed (a plain Start does no capacity check).
+        assert!(payload.get("bhyve_extra_opts").is_none());
+    }
+
+    #[test]
+    fn migration_target_payload_native_keeps_image_uuid() {
+        let bp = sample_blueprint();
+        let nic_tags = NicTagMap::new();
+        let payload = build_migration_target_payload(&bp, &nic_tags).unwrap();
+        assert_eq!(payload["brand"], "joyent-minimal");
+        assert_eq!(payload["autoboot"], false);
+        // OS zones cannot be created imageless.
+        assert_eq!(
+            payload["image_uuid"],
+            bp.image.as_ref().unwrap().id.to_string()
         );
     }
 

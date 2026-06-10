@@ -137,15 +137,20 @@ use tokio::process::Child;
 /// abort). Mirrors the
 /// `tritond_store::SourceFilesystemDetails` shape so the saga can
 /// round-trip without a translation layer; we hold a separate
-/// type here to avoid an agent → store dependency arrow.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// type here to avoid an agent → store dependency arrow. The
+/// serde field names double as the `QuotaDanceSaveResult` job
+/// `result` contract and the on-dataset stash format, so renames
+/// are wire changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct SavedQuotas {
     /// `zfs get -Hp -o value quota <ds>` parsed as bytes. `None`
     /// when zfs returns `0` (i.e. the property was unset, which
     /// zfs reports as 0 — distinct from "explicit 0" which is
     /// invalid anyway).
+    #[serde(default)]
     pub quota_bytes: Option<u64>,
     /// Same for `refreservation`.
+    #[serde(default)]
     pub refreservation_bytes: Option<u64>,
 }
 
@@ -155,18 +160,84 @@ pub struct SavedQuotas {
 /// label is appended verbatim so the caller can encode the
 /// migration id + iteration ("base", "increment-1", "final",
 /// "postpause") in a single human-readable spot.
+///
+/// Recursive (`-r`): a bhyve zone's boot/data zvols are child
+/// datasets (`zones/<uuid>/disk0`), so a non-recursive snapshot
+/// would silently drop every guest disk from the stream.
 pub async fn snapshot_for_migration(dataset: &str, label: &str) -> Result<String> {
-    let snap_name = format!("migration-{label}");
-    snapshot(dataset, &snap_name).await?;
-    Ok(format!("{dataset}@{snap_name}"))
+    let full = format!("{dataset}@migration-{label}");
+    let args = migration_snapshot_args(&full);
+    let output = Command::new("zfs")
+        .args(&args)
+        .output()
+        .await
+        .context("spawn zfs snapshot -r")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!(
+            "zfs snapshot -r {full} failed (exit {}): {stderr}",
+            output.status,
+        ));
+    }
+    Ok(full)
 }
 
+fn migration_snapshot_args(snapshot: &str) -> Vec<String> {
+    vec!["snapshot".into(), "-r".into(), snapshot.into()]
+}
+
+fn send_full_args(snapshot: &str) -> Vec<String> {
+    vec!["send".into(), "-w".into(), "-R".into(), snapshot.into()]
+}
+
+fn send_incremental_args(from_snap: &str, to_snap: &str) -> Vec<String> {
+    vec![
+        "send".into(),
+        "-w".into(),
+        "-R".into(),
+        "-I".into(),
+        from_snap.into(),
+        to_snap.into(),
+    ]
+}
+
+fn recv_args(dataset: &str) -> Vec<String> {
+    vec![
+        "recv".into(),
+        "-F".into(),
+        "-u".into(),
+        "-x".into(),
+        "quota".into(),
+        "-x".into(),
+        "refreservation".into(),
+        dataset.into(),
+    ]
+}
+
+fn list_snapshots_args(dataset: &str) -> Vec<String> {
+    vec![
+        "list".into(),
+        "-H".into(),
+        "-t".into(),
+        "snapshot".into(),
+        "-o".into(),
+        "name".into(),
+        "-d".into(),
+        "1".into(),
+        dataset.into(),
+    ]
+}
+
+/// Spawn `zfs send -w -R <snap>` with stdout piped.
+///
 /// `-w` (raw, encryption-preserving) is unconditional so encrypted
 /// migrations work once the placement filter that rejects them is
-/// lifted; harmless on unencrypted datasets.
+/// lifted; harmless on unencrypted datasets. `-R` (replication
+/// stream) carries the whole dataset tree; without it a bhyve
+/// zone's disk zvols never reach the target.
 pub fn spawn_send_full(snapshot: &str) -> Result<Child> {
     let mut cmd = Command::new("zfs");
-    cmd.args(["send", "-w", snapshot])
+    cmd.args(send_full_args(snapshot))
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .stdin(std::process::Stdio::null());
@@ -174,19 +245,26 @@ pub fn spawn_send_full(snapshot: &str) -> Result<Child> {
         .with_context(|| format!("spawn zfs send {snapshot}"))
 }
 
-/// Spawn `zfs send -i <from> <to>` (incremental) with stdout
-/// piped. Same lifetime contract as [`spawn_send_full`].
+/// Spawn `zfs send -w -R -I <from> <to>` (incremental replication
+/// stream) with stdout piped. Same lifetime contract as
+/// [`spawn_send_full`].
+///
+/// `-I` (not `-i`): a replication stream must keep every dataset's
+/// snapshot chain intact on the receiver, and `-I` ships all
+/// intermediate snapshots between the two endpoints so the next
+/// round's incremental base exists on every child dataset.
 pub fn spawn_send_incremental(from_snap: &str, to_snap: &str) -> Result<Child> {
     let mut cmd = Command::new("zfs");
-    cmd.args(["send", "-w", "-i", from_snap, to_snap])
+    cmd.args(send_incremental_args(from_snap, to_snap))
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .stdin(std::process::Stdio::null());
     cmd.spawn()
-        .with_context(|| format!("spawn zfs send -i {from_snap} {to_snap}"))
+        .with_context(|| format!("spawn zfs send -I {from_snap} {to_snap}"))
 }
 
-/// Spawn `zfs recv <dataset>` with stdin piped.
+/// Spawn `zfs recv -F -u -x quota -x refreservation <dataset>`
+/// with stdin piped.
 ///
 /// Returns the `Child` with `stdin: Some(_)` — the caller takes
 /// the stdin (`child.stdin.take()`), pipes a
@@ -197,15 +275,64 @@ pub fn spawn_send_incremental(from_snap: &str, to_snap: &str) -> Result<Child> {
 /// target dataset already exists from a prior incremental round.
 /// Passes `-u` (no automount) so the dataset doesn't try to
 /// mount during the migration window — the migration saga
-/// activates it after the cutover.
+/// activates it after the cutover. Excludes `quota` and
+/// `refreservation` (`-x`) because the replication stream carries
+/// the source's properties and a received quota smaller than the
+/// in-flight stream aborts the receive; the saga's quota dance
+/// restores both on whichever side ends up owning the dataset.
 pub fn spawn_recv(dataset: &str) -> Result<Child> {
     let mut cmd = Command::new("zfs");
-    cmd.args(["recv", "-F", "-u", dataset])
+    cmd.args(recv_args(dataset))
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     cmd.spawn()
         .with_context(|| format!("spawn zfs recv {dataset}"))
+}
+
+/// List the names of `dataset`'s migration snapshots (the
+/// `@migration-*` family the saga creates). Depth-limited to the
+/// dataset itself: the snapshots are created with `-r`, so
+/// destroying the parent's snapshot with `-r` takes the
+/// children's along, and listing descendants would only produce
+/// names that vanish mid-cleanup.
+///
+/// A dataset that does not exist returns an empty list: cleanup
+/// runs after `vmadm delete`, which usually destroys the whole
+/// dataset tree first.
+pub async fn list_migration_snapshots(dataset: &str) -> Result<Vec<String>> {
+    let output = Command::new("zfs")
+        .args(list_snapshots_args(dataset))
+        .output()
+        .await
+        .context("spawn zfs list -t snapshot")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("does not exist") {
+            return Ok(Vec::new());
+        }
+        return Err(anyhow!(
+            "zfs list -t snapshot {dataset} failed (exit {}): {stderr}",
+            output.status,
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(parse_migration_snapshots(&stdout))
+}
+
+/// Filter a `zfs list -H -o name` listing down to migration
+/// snapshots (name part after `@` starts with `migration-`).
+fn parse_migration_snapshots(stdout: &str) -> Vec<String> {
+    stdout
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter(|line| {
+            line.split_once('@')
+                .is_some_and(|(_, snap)| snap.starts_with("migration-"))
+        })
+        .map(str::to_string)
+        .collect()
 }
 
 /// Capture the current `quota` + `refreservation` of a dataset so
@@ -242,20 +369,104 @@ pub async fn clear_quotas(dataset: &str) -> Result<()> {
     Ok(())
 }
 
-/// Destroy one snapshot. Unlike [`destroy`] (which is recursive
-/// and tolerates a missing dataset), this is strict: a missing
-/// snapshot surfaces as an error so the saga's cleanup logs
-/// catch typos / wrong names instead of silently moving on.
+/// Destroy one snapshot across the dataset tree (`destroy -r` of
+/// a snapshot name takes the same-named snapshot on every child,
+/// the mirror image of the `-r` create in
+/// [`snapshot_for_migration`]). Unlike [`destroy`] this is strict
+/// on a missing snapshot: the saga's cleanup logs should catch
+/// typos / wrong names instead of silently moving on.
 pub async fn destroy_snapshot(snapshot: &str) -> Result<()> {
     let output = Command::new("zfs")
-        .args(["destroy", snapshot])
+        .args(["destroy", "-r", snapshot])
         .output()
         .await
         .with_context(|| format!("spawn zfs destroy {snapshot}"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(anyhow!(
-            "zfs destroy {snapshot} failed (exit {}): {stderr}",
+            "zfs destroy -r {snapshot} failed (exit {}): {stderr}",
+            output.status,
+        ));
+    }
+    Ok(())
+}
+
+/// ZFS user property the quota dance stashes the original
+/// `quota`/`refreservation` under (JSON-encoded [`SavedQuotas`]).
+/// Living on the dataset itself makes `SaveAndClear` idempotent
+/// across agent crashes: a re-claimed job whose clear already ran
+/// reads the stash instead of reporting the cleared (None)
+/// values, which would silently lose the tenant's quota.
+const MIGRATION_QUOTA_STASH_PROP: &str = "tritond:migration_saved_quotas";
+
+/// Persist `saved` on the dataset (see
+/// [`MIGRATION_QUOTA_STASH_PROP`]). Must run BEFORE
+/// [`clear_quotas`] so a crash between the two never loses the
+/// originals.
+pub async fn stash_saved_quotas(dataset: &str, saved: SavedQuotas) -> Result<()> {
+    let encoded = serde_json::to_string(&saved).context("encode SavedQuotas stash")?;
+    let assignment = format!("{MIGRATION_QUOTA_STASH_PROP}={encoded}");
+    let output = Command::new("zfs")
+        .args(["set", &assignment, dataset])
+        .output()
+        .await
+        .with_context(|| format!("spawn zfs set quota stash on {dataset}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!(
+            "zfs set quota stash on {dataset} failed (exit {}): {stderr}",
+            output.status,
+        ));
+    }
+    Ok(())
+}
+
+/// Read back a previously stashed [`SavedQuotas`], `Ok(None)` when
+/// no stash is set (zfs reports `-` for an unset user property).
+pub async fn read_stashed_quotas(dataset: &str) -> Result<Option<SavedQuotas>> {
+    let output = Command::new("zfs")
+        .args([
+            "get",
+            "-H",
+            "-o",
+            "value",
+            MIGRATION_QUOTA_STASH_PROP,
+            dataset,
+        ])
+        .output()
+        .await
+        .with_context(|| format!("spawn zfs get quota stash on {dataset}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!(
+            "zfs get quota stash on {dataset} failed (exit {}): {stderr}",
+            output.status,
+        ));
+    }
+    let raw = String::from_utf8_lossy(&output.stdout);
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed == "-" {
+        return Ok(None);
+    }
+    let saved: SavedQuotas = serde_json::from_str(trimmed)
+        .with_context(|| format!("parse quota stash on {dataset}: {trimmed:?}"))?;
+    Ok(Some(saved))
+}
+
+/// Drop the quota stash (`zfs inherit` of a user property removes
+/// the local value; inheriting a property that was never set is a
+/// no-op, so this is idempotent and safe on the target side where
+/// the stash never existed).
+pub async fn clear_stashed_quotas(dataset: &str) -> Result<()> {
+    let output = Command::new("zfs")
+        .args(["inherit", MIGRATION_QUOTA_STASH_PROP, dataset])
+        .output()
+        .await
+        .with_context(|| format!("spawn zfs inherit quota stash on {dataset}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!(
+            "zfs inherit quota stash on {dataset} failed (exit {}): {stderr}",
             output.status,
         ));
     }
@@ -334,5 +545,115 @@ mod tests {
         };
         let q2 = q1;
         assert_eq!(q1, q2);
+    }
+
+    #[test]
+    fn saved_quotas_json_round_trips_and_tolerates_missing_fields() {
+        let q = SavedQuotas {
+            quota_bytes: Some(42),
+            refreservation_bytes: None,
+        };
+        let json = serde_json::to_string(&q).unwrap();
+        let back: SavedQuotas = serde_json::from_str(&json).unwrap();
+        assert_eq!(q, back);
+        // A stash written before a field existed must still parse.
+        let sparse: SavedQuotas = serde_json::from_str("{}").unwrap();
+        assert_eq!(sparse, SavedQuotas::default());
+    }
+
+    #[test]
+    fn migration_snapshot_args_are_recursive() {
+        assert_eq!(
+            migration_snapshot_args("zones/abc@migration-base"),
+            vec!["snapshot", "-r", "zones/abc@migration-base"],
+        );
+    }
+
+    #[test]
+    fn send_full_args_form_a_raw_replication_stream() {
+        assert_eq!(
+            send_full_args("zones/abc@migration-base"),
+            vec!["send", "-w", "-R", "zones/abc@migration-base"],
+        );
+    }
+
+    #[test]
+    fn send_incremental_args_keep_intermediate_snapshots() {
+        assert_eq!(
+            send_incremental_args("zones/abc@migration-base", "zones/abc@migration-sync-1"),
+            vec![
+                "send",
+                "-w",
+                "-R",
+                "-I",
+                "zones/abc@migration-base",
+                "zones/abc@migration-sync-1",
+            ],
+        );
+    }
+
+    #[test]
+    fn recv_args_exclude_quota_properties() {
+        assert_eq!(
+            recv_args("zones/abc"),
+            vec![
+                "recv",
+                "-F",
+                "-u",
+                "-x",
+                "quota",
+                "-x",
+                "refreservation",
+                "zones/abc",
+            ],
+        );
+    }
+
+    #[test]
+    fn list_snapshots_args_are_depth_limited_to_the_dataset() {
+        assert_eq!(
+            list_snapshots_args("zones/abc"),
+            vec![
+                "list",
+                "-H",
+                "-t",
+                "snapshot",
+                "-o",
+                "name",
+                "-d",
+                "1",
+                "zones/abc",
+            ],
+        );
+    }
+
+    #[test]
+    fn parse_migration_snapshots_filters_the_migration_family() {
+        let stdout = "\
+zones/abc@migration-base
+zones/abc@migration-sync-1
+zones/abc@migration-final
+zones/abc@daily-2026-06-09
+zones/abc@final
+
+  zones/abc@migration-sync-2
+";
+        assert_eq!(
+            parse_migration_snapshots(stdout),
+            vec![
+                "zones/abc@migration-base",
+                "zones/abc@migration-sync-1",
+                "zones/abc@migration-final",
+                "zones/abc@migration-sync-2",
+            ],
+        );
+    }
+
+    #[test]
+    fn parse_migration_snapshots_ignores_non_snapshot_lines() {
+        // A dataset named to look like the family but with no `@`
+        // must not slip through to a `zfs destroy -r`.
+        assert!(parse_migration_snapshots("zones/migration-base\n").is_empty());
+        assert!(parse_migration_snapshots("").is_empty());
     }
 }

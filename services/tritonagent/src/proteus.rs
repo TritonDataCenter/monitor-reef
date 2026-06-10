@@ -159,6 +159,21 @@ impl<T: Transport> ProteusClient<T> {
         self.dump_status(blueprint.port_id)
     }
 
+    /// Create and apply a port WITHOUT starting packet processing.
+    /// Migration targets use this: the port must exist (vmadm
+    /// needs the datalink) but must not forward while the source
+    /// instance still owns the identity; the cutover starts it.
+    pub fn ensure_paused(
+        &self,
+        blueprint: &PortBlueprint,
+        linkid: Option<u32>,
+    ) -> Result<ProteusPortStatus> {
+        self.create_port(blueprint, linkid)?;
+        self.apply_blueprint(blueprint)?;
+        self.assert_generation_applied(blueprint)?;
+        self.dump_status(blueprint.port_id)
+    }
+
     /// Best-effort cleanup for delete and failed-provision unwinds.
     pub fn cleanup_port(&self, port_id: PortId) -> Result<()> {
         match self.pause_port(port_id) {
@@ -348,6 +363,21 @@ mod tests {
 
         assert_eq!(status.summary.state, PortState::Running);
         assert_eq!(status.generation.applied_generation, Generation::new(3));
+    }
+
+    #[test]
+    fn ensure_paused_applies_without_starting() {
+        let proteus = ProteusClient::new(FakeTransport::new());
+        let blueprint = sample_blueprint(2);
+
+        let status = proteus.ensure_paused(&blueprint, None).unwrap();
+
+        assert_ne!(status.summary.state, PortState::Running);
+        assert_eq!(status.generation.applied_generation, Generation::new(2));
+        assert_eq!(
+            status.generation.apply_status,
+            BlueprintApplyStatus::Applied
+        );
     }
 
     #[test]

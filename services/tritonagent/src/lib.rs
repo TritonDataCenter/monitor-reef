@@ -28,6 +28,7 @@ pub mod imds_ratelimit;
 pub mod log_tailer;
 pub mod metrics;
 pub mod migrate;
+pub mod migrate_jobs;
 pub mod migrate_probe;
 pub mod nic_tags;
 pub mod platform;
@@ -427,7 +428,17 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
         None
     };
 
-    let result = run_poll_loop(client.as_ref(), &cfg, &bindings, reservoir_runtime.as_ref()).await;
+    // One migration data plane per CN (see `migrate_jobs` docs).
+    let migration_lane = migrate_jobs::new_lane();
+
+    let result = run_poll_loop(
+        &client,
+        &cfg,
+        &bindings,
+        reservoir_runtime.as_ref(),
+        &migration_lane,
+    )
+    .await;
 
     if let Some(h) = dhcp_events_handle.take() {
         h.shutdown().await;
@@ -559,13 +570,14 @@ fn maybe_spawn_migrate_listener(cfg: &AgentConfig) {
 /// signature matches `run` so future SIGTERM handling drops in
 /// without a refactor.
 async fn run_poll_loop(
-    client: &Client,
+    client: &Arc<Client>,
     cfg: &AgentConfig,
     bindings: &ImdsBindingTable,
     reservoir: Option<&reservoir::ReservoirRuntime>,
+    migration_lane: &Arc<tokio::sync::Semaphore>,
 ) -> Result<()> {
     loop {
-        match poll_once(client, cfg, bindings, reservoir).await {
+        match poll_once(client, cfg, bindings, reservoir, migration_lane).await {
             Ok(true) => {
                 // Worked a job; immediately try the next one — the
                 // queue may have more.
@@ -642,10 +654,11 @@ fn spawn_publisher(client: Arc<Client>, reservoir: Arc<ReservoirTool>) -> Publis
 /// are reported via `JobOutcome::Failed`), `Ok(false)` if the
 /// queue was empty.
 async fn poll_once(
-    client: &Client,
+    client: &Arc<Client>,
     cfg: &AgentConfig,
     bindings: &ImdsBindingTable,
     reservoir: Option<&reservoir::ReservoirRuntime>,
+    migration_lane: &Arc<tokio::sync::Semaphore>,
 ) -> Result<bool> {
     let claimed = client
         .agent_claim_job()
@@ -661,8 +674,22 @@ async fn poll_once(
         return Ok(false);
     };
 
-    let outcome = match drive_job(client, cfg, bindings, reservoir, &job).await {
-        Ok(()) => JobOutcome::Completed,
+    // Migration data-plane streams run for hours; detach them onto
+    // the per-CN lane so this loop keeps serving fast jobs. The
+    // detached task reports its own completion. Dry-run jobs stay
+    // inline so they keep their report-Completed-without-work path.
+    if !cfg.dry_run && migrate_jobs::is_data_plane_kind(&job.kind) {
+        migrate_jobs::spawn_data_plane_job(
+            Arc::clone(client),
+            cfg.clone(),
+            Arc::clone(migration_lane),
+            job,
+        );
+        return Ok(true);
+    }
+
+    let (outcome, result) = match drive_job(client.as_ref(), cfg, bindings, reservoir, &job).await {
+        Ok(result) => (JobOutcome::Completed, result),
         Err(reason) => {
             // Agent-side failures are reported back to tritond so
             // the operator sees the cause in `tcadm jobs get` (a
@@ -676,14 +703,14 @@ async fn poll_once(
             // diagnose without an interactive shell on the agent.
             let chain = format!("{reason:#}");
             error!(job_id = %job.id, error = %chain, "job failed; reporting to tritond");
-            JobOutcome::Failed(chain)
+            (JobOutcome::Failed(chain), None)
         }
     };
 
     let updated = client
         .agent_complete_job()
         .job_id(job.id)
-        .body(CompleteJobRequest { outcome })
+        .body(CompleteJobRequest { outcome, result })
         .send()
         .await
         .context("agent_complete_job")?
@@ -697,15 +724,16 @@ async fn poll_once(
 }
 
 /// Drive a single claimed job to a terminal state. Returns
-/// `Ok(())` for success (caller reports `Completed`), `Err` for
-/// agent-side failure (caller reports `Failed { reason }`).
+/// `Ok(result)` for success (caller reports `Completed` with the
+/// optional per-kind result payload), `Err` for agent-side
+/// failure (caller reports `Failed { reason }`).
 async fn drive_job(
     client: &Client,
     cfg: &AgentConfig,
     bindings: &ImdsBindingTable,
     reservoir: Option<&reservoir::ReservoirRuntime>,
     job: &ProvisioningJob,
-) -> Result<()> {
+) -> Result<Option<serde_json::Value>> {
     info!(
         job_id = %job.id,
         kind = ?job.kind,
@@ -727,8 +755,12 @@ async fn drive_job(
             job_id = %job.id,
             "dry-run mode: skipping vmadm; reporting Completed",
         );
-        return Ok(());
+        return Ok(None);
     }
+
+    // Per-kind result payload attached to the completion (only the
+    // quota dance produces one on the inline path today).
+    let mut result: Option<serde_json::Value> = None;
 
     // The match is intentionally exhaustive (no `_` arm). The
     // tritond-store `JobKind` is `#[non_exhaustive]` but
@@ -791,6 +823,7 @@ async fn drive_job(
                 proteus.as_ref(),
                 &cfg.agent_id,
                 &blueprint,
+                PortActivation::Started,
             )
             .await?;
             let registered = register_blueprint_bindings(bindings, &blueprint);
@@ -832,6 +865,78 @@ async fn drive_job(
                 cleanup_started_ports(proteus.as_ref(), &started_ports);
                 return Err(err).context("create VM after Proteus port realization");
             }
+            // Future migration sources need the bhyve brand's
+            // in-zone control socket, which only exists when the
+            // zone carries the `migrate_export` attr at boot.
+            // Best-effort: failing the provision here would strand
+            // a fully created guest over a capability it may never
+            // use; the attr can be added by hand before a live
+            // migration.
+            if vmadm::blueprint_is_bhyve(&blueprint)
+                && let Err(err) = vmadm::set_zone_attr(*instance_id, "migrate_export", "true").await
+            {
+                warn!(
+                    %instance_id,
+                    error = %format!("{err:#}"),
+                    "provision: setting migrate_export zonecfg attr failed; \
+                     this guest cannot be a live-migration source until it is set",
+                );
+            }
+        }
+        JobKind::MigrationProvisionTarget {
+            migration_id,
+            instance_id,
+        } => {
+            provision_migration_target(
+                client,
+                cfg,
+                bindings,
+                &blueprint,
+                *migration_id,
+                *instance_id,
+            )
+            .await?;
+        }
+        JobKind::MigrateQuotaDance {
+            migration_id,
+            instance_id,
+            dataset,
+            op,
+        } => {
+            result = run_quota_dance(*migration_id, *instance_id, dataset, op).await?;
+        }
+        JobKind::MigratePauseSource {
+            migration_id,
+            instance_id,
+        } => {
+            error!(
+                %migration_id, %instance_id,
+                "migrate-pause-source: not implemented; lands with LM-7",
+            );
+            anyhow::bail!("MigratePauseSource lands with LM-7");
+        }
+        JobKind::MigrateResumeSource {
+            migration_id,
+            instance_id,
+        } => {
+            error!(
+                %migration_id, %instance_id,
+                "migrate-resume-source: not implemented; lands with LM-7",
+            );
+            anyhow::bail!("MigrateResumeSource lands with LM-7");
+        }
+        JobKind::MigrateTargetListen {
+            migration_id,
+            instance_id,
+        } => {
+            // Routed to the data-plane lane by `poll_once`; reaching
+            // the inline path means the diversion predicate and this
+            // match disagree.
+            error!(
+                %migration_id, %instance_id,
+                "migrate-target-listen: reached the inline dispatcher; lands with LM-7",
+            );
+            anyhow::bail!("MigrateTargetListen lands with LM-7");
         }
         JobKind::Start { instance_id } => {
             // Power on an existing stopped zone. The zone and its
@@ -933,18 +1038,28 @@ async fn drive_job(
                     "migration cleanup: vmadm delete failed (best-effort, continuing)",
                 );
             }
-            // Destroy the two migration snapshots the saga
-            // creates. `destroy_snapshot` errors on missing
-            // snapshots, so we warn-and-continue rather than
-            // failing the job — a half-completed migration
-            // may not have created both snapshots.
+            // Destroy whatever `@migration-*` snapshots remain.
+            // Listed rather than hardcoded: the saga's sync loop
+            // creates an unbounded `@migration-sync-N` family on
+            // top of base/final, and a half-completed migration
+            // may have any subset. A vanished dataset (vmadm
+            // delete took the tree) lists as empty.
             let dataset = format!("zones/{instance_id}");
-            for snap_label in &["migration-base", "migration-final"] {
-                let snap = format!("{dataset}@{snap_label}");
-                if let Err(e) = zfs::destroy_snapshot(&snap).await {
+            match zfs::list_migration_snapshots(&dataset).await {
+                Ok(snapshots) => {
+                    for snap in snapshots {
+                        if let Err(e) = zfs::destroy_snapshot(&snap).await {
+                            warn!(
+                                %migration_id, %instance_id, side, %snap, error = %e,
+                                "migration cleanup: destroy_snapshot failed (best-effort, continuing)",
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
                     warn!(
-                        %migration_id, %instance_id, side, %snap, error = %e,
-                        "migration cleanup: destroy_snapshot failed (best-effort, continuing)",
+                        %migration_id, %instance_id, side, %dataset, error = %e,
+                        "migration cleanup: listing migration snapshots failed (best-effort, continuing)",
                     );
                 }
             }
@@ -958,75 +1073,18 @@ async fn drive_job(
             instance_id,
             role,
             dataset,
-            from_snap,
-            to_snap,
-            peer_endpoint,
-            peer_spki_sha256_hex,
-            ticket,
+            ..
         } => match role {
             tritond_client::types::MigrationJobRole::Source => {
-                // Snapshot the source dataset (idempotent — `zfs
-                // snapshot` errors if the snapshot already exists,
-                // which a re-claimed job after a crash hits; we
-                // ignore that specific error).
-                if let Err(e) = zfs::snapshot_for_migration(
-                    dataset,
-                    to_snap.trim_start_matches(&format!("{dataset}@migration-")),
-                )
-                .await
-                {
-                    let msg = e.to_string();
-                    if !msg.contains("dataset already exists") {
-                        anyhow::bail!("snapshot {to_snap} failed: {msg}");
-                    }
-                    info!(
-                        %migration_id, %to_snap,
-                        "migrate-zfs-send: snapshot already exists; reusing",
-                    );
-                }
-
-                let peer_endpoint = peer_endpoint.as_ref().ok_or_else(|| {
-                    anyhow::anyhow!("Source-role MigrateZfsSend missing peer_endpoint")
-                })?;
-                let peer_spki = peer_spki_sha256_hex.as_ref().ok_or_else(|| {
-                    anyhow::anyhow!("Source-role MigrateZfsSend missing peer_spki_sha256_hex")
-                })?;
-                let ticket = ticket
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("Source-role MigrateZfsSend missing ticket"))?;
-
-                let server_uuid = Uuid::parse_str(&cfg.agent_id)
-                    .context("agent_id is not a UUID; cannot present source_cn in dial")?;
-                let transport = migrate::dial_zfs(migrate::DialZfsParams {
-                    base_url: peer_endpoint.clone(),
-                    migration_id: *migration_id,
-                    source_cn: server_uuid,
-                    vm_uuid: *instance_id,
-                    target_dataset: dataset.clone(),
-                    ticket: ticket.clone(),
-                    target_spki_sha256_hex: peer_spki.clone(),
-                })
-                .await
-                .context("dial target /migrate/{id}/zfs")?;
-
-                let mut child = match from_snap {
-                    Some(from) => zfs::spawn_send_incremental(from, to_snap)
-                        .context("spawn zfs send -i for incremental")?,
-                    None => zfs::spawn_send_full(to_snap).context("spawn zfs send for full")?,
-                };
-                let stdout = child
-                    .stdout
-                    .take()
-                    .ok_or_else(|| anyhow::anyhow!("zfs send child has no piped stdout"))?;
-                let sender = tritond_vmm_migrate::zfs_stream::ZfsSender::new(transport, stdout);
-                let bytes = sender.run().await.context("ZfsSender::run")?;
-                let status = child.wait().await.context("await zfs send exit")?;
-                if !status.success() {
-                    anyhow::bail!("zfs send exited non-zero: {status}");
-                }
-                info!(
-                    %migration_id, %instance_id, %dataset, %to_snap, bytes,
-                    "migrate-zfs-send/source: stream completed",
+                // Diverted to the data-plane lane by `poll_once`
+                // before this dispatcher runs (the stream takes
+                // hours and must not hold the poll loop). Reaching
+                // here means the diversion predicate and this
+                // match disagree; fail loudly rather than running
+                // the stream inline.
+                anyhow::bail!(
+                    "source-role MigrateZfsSend must run on the migration data-plane lane \
+                     (migration {migration_id}, instance {instance_id})"
                 );
             }
             tritond_client::types::MigrationJobRole::Target => {
@@ -1049,14 +1107,26 @@ async fn drive_job(
             migration_id,
             instance_id,
             role,
-        } => {
-            // Stub so an accidental enqueue doesn't wedge the agent
-            // before the dispatcher lands.
-            info!(
-                %migration_id, %instance_id, ?role,
-                "migrate-vmm-stream: dispatcher pending — completing stub",
-            );
-        }
+            ..
+        } => match role {
+            tritond_client::types::MigrationJobRole::Source => {
+                // Same diversion contract as source-role
+                // MigrateZfsSend; the lane's driver is an LM-7
+                // fail-stub until then.
+                anyhow::bail!(
+                    "source-role MigrateVmmStream must run on the migration data-plane lane \
+                     (migration {migration_id}, instance {instance_id}); driver lands with LM-7"
+                );
+            }
+            tritond_client::types::MigrationJobRole::Target => {
+                // Mirrors the zfs target arm: the listener's
+                // `/migrate/{id}` route owns the inbound stream.
+                info!(
+                    %migration_id, %instance_id,
+                    "migrate-vmm-stream/target: dispatcher is a no-op; listener handles transfer",
+                );
+            }
+        },
         JobKind::ProteusActivate {
             migration_id,
             instance_id,
@@ -1134,7 +1204,163 @@ async fn drive_job(
         }
     }
 
+    Ok(result)
+}
+
+/// `JobKind::MigrationProvisionTarget`: create the target-side
+/// zone shell for a migration. Reuses the Provision arm's
+/// blueprint resolution and port realization, with the migration
+/// deltas: ports come up paused (the source still owns the
+/// identity on the wire), the zone is created with
+/// `autoboot=false`, and the vmadm-created dataset tree is
+/// destroyed so the first `zfs recv` lands clean.
+async fn provision_migration_target(
+    client: &Client,
+    cfg: &AgentConfig,
+    bindings: &ImdsBindingTable,
+    blueprint: &ProvisioningBlueprint,
+    migration_id: Uuid,
+    instance_id: Uuid,
+) -> Result<()> {
+    if blueprint.instance.is_none() {
+        anyhow::bail!(
+            "instance {instance_id} no longer exists; refusing to provision a migration target \
+             for a phantom"
+        );
+    }
+    let is_bhyve = vmadm::blueprint_is_bhyve(blueprint);
+    // No image ensure for bhyve: its disks are created blank (see
+    // `build_migration_target_payload`) because the recv replaces
+    // them, so pulling the image would be pure waste. Native
+    // zones can't be created imageless (vmadm clones the zone
+    // root from the image), so ensure content for them only.
+    if !is_bhyve {
+        let image = blueprint
+            .image
+            .as_ref()
+            .ok_or_else(|| anyhow!("MigrationProvisionTarget blueprint has no image"))?;
+        if let Some(compat) = image.compatibility.as_ref() {
+            check_image_compatibility(compat).await?;
+        }
+        images::ensure(image)
+            .await
+            .context("ensure image content for native-zone migration target")?;
+    }
+
+    let proteus = open_proteus_lifecycle(&cfg.proteus_dev)?;
+    let started_ports = realize_provision_ports(
+        client,
+        client,
+        proteus.as_ref(),
+        &cfg.agent_id,
+        blueprint,
+        PortActivation::Paused,
+    )
+    .await?;
+    // Same binding registration as Provision: harmless while the
+    // guest is elsewhere (the table is CN-local and nothing
+    // resolves to it until traffic flows here), and required for
+    // IMDS to work once the cutover lands the guest on this CN.
+    let registered = register_blueprint_bindings(bindings, blueprint);
+    if registered > 0 {
+        info!(
+            %migration_id, %instance_id,
+            bindings = registered,
+            "imds: registered binding(s) for migration target",
+        );
+    }
+    let nic_tags = started_ports
+        .iter()
+        .map(|port| (port.nic_id, port.link_name.clone()))
+        .collect::<BTreeMap<_, _>>();
+    if let Err(err) = vmadm::create_migration_target_zone(blueprint, &nic_tags).await {
+        cleanup_started_ports(proteus.as_ref(), &started_ports);
+        return Err(err).context("create migration target zone after Proteus port realization");
+    }
+
+    // The first recv must land on a clean slate; `vmadm create`
+    // made a dataset tree (zone root + disk zvols) that would
+    // collide with the incoming replication stream.
+    zfs::destroy(&format!("zones/{instance_id}"))
+        .await
+        .context("destroy vmadm-created dataset tree for migration target")?;
+
+    // The bhyve brand only boots in migration listen mode (LM-7's
+    // inbound RAM stream) when the zone carries this attr.
+    if is_bhyve {
+        vmadm::set_zone_attr(instance_id, "migrate_listen", "true")
+            .await
+            .context("set migrate_listen zonecfg attr on migration target")?;
+    }
+
+    info!(
+        %migration_id, %instance_id, is_bhyve,
+        "migration-provision-target: zone shell created (unbooted, datasets cleared)",
+    );
     Ok(())
+}
+
+/// `JobKind::MigrateQuotaDance`: the legacy-compat quota dance.
+/// Returns the job `result` payload for `SaveAndClear` (the
+/// original values, `QuotaDanceSaveResult` shape), `None` for
+/// `Restore`.
+async fn run_quota_dance(
+    migration_id: Uuid,
+    instance_id: Uuid,
+    dataset: &str,
+    op: &tritond_client::types::QuotaDanceOp,
+) -> Result<Option<serde_json::Value>> {
+    match op {
+        tritond_client::types::QuotaDanceOp::SaveAndClear => {
+            let live = zfs::save_quotas(dataset).await?;
+            let saved = if live.quota_bytes.is_some() || live.refreservation_bytes.is_some() {
+                // First run (or the operator restored values since):
+                // stash the originals on the dataset BEFORE clearing
+                // so a crash between the two steps can't lose them.
+                zfs::stash_saved_quotas(dataset, live).await?;
+                zfs::clear_quotas(dataset).await?;
+                live
+            } else {
+                // Both already clear: either a re-claimed job whose
+                // clear already ran (the stash holds the originals)
+                // or nothing was ever set (no stash, report None).
+                zfs::read_stashed_quotas(dataset).await?.unwrap_or(live)
+            };
+            info!(
+                %migration_id, %instance_id, %dataset,
+                quota_bytes = ?saved.quota_bytes,
+                refreservation_bytes = ?saved.refreservation_bytes,
+                "migrate-quota-dance: saved and cleared",
+            );
+            Ok(Some(
+                serde_json::to_value(saved).context("encode QuotaDanceSaveResult payload")?,
+            ))
+        }
+        tritond_client::types::QuotaDanceOp::Restore {
+            quota_bytes,
+            refreservation_bytes,
+        } => {
+            zfs::restore_quotas(
+                dataset,
+                zfs::SavedQuotas {
+                    quota_bytes: *quota_bytes,
+                    refreservation_bytes: *refreservation_bytes,
+                },
+            )
+            .await?;
+            // Drop the stash so a later migration's SaveAndClear
+            // can't read this one's values. No-op on the target,
+            // where no stash was ever written.
+            zfs::clear_stashed_quotas(dataset).await?;
+            info!(
+                %migration_id, %instance_id, %dataset,
+                quota_bytes = ?quota_bytes,
+                refreservation_bytes = ?refreservation_bytes,
+                "migrate-quota-dance: restored",
+            );
+            Ok(None)
+        }
+    }
 }
 
 /// Parse a FIP address string carried on a job into an `IpAddr`,
@@ -1419,6 +1645,16 @@ trait ProteusLifecycle: Send + Sync {
         link_name: &str,
     ) -> Result<proteus::ProteusPortStatus>;
 
+    /// Create + apply a port without starting packet processing.
+    /// Migration targets use this: the datalink must exist for
+    /// `vmadm create`, but the port must not forward while the
+    /// source instance still owns the identity on the wire.
+    fn ensure_paused(
+        &self,
+        blueprint: &PortBlueprint,
+        link_name: &str,
+    ) -> Result<proteus::ProteusPortStatus>;
+
     /// Re-apply a port's blueprint in place: no create, no start.
     /// Pushes a recomputed blueprint to an already-running port (e.g. a
     /// FIP attach on a running VM). The kmod no-ops a re-apply at the
@@ -1448,6 +1684,14 @@ where
         _link_name: &str,
     ) -> Result<proteus::ProteusPortStatus> {
         proteus::ProteusClient::ensure_started(self, blueprint, None)
+    }
+
+    fn ensure_paused(
+        &self,
+        blueprint: &PortBlueprint,
+        _link_name: &str,
+    ) -> Result<proteus::ProteusPortStatus> {
+        proteus::ProteusClient::ensure_paused(self, blueprint, None)
     }
 
     fn apply_blueprint(&self, blueprint: &PortBlueprint) -> Result<()> {
@@ -1503,14 +1747,15 @@ impl KernelProteusLifecycle {
             inner: proteus::ProteusClient::new(transport),
         }
     }
-}
 
-#[cfg(target_os = "illumos")]
-impl ProteusLifecycle for KernelProteusLifecycle {
-    fn ensure_started(
+    /// Shared body of `ensure_started` / `ensure_paused`: allocate
+    /// the dladm link, create + apply the port, then start it only
+    /// when asked.
+    fn ensure_port(
         &self,
         blueprint: &PortBlueprint,
         link_name: &str,
+        start: bool,
     ) -> Result<proteus::ProteusPortStatus> {
         use proteus_ioctl::dladm::{DATALINK_CLASS_MISC, DL_ETHER, DLADM_OPT_ACTIVE, DladmHandle};
 
@@ -1533,8 +1778,29 @@ impl ProteusLifecycle for KernelProteusLifecycle {
 
         self.inner.apply_blueprint(blueprint)?;
         self.inner.assert_generation_applied(blueprint)?;
-        self.inner.start_port(blueprint.port_id)?;
+        if start {
+            self.inner.start_port(blueprint.port_id)?;
+        }
         self.inner.dump_status(blueprint.port_id)
+    }
+}
+
+#[cfg(target_os = "illumos")]
+impl ProteusLifecycle for KernelProteusLifecycle {
+    fn ensure_started(
+        &self,
+        blueprint: &PortBlueprint,
+        link_name: &str,
+    ) -> Result<proteus::ProteusPortStatus> {
+        self.ensure_port(blueprint, link_name, true)
+    }
+
+    fn ensure_paused(
+        &self,
+        blueprint: &PortBlueprint,
+        link_name: &str,
+    ) -> Result<proteus::ProteusPortStatus> {
+        self.ensure_port(blueprint, link_name, false)
     }
 
     fn apply_blueprint(&self, blueprint: &PortBlueprint) -> Result<()> {
@@ -1578,12 +1844,23 @@ struct RealizedProvisionPort {
     link_name: String,
 }
 
+/// How [`realize_provision_ports`] leaves each Proteus port:
+/// forwarding (normal provision) or created-but-paused (migration
+/// target, where forwarding before the cutover would put a
+/// duplicate identity on the wire).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PortActivation {
+    Started,
+    Paused,
+}
+
 async fn realize_provision_ports<S, R, P>(
     source: &S,
     sink: &R,
     proteus: &P,
     agent_id: &str,
     blueprint: &ProvisioningBlueprint,
+    activation: PortActivation,
 ) -> Result<Vec<RealizedProvisionPort>>
 where
     S: PortBlueprintSource + Sync,
@@ -1612,7 +1889,11 @@ where
         let desired_generation = port_blueprint.generation.0;
         let resource = port_realization_resource(nic);
 
-        match proteus.ensure_started(&port_blueprint, &link_name) {
+        let ensured = match activation {
+            PortActivation::Started => proteus.ensure_started(&port_blueprint, &link_name),
+            PortActivation::Paused => proteus.ensure_paused(&port_blueprint, &link_name),
+        };
+        match ensured {
             Ok(status) => {
                 let applied_generation = status.generation.applied_generation.0;
                 // Register the proteus link as a SmartOS nic_tag so
@@ -1974,10 +2255,16 @@ mod tests {
         let sink = RecordingRealizationSink::default();
         let proteus = proteus::ProteusClient::new(FakeTransport::new());
 
-        let started =
-            realize_provision_ports(&source, &sink, &proteus, &cn_id.to_string(), &provision)
-                .await
-                .unwrap();
+        let started = realize_provision_ports(
+            &source,
+            &sink,
+            &proteus,
+            &cn_id.to_string(),
+            &provision,
+            PortActivation::Started,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(started.len(), 1);
         assert_eq!(started[0].nic_id, nic_id);
@@ -2009,6 +2296,40 @@ mod tests {
                 .as_deref()
                 .is_some_and(|message| message.contains(&started[0].link_name))
         );
+    }
+
+    #[tokio::test]
+    async fn realize_provision_ports_paused_applies_without_starting() {
+        let cn_id = Uuid::new_v4();
+        let nic_id = Uuid::new_v4();
+        let vpc_id = Uuid::new_v4();
+        let nic = sample_nic(nic_id, vpc_id);
+        let provision = sample_provisioning_blueprint(nic);
+        let port = sample_port_blueprint(nic_id, 2);
+        let source = StaticPortBlueprintSource {
+            by_port: HashMap::from([(nic_id, port.clone())]),
+        };
+        let sink = RecordingRealizationSink::default();
+        let proteus = proteus::ProteusClient::new(FakeTransport::new());
+
+        let started = realize_provision_ports(
+            &source,
+            &sink,
+            &proteus,
+            &cn_id.to_string(),
+            &provision,
+            PortActivation::Paused,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(started.len(), 1);
+        let status = proteus.dump_status(port.port_id).unwrap();
+        // Applied but NOT forwarding: the migration target's port
+        // must stay off the wire until the cutover starts it.
+        assert_ne!(status.summary.state, PortState::Running);
+        assert_eq!(status.summary.apply_status, BlueprintApplyStatus::Applied);
+        assert_eq!(status.generation.applied_generation, Generation::new(2));
     }
 
     #[tokio::test]
@@ -2107,6 +2428,14 @@ mod tests {
 
     impl ProteusLifecycle for RecordingProteusLifecycle {
         fn ensure_started(
+            &self,
+            _blueprint: &PortBlueprint,
+            _link_name: &str,
+        ) -> Result<proteus::ProteusPortStatus> {
+            unreachable!("FIP handler never creates a port")
+        }
+
+        fn ensure_paused(
             &self,
             _blueprint: &PortBlueprint,
             _link_name: &str,
