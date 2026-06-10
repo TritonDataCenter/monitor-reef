@@ -1224,11 +1224,11 @@ async fn provision_migration_target(
         );
     }
     let is_bhyve = vmadm::blueprint_is_bhyve(blueprint);
-    // No image ensure for bhyve: its disks are created blank (see
-    // `build_migration_target_payload`) because the recv replaces
-    // them, so pulling the image would be pure waste. Native
-    // zones can't be created imageless (vmadm clones the zone
-    // root from the image), so ensure content for them only.
+    // No image ensure for bhyve: the boot disk arrives as a flattened,
+    // self-contained `zfs send` stream (the source sends per-dataset
+    // without `-R`, so the clone is collapsed and needs no origin on
+    // this CN). Native zones still need the image because vmadm clones
+    // the zone root from it locally.
     if !is_bhyve {
         let image = blueprint
             .image
