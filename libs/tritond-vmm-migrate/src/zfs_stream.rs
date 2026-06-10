@@ -104,12 +104,25 @@ where
         let mut buf = vec![0u8; ZFS_CHUNK_SIZE];
         let mut total: u64 = 0;
         loop {
-            let n = self
-                .reader
-                .read(&mut buf)
-                .await
-                .map_err(MigrateError::Transport)?;
-            if n == 0 {
+            // Coalesce pipe-sized reads up to a full frame before
+            // sending. `read()` on `zfs send`'s stdout pipe returns
+            // only what the pipe holds (tens of KiB), so a one-read =
+            // one-frame loop would emit thousands of tiny WebSocket
+            // messages, each paying a framing + TLS-record + flush
+            // round-trip — the dominant cost that pinned throughput.
+            let mut filled = 0;
+            while filled < buf.len() {
+                let n = self
+                    .reader
+                    .read(&mut buf[filled..])
+                    .await
+                    .map_err(MigrateError::Transport)?;
+                if n == 0 {
+                    break;
+                }
+                filled += n;
+            }
+            if filled == 0 {
                 break;
             }
             // Allocate a fresh Vec from the slice so the
@@ -118,9 +131,9 @@ where
             // chunk — see crate-doc comment for the perf
             // discussion; LM-10 can swap to `bytes::Bytes` if
             // benchmarks demand it.)
-            let chunk = buf[..n].to_vec();
+            let chunk = buf[..filled].to_vec();
             self.transport.send(Message::ZfsChunk(chunk)).await?;
-            total += n as u64;
+            total += filled as u64;
             if let Some(cb) = self.progress.as_mut() {
                 cb(total);
             }
@@ -408,10 +421,13 @@ mod tests {
         });
         let recv_clone = recv_samples.clone();
         let recv = tokio::spawn(async move {
-            ZfsReceiver::new(dst_t, VecWriter(Vec::new()))
+            let (total, mut transport) = ZfsReceiver::new(dst_t, VecWriter(Vec::new()))
                 .with_progress(move |total| recv_clone.lock().unwrap().push(total))
                 .run()
-                .await
+                .await?;
+            transport.send(Message::ZfsRecvOk).await?;
+            let _ = transport.close().await;
+            Ok::<u64, MigrateError>(total)
         });
         let sent = send.await.expect("send join").expect("send run");
         let recvd = recv.await.expect("recv join").expect("recv run");
@@ -439,7 +455,10 @@ mod tests {
         });
         let recv = tokio::spawn(async move {
             let receiver = ZfsReceiver::new(dst_t, VecWriter(Vec::new()));
-            receiver.run().await
+            let (total, mut transport) = receiver.run().await?;
+            transport.send(Message::ZfsRecvOk).await?;
+            let _ = transport.close().await;
+            Ok::<u64, MigrateError>(total)
         });
         assert_eq!(send.await.expect("send").expect("send run"), 0);
         assert_eq!(recv.await.expect("recv").expect("recv run"), 0);

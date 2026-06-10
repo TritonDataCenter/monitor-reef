@@ -355,10 +355,26 @@ pub(crate) async fn agent_heartbeat(
     // to know which CN to attribute the ping to. Unbound
     // keys (legacy operator-minted) get 403.
     let server_uuid = require_bound_cn(&principal)?;
+    let now = chrono::Utc::now();
     ctx.store
-        .update_cn_last_seen(server_uuid, chrono::Utc::now())
+        .update_cn_last_seen(server_uuid, now)
         .await
         .map_err(store_error_to_http)?;
+    // Renew this CN's in-progress job claims: a long data-plane
+    // transfer (multi-GiB ZFS send) outlives the stale-claim cutoff,
+    // and the heartbeat is the signal that the owning CN is still
+    // alive and working. Best-effort: a rare failed renewal only risks
+    // one sweep reaping a live job before the next heartbeat refreshes it.
+    if let Err(e) = ctx
+        .store
+        .renew_cn_claims(&server_uuid.to_string(), now)
+        .await
+    {
+        tracing::warn!(
+            error = %e, server_uuid = %server_uuid,
+            "renew_cn_claims failed; heartbeat still acked",
+        );
+    }
     // Heartbeat is a hot path; we deliberately don't audit
     // every ping. The Cn record's `last_seen` is the
     // observable signal an operator cares about.

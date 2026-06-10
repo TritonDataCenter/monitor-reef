@@ -1368,6 +1368,19 @@ pub trait Store: Send + Sync + 'static {
         cutoff: chrono::DateTime<chrono::Utc>,
     ) -> Result<Vec<ProvisioningJob>, StoreError>;
 
+    /// Refresh `claimed_at` to `now` for every `InProgress` job
+    /// claimed by `claimed_by`. A CN calls this implicitly via its
+    /// heartbeat so a long-running data-plane job (a multi-GiB ZFS
+    /// transfer) is not reaped by [`Store::list_stale_claims`] while
+    /// the owning CN is demonstrably alive. A CN that stops
+    /// heartbeating stops renewing, so its claims still go stale
+    /// after the cutoff and get reaped. Returns the count renewed.
+    async fn renew_cn_claims(
+        &self,
+        claimed_by: &str,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<usize, StoreError>;
+
     /// Atomically claim the next Pending job (lowest `seq`),
     /// transitioning it to [`JobStatus::InProgress`] and stamping
     /// `claimed_at` + `claimed_by`. Returns

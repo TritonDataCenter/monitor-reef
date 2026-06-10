@@ -3765,6 +3765,24 @@ impl Store for MemStore {
         Ok(stale)
     }
 
+    async fn renew_cn_claims(
+        &self,
+        claimed_by: &str,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<usize, StoreError> {
+        let mut guard = self.inner.write().await;
+        let mut renewed = 0;
+        for job in guard.jobs_by_id.values_mut() {
+            if matches!(job.status.kind(), JobStatusKind::InProgress)
+                && job.claimed_by.as_deref() == Some(claimed_by)
+            {
+                job.claimed_at = Some(now);
+                renewed += 1;
+            }
+        }
+        Ok(renewed)
+    }
+
     async fn claim_next_job(
         &self,
         claimed_by: &str,

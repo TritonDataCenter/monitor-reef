@@ -6017,6 +6017,59 @@ impl Store for FdbStore {
         Ok(stale)
     }
 
+    async fn renew_cn_claims(
+        &self,
+        claimed_by: &str,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<usize, StoreError> {
+        // Full scan + rewrite of `InProgress` jobs claimed by this CN.
+        // Same cost profile as `list_stale_claims`; runs on the agent
+        // heartbeat cadence (well under the sweeper cutoff).
+        let prefix = b"job/by_id/".to_vec();
+        let (begin, end) = prefix_range(&prefix);
+        let claimed_by = claimed_by.to_string();
+
+        let renewed: Result<usize, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                let claimed_by = claimed_by.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let entries: Vec<(Vec<u8>, Vec<u8>)> = kvs
+                        .iter()
+                        .map(|kv| (kv.key().to_vec(), kv.value().to_vec()))
+                        .collect();
+                    drop(kvs);
+
+                    let mut count = 0usize;
+                    for (key, bytes) in entries {
+                        let mut job: ProvisioningJob = match serde_json::from_slice(&bytes) {
+                            Ok(j) => j,
+                            Err(_) => continue,
+                        };
+                        if matches!(job.status.kind(), JobStatusKind::InProgress)
+                            && job.claimed_by.as_deref() == Some(claimed_by.as_str())
+                        {
+                            job.claimed_at = Some(now);
+                            let value = serde_json::to_vec(&job).map_err(txn_ser_err("job"))?;
+                            tr.set(&key, &value);
+                            count += 1;
+                        }
+                    }
+                    Ok(count)
+                }
+            })
+            .await;
+        renewed.map_err(StoreError::from)
+    }
+
     async fn claim_next_job(
         &self,
         claimed_by: &str,
