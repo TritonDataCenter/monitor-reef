@@ -60,7 +60,7 @@ pub const HIGHMEM_BASE_GPA: u64 = 4 * 1024 * 1024 * 1024;
 ///   most this much — the dataset transfer has no resume, so the
 ///   chunk granularity is the unit of work we're willing to
 ///   lose on a transient.
-pub const ZFS_CHUNK_SIZE: usize = 256 * 1024;
+pub const ZFS_CHUNK_SIZE: usize = 4 * 1024 * 1024;
 
 /// Hash one contiguous byte slice with xxh3-64.
 ///
