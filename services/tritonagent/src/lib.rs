@@ -1757,19 +1757,39 @@ impl KernelProteusLifecycle {
         link_name: &str,
         start: bool,
     ) -> Result<proteus::ProteusPortStatus> {
-        use proteus_ioctl::dladm::{DATALINK_CLASS_MISC, DL_ETHER, DLADM_OPT_ACTIVE, DladmHandle};
+        use proteus_ioctl::dladm::{
+            DATALINK_CLASS_MISC, DL_ETHER, DLADM_OPT_ACTIVE, DLADM_STATUS_EXIST, DladmError,
+            DladmHandle,
+        };
 
         let dladm = DladmHandle::open().with_context(
             || "open libdladm for Proteus link allocation; tritonagent must run as root on SmartOS",
         )?;
-        let linkid = dladm
-            .create_datalink_id(link_name, DATALINK_CLASS_MISC, DL_ETHER, DLADM_OPT_ACTIVE)
-            .with_context(|| {
-                format!(
-                    "allocate dladm link {link_name} for Proteus port {}",
-                    blueprint.port_id,
-                )
-            })?;
+        // Idempotent allocation: a prior realization that failed after
+        // creating the link (or a re-claimed job) leaves the datalink id
+        // in dlmgmtd. Reuse it instead of failing EEXIST -- create_port +
+        // apply_blueprint below re-establish the kmod port state on top.
+        let linkid = match dladm.create_datalink_id(
+            link_name,
+            DATALINK_CLASS_MISC,
+            DL_ETHER,
+            DLADM_OPT_ACTIVE,
+        ) {
+            Ok(id) => id,
+            Err(DladmError::StatusCode(s)) if s == DLADM_STATUS_EXIST => {
+                dladm.name2info(link_name).with_context(|| {
+                    format!("look up existing dladm link {link_name} after EEXIST")
+                })?
+            }
+            Err(e) => {
+                return Err(anyhow::Error::new(e)).with_context(|| {
+                    format!(
+                        "allocate dladm link {link_name} for Proteus port {}",
+                        blueprint.port_id,
+                    )
+                });
+            }
+        };
 
         if let Err(err) = self.inner.create_port(blueprint, Some(linkid)) {
             let _ = dladm.destroy_datalink_id(linkid, DLADM_OPT_ACTIVE);
