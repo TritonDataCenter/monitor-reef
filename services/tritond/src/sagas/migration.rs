@@ -1786,15 +1786,20 @@ const LIVE_AMBIGUOUS_ERROR_PREFIX: &str = "live migration ambiguous failure";
 
 /// Wire-phase labels the source agent reports in the
 /// `MigrateVmmStream` job result (`last_phase`); mirrors
-/// `tritonagent::migrate_vmm::phase_label`. Anything before the
-/// Finish phase means the device-state send did not complete, so
-/// the target cannot have imported and resuming the source is safe.
-/// "finish"/"complete"/missing/garbage are all treated as ambiguous:
-/// fail closed on the side that cannot split-brain.
+/// `tritonagent::migrate_vmm::phase_label`. Only phases that provably
+/// precede the device-state bytes leaving the source are safe to
+/// resume: the target runs its irreversible cutover (import-state +
+/// resume) the instant it has consumed those bytes, and the source
+/// stamps "device_state" *before* the send with no ack before
+/// "finish", so a delivered-then-errored send (or source death in the
+/// gap) can leave last_phase=="device_state" after the target is
+/// already live. "device_state"/"finish"/"complete"/missing/garbage
+/// are therefore all treated as ambiguous: fail closed on the side
+/// that cannot split-brain.
 fn live_failure_is_pre_finish(last_phase: Option<&str>) -> bool {
     matches!(
         last_phase,
-        Some("sync" | "pause" | "ram_push" | "ram_hash" | "time_data" | "device_state")
+        Some("sync" | "pause" | "ram_push" | "ram_hash" | "time_data")
     )
 }
 
@@ -2443,27 +2448,27 @@ mod tests {
         assert_eq!(parsed.bytes_streamed, 7);
     }
 
-    /// The live failure policy's phase classifier: everything
-    /// strictly before the wire's Finish phase is safe to unwind
-    /// (resume source + clean target); Finish onward, and any
-    /// missing/garbled report, is ambiguous and fails closed.
+    /// The live failure policy's phase classifier: only phases that
+    /// provably precede the device-state send are safe to unwind
+    /// (resume source + clean target). "device_state" onward, and any
+    /// missing/garbled report, is ambiguous and fails closed because
+    /// the target may already have imported and resumed.
     /// Labels mirror `tritonagent::migrate_vmm::phase_label`.
     #[test]
     fn live_failure_phase_classification() {
-        for safe in [
-            "sync",
-            "pause",
-            "ram_push",
-            "ram_hash",
-            "time_data",
-            "device_state",
-        ] {
+        for safe in ["sync", "pause", "ram_push", "ram_hash", "time_data"] {
             assert!(
                 live_failure_is_pre_finish(Some(safe)),
                 "{safe} must be safe"
             );
         }
-        for ambiguous in [Some("finish"), Some("complete"), Some("not-a-phase"), None] {
+        for ambiguous in [
+            Some("device_state"),
+            Some("finish"),
+            Some("complete"),
+            Some("not-a-phase"),
+            None,
+        ] {
             assert!(
                 !live_failure_is_pre_finish(ambiguous),
                 "{ambiguous:?} must be ambiguous",

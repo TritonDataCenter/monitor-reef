@@ -264,8 +264,11 @@ pub(crate) async fn pause_source_at(path: &Path, migration_id: Uuid) -> Result<s
     Ok(serde_json::json!({ "pause_complete_ts": ts }))
 }
 
-/// `JobKind::MigrateResumeSource`: pre-switch failure undo. Never
-/// enqueued after `SwitchComplete`; the target owns the guest then.
+/// `JobKind::MigrateResumeSource`: pre-cutover failure undo. The saga
+/// only enqueues this when the source failed in a phase that provably
+/// precedes the device-state send (see `live_failure_is_pre_finish`);
+/// once the target may have imported, the failure is ambiguous and the
+/// source is left paused for the operator rather than resumed here.
 pub(crate) async fn resume_source(migration_id: Uuid, instance_id: Uuid) -> Result<()> {
     resume_source_at(&bhyve_sock_path(instance_id), migration_id).await
 }

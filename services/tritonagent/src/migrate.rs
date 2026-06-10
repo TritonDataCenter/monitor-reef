@@ -100,6 +100,23 @@ struct MigrateZfsParams {
     dataset: String,
 }
 
+/// True when `dataset` is the instance's own ZFS tree: the root
+/// `zones/<vm>`, a child (`zones/<vm>/disk0`), or a sibling disk
+/// dataset (`zones/<vm>-disk0`). Rejects any other `zones/<uuid>`,
+/// so a ZfsSource ticket bound to `vm` cannot `zfs recv -F` over an
+/// unrelated tenant's dataset. The uuid boundary char guards against
+/// `zones/<vm>extra`.
+fn dataset_belongs_to_vm(dataset: &str, vm: Uuid) -> bool {
+    if dataset.split('/').any(|c| c == "." || c == "..") {
+        return false;
+    }
+    let root = format!("zones/{vm}");
+    dataset == root
+        || dataset
+            .strip_prefix(&root)
+            .is_some_and(|rest| rest.starts_with('/') || rest.starts_with('-'))
+}
+
 /// Build the Axum router. Exposed for tests so they can serve it
 /// over plain HTTP; production wraps it in TLS via [`serve`].
 fn build_router(state: Arc<MigrateState>) -> Router {
@@ -242,6 +259,24 @@ async fn migrate_zfs_ws(
             "migrate-zfs: rejecting ticket",
         );
         return (StatusCode::UNAUTHORIZED, "invalid migrate-zfs ticket").into_response();
+    }
+
+    // The ticket binds `vm` but NOT the dataset, and `zfs recv -F`
+    // force-rolls (destroys) the destination. Bind the dataset to the
+    // ticket's instance so a ZfsSource ticket can only ever overwrite
+    // its own migration's dataset, never another tenant's. The saga
+    // always derives `zones/<instance_id>`; descendants are allowed
+    // for forward compatibility with per-disk child datasets.
+    if !dataset_belongs_to_vm(&params.dataset, params.vm) {
+        warn!(
+            %migration_id, vm = %params.vm, dataset = %params.dataset,
+            "migrate-zfs: dataset is not within the ticket's instance tree",
+        );
+        return (
+            StatusCode::FORBIDDEN,
+            "migrate-zfs dataset outside instance tree",
+        )
+            .into_response();
     }
 
     info!(
@@ -711,6 +746,20 @@ mod tests {
         // hard-coded `4567` in a follow-up patch trips the
         // compile-time mismatch.
         assert_eq!(DEFAULT_MIGRATE_LISTEN_PORT, 4568);
+    }
+
+    #[test]
+    fn zfs_dataset_binding_rejects_foreign_trees() {
+        let vm = Uuid::parse_str("565a084a-5426-416c-a945-5a4bd9db15e8").unwrap();
+        let other = Uuid::new_v4();
+        assert!(dataset_belongs_to_vm(&format!("zones/{vm}"), vm));
+        assert!(dataset_belongs_to_vm(&format!("zones/{vm}/disk0"), vm));
+        assert!(dataset_belongs_to_vm(&format!("zones/{vm}-disk0"), vm));
+        assert!(!dataset_belongs_to_vm(&format!("zones/{other}"), vm));
+        assert!(!dataset_belongs_to_vm(&format!("zones/{other}/disk0"), vm));
+        assert!(!dataset_belongs_to_vm(&format!("zones/{vm}extra"), vm));
+        assert!(!dataset_belongs_to_vm("rpool/secret", vm));
+        assert!(!dataset_belongs_to_vm(&format!("zones/{vm}/../{other}"), vm));
     }
 
     #[test]
