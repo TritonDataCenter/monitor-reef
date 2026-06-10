@@ -171,6 +171,11 @@ enum Commands {
         #[command(subcommand)]
         command: OperationsCommand,
     },
+    /// Inspect and control instance migrations (operator-only).
+    Migration {
+        #[command(subcommand)]
+        command: MigrationCommand,
+    },
     /// Manage silo-scoped resources (IdP, SSH keys, images).
     Silo {
         #[command(subcommand)]
@@ -984,6 +989,39 @@ enum OperationsCommand {
 }
 
 #[derive(Subcommand)]
+enum MigrationCommand {
+    /// List recent migrations fleet-wide, newest first.
+    List {
+        /// Return migrations strictly after this id.
+        #[arg(long)]
+        after_id: Option<Uuid>,
+        /// Maximum migrations to return (default 50, max 200).
+        #[arg(long)]
+        limit: Option<u32>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Fetch one migration by id.
+    Show {
+        migration_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Follow a migration's progress events until it is terminal.
+    /// Exits zero on successful; nonzero on failed / aborted /
+    /// rolled back.
+    Watch { migration_id: Uuid },
+    /// Request an abort of an in-flight migration. The saga
+    /// unwinds at its next abort poll; refused (409) once the
+    /// cutover has committed or the record is terminal.
+    Abort {
+        migration_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum AuditCommand {
     /// Page through audit events.
     List {
@@ -1234,6 +1272,26 @@ enum InstanceCommand {
     },
     Restart {
         instance_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Migrate an instance to another CN (operator-only). bhyve
+    /// instances migrate live by default; every other brand is
+    /// forced cold by the server.
+    Migrate {
+        instance_id: Uuid,
+        /// Force a specific target CN (still subject to the
+        /// migration placement filters).
+        #[arg(long = "target-cn")]
+        target_cn: Option<Uuid>,
+        /// Cold migration: stop the guest for the cutover instead
+        /// of the bhyve live RAM stream.
+        #[arg(long)]
+        cold: bool,
+        /// Follow phase / progress lines until the migration is
+        /// terminal. Exits zero on successful; nonzero otherwise.
+        #[arg(long)]
+        watch: bool,
         #[arg(long)]
         json: bool,
     },
@@ -2095,6 +2153,24 @@ async fn main() -> Result<()> {
                 )
                 .await
             }
+            InstanceCommand::Migrate {
+                instance_id,
+                target_cn,
+                cold,
+                watch,
+                json,
+            } => {
+                commands::instance_migrate_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    instance_id,
+                    target_cn,
+                    cold,
+                    watch,
+                    json,
+                )
+                .await
+            }
         },
         Commands::System { command } => match command {
             SystemCommand::Instances {
@@ -2602,6 +2678,22 @@ async fn main() -> Result<()> {
             }
             OperationsCommand::Abandon { operation_id, json } => {
                 commands::operations_abandon(cli.endpoint, cli.api_key, operation_id, json).await
+            }
+        },
+        Commands::Migration { command } => match command {
+            MigrationCommand::List {
+                after_id,
+                limit,
+                json,
+            } => commands::migration_list(cli.endpoint, cli.api_key, after_id, limit, json).await,
+            MigrationCommand::Show { migration_id, json } => {
+                commands::migration_show(cli.endpoint, cli.api_key, migration_id, json).await
+            }
+            MigrationCommand::Watch { migration_id } => {
+                commands::migration_watch(cli.endpoint, cli.api_key, migration_id).await
+            }
+            MigrationCommand::Abort { migration_id, json } => {
+                commands::migration_abort(cli.endpoint, cli.api_key, migration_id, json).await
             }
         },
         Commands::Silo { command } => match command {

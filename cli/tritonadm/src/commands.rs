@@ -3198,6 +3198,430 @@ pub async fn instance_lifecycle_v1(
     Ok(())
 }
 
+// ──────────────────────────────────────────────────────────────────
+// Migrations (LM-5b)
+// ──────────────────────────────────────────────────────────────────
+
+/// Poll interval for the migration watch loops.
+const MIGRATION_WATCH_POLL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// `tritonadm instance migrate <instance_id> [--target-cn] [--cold]
+/// [--watch]`.
+///
+/// The server holds the POST open until the saga is terminal, so
+/// `--watch` runs the request on a side task and follows the
+/// record's progress event log while it is in flight.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn instance_migrate_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    instance_id: Uuid,
+    target_cn: Option<Uuid>,
+    cold: bool,
+    watch: bool,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let body = tritond_client::types::MigrateInstanceBody {
+        action: tritond_client::types::MigrationAction::Begin,
+        affinity: None,
+        automatic: false,
+        cold,
+        target_server_uuid: target_cn,
+    };
+
+    if !watch {
+        let response = client
+            .migrate_instance_v1()
+            .instance_id(instance_id)
+            .body(body)
+            .send()
+            .await
+            .context("/v1/instances/{id}/migrate begin")?
+            .into_inner();
+        let record = client
+            .get_migration()
+            .migration_id(response.migration_id)
+            .send()
+            .await
+            .context("get migration")?
+            .into_inner();
+        if json_output {
+            println!("{}", serde_json::to_string_pretty(&record)?);
+        } else {
+            print_migration(&record);
+        }
+        return migration_exit(&record);
+    }
+
+    // Snapshot the known history so the record this request creates
+    // is recognisable once it appears.
+    let known: std::collections::HashSet<Uuid> = client
+        .list_instance_migrations()
+        .instance_id(instance_id)
+        .send()
+        .await
+        .context("list instance migrations")?
+        .into_inner()
+        .iter()
+        .map(|r| r.id)
+        .collect();
+
+    let post_client = client.clone();
+    let mut post = Some(tokio::spawn(async move {
+        post_client
+            .migrate_instance_v1()
+            .instance_id(instance_id)
+            .body(body)
+            .send()
+            .await
+    }));
+
+    let migration_id = loop {
+        if let Some(handle) = post.take_if(|h| h.is_finished()) {
+            // Fast failure (4xx) or the whole migration finished
+            // before the first poll; either way the response has
+            // the id (or the error to surface).
+            let response = handle
+                .await
+                .map_err(|e| anyhow::anyhow!("migrate request task panicked: {e}"))?
+                .context("/v1/instances/{id}/migrate begin")?
+                .into_inner();
+            break response.migration_id;
+        }
+        let rows = client
+            .list_instance_migrations()
+            .instance_id(instance_id)
+            .send()
+            .await
+            .context("list instance migrations")?
+            .into_inner();
+        if let Some(row) = rows.iter().find(|r| !known.contains(&r.id)) {
+            break row.id;
+        }
+        tokio::time::sleep(MIGRATION_WATCH_POLL).await;
+    };
+
+    println!("migration {migration_id} started; watching");
+    let record = match post.take() {
+        None => watch_until_terminal(&client, migration_id).await?,
+        Some(handle) => {
+            // Follow the event log while the long-lived POST runs to
+            // completion on the side. If the POST fails (the saga
+            // infrastructure errored) the record may never reach a
+            // terminal state, so surface that error instead of
+            // watching forever.
+            let watch = watch_until_terminal(&client, migration_id);
+            tokio::pin!(watch);
+            tokio::select! {
+                record = &mut watch => record?,
+                response = handle => {
+                    response
+                        .map_err(|e| anyhow::anyhow!("migrate request task panicked: {e}"))?
+                        .context("/v1/instances/{id}/migrate begin")?;
+                    // POST returned 201: the saga is terminal; the
+                    // watch drains the remaining events and exits.
+                    watch.await?
+                }
+            }
+        }
+    };
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&record)?);
+    } else {
+        println!("migration {} {}", record.id, record.state);
+    }
+    migration_exit(&record)
+}
+
+/// `tritonadm migration list [--after-id] [--limit] [--json]`.
+pub async fn migration_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    after_id: Option<Uuid>,
+    limit: Option<u32>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let mut req = client.list_migrations();
+    if let Some(a) = after_id {
+        req = req.after_id(a);
+    }
+    if let Some(l) = limit {
+        req = req.limit(l);
+    }
+    let rows = req.send().await.context("list migrations")?.into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+        return Ok(());
+    }
+    if rows.is_empty() {
+        println!("(no migrations)");
+        return Ok(());
+    }
+    println!(
+        "{:36}  {:36}  {:>6}  {:>10}  {:36}  CREATED",
+        "ID", "INSTANCE", "PHASE", "STATE", "TARGET-CN"
+    );
+    for r in &rows {
+        // The generated Display impls ignore width specifiers
+        // (f.write_str), so pre-render before padding.
+        let phase = r.phase.to_string();
+        let state = r.state.to_string();
+        let target = r
+            .target_cn
+            .map(|u| u.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        println!(
+            "{:36}  {:36}  {:>6}  {:>10}  {:36}  {}",
+            r.id, r.instance_id, phase, state, target, r.created_at,
+        );
+    }
+    Ok(())
+}
+
+/// `tritonadm migration show <migration_id> [--json]`.
+pub async fn migration_show(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    migration_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let record = client
+        .get_migration()
+        .migration_id(migration_id)
+        .send()
+        .await
+        .context("get migration")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&record)?);
+        return Ok(());
+    }
+    print_migration(&record);
+    Ok(())
+}
+
+/// `tritonadm migration watch <migration_id>`: page the progress
+/// event log until the record is terminal. Exits zero on
+/// successful, nonzero otherwise.
+pub async fn migration_watch(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    migration_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let record = watch_until_terminal(&client, migration_id).await?;
+    println!("migration {} {}", record.id, record.state);
+    migration_exit(&record)
+}
+
+/// `tritonadm migration abort <migration_id> [--json]`. The flat
+/// abort route is instance-addressed; resolve the record first so
+/// the operator can abort by migration id.
+pub async fn migration_abort(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    migration_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let record = client
+        .get_migration()
+        .migration_id(migration_id)
+        .send()
+        .await
+        .context("get migration")?
+        .into_inner();
+    // A non-terminal record is by construction the instance's
+    // active migration (the active guard allows one at a time),
+    // so the instance-addressed abort below cannot hit a
+    // different record.
+    if migration_state_is_terminal(record.state) {
+        bail!(
+            "migration {} is already terminal ({}); nothing to abort",
+            record.id,
+            record.state,
+        );
+    }
+    let response = client
+        .migrate_instance_v1()
+        .instance_id(record.instance_id)
+        .body(tritond_client::types::MigrateInstanceBody {
+            action: tritond_client::types::MigrationAction::Abort,
+            affinity: None,
+            automatic: false,
+            cold: false,
+            target_server_uuid: None,
+        })
+        .send()
+        .await
+        .context("/v1/instances/{id}/migrate abort")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&response)?);
+        return Ok(());
+    }
+    println!(
+        "abort requested for migration {} (the saga unwinds at its next abort poll)",
+        response.migration_id,
+    );
+    Ok(())
+}
+
+/// Follow one migration's progress event log until the record is
+/// terminal, printing one line per event. Returns the final record.
+async fn watch_until_terminal(
+    client: &tritond_client::Client,
+    migration_id: Uuid,
+) -> Result<tritond_client::types::MigrationRecord> {
+    let mut after_seq = 0u64;
+    loop {
+        let record = client
+            .get_migration()
+            .migration_id(migration_id)
+            .send()
+            .await
+            .context("get migration")?
+            .into_inner();
+        let events = client
+            .list_migration_progress()
+            .migration_id(migration_id)
+            .after_seq(after_seq)
+            .send()
+            .await
+            .context("page migration progress")?
+            .into_inner();
+        for event in &events {
+            after_seq = event.seq;
+            println!("{}", render_progress_event(event));
+        }
+        if migration_state_is_terminal(record.state) {
+            return Ok(record);
+        }
+        tokio::time::sleep(MIGRATION_WATCH_POLL).await;
+    }
+}
+
+fn migration_state_is_terminal(state: tritond_client::types::MigrationState) -> bool {
+    use tritond_client::types::MigrationState as S;
+    matches!(state, S::Aborted | S::Rollback | S::Successful | S::Failed)
+}
+
+/// Exit contract for the migrate / watch verbs: `Ok` only when the
+/// record ended `successful`; any other terminal state is an error
+/// so scripts get a nonzero exit.
+fn migration_exit(record: &tritond_client::types::MigrationRecord) -> Result<()> {
+    use tritond_client::types::MigrationState as S;
+    match record.state {
+        S::Successful => Ok(()),
+        state => bail!(
+            "migration {} ended {}{}",
+            record.id,
+            state,
+            record
+                .error
+                .as_deref()
+                .map(|e| format!(": {e}"))
+                .unwrap_or_default(),
+        ),
+    }
+}
+
+fn render_progress_event(e: &tritond_client::types::MigrationProgressEvent) -> String {
+    let mut line = format!("{}  {:<16}", e.timestamp.format("%H:%M:%S"), e.type_);
+    if let Some(phase) = &e.phase {
+        line.push_str(&format!("  phase={phase}"));
+    }
+    if let Some(state) = &e.state {
+        line.push_str(&format!("  state={state}"));
+    }
+    if let (Some(done), Some(total)) = (e.transferred_bytes, e.total_bytes) {
+        line.push_str(&format!("  {} / {}", fmt_bytes(done), fmt_bytes(total)));
+    } else if let Some(done) = e.transferred_bytes {
+        line.push_str(&format!("  {}", fmt_bytes(done)));
+    }
+    if let Some(pct) = e.percentage {
+        line.push_str(&format!(" ({pct:.1}%)"));
+    }
+    if let Some(eta) = e.eta_ms {
+        line.push_str(&format!("  eta {}", fmt_duration_ms(eta)));
+    }
+    if let Some(msg) = &e.message {
+        line.push_str(&format!("  {msg}"));
+    }
+    if let Some(err) = &e.error {
+        line.push_str(&format!("  error: {err}"));
+    }
+    line
+}
+
+fn print_migration(r: &tritond_client::types::MigrationRecord) {
+    println!("Migration {} for instance {}", r.id, r.instance_id);
+    println!("  phase:     {}", r.phase);
+    println!("  state:     {}", r.state);
+    println!("  requested: {}", r.action_requested);
+    println!("  source-cn: {}", r.source_cn);
+    println!(
+        "  target-cn: {}",
+        r.target_cn
+            .map(|u| u.to_string())
+            .unwrap_or_else(|| "-".to_string()),
+    );
+    println!(
+        "  operation: {}",
+        r.saga_id
+            .map(|u| u.to_string())
+            .unwrap_or_else(|| "-".to_string()),
+    );
+    println!("  automatic: {}", r.automatic);
+    println!("  created:   {}", r.created_at);
+    if let Some(t) = r.started_at {
+        println!("  started:   {t}");
+    }
+    if let Some(t) = r.finished_at {
+        println!("  finished:  {t}");
+    }
+    if let Some(e) = &r.error {
+        println!("  error:     {e}");
+    }
+}
+
+fn fmt_bytes(bytes: u64) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = KIB * 1024.0;
+    const GIB: f64 = MIB * 1024.0;
+    let b = bytes as f64;
+    if b >= GIB {
+        format!("{:.1} GiB", b / GIB)
+    } else if b >= MIB {
+        format!("{:.1} MiB", b / MIB)
+    } else if b >= KIB {
+        format!("{:.1} KiB", b / KIB)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+fn fmt_duration_ms(ms: u64) -> String {
+    let secs = ms / 1000;
+    if secs >= 3600 {
+        format!("{}h{:02}m", secs / 3600, (secs % 3600) / 60)
+    } else if secs >= 60 {
+        format!("{}m{:02}s", secs / 60, secs % 60)
+    } else {
+        format!("{secs}s")
+    }
+}
+
 /// `tritonadm system instances [--image=&cn=...]` -> fleet-wide search.
 pub async fn system_instances_v1(
     endpoint_override: Option<String>,

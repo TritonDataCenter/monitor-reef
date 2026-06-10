@@ -521,6 +521,7 @@ async fn cold_migration_of_running_instance_stops_source_before_final_send() {
             .body(MigrateInstanceBody {
                 action: ClientMigrationAction::Begin,
                 affinity: None,
+                automatic: false,
                 cold: true,
                 target_server_uuid: Some(target_cn),
             })
@@ -687,6 +688,7 @@ async fn abort_mid_sync_unwinds_cleanup_and_quota_restore() {
             .body(MigrateInstanceBody {
                 action: ClientMigrationAction::Begin,
                 affinity: None,
+                automatic: false,
                 cold: true,
                 target_server_uuid: Some(target_cn),
             })
@@ -796,6 +798,7 @@ async fn run_live_migration(silo_name: &str, script: FakeAgentScript) -> LiveRun
             .body(MigrateInstanceBody {
                 action: ClientMigrationAction::Begin,
                 affinity: None,
+                automatic: false,
                 cold: false,
                 target_server_uuid: Some(target_cn),
             })
@@ -1061,6 +1064,274 @@ async fn lifecycle_mutations_conflict_while_migration_active() {
         .send()
         .await
         .expect("stop must succeed once the migration is terminal");
+
+    test.close().await;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// LM-5b — flat operator route: POST /v1/instances/{id}/migrate
+// ──────────────────────────────────────────────────────────────────
+
+/// The flat begin lane: a non-bhyve instance asked to migrate
+/// `cold: false` is forced cold by the server (no live-lane jobs),
+/// and the `automatic` label round-trips onto the record.
+#[tokio::test]
+async fn flat_route_begin_forces_cold_for_non_bhyve_and_labels_automatic() {
+    let test = TestServer::start().await;
+    let source_cn = Uuid::new_v4();
+    let target_cn = Uuid::new_v4();
+    register_and_approve_migration_cn(&test, source_cn, "10.99.97.1").await;
+    register_and_approve_migration_cn(&test, target_cn, "10.99.97.2").await;
+    publish_capacity(&test, source_cn).await;
+    publish_capacity(&test, target_cn).await;
+    let (_tenant_id, _project_id, instance) =
+        running_instance_on(&test, "migrate-flat-begin", source_cn).await;
+
+    let agent = spawn_fake_agent(
+        Arc::clone(&test.store),
+        vec![source_cn, target_cn],
+        FakeAgentScript::Normal,
+    );
+
+    let root = root_client(&test).await;
+    let response = tokio::time::timeout(
+        TEST_DEADLINE,
+        root.migrate_instance_v1()
+            .instance_id(instance.id)
+            .body(MigrateInstanceBody {
+                action: ClientMigrationAction::Begin,
+                affinity: None,
+                automatic: true,
+                cold: false,
+                target_server_uuid: Some(target_cn),
+            })
+            .send(),
+    )
+    .await
+    .expect("flat-route migration saga must finish before the deadline")
+    .unwrap()
+    .into_inner();
+
+    let record = test
+        .store
+        .get_migration(response.migration_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        record.state,
+        MigrationState::Successful,
+        "{:?}",
+        record.error
+    );
+    assert!(record.automatic, "automatic label must round-trip");
+
+    // The forced-cold proof: the live lane never ran (no pause /
+    // listen jobs) and the running guest was quiesced via Stop.
+    let jobs = test.store.list_recent_jobs(200).await.unwrap();
+    assert!(
+        !jobs.iter().any(|j| matches!(
+            j.kind,
+            JobKind::MigratePauseSource { .. } | JobKind::MigrateTargetListen { .. }
+        )),
+        "non-bhyve brand must be forced cold even when cold=false is requested",
+    );
+    assert!(
+        jobs.iter().any(|j| matches!(j.kind, JobKind::Stop { .. })),
+        "cold migration of a running instance must stop the source guest",
+    );
+
+    let migrated = test.store.get_instance(instance.id).await.unwrap();
+    assert_eq!(migrated.host_cn_uuid, Some(target_cn));
+
+    agent.abort();
+    test.close().await;
+}
+
+/// `action=abort` flags the active migration's `action_requested`
+/// (the saga's abort poll does the unwinding) and is idempotent.
+#[tokio::test]
+async fn flat_route_abort_flags_active_migration() {
+    let test = TestServer::start().await;
+    let source_cn = Uuid::new_v4();
+    let (tenant_id, project_id, instance) =
+        running_instance_on(&test, "migrate-flat-abort", source_cn).await;
+
+    // Take the guard the way the migrate handler does, without
+    // running the saga (the abort poll lives saga-side; the
+    // handler only validates + flips the record).
+    let record = test
+        .store
+        .create_migration(tritond_store::NewMigration {
+            instance_id: instance.id,
+            tenant_id,
+            project_id,
+            source_cn,
+            action_requested: MigrationAction::Begin,
+            automatic: false,
+        })
+        .await
+        .unwrap();
+
+    let root = root_client(&test).await;
+    let abort_body = MigrateInstanceBody {
+        action: ClientMigrationAction::Abort,
+        affinity: None,
+        automatic: false,
+        cold: false,
+        target_server_uuid: None,
+    };
+    let response = root
+        .migrate_instance_v1()
+        .instance_id(instance.id)
+        .body(abort_body.clone())
+        .send()
+        .await
+        .expect("abort of an active migration must succeed")
+        .into_inner();
+    assert_eq!(response.migration_id, record.id);
+    // No saga ever bound an operation id to this record.
+    assert_eq!(response.operation_id, Uuid::nil());
+
+    let flagged = test.store.get_migration(record.id).await.unwrap();
+    assert_eq!(flagged.action_requested, MigrationAction::Abort);
+
+    // Idempotent: a second abort is accepted, not 409.
+    root.migrate_instance_v1()
+        .instance_id(instance.id)
+        .body(abort_body)
+        .send()
+        .await
+        .expect("repeated abort must stay accepted");
+
+    test.close().await;
+}
+
+/// Abort conflicts: no active migration is 409, and once the
+/// cutover CAS has committed (phase Switch + host_cn already the
+/// target) abort is refused with 409.
+#[tokio::test]
+async fn flat_route_abort_conflicts_when_inactive_or_post_cas() {
+    let test = TestServer::start().await;
+    let source_cn = Uuid::new_v4();
+    let target_cn = Uuid::new_v4();
+    let (tenant_id, project_id, instance) =
+        running_instance_on(&test, "migrate-flat-abort-409", source_cn).await;
+
+    let root = root_client(&test).await;
+    let abort_body = MigrateInstanceBody {
+        action: ClientMigrationAction::Abort,
+        affinity: None,
+        automatic: false,
+        cold: false,
+        target_server_uuid: None,
+    };
+
+    // Nothing in flight: 409.
+    let err = root
+        .migrate_instance_v1()
+        .instance_id(instance.id)
+        .body(abort_body.clone())
+        .send()
+        .await
+        .expect_err("abort with no active migration must conflict");
+    assert_status(err, 409);
+
+    // Post-CAS: record in phase Switch and ownership already
+    // flipped to the target — the target copy is canonical.
+    let mut record = test
+        .store
+        .create_migration(tritond_store::NewMigration {
+            instance_id: instance.id,
+            tenant_id,
+            project_id,
+            source_cn,
+            action_requested: MigrationAction::Begin,
+            automatic: false,
+        })
+        .await
+        .unwrap();
+    record.phase = tritond_store::MigrationPhase::Switch;
+    record.state = MigrationState::Switch;
+    record.target_cn = Some(target_cn);
+    test.store.put_migration(record).await.unwrap();
+    test.store
+        .set_instance_host_cn(instance.id, Some(target_cn))
+        .await
+        .unwrap();
+
+    let err = root
+        .migrate_instance_v1()
+        .instance_id(instance.id)
+        .body(abort_body)
+        .send()
+        .await
+        .expect_err("abort after the cutover CAS must conflict");
+    assert_status(err, 409);
+
+    test.close().await;
+}
+
+/// The deferred verbs (sync / pause / switch / rollback /
+/// estimate / finalize) are intentionally not supported: 400.
+#[tokio::test]
+async fn flat_route_rejects_unsupported_actions() {
+    let test = TestServer::start().await;
+    let source_cn = Uuid::new_v4();
+    let (_tenant_id, _project_id, instance) =
+        running_instance_on(&test, "migrate-flat-400", source_cn).await;
+
+    let root = root_client(&test).await;
+    for action in [
+        ClientMigrationAction::Sync,
+        ClientMigrationAction::Pause,
+        ClientMigrationAction::Switch,
+        ClientMigrationAction::Rollback,
+        ClientMigrationAction::Estimate,
+        ClientMigrationAction::Finalize,
+    ] {
+        let err = root
+            .migrate_instance_v1()
+            .instance_id(instance.id)
+            .body(MigrateInstanceBody {
+                action,
+                affinity: None,
+                automatic: false,
+                cold: false,
+                target_server_uuid: None,
+            })
+            .send()
+            .await
+            .expect_err("deferred migrate actions must be rejected");
+        assert_status(err, 400);
+    }
+
+    test.close().await;
+}
+
+/// The flat route is operator-only (mirrors the fleet-wide
+/// /v1/migrations list): an anonymous caller is denied.
+#[tokio::test]
+async fn flat_route_is_operator_only() {
+    let test = TestServer::start().await;
+    let source_cn = Uuid::new_v4();
+    let (_tenant_id, _project_id, instance) =
+        running_instance_on(&test, "migrate-flat-deny", source_cn).await;
+
+    let anon = test.anonymous_client();
+    let err = anon
+        .migrate_instance_v1()
+        .instance_id(instance.id)
+        .body(MigrateInstanceBody {
+            action: ClientMigrationAction::Begin,
+            affinity: None,
+            automatic: false,
+            cold: true,
+            target_server_uuid: None,
+        })
+        .send()
+        .await
+        .expect_err("anonymous migrate must be denied");
+    assert_status(err, 403);
 
     test.close().await;
 }
