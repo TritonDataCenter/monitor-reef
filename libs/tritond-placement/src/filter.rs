@@ -777,14 +777,24 @@ impl Filter for CnCpuFeatureSuperset {
         let Some(mig) = req.migration.as_ref() else {
             return Verdict::Skip;
         };
+        if mig.cold {
+            // Cold reboots the guest on the target, which re-reads CPUID
+            // fresh; CPU-feature parity only matters when bhyve resumes
+            // saved vCPU state off the wire (the live lane).
+            return Verdict::Skip;
+        }
         let Some(cap) = cn.capacity.as_ref() else {
             return Verdict::Skip;
         };
         if mig.cpu_features.is_empty() {
-            // Source reported no features — treat as "no constraint"
-            // rather than a wholesale reject. The agent capability
-            // probe will fill this in for v1; older agents pass.
-            return Verdict::Skip;
+            // Live lane with no source feature list: the live wire does
+            // NOT revalidate CPU features, so this filter is the only
+            // guard against landing the guest on a target missing a
+            // feature it uses (which resumes into a #UD panic). An empty
+            // list means the source probe failed — fail closed.
+            return Verdict::reject(
+                "source cpu feature probe is empty; cannot verify live CPU compatibility",
+            );
         }
         let missing: Vec<&str> = mig
             .cpu_features
@@ -2144,14 +2154,34 @@ mod tests {
     }
 
     #[test]
-    fn cn_cpu_feature_superset_unaffected_by_cold_flag() {
-        // The cold flag does not gate this filter: a populated source
-        // feature list still constrains targets (a cold ask that
-        // wants no constraint sends an empty list, which Skips).
+    fn cn_cpu_feature_superset_skips_on_cold() {
+        // Cold reboots the guest on the target, which re-reads CPUID
+        // fresh, so CPU-feature parity is irrelevant; the filter must
+        // not false-reject a cold move to a non-superset CPU.
         let mut cn = make_cn();
         cn.capacity.as_mut().unwrap().cpu_features = vec!["vmx".into()]; // missing avx2
         let mut mig = migration_compat_v0(); // wants vmx + avx2
         mig.cold = true;
+        let mut req = make_req();
+        req.migration = Some(mig);
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnCpuFeatureSuperset.evaluate(&cn, &req, &ctx),
+            Verdict::Skip
+        ));
+    }
+
+    #[test]
+    fn cn_cpu_feature_superset_rejects_empty_features_on_live() {
+        // Live lane: an empty source feature list means the probe
+        // failed, and the live wire never revalidates CPU features, so
+        // we must fail closed rather than green-light a #UD panic.
+        let mut cn = make_cn();
+        cn.capacity.as_mut().unwrap().cpu_features = vec!["vmx".into(), "avx2".into()];
+        let mut mig = migration_compat_v0();
+        mig.cold = false;
+        mig.cpu_features = Vec::new();
         let mut req = make_req();
         req.migration = Some(mig);
         let weights = StrategyWeights::new();

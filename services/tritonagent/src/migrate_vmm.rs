@@ -321,16 +321,19 @@ pub(crate) async fn target_listen(
 
     // Put the zone into bhyve listen mode before booting so it waits
     // for the inbound RAM stream instead of cold-starting the guest.
-    // Best-effort: the exact PI brand trigger is still being pinned
-    // down (zonecfg attr names reject `_`), and a failure here surfaces
-    // as a clear stream-phase error rather than aborting the cutover.
-    if let Err(err) = vmadm::set_zone_attr(instance_id, "migrate-listen", "true").await {
-        warn!(
-            %migration_id, %instance_id, error = %format!("{err:#}"),
-            "migrate-target-listen: could not set listen-mode attr; \
-             the inbound RAM stream may fail",
-        );
-    }
+    // The brand reads the `migrate_listen` zonecfg attr (UNDERSCORE,
+    // same family as the proven `migrate_export`) and adds `-o
+    // migrate.listen=true`, which skips the bootrom/UEFI and blocks for
+    // `import-state`. This is a HARD precondition, not best-effort: by
+    // this point the ZFS receives have delivered the complete guest
+    // disk and `mount_target` mounted it, so a `start_zone` without the
+    // listen flag would COLD-BOOT a second live copy of the (paused)
+    // source — duplicate identity/MAC = split-brain. Failing here makes
+    // the MigrateTargetListen job terminal-fail, so the saga unwinds
+    // while the source is still canonical and the target never booted.
+    vmadm::set_zone_attr(instance_id, "migrate_listen", "true")
+        .await
+        .context("set migrate_listen zonecfg attr (listen mode is a hard precondition)")?;
     vmadm::start_zone(instance_id)
         .await
         .context("vmadm start listen-mode target zone")?;
@@ -671,7 +674,23 @@ pub(crate) async fn run_target(
         proteus_dev: params.proteus_dev,
         port_ids: ctx.port_ids,
     });
-    run_target_with(transport, vmm, ctl, ports, params.migration_id).await
+    let activated =
+        run_target_with(transport, vmm, ctl, ports, params.migration_id).await?;
+
+    // `migrate_listen` is one-shot per boot but persists in zonecfg.
+    // Now that the guest is imported and running on this CN, clear it
+    // so a later reboot is a normal boot instead of re-entering listen
+    // mode and hanging forever on an `import-state` that never comes.
+    // Best-effort: the migration already succeeded, so a clear failure
+    // is a follow-up, not a reason to fail the cutover.
+    if let Err(err) = vmadm::set_zone_attr(params.vm_uuid, "migrate_listen", "false").await {
+        warn!(
+            migration_id = %params.migration_id, instance_id = %params.vm_uuid,
+            error = %format!("{err:#}"),
+            "migrate-target: could not clear migrate_listen attr; a reboot may re-enter listen mode",
+        );
+    }
+    Ok(activated)
 }
 
 /// Dependency-injected core of [`run_target`] so tests can drive a
