@@ -2123,6 +2123,9 @@ pub mod types {
     #[doc = "  \"properties\": {"]
     #[doc = "    \"outcome\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/JobOutcome\""]
+    #[doc = "    },"]
+    #[doc = "    \"result\": {"]
+    #[doc = "      \"description\": \"Optional per-kind result payload, stored verbatim on the job record's `result` field. The enqueuing orchestrator defines the contract (e.g. `QuotaDanceSaveResult`, `ZfsSendResult` for migration jobs).\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -2133,6 +2136,9 @@ pub mod types {
     )]
     pub struct CompleteJobRequest {
         pub outcome: JobOutcome,
+        #[doc = "Optional per-kind result payload, stored verbatim on the job record's `result` field. The enqueuing orchestrator defines the contract (e.g. `QuotaDanceSaveResult`, `ZfsSendResult` for migration jobs)."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub result: ::std::option::Option<::serde_json::Value>,
     }
 
     impl CompleteJobRequest {
@@ -5488,8 +5494,163 @@ pub mod types {
     #[doc = "          \"type\": \"string\","]
     #[doc = "          \"format\": \"uuid\""]
     #[doc = "        },"]
+    #[doc = "        \"peer_endpoint\": {"]
+    #[doc = "          \"description\": \"Source-only: `wss://<target_admin_ip>:<port>` base for the dial. Same contract as the [`JobKind::MigrateZfsSend`] trio: the target side of the pair listens, so it leaves all three `None`.\","]
+    #[doc = "          \"type\": ["]
+    #[doc = "            \"string\","]
+    #[doc = "            \"null\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"peer_spki_sha256_hex\": {"]
+    #[doc = "          \"description\": \"Source-only: lowercase-hex SHA-256 of the target's migrate-listener leaf-cert SPKI, pinned by the dialer.\","]
+    #[doc = "          \"type\": ["]
+    #[doc = "            \"string\","]
+    #[doc = "            \"null\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
     #[doc = "        \"role\": {"]
     #[doc = "          \"$ref\": \"#/components/schemas/MigrationJobRole\""]
+    #[doc = "        },"]
+    #[doc = "        \"ticket\": {"]
+    #[doc = "          \"description\": \"Source-only: HS256 migrate-ticket minted with the *target* CN's `migrate_ticket_key` (`MigrateRole::Outbound`). ~10 min TTL.\","]
+    #[doc = "          \"type\": ["]
+    #[doc = "            \"string\","]
+    #[doc = "            \"null\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Create the target-side zone shell for a migration: `vmadm create` with `autoboot=false`, no image ensure, Proteus ports paused, then destroy the vmadm-created datasets so the first `zfs recv` lands on a clean slate. Distinct from [`JobKind::Provision`] because a normal provision boots the guest and realizes the network — both forbidden while the source instance still owns the identity.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"instance_id\","]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"migration_id\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"instance_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"migration_provision_target\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"migration_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"One leg of the legacy-compat quota dance: `zfs send` of a dataset whose `quota`/`refreservation` are set can fail at recv time, so the saga clears them on the source up front (`SaveAndClear`, which reports the original values back via the job `result`) and re-applies them on whichever side ends up owning the dataset (`Restore`).\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"dataset\","]
+    #[doc = "        \"instance_id\","]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"migration_id\","]
+    #[doc = "        \"op\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"dataset\": {"]
+    #[doc = "          \"description\": \"Dataset the dance applies to (`zones/<instance>`).\","]
+    #[doc = "          \"type\": \"string\""]
+    #[doc = "        },"]
+    #[doc = "        \"instance_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"migrate_quota_dance\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"migration_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"op\": {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/QuotaDanceOp\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Live-path source quiesce: bhyve.sock `pause-devices` → `pause-vm` → `drain-devices`, leaving the guest paused so the final ZFS increment and the RAM stream see a frozen machine. The job `result` carries `pause_complete_ts`.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"instance_id\","]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"migration_id\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"instance_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"migrate_pause_source\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"migration_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Undo of [`JobKind::MigratePauseSource`]: resume the paused source guest after a pre-switch failure. Never enqueued after `SwitchComplete` — the target owns the guest then.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"instance_id\","]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"migration_id\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"instance_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"migrate_resume_source\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"migration_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Boot the target-side zone in bhyve listen mode so the inbound memory stream has a vmm to import into. The agent polls the zone's bhyve.sock until the listener is up.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"instance_id\","]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"migration_id\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"instance_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"migrate_target_listen\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"migration_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
     #[doc = "        }"]
     #[doc = "      }"]
     #[doc = "    },"]
@@ -5733,7 +5894,49 @@ pub mod types {
         MigrateVmmStream {
             instance_id: ::uuid::Uuid,
             migration_id: ::uuid::Uuid,
+            #[doc = "Source-only: `wss://<target_admin_ip>:<port>` base for the dial. Same contract as the [`JobKind::MigrateZfsSend`] trio: the target side of the pair listens, so it leaves all three `None`."]
+            #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+            peer_endpoint: ::std::option::Option<::std::string::String>,
+            #[doc = "Source-only: lowercase-hex SHA-256 of the target's migrate-listener leaf-cert SPKI, pinned by the dialer."]
+            #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+            peer_spki_sha256_hex: ::std::option::Option<::std::string::String>,
             role: MigrationJobRole,
+            #[doc = "Source-only: HS256 migrate-ticket minted with the *target* CN's `migrate_ticket_key` (`MigrateRole::Outbound`). ~10 min TTL."]
+            #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+            ticket: ::std::option::Option<::std::string::String>,
+        },
+        #[doc = "Create the target-side zone shell for a migration: `vmadm create` with `autoboot=false`, no image ensure, Proteus ports paused, then destroy the vmadm-created datasets so the first `zfs recv` lands on a clean slate. Distinct from [`JobKind::Provision`] because a normal provision boots the guest and realizes the network — both forbidden while the source instance still owns the identity."]
+        #[serde(rename = "migration_provision_target")]
+        MigrationProvisionTarget {
+            instance_id: ::uuid::Uuid,
+            migration_id: ::uuid::Uuid,
+        },
+        #[doc = "One leg of the legacy-compat quota dance: `zfs send` of a dataset whose `quota`/`refreservation` are set can fail at recv time, so the saga clears them on the source up front (`SaveAndClear`, which reports the original values back via the job `result`) and re-applies them on whichever side ends up owning the dataset (`Restore`)."]
+        #[serde(rename = "migrate_quota_dance")]
+        MigrateQuotaDance {
+            #[doc = "Dataset the dance applies to (`zones/<instance>`)."]
+            dataset: ::std::string::String,
+            instance_id: ::uuid::Uuid,
+            migration_id: ::uuid::Uuid,
+            op: QuotaDanceOp,
+        },
+        #[doc = "Live-path source quiesce: bhyve.sock `pause-devices` → `pause-vm` → `drain-devices`, leaving the guest paused so the final ZFS increment and the RAM stream see a frozen machine. The job `result` carries `pause_complete_ts`."]
+        #[serde(rename = "migrate_pause_source")]
+        MigratePauseSource {
+            instance_id: ::uuid::Uuid,
+            migration_id: ::uuid::Uuid,
+        },
+        #[doc = "Undo of [`JobKind::MigratePauseSource`]: resume the paused source guest after a pre-switch failure. Never enqueued after `SwitchComplete` — the target owns the guest then."]
+        #[serde(rename = "migrate_resume_source")]
+        MigrateResumeSource {
+            instance_id: ::uuid::Uuid,
+            migration_id: ::uuid::Uuid,
+        },
+        #[doc = "Boot the target-side zone in bhyve listen mode so the inbound memory stream has a vmm to import into. The agent polls the zone's bhyve.sock until the listener is up."]
+        #[serde(rename = "migrate_target_listen")]
+        MigrateTargetListen {
+            instance_id: ::uuid::Uuid,
+            migration_id: ::uuid::Uuid,
         },
         #[doc = "Proteus port activation on the target (`start_port`) after the cutover fence completes. Source-side equivalent is [`ProteusDeactivate`]."]
         #[serde(rename = "proteus_activate")]
@@ -11740,6 +11943,9 @@ pub mod types {
     #[doc = "    \"kind\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/JobKind\""]
     #[doc = "    },"]
+    #[doc = "    \"result\": {"]
+    #[doc = "      \"description\": \"Free-form result payload the completing agent attached. Opaque to the queue; the enqueuing orchestrator defines the per-kind contract (e.g. [`QuotaDanceSaveResult`], [`ZfsSendResult`]). `None` for kinds with nothing to report and for completions from agents predating the field.\""]
+    #[doc = "    },"]
     #[doc = "    \"seq\": {"]
     #[doc = "      \"description\": \"Monotonically-increasing sequence number that determines the queue order. Older jobs (lower seq) are claimed first. Server-assigned at enqueue time.\","]
     #[doc = "      \"type\": \"integer\","]
@@ -11777,6 +11983,9 @@ pub mod types {
         pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
         pub id: ::uuid::Uuid,
         pub kind: JobKind,
+        #[doc = "Free-form result payload the completing agent attached. Opaque to the queue; the enqueuing orchestrator defines the per-kind contract (e.g. [`QuotaDanceSaveResult`], [`ZfsSendResult`]). `None` for kinds with nothing to report and for completions from agents predating the field."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub result: ::std::option::Option<::serde_json::Value>,
         #[doc = "Monotonically-increasing sequence number that determines the queue order. Older jobs (lower seq) are claimed first. Server-assigned at enqueue time."]
         pub seq: u64,
         pub status: JobStatus,
@@ -11870,6 +12079,81 @@ pub mod types {
         pub fn builder() -> builder::Quota {
             Default::default()
         }
+    }
+
+    #[doc = "Which leg of the quota dance a [`JobKind::MigrateQuotaDance`] job performs. `Restore` carries the values to re-apply rather than re-reading them on the agent because the restore can run on the *target* CN, where the original source-side properties were never visible (`zfs recv -x quota -x refreservation` strips them from the stream)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Which leg of the quota dance a [`JobKind::MigrateQuotaDance`] job performs. `Restore` carries the values to re-apply rather than re-reading them on the agent because the restore can run on the *target* CN, where the original source-side properties were never visible (`zfs recv -x quota -x refreservation` strips them from the stream).\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Read the dataset's current `quota`/`refreservation`, report them in the job `result` (shape: [`QuotaDanceSaveResult`]), then clear both.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"save_and_clear\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Re-apply previously saved values. `None` means the property was unset on the source and stays unset.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"restore\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"quota_bytes\": {"]
+    #[doc = "          \"type\": ["]
+    #[doc = "            \"integer\","]
+    #[doc = "            \"null\""]
+    #[doc = "          ],"]
+    #[doc = "          \"format\": \"uint64\","]
+    #[doc = "          \"minimum\": 0.0"]
+    #[doc = "        },"]
+    #[doc = "        \"refreservation_bytes\": {"]
+    #[doc = "          \"type\": ["]
+    #[doc = "            \"integer\","]
+    #[doc = "            \"null\""]
+    #[doc = "          ],"]
+    #[doc = "          \"format\": \"uint64\","]
+    #[doc = "          \"minimum\": 0.0"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    #[serde(tag = "kind")]
+    pub enum QuotaDanceOp {
+        #[serde(rename = "save_and_clear")]
+        SaveAndClear,
+        #[doc = "Re-apply previously saved values. `None` means the property was unset on the source and stays unset."]
+        #[serde(rename = "restore")]
+        Restore {
+            #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+            quota_bytes: ::std::option::Option<u64>,
+            #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+            refreservation_bytes: ::std::option::Option<u64>,
+        },
     }
 
     #[doc = "Per-realizer realization row. One per `(resource, realizer)` tuple; written by [`crate::Store::record_network_realization`] and read back by [`crate::Store::list_network_realizations`]."]
@@ -18969,12 +19253,17 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct CompleteJobRequest {
             outcome: ::std::result::Result<super::JobOutcome, ::std::string::String>,
+            result: ::std::result::Result<
+                ::std::option::Option<::serde_json::Value>,
+                ::std::string::String,
+            >,
         }
 
         impl ::std::default::Default for CompleteJobRequest {
             fn default() -> Self {
                 Self {
                     outcome: Err("no value supplied for outcome".to_string()),
+                    result: Ok(Default::default()),
                 }
             }
         }
@@ -18990,6 +19279,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for outcome: {e}"));
                 self
             }
+            pub fn result<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::serde_json::Value>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.result = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for result: {e}"));
+                self
+            }
         }
 
         impl ::std::convert::TryFrom<CompleteJobRequest> for super::CompleteJobRequest {
@@ -18999,6 +19298,7 @@ pub mod types {
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
                     outcome: value.outcome?,
+                    result: value.result?,
                 })
             }
         }
@@ -19007,6 +19307,7 @@ pub mod types {
             fn from(value: super::CompleteJobRequest) -> Self {
                 Self {
                     outcome: Ok(value.outcome),
+                    result: Ok(value.result),
                 }
             }
         }
@@ -28801,6 +29102,10 @@ pub mod types {
             >,
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             kind: ::std::result::Result<super::JobKind, ::std::string::String>,
+            result: ::std::result::Result<
+                ::std::option::Option<::serde_json::Value>,
+                ::std::string::String,
+            >,
             seq: ::std::result::Result<u64, ::std::string::String>,
             status: ::std::result::Result<super::JobStatus, ::std::string::String>,
             target_cn_uuid:
@@ -28816,6 +29121,7 @@ pub mod types {
                     created_at: Err("no value supplied for created_at".to_string()),
                     id: Err("no value supplied for id".to_string()),
                     kind: Err("no value supplied for kind".to_string()),
+                    result: Ok(Default::default()),
                     seq: Err("no value supplied for seq".to_string()),
                     status: Err("no value supplied for status".to_string()),
                     target_cn_uuid: Ok(Default::default()),
@@ -28888,6 +29194,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for kind: {e}"));
                 self
             }
+            pub fn result<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::serde_json::Value>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.result = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for result: {e}"));
+                self
+            }
             pub fn seq<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<u64>,
@@ -28932,6 +29248,7 @@ pub mod types {
                     created_at: value.created_at?,
                     id: value.id?,
                     kind: value.kind?,
+                    result: value.result?,
                     seq: value.seq?,
                     status: value.status?,
                     target_cn_uuid: value.target_cn_uuid?,
@@ -28948,6 +29265,7 @@ pub mod types {
                     created_at: Ok(value.created_at),
                     id: Ok(value.id),
                     kind: Ok(value.kind),
+                    result: Ok(value.result),
                     seq: Ok(value.seq),
                     status: Ok(value.status),
                     target_cn_uuid: Ok(value.target_cn_uuid),

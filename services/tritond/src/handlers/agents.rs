@@ -289,7 +289,11 @@ pub(crate) async fn agent_complete_job(
         JobOutcome::Failed { .. } => "failed",
         _ => "unknown",
     };
-    match ctx.store.complete_job(job_id, req.outcome.clone()).await {
+    match ctx
+        .store
+        .complete_job(job_id, req.outcome.clone(), req.result.clone())
+        .await
+    {
         Ok(updated) => {
             ctx.audit
                 .record_mutation(

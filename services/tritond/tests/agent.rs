@@ -570,7 +570,9 @@ async fn instance_create_spreads_across_tenant_cns_via_placement_engine() {
     let placed: std::collections::HashSet<Uuid> = [first_cn, second_cn].into_iter().collect();
     assert_eq!(
         placed,
-        [cn_a, cn_b].into_iter().collect::<std::collections::HashSet<_>>(),
+        [cn_a, cn_b]
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>(),
         "the two instances should spread across both CNs",
     );
 
@@ -640,6 +642,7 @@ async fn agent_claim_then_complete_drains_queue() {
         .job_id(claimed.id)
         .body(CompleteJobRequest {
             outcome: JobOutcome::Completed,
+            result: None,
         })
         .send()
         .await
@@ -694,6 +697,7 @@ async fn agent_complete_with_failure_records_reason() {
         .job_id(claimed.id)
         .body(CompleteJobRequest {
             outcome: JobOutcome::Failed("image not on host".to_string()),
+            result: None,
         })
         .send()
         .await
@@ -1350,6 +1354,7 @@ async fn port_blueprint_materializes_nat_edge_cluster_and_routes_edge_target() {
         .job_id(edge_job_id)
         .body(CompleteJobRequest {
             outcome: JobOutcome::Failed("edge apply failed".to_string()),
+            result: None,
         })
         .send()
         .await
@@ -1560,6 +1565,7 @@ async fn provision_job_drives_lifecycle_pending_to_running() {
         .job_id(claimed.id)
         .body(CompleteJobRequest {
             outcome: JobOutcome::Completed,
+            result: None,
         })
         .send()
         .await
@@ -1845,6 +1851,7 @@ async fn instance_delete_enqueues_delete_job_for_agent() {
         .job_id(claimed.id)
         .body(CompleteJobRequest {
             outcome: JobOutcome::Completed,
+            result: None,
         })
         .send()
         .await
@@ -1975,6 +1982,7 @@ async fn provision_job_failed_outcome_lands_in_failed_state() {
         .job_id(claimed.id)
         .body(CompleteJobRequest {
             outcome: JobOutcome::Failed("image not on host".to_string()),
+            result: None,
         })
         .send()
         .await

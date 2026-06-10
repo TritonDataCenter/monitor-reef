@@ -292,6 +292,32 @@ pub(crate) async fn backfill_instance_brands(ctx: &ApiContext, payload: &serde_j
     }
 }
 
+/// 409 when a migration is in flight for the instance. The
+/// start/stop/restart/delete entry points call this so an operator
+/// (or tenant) lifecycle mutation cannot race the migrate-instance
+/// saga's own quiesce/activate sequencing — a concurrent stop
+/// would, for example, make the saga's "skip if already stopped"
+/// read lie about who owns the guest's power state. The saga
+/// itself enqueues jobs directly against the store and never
+/// passes through these handlers, so it is not affected.
+pub(crate) async fn reject_if_migration_active(
+    store: &dyn Store,
+    instance_id: Uuid,
+) -> Result<(), HttpError> {
+    match store.get_active_migration(instance_id).await {
+        Ok(Some(migration)) => Err(HttpError::for_client_error(
+            Some("Conflict".to_string()),
+            dropshot::ClientErrorStatusCode::CONFLICT,
+            format!(
+                "instance {instance_id} is being migrated (migration {}); retry after it finishes or abort it",
+                migration.id,
+            ),
+        )),
+        Ok(None) => Ok(()),
+        Err(e) => Err(store_error_to_http(e)),
+    }
+}
+
 /// Token-only enum used by `instance_lifecycle_transition` to pick
 /// the matching `JobKind` after the CAS lands. We don't pass a
 /// `JobKind` directly because that would require the caller to
@@ -354,6 +380,7 @@ pub(crate) async fn instance_lifecycle_transition(
     if instance.tenant_id != tenant_id || instance.project_id != project_id {
         return Err(not_found());
     }
+    reject_if_migration_active(ctx.store.as_ref(), instance_id).await?;
     let target_cn_uuid = instance.host_cn_uuid;
 
     let updated = match ctx
@@ -698,6 +725,7 @@ mod tests {
             claimed_by: Some("agent".into()),
             completed_at: Some(Utc::now()),
             target_cn_uuid: None,
+            result: None,
         }
     }
 

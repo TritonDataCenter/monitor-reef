@@ -242,18 +242,14 @@ async fn snapshot_attachments(ctx: LocalCtx) -> Result<DeleteSnapshot, ActionErr
             for f in &instance_fips {
                 if let Some(hosted_cn) = f.hosted_cn {
                     let external_nic_tag = match f.external_nic_tag {
-                        Some(tag_id) => {
-                            store.get_nic_tag(tag_id).await.ok().map(|t| t.name)
-                        }
+                        Some(tag_id) => store.get_nic_tag(tag_id).await.ok().map(|t| t.name),
                         None => None,
                     };
                     // The VLAN lives on the FIP's external subnet; resolve
                     // it so the agent finds the same `fipN` vnic to remove
                     // the alias from on release.
                     let vlan_id = match f.network_id {
-                        Some(net_id) => {
-                            store.get_subnet(net_id).await.ok().and_then(|s| s.vlan_id)
-                        }
+                        Some(net_id) => store.get_subnet(net_id).await.ok().and_then(|s| s.vlan_id),
                         None => None,
                     };
                     hosted_fips.push(HostedFipWithdraw {

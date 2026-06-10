@@ -3744,6 +3744,7 @@ impl Store for MemStore {
             claimed_by: None,
             completed_at: None,
             target_cn_uuid: req.target_cn_uuid,
+            result: None,
         };
         guard.jobs_by_id.insert(job.id, job.clone());
         Ok(job)
@@ -3791,6 +3792,7 @@ impl Store for MemStore {
         &self,
         job_id: Uuid,
         outcome: JobOutcome,
+        result: Option<serde_json::Value>,
     ) -> Result<ProvisioningJob, StoreError> {
         let mut guard = self.inner.write().await;
         let job = guard
@@ -3811,6 +3813,7 @@ impl Store for MemStore {
             JobOutcome::Failed { reason } => JobStatus::Failed { reason },
         };
         job.completed_at = Some(Utc::now());
+        job.result = result;
         Ok(job.clone())
     }
 
@@ -3892,8 +3895,44 @@ impl Store for MemStore {
         if !guard.migrations_by_id.contains_key(&record.id) {
             return Err(StoreError::NotFound);
         }
+        // Terminal write releases the active guard so a fresh
+        // migration of the same instance can start. Only when the
+        // guard still points at this record — a newer migration's
+        // guard must not be clobbered by a late terminal write
+        // from an older one.
+        if record.state.is_terminal()
+            && guard
+                .migration_active_by_instance
+                .get(&record.instance_id)
+                .is_some_and(|active| *active == record.id)
+        {
+            guard
+                .migration_active_by_instance
+                .remove(&record.instance_id);
+        }
         guard.migrations_by_id.insert(record.id, record.clone());
         Ok(record)
+    }
+
+    async fn get_active_migration(
+        &self,
+        instance_id: Uuid,
+    ) -> Result<Option<MigrationRecord>, StoreError> {
+        let guard = self.inner.read().await;
+        let Some(active_id) = guard.migration_active_by_instance.get(&instance_id) else {
+            return Ok(None);
+        };
+        // Defensive in both arms: a guard pointing at a missing
+        // record (corrupt state) or at a finished one (written
+        // before terminal-clear existed) must not block lifecycle
+        // operations forever.
+        let Some(record) = guard.migrations_by_id.get(active_id).cloned() else {
+            return Ok(None);
+        };
+        if record.state.is_terminal() {
+            return Ok(None);
+        }
+        Ok(Some(record))
     }
 
     async fn list_migrations(
@@ -10477,7 +10516,7 @@ mod tests {
         }
 
         let done = store
-            .complete_job(claimed.id, JobOutcome::Completed)
+            .complete_job(claimed.id, JobOutcome::Completed, None)
             .await
             .unwrap();
         assert!(matches!(done.status, JobStatus::Completed));
@@ -10502,15 +10541,20 @@ mod tests {
             .unwrap();
         store.claim_next_job("w", None).await.unwrap();
         let done = store
-            .complete_job(job.id, JobOutcome::Completed)
+            .complete_job(
+                job.id,
+                JobOutcome::Completed,
+                Some(serde_json::json!({"bytes_streamed": 42})),
+            )
             .await
             .unwrap();
         assert!(matches!(done.status, JobStatus::Completed));
         assert!(done.completed_at.is_some());
+        assert_eq!(done.result, Some(serde_json::json!({"bytes_streamed": 42})));
 
         // Re-completing is a Conflict.
         let err = store
-            .complete_job(job.id, JobOutcome::Completed)
+            .complete_job(job.id, JobOutcome::Completed, None)
             .await
             .expect_err("double-complete should conflict");
         assert!(matches!(err, StoreError::Conflict(_)));
@@ -10529,6 +10573,7 @@ mod tests {
                 JobOutcome::Failed {
                     reason: "image not ready".to_string(),
                 },
+                None,
             )
             .await
             .unwrap();

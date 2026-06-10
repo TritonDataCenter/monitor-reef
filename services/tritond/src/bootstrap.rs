@@ -54,10 +54,7 @@ pub async fn ensure(store: &dyn Store) -> Result<(JwtKey, IdentityHmacKey)> {
         .await
         .context("migrate user capabilities")?;
     if rewritten > 0 {
-        info!(
-            rewritten,
-            "backfilled User.capabilities for legacy rows"
-        );
+        info!(rewritten, "backfilled User.capabilities for legacy rows");
     }
     Ok((jwt_key, identity_hmac_key))
 }

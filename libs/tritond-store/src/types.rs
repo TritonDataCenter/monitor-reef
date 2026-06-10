@@ -2486,6 +2486,67 @@ pub enum JobKind {
         migration_id: Uuid,
         instance_id: Uuid,
         role: MigrationJobRole,
+        /// Source-only: `wss://<target_admin_ip>:<port>` base for
+        /// the dial. Same contract as the
+        /// [`JobKind::MigrateZfsSend`] trio: the target side of the
+        /// pair listens, so it leaves all three `None`.
+        #[serde(default)]
+        peer_endpoint: Option<String>,
+        /// Source-only: lowercase-hex SHA-256 of the target's
+        /// migrate-listener leaf-cert SPKI, pinned by the dialer.
+        #[serde(default)]
+        peer_spki_sha256_hex: Option<String>,
+        /// Source-only: HS256 migrate-ticket minted with the
+        /// *target* CN's `migrate_ticket_key`
+        /// (`MigrateRole::Outbound`). ~10 min TTL.
+        #[serde(default)]
+        ticket: Option<String>,
+    },
+    /// Create the target-side zone shell for a migration: `vmadm
+    /// create` with `autoboot=false`, no image ensure, Proteus ports
+    /// paused, then destroy the vmadm-created datasets so the first
+    /// `zfs recv` lands on a clean slate. Distinct from
+    /// [`JobKind::Provision`] because a normal provision boots the
+    /// guest and realizes the network — both forbidden while the
+    /// source instance still owns the identity.
+    MigrationProvisionTarget {
+        migration_id: Uuid,
+        instance_id: Uuid,
+    },
+    /// One leg of the legacy-compat quota dance: `zfs send` of a
+    /// dataset whose `quota`/`refreservation` are set can fail at
+    /// recv time, so the saga clears them on the source up front
+    /// (`SaveAndClear`, which reports the original values back via
+    /// the job `result`) and re-applies them on whichever side ends
+    /// up owning the dataset (`Restore`).
+    MigrateQuotaDance {
+        migration_id: Uuid,
+        instance_id: Uuid,
+        /// Dataset the dance applies to (`zones/<instance>`).
+        dataset: String,
+        op: QuotaDanceOp,
+    },
+    /// Live-path source quiesce: bhyve.sock `pause-devices` →
+    /// `pause-vm` → `drain-devices`, leaving the guest paused so
+    /// the final ZFS increment and the RAM stream see a frozen
+    /// machine. The job `result` carries `pause_complete_ts`.
+    MigratePauseSource {
+        migration_id: Uuid,
+        instance_id: Uuid,
+    },
+    /// Undo of [`JobKind::MigratePauseSource`]: resume the paused
+    /// source guest after a pre-switch failure. Never enqueued
+    /// after `SwitchComplete` — the target owns the guest then.
+    MigrateResumeSource {
+        migration_id: Uuid,
+        instance_id: Uuid,
+    },
+    /// Boot the target-side zone in bhyve listen mode so the
+    /// inbound memory stream has a vmm to import into. The agent
+    /// polls the zone's bhyve.sock until the listener is up.
+    MigrateTargetListen {
+        migration_id: Uuid,
+        instance_id: Uuid,
     },
     /// Proteus port activation on the target (`start_port`) after
     /// the cutover fence completes. Source-side equivalent is
@@ -2547,6 +2608,56 @@ pub enum MigrationJobRole {
     Target,
 }
 
+/// Which leg of the quota dance a [`JobKind::MigrateQuotaDance`]
+/// job performs. `Restore` carries the values to re-apply rather
+/// than re-reading them on the agent because the restore can run
+/// on the *target* CN, where the original source-side properties
+/// were never visible (`zfs recv -x quota -x refreservation`
+/// strips them from the stream).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum QuotaDanceOp {
+    /// Read the dataset's current `quota`/`refreservation`, report
+    /// them in the job `result` (shape:
+    /// [`QuotaDanceSaveResult`]), then clear both.
+    SaveAndClear,
+    /// Re-apply previously saved values. `None` means the property
+    /// was unset on the source and stays unset.
+    Restore {
+        #[serde(default)]
+        quota_bytes: Option<u64>,
+        #[serde(default)]
+        refreservation_bytes: Option<u64>,
+    },
+}
+
+/// Job `result` payload contract for a successful
+/// [`QuotaDanceOp::SaveAndClear`]. The agent serializes this; the
+/// migration saga deserializes it to fill
+/// [`SourceFilesystemDetails::original_quota_bytes`] /
+/// `original_refreservation_bytes`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct QuotaDanceSaveResult {
+    /// Original `quota` in bytes; `None`/missing when unset.
+    #[serde(default)]
+    pub quota_bytes: Option<u64>,
+    /// Original `refreservation` in bytes; `None`/missing when unset.
+    #[serde(default)]
+    pub refreservation_bytes: Option<u64>,
+}
+
+/// Job `result` payload contract for a successful source-side
+/// [`JobKind::MigrateZfsSend`]. The saga's sync-convergence loop
+/// reads `bytes_streamed` to decide whether another incremental
+/// round is worth it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ZfsSendResult {
+    /// Bytes the `zfs send` stream produced for this pass.
+    #[serde(default)]
+    pub bytes_streamed: u64,
+}
+
 impl JobKind {
     /// Extract the target VM instance id when this is an
     /// instance-lifecycle job. Migration jobs also carry an
@@ -2565,6 +2676,11 @@ impl JobKind {
             | JobKind::FipClaim { instance_id, .. }
             | JobKind::MigrateZfsSend { instance_id, .. }
             | JobKind::MigrateVmmStream { instance_id, .. }
+            | JobKind::MigrationProvisionTarget { instance_id, .. }
+            | JobKind::MigrateQuotaDance { instance_id, .. }
+            | JobKind::MigratePauseSource { instance_id, .. }
+            | JobKind::MigrateResumeSource { instance_id, .. }
+            | JobKind::MigrateTargetListen { instance_id, .. }
             | JobKind::ProteusActivate { instance_id, .. }
             | JobKind::ProteusDeactivate { instance_id, .. }
             | JobKind::MigrationCleanupTarget { instance_id, .. }
@@ -2596,6 +2712,11 @@ impl JobKind {
             | JobKind::FipRelease { .. }
             | JobKind::MigrateZfsSend { .. }
             | JobKind::MigrateVmmStream { .. }
+            | JobKind::MigrationProvisionTarget { .. }
+            | JobKind::MigrateQuotaDance { .. }
+            | JobKind::MigratePauseSource { .. }
+            | JobKind::MigrateResumeSource { .. }
+            | JobKind::MigrateTargetListen { .. }
             | JobKind::ProteusActivate { .. }
             | JobKind::ProteusDeactivate { .. }
             | JobKind::MigrationCleanupTarget { .. }
@@ -2614,6 +2735,11 @@ impl JobKind {
         match self {
             JobKind::MigrateZfsSend { migration_id, .. }
             | JobKind::MigrateVmmStream { migration_id, .. }
+            | JobKind::MigrationProvisionTarget { migration_id, .. }
+            | JobKind::MigrateQuotaDance { migration_id, .. }
+            | JobKind::MigratePauseSource { migration_id, .. }
+            | JobKind::MigrateResumeSource { migration_id, .. }
+            | JobKind::MigrateTargetListen { migration_id, .. }
             | JobKind::ProteusActivate { migration_id, .. }
             | JobKind::ProteusDeactivate { migration_id, .. }
             | JobKind::MigrationCleanupTarget { migration_id, .. }
@@ -2669,12 +2795,96 @@ mod job_kind_tests {
             migration_id,
             instance_id,
             role: MigrationJobRole::Source,
+            peer_endpoint: None,
+            peer_spki_sha256_hex: None,
+            ticket: None,
         };
         assert_eq!(kind.instance_id(), Some(instance_id));
         assert_eq!(kind.migration_id(), Some(migration_id));
         assert_eq!(kind.edge_instance_id(), None);
         // Non-migration jobs return None for migration_id.
         assert_eq!(JobKind::Provision { instance_id }.migration_id(), None);
+    }
+
+    #[test]
+    fn migrate_vmm_stream_decodes_without_peer_fields() {
+        // Wire-compat: a MigrateVmmStream enqueued by a pre-peer-trio
+        // tritond must still decode (all three fields default None).
+        let json = serde_json::json!({
+            "kind": "migrate_vmm_stream",
+            "migration_id": Uuid::new_v4(),
+            "instance_id": Uuid::new_v4(),
+            "role": "target",
+        });
+        let decoded: JobKind = serde_json::from_value(json).unwrap();
+        assert!(matches!(
+            decoded,
+            JobKind::MigrateVmmStream {
+                peer_endpoint: None,
+                peer_spki_sha256_hex: None,
+                ticket: None,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn migrate_quota_dance_round_trips_both_ops() {
+        let save = JobKind::MigrateQuotaDance {
+            migration_id: Uuid::new_v4(),
+            instance_id: Uuid::new_v4(),
+            dataset: "zones/abcd".to_string(),
+            op: QuotaDanceOp::SaveAndClear,
+        };
+        let json = serde_json::to_value(&save).unwrap();
+        assert_eq!(json["kind"].as_str(), Some("migrate_quota_dance"));
+        assert_eq!(json["op"]["kind"].as_str(), Some("save_and_clear"));
+        let decoded: JobKind = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded, save);
+
+        let restore = JobKind::MigrateQuotaDance {
+            migration_id: Uuid::new_v4(),
+            instance_id: Uuid::new_v4(),
+            dataset: "zones/abcd".to_string(),
+            op: QuotaDanceOp::Restore {
+                quota_bytes: Some(10 * 1024 * 1024 * 1024),
+                refreservation_bytes: None,
+            },
+        };
+        let json = serde_json::to_value(&restore).unwrap();
+        assert_eq!(json["op"]["kind"].as_str(), Some("restore"));
+        let decoded: JobKind = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded, restore);
+    }
+
+    #[test]
+    fn new_migration_job_kinds_carry_ids() {
+        let migration_id = Uuid::new_v4();
+        let instance_id = Uuid::new_v4();
+        for kind in [
+            JobKind::MigrationProvisionTarget {
+                migration_id,
+                instance_id,
+            },
+            JobKind::MigratePauseSource {
+                migration_id,
+                instance_id,
+            },
+            JobKind::MigrateResumeSource {
+                migration_id,
+                instance_id,
+            },
+            JobKind::MigrateTargetListen {
+                migration_id,
+                instance_id,
+            },
+        ] {
+            assert_eq!(kind.instance_id(), Some(instance_id));
+            assert_eq!(kind.migration_id(), Some(migration_id));
+            let json = serde_json::to_value(&kind).unwrap();
+            let decoded: JobKind = serde_json::from_value(json).unwrap();
+            assert_eq!(decoded, kind);
+        }
     }
 
     #[test]
@@ -2904,6 +3114,13 @@ pub struct ProvisioningJob {
     /// Failed).
     #[serde(default)]
     pub completed_at: Option<DateTime<Utc>>,
+    /// Free-form result payload the completing agent attached.
+    /// Opaque to the queue; the enqueuing orchestrator defines the
+    /// per-kind contract (e.g. [`QuotaDanceSaveResult`],
+    /// [`ZfsSendResult`]). `None` for kinds with nothing to report
+    /// and for completions from agents predating the field.
+    #[serde(default)]
+    pub result: Option<serde_json::Value>,
     /// Optional placement: when `Some(server_uuid)`, only an
     /// agent bound to that CN will claim the job. When `None`,
     /// any claimer (the in-process stub or any bound agent) can
@@ -3565,6 +3782,17 @@ pub const DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS: u64 = 7 * 24 * 60 * 60;
 /// RFD 00004 SG-4.
 pub const DEFAULT_SAGA_RETENTION_SECS: u64 = 30 * 24 * 60 * 60;
 
+/// Default convergence threshold for the migration saga's
+/// incremental-sync loop, in bytes. When a sync round streams less
+/// than this, the next round is unlikely to shrink the final
+/// (guest-down) increment meaningfully, so the saga moves to
+/// quiesce. 50 MiB matches the legacy sdc-migrate heuristic.
+pub const DEFAULT_MIGRATION_SYNC_DELTA_THRESHOLD_BYTES: u64 = 50 * 1024 * 1024;
+/// Default cap on migration sync rounds. A guest that dirties data
+/// faster than the link can drain never converges; the cap bounds
+/// the pre-cutover phase instead of looping forever.
+pub const DEFAULT_MIGRATION_MAX_SYNC_ROUNDS: u64 = 10;
+
 /// Default cadence of the placement load materializer, in seconds
 /// (RFD 00005 PL-6).
 pub const DEFAULT_PLACEMENT_LOAD_MATERIALIZER_INTERVAL_SECS: u64 = 60;
@@ -3697,10 +3925,34 @@ pub struct Settings {
     /// materializer task is not spawned.
     #[serde(rename = "placement.load_materializer.clickhouse_url", default)]
     pub placement_load_materializer_clickhouse_url: Option<String>,
+    /// Convergence threshold for the migration saga's incremental
+    /// sync loop: stop syncing once a round streams fewer bytes than
+    /// this. Read live from FDB by each saga run, so changing it
+    /// affects in-flight and future migrations without a restart.
+    #[serde(
+        rename = "migration.sync_delta_threshold_bytes",
+        default = "default_migration_sync_delta_threshold_bytes"
+    )]
+    pub migration_sync_delta_threshold_bytes: u64,
+    /// Upper bound on incremental sync rounds per migration. Read
+    /// live, same as `migration.sync_delta_threshold_bytes`.
+    #[serde(
+        rename = "migration.max_sync_rounds",
+        default = "default_migration_max_sync_rounds"
+    )]
+    pub migration_max_sync_rounds: u64,
 }
 
 fn default_placement_load_materializer_interval_secs() -> u64 {
     DEFAULT_PLACEMENT_LOAD_MATERIALIZER_INTERVAL_SECS
+}
+
+fn default_migration_sync_delta_threshold_bytes() -> u64 {
+    DEFAULT_MIGRATION_SYNC_DELTA_THRESHOLD_BYTES
+}
+
+fn default_migration_max_sync_rounds() -> u64 {
+    DEFAULT_MIGRATION_MAX_SYNC_ROUNDS
 }
 
 fn default_placement_load_materializer_staleness_ticks() -> u64 {
@@ -3729,6 +3981,8 @@ impl Default for Settings {
             placement_load_materializer_staleness_ticks:
                 DEFAULT_PLACEMENT_LOAD_MATERIALIZER_STALENESS_TICKS,
             placement_load_materializer_clickhouse_url: None,
+            migration_sync_delta_threshold_bytes: DEFAULT_MIGRATION_SYNC_DELTA_THRESHOLD_BYTES,
+            migration_max_sync_rounds: DEFAULT_MIGRATION_MAX_SYNC_ROUNDS,
         }
     }
 }
@@ -3981,11 +4235,15 @@ pub enum ConfigKey {
     PlacementLoadMaterializerStalenessTicks,
     /// [`Settings::placement_load_materializer_clickhouse_url`]
     PlacementLoadMaterializerClickhouseUrl,
+    /// [`Settings::migration_sync_delta_threshold_bytes`]
+    MigrationSyncDeltaThresholdBytes,
+    /// [`Settings::migration_max_sync_rounds`]
+    MigrationMaxSyncRounds,
 }
 
 impl ConfigKey {
     /// Every key, in the order `tcadm config list` displays them.
-    pub const ALL: [ConfigKey; 16] = [
+    pub const ALL: [ConfigKey; 18] = [
         ConfigKey::ProvisionerInprocessDisabled,
         ConfigKey::SweeperIntervalSecs,
         ConfigKey::StaleClaimThresholdSecs,
@@ -4002,6 +4260,8 @@ impl ConfigKey {
         ConfigKey::PlacementLoadMaterializerIntervalSecs,
         ConfigKey::PlacementLoadMaterializerStalenessTicks,
         ConfigKey::PlacementLoadMaterializerClickhouseUrl,
+        ConfigKey::MigrationSyncDeltaThresholdBytes,
+        ConfigKey::MigrationMaxSyncRounds,
     ];
 
     /// Dotted wire name. Must exactly equal the `#[serde(rename = ...)]`
@@ -4030,6 +4290,8 @@ impl ConfigKey {
             ConfigKey::PlacementLoadMaterializerClickhouseUrl => {
                 "placement.load_materializer.clickhouse_url"
             }
+            ConfigKey::MigrationSyncDeltaThresholdBytes => "migration.sync_delta_threshold_bytes",
+            ConfigKey::MigrationMaxSyncRounds => "migration.max_sync_rounds",
         }
     }
 
@@ -4085,6 +4347,12 @@ impl ConfigKey {
             ConfigKey::PlacementLoadMaterializerClickhouseUrl => {
                 "ClickHouse HTTP base URL for the load materializer (falls back to metrics.clickhouse_url)"
             }
+            ConfigKey::MigrationSyncDeltaThresholdBytes => {
+                "stop migration sync rounds once a round streams fewer bytes than this (applied live per saga run)"
+            }
+            ConfigKey::MigrationMaxSyncRounds => {
+                "upper bound on incremental sync rounds per migration (applied live per saga run)"
+            }
         }
     }
 
@@ -4095,7 +4363,12 @@ impl ConfigKey {
         !matches!(
             self,
             // Resolved per pick (placement::pick re-reads Settings).
-            ConfigKey::PlacementProfiles | ConfigKey::PlacementLoadMaterializerStalenessTicks
+            ConfigKey::PlacementProfiles
+                | ConfigKey::PlacementLoadMaterializerStalenessTicks
+                // Resolved per saga run (the migrate-instance saga
+                // re-reads Settings inside sync_convergence).
+                | ConfigKey::MigrationSyncDeltaThresholdBytes
+                | ConfigKey::MigrationMaxSyncRounds
         )
     }
 
@@ -4128,6 +4401,10 @@ impl ConfigKey {
             ConfigKey::PlacementLoadMaterializerClickhouseUrl => {
                 "TRITOND_PLACEMENT_LOAD_MATERIALIZER_CLICKHOUSE_URL"
             }
+            ConfigKey::MigrationSyncDeltaThresholdBytes => {
+                "TRITOND_MIGRATION_SYNC_DELTA_THRESHOLD_BYTES"
+            }
+            ConfigKey::MigrationMaxSyncRounds => "TRITOND_MIGRATION_MAX_SYNC_ROUNDS",
         })
     }
 }
@@ -7803,6 +8080,22 @@ pub enum MigrationState {
     Running,
     #[serde(other)]
     Unknown,
+}
+
+impl MigrationState {
+    /// Whether this state ends the migration. Terminal-state writes
+    /// release the `migration/active/<instance>` guard (see
+    /// `Store::put_migration`).
+    #[must_use]
+    pub fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            MigrationState::Aborted
+                | MigrationState::RolledBack
+                | MigrationState::Successful
+                | MigrationState::Failed
+        )
+    }
 }
 
 /// Coarse-grained phase the migration is in. The saga catalog at

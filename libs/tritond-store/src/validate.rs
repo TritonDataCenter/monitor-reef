@@ -79,14 +79,24 @@ impl From<InvalidInput> for StoreError {
 /// bytes are rejected because they can't round-trip through `format!`
 /// safely and have no business in a UX-visible identifier.
 pub fn name(field: &'static str, s: &str) -> Result<(), InvalidInput> {
-    check_basics(field, s, MAX_NAME_BYTES, /* allow_internal_slash */ false)
+    check_basics(
+        field,
+        s,
+        MAX_NAME_BYTES,
+        /* allow_internal_slash */ false,
+    )
 }
 
 /// Validate an SSH-key fingerprint. Same rules as [`name`] but with
 /// a much higher length cap and `/` allowed (base64 fingerprints can
 /// contain `/`).
 pub fn fingerprint(field: &'static str, s: &str) -> Result<(), InvalidInput> {
-    check_basics(field, s, MAX_FINGERPRINT_BYTES, /* allow_internal_slash */ true)
+    check_basics(
+        field,
+        s,
+        MAX_FINGERPRINT_BYTES,
+        /* allow_internal_slash */ true,
+    )
 }
 
 /// Validate a username. Allows internal `/`, `:`, `@` because federated
@@ -96,7 +106,12 @@ pub fn fingerprint(field: &'static str, s: &str) -> Result<(), InvalidInput> {
 /// stricter shape; storage is defense in depth against
 /// schema-breaking bytes.
 pub fn username(field: &'static str, s: &str) -> Result<(), InvalidInput> {
-    check_basics(field, s, MAX_USERNAME_BYTES, /* allow_internal_slash */ true)
+    check_basics(
+        field,
+        s,
+        MAX_USERNAME_BYTES,
+        /* allow_internal_slash */ true,
+    )
 }
 
 /// Validate a MAC address in canonical lowercase form `aa:bb:cc:dd:ee:ff`.
@@ -232,7 +247,10 @@ mod tests {
         let s = "a".repeat(MAX_NAME_BYTES + 1);
         assert!(matches!(
             name("vpc", &s),
-            Err(InvalidInput::TooLong { limit: MAX_NAME_BYTES, .. })
+            Err(InvalidInput::TooLong {
+                limit: MAX_NAME_BYTES,
+                ..
+            })
         ));
         // Exactly at the limit is allowed.
         let s = "a".repeat(MAX_NAME_BYTES);

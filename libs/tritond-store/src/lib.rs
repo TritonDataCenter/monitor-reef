@@ -38,6 +38,7 @@ pub use types::{
     Cn, CnCapacity, CnLoadSummary, CnNicTagInventory, CnPickSnapshot, CnPlacement, CnReservation,
     CnRole, CnState, CnView, ConfigError, ConfigKey, DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS,
     DEFAULT_DHCP_RECONCILE_INTERVAL_SECS, DEFAULT_IMDS_ENABLED, DEFAULT_IMDS_HOP_LIMIT,
+    DEFAULT_MIGRATION_MAX_SYNC_ROUNDS, DEFAULT_MIGRATION_SYNC_DELTA_THRESHOLD_BYTES,
     DEFAULT_STALE_CLAIM_THRESHOLD_SECS, DEFAULT_SWEEPER_INTERVAL_SECS, DeviceCapacity, DeviceKind,
     DeviceReservation, DhcpLease, DhcpOptionRaw, DhcpPool, DhcpReservation, Disk, DiskKind,
     EdgeCluster, EdgeClusterInstance, EdgeClusterInstanceState, EdgeClusterKind,
@@ -57,15 +58,15 @@ pub use types::{
     NewJob, NewMigration, NewNatGateway, NewNetworkPool, NewNicTag, NewProject, NewQuota, NewRoute,
     NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic,
     NicTag, NicTagProvision, NumaNode, PlacementProfile, PlacementProfiles, Project,
-    ProvisioningJob, Quota, Realization,
-    RealizationStatus, RealizedMeta, RealizedNetworkState, RealizedView, RealizerId, Route,
-    RouteTable, RouteTarget, Settings, Silo, SourceFilesystemDetails, SshKey, SshKeyScope,
-    StorageCluster, StorageClusterStatus, StorageClusterSurface, StorageClusterView, StorageTier,
-    Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE, TRITOND_METADATA_IDENTITY_HMAC,
+    ProvisioningJob, Quota, QuotaDanceOp, QuotaDanceSaveResult, Realization, RealizationStatus,
+    RealizedMeta, RealizedNetworkState, RealizedView, RealizerId, Route, RouteTable, RouteTarget,
+    Settings, Silo, SourceFilesystemDetails, SshKey, SshKeyScope, StorageCluster,
+    StorageClusterStatus, StorageClusterSurface, StorageClusterView, StorageTier, Subnet,
+    SystemKey, TRITOND_IMAGE_NAMESPACE, TRITOND_METADATA_IDENTITY_HMAC,
     TRITOND_METADATA_INSTANCE_ID, TRITOND_METADATA_PROJECT_ID, TRITOND_METADATA_TENANT_ID,
     TRITOND_SSH_KEY_NAMESPACE, Tenant, TenantInstanceProjection, TopologyKey, TopologySpread,
     UnderlayCapability, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, VmNicReport,
-    VmReport, VmState, Vpc, ZpoolCapacity, ZpoolPropFingerprint, computed_metadata,
+    VmReport, VmState, Vpc, ZfsSendResult, ZpoolCapacity, ZpoolPropFingerprint, computed_metadata,
     default_boot_disk_size_bytes, default_guest_visible, derive_image_id, derive_ssh_key_id,
     format_claim_code, generate_claim_code, generate_poll_token, meta_key_guest_writable_allowed,
     normalize_claim_code, parse_vm_reports, resolve_boot_disk_size_bytes, validate_meta_entry,
@@ -1390,13 +1391,16 @@ pub trait Store: Send + Sync + 'static {
     ) -> Result<ProvisioningJob, StoreError>;
 
     /// Mark a job as terminal (Completed or Failed). Stamps
-    /// `completed_at`. Returns [`StoreError::NotFound`] if the job
-    /// does not exist; [`StoreError::Conflict`] if it is already
-    /// terminal (Completed or Failed).
+    /// `completed_at` and stores the agent-supplied `result`
+    /// payload (see [`ProvisioningJob::result`]). Returns
+    /// [`StoreError::NotFound`] if the job does not exist;
+    /// [`StoreError::Conflict`] if it is already terminal
+    /// (Completed or Failed).
     async fn complete_job(
         &self,
         job_id: Uuid,
         outcome: JobOutcome,
+        result: Option<serde_json::Value>,
     ) -> Result<ProvisioningJob, StoreError>;
 
     /// Look up a single job by id.
@@ -1432,6 +1436,20 @@ pub trait Store: Send + Sync + 'static {
     /// Look up one migration by id.
     async fn get_migration(&self, migration_id: Uuid) -> Result<MigrationRecord, StoreError>;
 
+    /// Read the `migration/active/<instance>` guard: the migration
+    /// currently in flight for `instance_id`, if any. Returns
+    /// `Ok(None)` both when no guard is held and when the guard
+    /// points at a record that has since reached a terminal state
+    /// (defensive: guards written before terminal-clear existed).
+    /// The instance start/stop/restart/delete handlers consult this
+    /// to 409 lifecycle mutations that would race the migration
+    /// saga; the saga itself enqueues jobs directly and never goes
+    /// through those handlers.
+    async fn get_active_migration(
+        &self,
+        instance_id: Uuid,
+    ) -> Result<Option<MigrationRecord>, StoreError>;
+
     /// Persist a full migration record (used by the saga to advance
     /// state / phase / fill in `target_cn` / `error` / etc.).
     /// Returns [`StoreError::NotFound`] if no record exists for
@@ -1440,6 +1458,11 @@ pub trait Store: Send + Sync + 'static {
     /// The store does NOT validate state-machine transitions here
     /// — the saga is the authority. The HTTP handler does enforce
     /// "valid action for current state" before invoking the saga.
+    ///
+    /// Writing a record whose `state` is terminal (`Successful`,
+    /// `Failed`, `Aborted`, `RolledBack`) atomically releases the
+    /// `migration/active/<instance>` guard if it still points at
+    /// this record, so a fresh migration can start.
     async fn put_migration(&self, record: MigrationRecord) -> Result<MigrationRecord, StoreError>;
 
     /// List recent migrations across the fleet, newest-first, paged

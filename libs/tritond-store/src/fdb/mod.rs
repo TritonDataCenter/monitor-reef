@@ -5965,6 +5965,7 @@ impl Store for FdbStore {
                         claimed_by: None,
                         completed_at: None,
                         target_cn_uuid,
+                        result: None,
                     };
                     let value = serde_json::to_vec(&job).map_err(txn_ser_err("job"))?;
                     tr.set(&counter_key, &next_seq.to_be_bytes());
@@ -6118,6 +6119,7 @@ impl Store for FdbStore {
         &self,
         job_id: Uuid,
         outcome: JobOutcome,
+        result: Option<serde_json::Value>,
     ) -> Result<ProvisioningJob, StoreError> {
         let by_id_key = keys::job_by_id_key(job_id);
 
@@ -6132,6 +6134,7 @@ impl Store for FdbStore {
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
                 let outcome = outcome.clone();
+                let job_result = result.clone();
                 async move {
                     let bytes = match tr.get(&by_id_key, false).await? {
                         Some(b) => b,
@@ -6150,6 +6153,7 @@ impl Store for FdbStore {
                         JobOutcome::Failed { reason } => JobStatus::Failed { reason },
                     };
                     job.completed_at = Some(Utc::now());
+                    job.result = job_result;
                     let value = match serde_json::to_vec(&job) {
                         Ok(v) => v,
                         Err(_) => return Ok(Out::Vanished),
@@ -6319,13 +6323,18 @@ impl Store for FdbStore {
 
     async fn put_migration(&self, record: MigrationRecord) -> Result<MigrationRecord, StoreError> {
         let by_id_key = keys::migration_by_id_key(record.id);
+        let active_key = keys::migration_active_key(record.instance_id);
         let bytes = serde_json::to_vec(&record)
             .map_err(|e| StoreError::Backend(format!("encode MigrationRecord: {e}")))?;
+        let release_guard = record.state.is_terminal();
+        let id_bytes = record.id.to_string().into_bytes();
         let result: Result<(), FdbBindingError> = self
             .db
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
+                let active_key = active_key.clone();
                 let bytes = bytes.clone();
+                let id_bytes = id_bytes.clone();
                 async move {
                     if tr.get(&by_id_key, false).await?.is_none() {
                         return Err(FdbBindingError::CustomError(
@@ -6333,6 +6342,19 @@ impl Store for FdbStore {
                         ));
                     }
                     tr.set(&by_id_key, &bytes);
+                    // Terminal write releases the active guard in
+                    // the same transaction — but only when the
+                    // guard still points at this record, so a
+                    // newer migration's guard survives a late
+                    // terminal write from an older one.
+                    if release_guard
+                        && tr
+                            .get(&active_key, false)
+                            .await?
+                            .is_some_and(|v| &v[..] == id_bytes.as_slice())
+                    {
+                        tr.clear(&active_key);
+                    }
                     Ok(())
                 }
             })
@@ -6346,6 +6368,40 @@ impl Store for FdbStore {
             }
             Err(e) => Err(e.into()),
         }
+    }
+
+    async fn get_active_migration(
+        &self,
+        instance_id: Uuid,
+    ) -> Result<Option<MigrationRecord>, StoreError> {
+        let active_key = keys::migration_active_key(instance_id);
+        let raw: Result<Option<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let active_key = active_key.clone();
+                async move { Ok(tr.get(&active_key, false).await?.map(|v| v.to_vec())) }
+            })
+            .await;
+        let Some(id_bytes) = raw.map_err(StoreError::from)? else {
+            return Ok(None);
+        };
+        let migration_id = std::str::from_utf8(&id_bytes)
+            .ok()
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or_else(|| StoreError::Backend("corrupt migration/active value".to_string()))?;
+        // Defensive in both arms: a guard pointing at a missing
+        // record (corrupt state) or at a finished one (written
+        // before terminal-clear existed) must not block lifecycle
+        // operations forever.
+        let record = match self.get_migration(migration_id).await {
+            Ok(r) => r,
+            Err(StoreError::NotFound) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        if record.state.is_terminal() {
+            return Ok(None);
+        }
+        Ok(Some(record))
     }
 
     async fn list_migrations(

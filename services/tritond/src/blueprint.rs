@@ -1181,10 +1181,7 @@ mod imds_tests {
         // byte-identical intent.
         let bare = floating_ip_intent(&fip_with(None, None), None);
         let stamped = floating_ip_intent(
-            &fip_with(
-                Some(Uuid::from_u128(0xaaaa)),
-                Some(Uuid::from_u128(0xbbbb)),
-            ),
+            &fip_with(Some(Uuid::from_u128(0xaaaa)), Some(Uuid::from_u128(0xbbbb))),
             None,
         );
         assert_eq!(bare, stamped, "C-2 store fields must not affect the intent");
@@ -1225,7 +1222,10 @@ mod imds_tests {
         ));
         // The two families must get distinct stable ids so a dual-stack
         // port's v4 + v6 default routes coexist instead of colliding.
-        assert_ne!(v4.id, v6.id, "v4 and v6 default routes must have distinct ids");
+        assert_ne!(
+            v4.id, v6.id,
+            "v4 and v6 default routes must have distinct ids"
+        );
         // Re-emission is idempotent per family.
         let v4_again = external_default_route(rt, att, ExternalRouteFamily::V4);
         assert_eq!(v4.id, v4_again.id, "v4 default-route id must be stable");

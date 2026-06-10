@@ -105,6 +105,12 @@ fn apply_env_overrides(mut s: Settings, env: impl Fn(&str) -> Option<String>) ->
     )) {
         s.placement_load_materializer_clickhouse_url = Some(url);
     }
+    if let Some(v) = u64v(env_str_key(ConfigKey::MigrationSyncDeltaThresholdBytes)) {
+        s.migration_sync_delta_threshold_bytes = v;
+    }
+    if let Some(v) = u64v(env_str_key(ConfigKey::MigrationMaxSyncRounds)) {
+        s.migration_max_sync_rounds = v;
+    }
     s
 }
 

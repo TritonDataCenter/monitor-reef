@@ -160,7 +160,7 @@ async fn sweep_one(
     let outcome = JobOutcome::Failed {
         reason: SWEEPER_FAIL_REASON.to_string(),
     };
-    let updated = match store.complete_job(job_id, outcome.clone()).await {
+    let updated = match store.complete_job(job_id, outcome.clone(), None).await {
         Ok(j) => j,
         Err(e) => {
             warn!(%job_id, error = %e, "complete_job failed during sweep");

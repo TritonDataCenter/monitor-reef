@@ -45,11 +45,11 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tritond_auth::generate_random_password;
+use tritond_placement::{ExplainReport, PlacementRequest};
 use tritond_saga::{
     ActionContext, ActionError, ActionFunc, ActionRegistry, DagBuilder, Node, ResourceRef,
     ResourceScope, SagaDag, SagaError, SagaName, SagaResult, TritondSagaType,
 };
-use tritond_placement::{ExplainReport, PlacementRequest};
 use tritond_store::{
     Instance, InstanceAffinity, InstanceBrand, InstanceCreateResult, JobKind, JobStatusKind,
     MetaScope, MetaValue, NewInstance, NewJob,
@@ -351,11 +351,7 @@ async fn placement_request_for(
         required_devices: Vec::new(),
         needs_hvm: matches!(instance.brand, InstanceBrand::Bhyve),
         min_platform: None,
-        affinity: InstanceAffinity::empty(
-            instance.id,
-            instance.tenant_id,
-            chrono::Utc::now(),
-        ),
+        affinity: InstanceAffinity::empty(instance.id, instance.tenant_id, chrono::Utc::now()),
         strategy_override: None,
         force_cn: params.force_cn_override,
         ignore_scope_pin: false,

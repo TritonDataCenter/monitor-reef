@@ -340,6 +340,12 @@ pub struct ClaimJobResponse {
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CompleteJobRequest {
     pub outcome: JobOutcome,
+    /// Optional per-kind result payload, stored verbatim on the
+    /// job record's `result` field. The enqueuing orchestrator
+    /// defines the contract (e.g. `QuotaDanceSaveResult`,
+    /// `ZfsSendResult` for migration jobs).
+    #[serde(default)]
+    pub result: Option<serde_json::Value>,
 }
 
 /// Request body for `POST /v1/agent/status`.

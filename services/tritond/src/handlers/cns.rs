@@ -31,20 +31,18 @@ use tritond_api::{
     ApiKeyPath, ApproveCnRequest, AttachFloatingIpRequest, AuditEventList, AuditEventPath,
     AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, ClaimJobRequest, ClaimJobResponse,
     CnListQuery, CnPath, CnReservoirView, CompleteJobRequest, ConfigEntry, ConfigKeyPath,
-    HealthResponse, ImagePath,
-    InstanceDeleteQuery, InstanceLogsPath, LegacyCnSummary, LegacyVmListQuery, LegacyVmPath,
-    LogTailQuery, LoginRequest, MetricsRangeQuery, NetworkRealizationRequest, NewApiKey,
-    NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint,
-    RefreshRequest, RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery,
-    RegisterStatusResponse, SetCnReservoirRequest, SetCnRoleRequest, SetConfigRequest, SiloPath,
-    SiloTenantPath,
-    SshKeyPath, StorageClusterAccessKeyPath, StorageClusterBucketPath, StorageClusterNodePath,
-    StorageClusterPath, StorageClusterUserPath, StorageClusterUserPolicyPath, TenantIdpPath,
-    TenantPath, TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath,
-    TenantProjectInstanceNicPath, TenantProjectInstancePath, TenantProjectPath,
-    TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath, TenantProjectVpcNatGatewayPath,
-    TenantProjectVpcPath, TenantProjectVpcRouteTablePath, TenantProjectVpcRouteTableRoutePath,
-    TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
+    HealthResponse, ImagePath, InstanceDeleteQuery, InstanceLogsPath, LegacyCnSummary,
+    LegacyVmListQuery, LegacyVmPath, LogTailQuery, LoginRequest, MetricsRangeQuery,
+    NetworkRealizationRequest, NewApiKey, NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest,
+    ProvisioningBlueprint, RefreshRequest, RegisterCnRequest, RegisterCnResponse,
+    RegisterStatusQuery, RegisterStatusResponse, SetCnReservoirRequest, SetCnRoleRequest,
+    SetConfigRequest, SiloPath, SiloTenantPath, SshKeyPath, StorageClusterAccessKeyPath,
+    StorageClusterBucketPath, StorageClusterNodePath, StorageClusterPath, StorageClusterUserPath,
+    StorageClusterUserPolicyPath, TenantIdpPath, TenantPath, TenantProjectFloatingIpPath,
+    TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath, TenantProjectInstancePath,
+    TenantProjectPath, TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath,
+    TenantProjectVpcNatGatewayPath, TenantProjectVpcPath, TenantProjectVpcRouteTablePath,
+    TenantProjectVpcRouteTableRoutePath, TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, DhcpLease, DhcpPool, DhcpReservation,
         Disk, FirewallRule, FloatingIp, IdpConfigView, Image, ImageScope, Instance, JobKind,
@@ -496,7 +494,11 @@ pub(crate) async fn set_cn_reservoir(
         .await
         .map_err(store_error_to_http)?;
 
-    let settings = ctx.store.get_settings().await.map_err(store_error_to_http)?;
+    let settings = ctx
+        .store
+        .get_settings()
+        .await
+        .map_err(store_error_to_http)?;
     let (effective_enabled, effective_percent) = placement.effective_reservoir(
         settings.reservoir_enabled_default,
         settings.reservoir_percent_default,

@@ -11940,6 +11940,11 @@
         "properties": {
           "outcome": {
             "$ref": "#/components/schemas/JobOutcome"
+          },
+          "result": {
+            "nullable": true,
+            "description": "Optional per-kind result payload, stored verbatim on the job record's `result` field. The enqueuing orchestrator defines the contract (e.g. `QuotaDanceSaveResult`, `ZfsSendResult` for migration jobs).",
+            "default": null
           }
         },
         "required": [
@@ -13640,8 +13645,26 @@
                 "type": "string",
                 "format": "uuid"
               },
+              "peer_endpoint": {
+                "nullable": true,
+                "description": "Source-only: `wss://<target_admin_ip>:<port>` base for the dial. Same contract as the [`JobKind::MigrateZfsSend`] trio: the target side of the pair listens, so it leaves all three `None`.",
+                "default": null,
+                "type": "string"
+              },
+              "peer_spki_sha256_hex": {
+                "nullable": true,
+                "description": "Source-only: lowercase-hex SHA-256 of the target's migrate-listener leaf-cert SPKI, pinned by the dialer.",
+                "default": null,
+                "type": "string"
+              },
               "role": {
                 "$ref": "#/components/schemas/MigrationJobRole"
+              },
+              "ticket": {
+                "nullable": true,
+                "description": "Source-only: HS256 migrate-ticket minted with the *target* CN's `migrate_ticket_key` (`MigrateRole::Outbound`). ~10 min TTL.",
+                "default": null,
+                "type": "string"
               }
             },
             "required": [
@@ -13649,6 +13672,140 @@
               "kind",
               "migration_id",
               "role"
+            ]
+          },
+          {
+            "description": "Create the target-side zone shell for a migration: `vmadm create` with `autoboot=false`, no image ensure, Proteus ports paused, then destroy the vmadm-created datasets so the first `zfs recv` lands on a clean slate. Distinct from [`JobKind::Provision`] because a normal provision boots the guest and realizes the network — both forbidden while the source instance still owns the identity.",
+            "type": "object",
+            "properties": {
+              "instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "migration_provision_target"
+                ]
+              },
+              "migration_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "instance_id",
+              "kind",
+              "migration_id"
+            ]
+          },
+          {
+            "description": "One leg of the legacy-compat quota dance: `zfs send` of a dataset whose `quota`/`refreservation` are set can fail at recv time, so the saga clears them on the source up front (`SaveAndClear`, which reports the original values back via the job `result`) and re-applies them on whichever side ends up owning the dataset (`Restore`).",
+            "type": "object",
+            "properties": {
+              "dataset": {
+                "description": "Dataset the dance applies to (`zones/<instance>`).",
+                "type": "string"
+              },
+              "instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "migrate_quota_dance"
+                ]
+              },
+              "migration_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "op": {
+                "$ref": "#/components/schemas/QuotaDanceOp"
+              }
+            },
+            "required": [
+              "dataset",
+              "instance_id",
+              "kind",
+              "migration_id",
+              "op"
+            ]
+          },
+          {
+            "description": "Live-path source quiesce: bhyve.sock `pause-devices` → `pause-vm` → `drain-devices`, leaving the guest paused so the final ZFS increment and the RAM stream see a frozen machine. The job `result` carries `pause_complete_ts`.",
+            "type": "object",
+            "properties": {
+              "instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "migrate_pause_source"
+                ]
+              },
+              "migration_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "instance_id",
+              "kind",
+              "migration_id"
+            ]
+          },
+          {
+            "description": "Undo of [`JobKind::MigratePauseSource`]: resume the paused source guest after a pre-switch failure. Never enqueued after `SwitchComplete` — the target owns the guest then.",
+            "type": "object",
+            "properties": {
+              "instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "migrate_resume_source"
+                ]
+              },
+              "migration_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "instance_id",
+              "kind",
+              "migration_id"
+            ]
+          },
+          {
+            "description": "Boot the target-side zone in bhyve listen mode so the inbound memory stream has a vmm to import into. The agent polls the zone's bhyve.sock until the listener is up.",
+            "type": "object",
+            "properties": {
+              "instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "migrate_target_listen"
+                ]
+              },
+              "migration_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "instance_id",
+              "kind",
+              "migration_id"
             ]
           },
           {
@@ -16994,6 +17151,11 @@
           "kind": {
             "$ref": "#/components/schemas/JobKind"
           },
+          "result": {
+            "nullable": true,
+            "description": "Free-form result payload the completing agent attached. Opaque to the queue; the enqueuing orchestrator defines the per-kind contract (e.g. [`QuotaDanceSaveResult`], [`ZfsSendResult`]). `None` for kinds with nothing to report and for completions from agents predating the field.",
+            "default": null
+          },
           "seq": {
             "description": "Monotonically-increasing sequence number that determines the queue order. Older jobs (lower seq) are claimed first. Server-assigned at enqueue time.",
             "type": "integer",
@@ -17068,6 +17230,55 @@
           "project_id",
           "tenant_id",
           "updated_at"
+        ]
+      },
+      "QuotaDanceOp": {
+        "description": "Which leg of the quota dance a [`JobKind::MigrateQuotaDance`] job performs. `Restore` carries the values to re-apply rather than re-reading them on the agent because the restore can run on the *target* CN, where the original source-side properties were never visible (`zfs recv -x quota -x refreservation` strips them from the stream).",
+        "oneOf": [
+          {
+            "description": "Read the dataset's current `quota`/`refreservation`, report them in the job `result` (shape: [`QuotaDanceSaveResult`]), then clear both.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "save_and_clear"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "description": "Re-apply previously saved values. `None` means the property was unset on the source and stays unset.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "restore"
+                ]
+              },
+              "quota_bytes": {
+                "nullable": true,
+                "default": null,
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "refreservation_bytes": {
+                "nullable": true,
+                "default": null,
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          }
         ]
       },
       "RangeResult": {

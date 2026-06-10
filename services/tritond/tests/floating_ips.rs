@@ -38,7 +38,7 @@ use tritond_client::types::{
     AddressFamily, AttachFloatingIpRequest, LifecycleState, NewFloatingIp, NewImage, NewInstance,
     NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc,
 };
-use tritond_store::{MemStore, Store, User};
+use tritond_store::{JobKind, JobOutcome, MemStore, Store, User};
 use uuid::Uuid;
 
 const ROOT_PASSWORD: &str = "fip-test";
@@ -48,6 +48,7 @@ const ROOT_PASSWORD: &str = "fip-test";
 struct TestServer {
     server: dropshot::HttpServer<ApiContext>,
     root_bearer: String,
+    store: Arc<dyn Store>,
 }
 
 impl TestServer {
@@ -72,13 +73,14 @@ impl TestServer {
         let (token, _) = mint_access(&jwt_key, user_id).unwrap();
         let auth = Arc::new(AuthService::new(jwt_key).unwrap());
         let audit = Arc::new(AuditService::new(Arc::new(MemChain::new())));
-        let context = ApiContext::new(store, auth, audit);
+        let context = ApiContext::new(Arc::clone(&store), auth, audit);
         let server = start_server_with_context("127.0.0.1:0", context)
             .await
             .unwrap();
         Self {
             server,
             root_bearer: token,
+            store,
         }
     }
 
@@ -272,6 +274,60 @@ fn instance_req(fx: &Fixture, name: &str) -> NewInstance {
     }
 }
 
+/// Pin an instance to a host CN after its create saga finishes. The
+/// fixture registers no CNs, so the designate step leaves instances
+/// unrouted, and the store-level attach guard refuses to attach a
+/// FloatingIp to an unplaced instance (the FipClaim job must pin to
+/// a hosting CN).
+async fn place_instance(test: &TestServer, instance_id: Uuid, cn: Uuid) {
+    test.store
+        .set_instance_host_cn(instance_id, Some(cn))
+        .await
+        .expect("pin instance to a host CN");
+}
+
+/// Store-level fake agent for jobs routed to `cn`. The in-process
+/// stub provisioner only claims unrouted jobs, so once an instance
+/// is pinned the FipClaim / FipRelease / lifecycle jobs would wedge
+/// the sagas' await-terminal actions without this loop. Lifecycle
+/// jobs mirror the stub's CAS dance before the ack because the
+/// store-level complete path does not advance lifecycle.
+fn spawn_cn_agent(store: Arc<dyn Store>, cn: Uuid) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            match store.claim_next_job("fip-test-agent", Some(cn)).await {
+                Ok(job) => {
+                    match job.kind {
+                        JobKind::Stop { instance_id } => {
+                            let _ = store
+                                .transition_instance_lifecycle(
+                                    instance_id,
+                                    &[tritond_store::LifecycleStateKind::Stopping],
+                                    tritond_store::LifecycleState::Stopped,
+                                )
+                                .await;
+                        }
+                        JobKind::Start { instance_id } => {
+                            let _ = store
+                                .transition_instance_lifecycle(
+                                    instance_id,
+                                    &[tritond_store::LifecycleStateKind::Pending],
+                                    tritond_store::LifecycleState::Running,
+                                )
+                                .await;
+                        }
+                        _ => {}
+                    }
+                    let _ = store
+                        .complete_job(job.id, JobOutcome::Completed, None)
+                        .await;
+                }
+                Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
+            }
+        }
+    })
+}
+
 // ---------- tests ----------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -358,6 +414,10 @@ async fn attach_replaces_existing_attachment_atomically() {
         .await
         .unwrap()
         .into_inner();
+    let host_cn = Uuid::new_v4();
+    place_instance(&test, inst_a.id, host_cn).await;
+    place_instance(&test, inst_b.id, host_cn).await;
+    let agent = spawn_cn_agent(Arc::clone(&test.store), host_cn);
     let nic_a = root
         .list_nics_v1()
         .instance(inst_a.id)
@@ -426,6 +486,7 @@ async fn attach_replaces_existing_attachment_atomically() {
     assert_eq!(attach.nic_id, nic_b.id);
     assert_eq!(attach.instance_id, inst_b.id);
 
+    agent.abort();
     test.close().await;
 }
 
@@ -443,6 +504,9 @@ async fn delete_while_attached_returns_409() {
         .await
         .unwrap()
         .into_inner();
+    let host_cn = Uuid::new_v4();
+    place_instance(&test, inst.id, host_cn).await;
+    let agent = spawn_cn_agent(Arc::clone(&test.store), host_cn);
     let nic = root
         .list_nics_v1()
         .instance(inst.id)
@@ -498,6 +562,7 @@ async fn delete_while_attached_returns_409() {
         .await
         .unwrap();
 
+    agent.abort();
     test.close().await;
 }
 
@@ -515,6 +580,9 @@ async fn instance_delete_auto_detaches_but_does_not_release() {
         .await
         .unwrap()
         .into_inner();
+    let host_cn = Uuid::new_v4();
+    place_instance(&test, inst.id, host_cn).await;
+    let agent = spawn_cn_agent(Arc::clone(&test.store), host_cn);
     let nic = root
         .list_nics_v1()
         .instance(inst.id)
@@ -596,6 +664,7 @@ async fn instance_delete_auto_detaches_but_does_not_release() {
         "project ownership preserved"
     );
 
+    agent.abort();
     test.close().await;
 }
 

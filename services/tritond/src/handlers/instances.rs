@@ -730,6 +730,13 @@ pub(crate) async fn delete_instance_v1(
     .await?;
     let request_id = parse_request_id(&rqctx);
 
+    // Delete racing the migrate-instance saga would pull the zone
+    // out from under an in-flight transfer; 409 until the
+    // migration finishes (or is aborted). Checked before the v2p
+    // invalidation push below so a rejected delete has no side
+    // effects.
+    reject_if_migration_active(ctx.store.as_ref(), instance_id).await?;
+
     // v2p invalidations must fire before the saga drops the NIC rows
     // (the saga's release_record can't reach the global ring).
     if let Ok(nics) = ctx.store.list_nics_for_instance(instance_id).await {
@@ -975,6 +982,10 @@ async fn lifecycle_saga_entry_uuid(
     if instance.tenant_id != tenant_id || instance.project_id != project_id {
         return Err(not_found());
     }
+    // A lifecycle mutation racing the migrate-instance saga would
+    // fight its quiesce/activate sequencing; 409 until the
+    // migration finishes (or is aborted).
+    reject_if_migration_active(ctx.store.as_ref(), instance_id).await?;
     let target_cn_uuid = instance.host_cn_uuid;
     let original_kind = Some(
         crate::sagas::instance_lifecycle::OriginalLifecycle::from_kind(instance.lifecycle.kind()),
@@ -1173,6 +1184,13 @@ pub(crate) async fn migrate_project_instance(
             "instance has no host_cn_uuid (was it ever provisioned?)".to_string(),
         )
     })?;
+    // Captured at submission so the saga restores the guest's
+    // pre-migration power state (quiesce undo, activate_target)
+    // even after the saga itself has been mutating the lifecycle.
+    let was_running = instance.lifecycle.kind() == LifecycleStateKind::Running;
+    // Only bhyve has a live lane (pause + RAM stream); every other
+    // brand migrates cold regardless of what the caller asked for.
+    let cold = body.cold || !matches!(instance.brand, tritond_store::InstanceBrand::Bhyve);
 
     // Atomic create_migration: takes the
     // migration/active/<instance> guard so a second concurrent
@@ -1198,7 +1216,8 @@ pub(crate) async fn migrate_project_instance(
         source_cn,
         target_cn_hint: body.target_server_uuid,
         automatic: false,
-        cold: body.cold,
+        cold,
+        was_running,
     };
     let saga_dag = crate::sagas::migration::build_dag(&saga_params)
         .map_err(|e| HttpError::for_internal_error(format!("migrate saga dag build: {e}")))?;

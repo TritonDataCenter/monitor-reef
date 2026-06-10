@@ -227,7 +227,10 @@ pub(super) fn route_by_id_prefix() -> Vec<u8> {
     b"route/by_id/".to_vec()
 }
 
-pub(super) fn route_by_table_destination_key(route_table_id: Uuid, destination: IpNetwork) -> Vec<u8> {
+pub(super) fn route_by_table_destination_key(
+    route_table_id: Uuid,
+    destination: IpNetwork,
+) -> Vec<u8> {
     format!("route/by_table/{route_table_id}/{destination}").into_bytes()
 }
 
@@ -670,7 +673,10 @@ pub(super) fn legacy_vm_by_id_prefix() -> &'static [u8] {
     b"legacy_vm/by_id/"
 }
 
-pub(super) fn network_realization_key(resource: NetworkResourceId, realizer: RealizerId) -> Vec<u8> {
+pub(super) fn network_realization_key(
+    resource: NetworkResourceId,
+    realizer: RealizerId,
+) -> Vec<u8> {
     format!(
         "network_realization/{}/{}/{}/{}",
         resource.kind_tag(),
@@ -780,7 +786,6 @@ pub(super) fn digest_to_hex(digest: &[u8]) -> String {
     out
 }
 
-
 // ── Migration (always-inline at extraction time; promoted here) ───────
 
 pub(super) fn migration_by_id_key(id: Uuid) -> Vec<u8> {
@@ -821,14 +826,23 @@ mod tests {
         let s = uuid("11111111-1111-1111-1111-111111111111");
         let t = uuid("22222222-2222-2222-2222-222222222222");
         let u = uuid("33333333-3333-3333-3333-333333333333");
-        assert_eq!(silo_by_id_key(s), b"silo/by_id/11111111-1111-1111-1111-111111111111");
+        assert_eq!(
+            silo_by_id_key(s),
+            b"silo/by_id/11111111-1111-1111-1111-111111111111"
+        );
         assert_eq!(silo_by_name_key("acme"), b"silo/by_name/acme");
-        assert_eq!(tenant_by_id_key(t), b"tenant/by_id/22222222-2222-2222-2222-222222222222");
+        assert_eq!(
+            tenant_by_id_key(t),
+            b"tenant/by_id/22222222-2222-2222-2222-222222222222"
+        );
         assert_eq!(
             tenant_by_silo_name_key(s, "prod"),
             b"tenant/by_silo/11111111-1111-1111-1111-111111111111/prod",
         );
-        assert_eq!(user_by_id_key(u), b"user/by_id/33333333-3333-3333-3333-333333333333");
+        assert_eq!(
+            user_by_id_key(u),
+            b"user/by_id/33333333-3333-3333-3333-333333333333"
+        );
         assert_eq!(user_by_name_key("alice"), b"user/by_name/alice");
         assert_eq!(user_prefix(), b"user/by_id/");
     }
@@ -852,7 +866,10 @@ mod tests {
             b"subnet/in_vpc/55555555-5555-5555-5555-555555555555/",
         );
         // The prefix length is load-bearing for slicing scanned keys.
-        assert_eq!(subnet_in_vpc_prefix(v).len(), b"subnet/in_vpc/".len() + 36 + 1);
+        assert_eq!(
+            subnet_in_vpc_prefix(v).len(),
+            b"subnet/in_vpc/".len() + 36 + 1
+        );
         assert_eq!(
             route_table_main_key(v),
             b"route_table/main/55555555-5555-5555-5555-555555555555",
@@ -901,7 +918,10 @@ mod tests {
         let b = migration_progress_key(m, 0x100);
         let c = migration_progress_key(m, u64::MAX);
         assert!(a < b && b < c);
-        assert_eq!(a, b"migration/progress/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/0000000000000001");
+        assert_eq!(
+            a,
+            b"migration/progress/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/0000000000000001"
+        );
     }
 
     #[test]

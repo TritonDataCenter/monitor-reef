@@ -45,12 +45,9 @@ async fn purge_cn(store: &FdbStore, server_uuid: Uuid) {
                 let claim_key = cn.claim_code.as_deref().map(FdbStore::cn_by_claim_key);
                 let poll_key = FdbStore::cn_by_poll_key(&cn.poll_token);
                 let state_key = FdbStore::cn_by_state_key(cn.state, server_uuid);
-                let pending_state_key =
-                    FdbStore::cn_by_state_key(CnState::Pending, server_uuid);
-                let approved_state_key =
-                    FdbStore::cn_by_state_key(CnState::Approved, server_uuid);
-                let disabled_state_key =
-                    FdbStore::cn_by_state_key(CnState::Disabled, server_uuid);
+                let pending_state_key = FdbStore::cn_by_state_key(CnState::Pending, server_uuid);
+                let approved_state_key = FdbStore::cn_by_state_key(CnState::Approved, server_uuid);
+                let disabled_state_key = FdbStore::cn_by_state_key(CnState::Disabled, server_uuid);
                 async move {
                     tr.clear(&by_uuid);
                     if let Some(k) = claim_key.as_deref() {

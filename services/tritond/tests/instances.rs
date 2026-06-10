@@ -652,7 +652,13 @@ async fn instance_create_appears_on_operations_surface() {
         .iter()
         .find(|o| o.kind == "instance-create")
         .expect("instance-create operation must be visible on /v1/operations");
-    assert_eq!(our_op.version, 2);
+    // The catalog's registered saga version rides the operation
+    // record; track the constant so version bumps (v3 PL-5e
+    // designate, v4) don't silently break this test.
+    assert_eq!(
+        our_op.version,
+        tritond::sagas::instance_create::SAGA_VERSION
+    );
     // The saga has run to terminal (Done with Ok); the
     // operations surface maps that to "done".
     let state_str = serde_json::to_value(&our_op.state)

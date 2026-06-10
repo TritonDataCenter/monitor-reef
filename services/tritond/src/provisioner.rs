@@ -78,7 +78,7 @@ async fn run(store: Arc<dyn Store>) {
             Ok(job) => {
                 let job_id = job.id;
                 let outcome = process(&job, &store).await;
-                if let Err(e) = store.complete_job(job_id, outcome).await {
+                if let Err(e) = store.complete_job(job_id, outcome, None).await {
                     warn!(%job_id, error = %e, "complete_job failed");
                 }
             }
