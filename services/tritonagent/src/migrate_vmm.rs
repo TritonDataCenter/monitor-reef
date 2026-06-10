@@ -321,19 +321,20 @@ pub(crate) async fn target_listen(
 
     // Put the zone into bhyve listen mode before booting so it waits
     // for the inbound RAM stream instead of cold-starting the guest.
-    // The brand reads the `migrate_listen` zonecfg attr (UNDERSCORE,
-    // same family as the proven `migrate_export`) and adds `-o
-    // migrate.listen=true`, which skips the bootrom/UEFI and blocks for
-    // `import-state`. This is a HARD precondition, not best-effort: by
-    // this point the ZFS receives have delivered the complete guest
+    // `-o migrate.listen=true` (via `bhyve_extra_opts`, the only channel
+    // the deployed PI honors) makes bhyve skip the bootrom/UEFI and block
+    // for `import-state`. This is a HARD precondition, not best-effort:
+    // by this point the ZFS receives have delivered the complete guest
     // disk and `mount_target` mounted it, so a `start_zone` without the
     // listen flag would COLD-BOOT a second live copy of the (paused)
     // source — duplicate identity/MAC = split-brain. Failing here makes
     // the MigrateTargetListen job terminal-fail, so the saga unwinds
     // while the source is still canonical and the target never booted.
-    vmadm::set_zone_attr(instance_id, "migrate_listen", "true")
+    // (`migrate.export` is already in the target's create payload, so the
+    // control socket `run_target` imports through exists too.)
+    vmadm::set_bhyve_extra_opt(instance_id, "migrate.listen", Some("true"))
         .await
-        .context("set migrate_listen zonecfg attr (listen mode is a hard precondition)")?;
+        .context("enable bhyve migrate.listen (listen mode is a hard precondition)")?;
     vmadm::start_zone(instance_id)
         .await
         .context("vmadm start listen-mode target zone")?;
@@ -677,17 +678,18 @@ pub(crate) async fn run_target(
     let activated =
         run_target_with(transport, vmm, ctl, ports, params.migration_id).await?;
 
-    // `migrate_listen` is one-shot per boot but persists in zonecfg.
-    // Now that the guest is imported and running on this CN, clear it
-    // so a later reboot is a normal boot instead of re-entering listen
-    // mode and hanging forever on an `import-state` that never comes.
+    // `migrate.listen` is one-shot per boot but persists in
+    // `bhyve_extra_opts`. Now that the guest is imported and running on
+    // this CN, drop it (preserving `migrate.export` + reservoir) so a
+    // later reboot is a normal boot instead of re-entering listen mode
+    // and hanging forever on an `import-state` that never comes.
     // Best-effort: the migration already succeeded, so a clear failure
     // is a follow-up, not a reason to fail the cutover.
-    if let Err(err) = vmadm::set_zone_attr(params.vm_uuid, "migrate_listen", "false").await {
+    if let Err(err) = vmadm::set_bhyve_extra_opt(params.vm_uuid, "migrate.listen", None).await {
         warn!(
             migration_id = %params.migration_id, instance_id = %params.vm_uuid,
             error = %format!("{err:#}"),
-            "migrate-target: could not clear migrate_listen attr; a reboot may re-enter listen mode",
+            "migrate-target: could not clear migrate.listen opt; a reboot may re-enter listen mode",
         );
     }
     Ok(activated)

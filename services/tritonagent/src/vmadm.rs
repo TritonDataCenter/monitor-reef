@@ -201,43 +201,100 @@ pub(crate) fn build_migration_target_payload(
     Ok(payload)
 }
 
-/// Idempotently set a string `attr` resource on a zone's zonecfg
-/// (e.g. the bhyve brand's `migrate_listen` / `migrate_export`
-/// boot flags, which vmadm payloads cannot express). `select`
-/// only succeeds when the attr already exists, so first try an
-/// in-place update and fall back to `add`. Names and values come
-/// from agent code (never tenant input), so shell quoting is not
-/// at risk; zonecfg takes the command string as a single argv
-/// entry anyway.
-pub async fn set_zone_attr(zone: Uuid, name: &str, value: &str) -> Result<()> {
-    let id = zone.to_string();
-    let update = format!("select attr name={name}; set value=\"{value}\"; end");
-    let updated = Command::new("zonecfg")
-        .args(["-z", &id, &update])
+/// Rewrite a `bhyve-extra-opts` value so `-o <key>=...` is present
+/// (`value = Some`) or absent (`value = None`), dropping any prior
+/// `-o <key>=...` and preserving every other token verbatim. Pure, so
+/// the token logic is unit-tested without a live zone.
+fn rewrite_extra_opts(current: &str, key: &str, value: Option<&str>) -> String {
+    let parts: Vec<&str> = current.split_whitespace().collect();
+    let mut kept: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < parts.len() {
+        if parts[i] == "-o" && i + 1 < parts.len() {
+            let arg = parts[i + 1];
+            if arg.split('=').next() != Some(key) {
+                kept.push(format!("-o {arg}"));
+            }
+            i += 2;
+        } else {
+            kept.push(parts[i].to_string());
+            i += 1;
+        }
+    }
+    if let Some(v) = value {
+        kept.push(format!("-o {key}={v}"));
+    }
+    kept.join(" ")
+}
+
+/// Read the zone's current `bhyve-extra-opts` attr value (the raw
+/// option string handed to bhyve), or `None` when the attr is absent.
+async fn read_bhyve_extra_opts(zone_id: &str) -> Result<Option<String>> {
+    let out = Command::new("zonecfg")
+        .args(["-z", zone_id, "info", "attr", "name=bhyve-extra-opts"])
         .output()
         .await
-        .with_context(|| format!("spawn zonecfg update attr {name} on {id}"))?;
+        .with_context(|| format!("zonecfg info bhyve-extra-opts on {zone_id}"))?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    for line in stdout.lines() {
+        if let Some(rest) = line.trim().strip_prefix("value:") {
+            return Ok(Some(rest.trim().trim_matches('"').to_string()));
+        }
+    }
+    Ok(None)
+}
+
+/// Ensure `-o <key>=<value>` is present (`value = Some`) or absent
+/// (`value = None`) in the zone's `bhyve-extra-opts` attr, preserving
+/// every other `-o` token (notably the reservoir flag and
+/// `migrate.export`). bhyve reads this attr only at boot, so the caller
+/// must (re)start the zone for a change to take effect.
+///
+/// This is the channel that actually reaches bhyve's argv on the
+/// deployed PI; the brand's `migrate_listen`/`migrate_export` zonecfg
+/// *attrs* are not honored here (zonecfg even rejects the underscore
+/// name). Used for the live-migration `migrate.listen` one-shot:
+/// `target_listen` sets it before the listen boot, `run_target` clears
+/// it after `import-state` so a later reboot is a normal boot.
+pub async fn set_bhyve_extra_opt(zone: Uuid, key: &str, value: Option<&str>) -> Result<()> {
+    let id = zone.to_string();
+    let current = read_bhyve_extra_opts(&id).await?.unwrap_or_default();
+    let new_value = rewrite_extra_opts(&current, key, value);
+
+    let cmd = if new_value.is_empty() {
+        "remove attr name=bhyve-extra-opts".to_string()
+    } else {
+        format!("select attr name=bhyve-extra-opts; set value=\"{new_value}\"; end")
+    };
+    let updated = Command::new("zonecfg")
+        .args(["-z", &id, &cmd])
+        .output()
+        .await
+        .with_context(|| format!("zonecfg update bhyve-extra-opts on {id}"))?;
     if updated.status.success() {
         return Ok(());
     }
-    let add = format!("add attr; set name={name}; set type=string; set value=\"{value}\"; end");
-    let added = Command::new("zonecfg")
-        .args(["-z", &id, &add])
-        .output()
-        .await
-        .with_context(|| format!("spawn zonecfg add attr {name} on {id}"))?;
-    if added.status.success() {
-        return Ok(());
+    // `select`/`remove` failed: the attr does not exist yet. Adding is
+    // only meaningful when we actually have a value to set.
+    if value.is_some() && !new_value.is_empty() {
+        let add = format!(
+            "add attr; set name=bhyve-extra-opts; set type=string; set value=\"{new_value}\"; end"
+        );
+        let added = Command::new("zonecfg")
+            .args(["-z", &id, &add])
+            .output()
+            .await
+            .with_context(|| format!("zonecfg add bhyve-extra-opts on {id}"))?;
+        if added.status.success() {
+            return Ok(());
+        }
+        return Err(anyhow!(
+            "zonecfg set bhyve-extra-opts on {id} failed: {}",
+            String::from_utf8_lossy(&added.stderr).trim(),
+        ));
     }
-    let update_stderr = String::from_utf8_lossy(&updated.stderr).into_owned();
-    let add_stderr = String::from_utf8_lossy(&added.stderr).into_owned();
-    Err(anyhow!(
-        "zonecfg set attr {name}={value} on zone {id} failed: update (exit {}): {}; add (exit {}): {}",
-        updated.status,
-        update_stderr.trim(),
-        added.status,
-        add_stderr.trim(),
-    ))
+    // value=None and the attr was already absent — nothing to clear.
+    Ok(())
 }
 
 async fn run_create_payload(
@@ -806,17 +863,29 @@ pub(crate) fn create_bhyve_payload_with_nic_tags(
         },
     });
 
-    // Draw guest memory from the bhyve memory reservoir (RFD 0185). The
-    // bhyve brand maps the zonecfg `bhyve_extra_opts` attr straight onto
-    // the bhyve command line, so `-o memory.use_reservoir=true` reaches
-    // bhyve with no platform change. Set only when the CN's effective
-    // policy enables the reservoir AND the agent has confirmed/grown
-    // enough free reservoir for this guest (the kernel does not fall back
-    // to transient memory). Applied at create only.
-    if use_reservoir && let Some(obj) = payload.as_object_mut() {
+    // The bhyve brand maps the zonecfg `bhyve_extra_opts` attr straight
+    // onto the bhyve command line, so `-o <key>=<value>` reaches bhyve
+    // with no platform change. We use it for two things:
+    //   * `-o memory.use_reservoir=true` — draw guest memory from the
+    //     bhyve memory reservoir (RFD 0185), only when the CN's policy
+    //     enables it and enough free reservoir was confirmed/grown.
+    //   * `-o migrate.export=true` — make bhyve create its live-migration
+    //     control socket (`/tmp/bhyve.sock`) at boot so this guest can be
+    //     a migration SOURCE. Durable and harmless for a guest that never
+    //     migrates; set on every bhyve VM (the donor's "any potential
+    //     source sets this"). NOTE: the `migrate_export`/`migrate_listen`
+    //     zonecfg *attrs* the brand docs mention are NOT honored on this
+    //     PI (zonecfg even rejects the underscore name); `bhyve_extra_opts`
+    //     is the channel that actually reaches bhyve's argv.
+    let mut extra_opts: Vec<&str> = Vec::new();
+    if use_reservoir {
+        extra_opts.push("-o memory.use_reservoir=true");
+    }
+    extra_opts.push("-o migrate.export=true");
+    if let Some(obj) = payload.as_object_mut() {
         obj.insert(
             "bhyve_extra_opts".to_string(),
-            serde_json::Value::String("-o memory.use_reservoir=true".to_string()),
+            serde_json::Value::String(extra_opts.join(" ")),
         );
     }
     Ok(payload)
@@ -1571,6 +1640,8 @@ mod tests {
                 "tritond.tenant_id": instance.tenant_id.to_string(),
                 "tritond.project_id": instance.project_id.to_string(),
             },
+            // Every bhyve VM is born migration-source-capable.
+            "bhyve_extra_opts": "-o migrate.export=true",
         });
 
         let payload = create_bhyve_payload(&bp).unwrap();
@@ -1688,8 +1759,11 @@ mod tests {
         assert!(disk0.get("image_uuid").is_none());
         assert_eq!(disk0["size"], 20 * 1024);
         assert_eq!(disk0["boot"], true);
-        // Never reservoir-backed (a plain Start does no capacity check).
-        assert!(payload.get("bhyve_extra_opts").is_none());
+        // Not reservoir-backed (a plain Start does no capacity check), but
+        // a bhyve target still needs `-o migrate.export=true` so its
+        // control socket exists for `run_target`'s `import-state` call
+        // (and so the migrated guest is itself source-capable afterwards).
+        assert_eq!(payload["bhyve_extra_opts"], "-o migrate.export=true");
     }
 
     #[test]
@@ -1718,15 +1792,51 @@ mod tests {
     }
 
     #[test]
-    fn create_bhyve_payload_sets_reservoir_opt_only_when_requested() {
+    fn rewrite_extra_opts_adds_removes_and_dedupes() {
+        let base = "-o memory.use_reservoir=true -o migrate.export=true";
+        // Add the one-shot listen flag, preserving the others.
+        let with_listen = rewrite_extra_opts(base, "migrate.listen", Some("true"));
+        assert_eq!(
+            with_listen,
+            "-o memory.use_reservoir=true -o migrate.export=true -o migrate.listen=true"
+        );
+        // Clearing it restores the base (reservoir + export untouched).
+        assert_eq!(
+            rewrite_extra_opts(&with_listen, "migrate.listen", None),
+            base
+        );
+        // Re-adding is idempotent (no duplicate token).
+        assert_eq!(
+            rewrite_extra_opts(&with_listen, "migrate.listen", Some("true")),
+            with_listen
+        );
+        // From empty, add yields just the one token; removing the sole
+        // token yields empty (caller drops the attr entirely).
+        assert_eq!(
+            rewrite_extra_opts("", "migrate.listen", Some("true")),
+            "-o migrate.listen=true"
+        );
+        assert_eq!(
+            rewrite_extra_opts("-o migrate.listen=true", "migrate.listen", None),
+            ""
+        );
+    }
+
+    #[test]
+    fn create_bhyve_payload_always_exports_and_adds_reservoir_when_requested() {
         let bp = sample_bhyve_blueprint();
         let nic_tags = NicTagMap::new();
 
+        // Every bhyve VM is born migration-source-capable; the reservoir
+        // token is prepended only when requested.
         let off = create_bhyve_payload_with_nic_tags(&bp, &nic_tags, false).unwrap();
-        assert!(off.get("bhyve_extra_opts").is_none());
+        assert_eq!(off["bhyve_extra_opts"], "-o migrate.export=true");
 
         let on = create_bhyve_payload_with_nic_tags(&bp, &nic_tags, true).unwrap();
-        assert_eq!(on["bhyve_extra_opts"], "-o memory.use_reservoir=true");
+        assert_eq!(
+            on["bhyve_extra_opts"],
+            "-o memory.use_reservoir=true -o migrate.export=true"
+        );
     }
 
     #[test]

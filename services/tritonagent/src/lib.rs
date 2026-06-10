@@ -868,23 +868,10 @@ async fn drive_job(
                 cleanup_started_ports(proteus.as_ref(), &started_ports);
                 return Err(err).context("create VM after Proteus port realization");
             }
-            // Future migration sources need the bhyve brand's
-            // in-zone control socket, which only exists when the
-            // zone carries the `migrate_export` attr at boot.
-            // Best-effort: failing the provision here would strand
-            // a fully created guest over a capability it may never
-            // use; the attr can be added by hand before a live
-            // migration.
-            if vmadm::blueprint_is_bhyve(&blueprint)
-                && let Err(err) = vmadm::set_zone_attr(*instance_id, "migrate_export", "true").await
-            {
-                warn!(
-                    %instance_id,
-                    error = %format!("{err:#}"),
-                    "provision: setting migrate_export zonecfg attr failed; \
-                     this guest cannot be a live-migration source until it is set",
-                );
-            }
+            // The bhyve live-migration control socket is enabled via
+            // `-o migrate.export=true` in the create payload's
+            // `bhyve_extra_opts` (see create_bhyve_payload_with_nic_tags),
+            // so it exists from first boot — no post-boot attr step.
         }
         JobKind::MigrationProvisionTarget {
             migration_id,
