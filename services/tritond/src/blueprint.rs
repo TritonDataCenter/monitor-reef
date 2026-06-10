@@ -75,14 +75,21 @@ pub(crate) async fn build_blueprint(
     // Stop / Restart only need the instance id; skip the full
     // resolve so a vanished image or NIC doesn't block the
     // agent from acting on a still-existing zone.
-    // Provision needs the full resolve (image, NICs, disks,
-    // ssh keys) so the agent can build a vmadm payload.
-    // Stop / Restart / Delete only need the instance id, which
-    // is on `job.kind`, so we short-circuit and let the agent
+    // Provision and the migration-target jobs need the full resolve
+    // (image, NICs, disks, ssh keys): MigrationProvisionTarget builds
+    // a vmadm payload and detects the brand from the image, and
+    // MigrateTargetListen resolves the instance's NICs to Proteus
+    // port ids. Stop / Restart / Delete only need the instance id,
+    // which is on `job.kind`, so we short-circuit and let the agent
     // act on the kind alone. Delete in particular runs *after*
     // the tritond record is gone, so the instance lookup
     // intentionally returns `instance: None`.
-    let needs_full_resolve = matches!(job.kind, JobKind::Provision { .. });
+    let needs_full_resolve = matches!(
+        job.kind,
+        JobKind::Provision { .. }
+            | JobKind::MigrationProvisionTarget { .. }
+            | JobKind::MigrateTargetListen { .. }
+    );
     if !needs_full_resolve {
         return Ok(ProvisioningBlueprint {
             job_id: job.id,
@@ -546,6 +553,17 @@ pub(crate) async fn enforce_port_instance_available_to_bound_cn(
 ) -> Result<(), HttpError> {
     if instance.host_cn_uuid == Some(bound_cn) {
         return Ok(());
+    }
+
+    // The target CN of an in-flight migration realizes the instance's
+    // ports (paused) before it owns the instance, so it legitimately
+    // fetches port blueprints for an instance still hosted on the
+    // source CN. Authorize it from the migration record, which is the
+    // authoritative statement of "this CN is preparing this instance".
+    if let Ok(Some(migration)) = store.get_active_migration(instance.id).await {
+        if migration.target_cn == Some(bound_cn) {
+            return Ok(());
+        }
     }
 
     enforce_port_instance_claimed_by_bound_cn(store, instance.id, bound_cn).await

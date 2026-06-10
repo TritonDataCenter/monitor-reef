@@ -1276,7 +1276,7 @@ async fn provision_migration_target(
     // The first recv must land on a clean slate; `vmadm create`
     // made a dataset tree (zone root + disk zvols) that would
     // collide with the incoming replication stream.
-    zfs::destroy(&format!("zones/{instance_id}"))
+    zfs::destroy_forced(&format!("zones/{instance_id}"))
         .await
         .context("destroy vmadm-created dataset tree for migration target")?;
 

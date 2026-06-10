@@ -99,6 +99,31 @@ pub async fn destroy(dataset: &str) -> Result<()> {
     ))
 }
 
+/// Recursively destroy a dataset, forcing an unmount of any
+/// mounted filesystems first (`-f`). The migration-target zone is
+/// created `installed` by `vmadm create`, which mounts its zone
+/// root, so a plain `zfs destroy` fails `Device busy`. The zone's
+/// `zoneadm` state is unaffected (it stays `installed`), so the
+/// later boot re-mounts the freshly received datasets.
+pub async fn destroy_forced(dataset: &str) -> Result<()> {
+    let output = Command::new("zfs")
+        .args(["destroy", "-r", "-f", dataset])
+        .output()
+        .await
+        .context("spawn zfs destroy -rf")?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("does not exist") {
+        return Ok(());
+    }
+    Err(anyhow!(
+        "zfs destroy -rf {dataset} failed (exit {}): {stderr}",
+        output.status,
+    ))
+}
+
 /// Decompress `gz_path` and pipe the resulting `zfs send`
 /// stream into `zfs receive <dataset>`. The new dataset name
 /// is `dataset` exactly — the caller controls naming. On
