@@ -14,15 +14,6 @@ license = "MPL-2.0"
 [lints]
 workspace = true
 
-[features]
-default = []
-# The load materialiser pulls in the ClickHouse client crate the
-# metrics pipeline already uses. Off by default so unit tests and
-# `make docker-up` builds stay lean. PL-6 turns this on inside
-# `tritond` to start the materialiser task. PL-1 ships the feature
-# flag; the materialiser module body lands in PL-6.
-materializer = []
-
 [dependencies]
 chrono = { workspace = true }
 schemars = { workspace = true }

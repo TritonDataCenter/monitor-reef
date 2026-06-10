@@ -16,9 +16,12 @@ Copyright 2026 Edgecast Cloud LLC.
    default path means "use the built-in defaults".
 2. **FoundationDB** — every other tunable (sweeper cadence, DHCP
    reconciler cadence, the in-process provisioner toggle, the metrics
-   backend). `tritond` reads these once at startup; you change them
-   with `tcadm config` or the admin console's **Settings** page. A
-   change takes effect on the next `tritond` restart.
+   backend). You change them with `tcadm config` or the admin
+   console's **Settings** page. Most are read once at startup and take
+   effect on the next `tritond` restart; a few are read live on every
+   placement pick (`placement.profiles`,
+   `placement.load_materializer.staleness_ticks`) — `tcadm config
+   list`'s RESTART column is authoritative per key.
 
 The packaging picture (SMF manifests, install paths, `tcadm doctor`,
 the support bundle) lives in [`../design/operator-packaging-v1.md`].
@@ -53,6 +56,13 @@ Three environment variables override the file (env > file > default):
 | `dhcp.lease_gc_threshold_secs` | `604800` | idle seconds before a DHCP lease is GC-eligible |
 | `metrics.backend` | `memory` | `memory` (in-memory ring buffer) or `clickhouse` |
 | `metrics.clickhouse_url` | *(unset)* | ClickHouse HTTP base URL; used only when `metrics.backend` is `clickhouse` |
+| `placement.load_materializer.interval_secs` | `60` | cadence of the ClickHouse→FDB load roll-up (RFD 00005 PL-6) |
+| `placement.load_materializer.staleness_ticks` | `3` | un-refreshed ticks before placement treats a `cn-load-summary` row as stale; applied live at pick time, no restart |
+| `placement.load_materializer.clickhouse_url` | *(unset)* | ClickHouse URL the materializer queries; falls back to `metrics.clickhouse_url`, and with neither set the materializer does not run |
+
+The table above covers the operationally common keys; `tcadm config
+list` is the authoritative, complete list (it also prints each key's
+description, default, and restart requirement).
 
 Each key also has a legacy `TRITOND_*` environment variable that, when
 set, overrides the FDB value at boot (env > FDB > default) — an

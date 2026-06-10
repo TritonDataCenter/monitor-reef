@@ -1,6 +1,15 @@
 # RFD 00005: VM placement — the `tritond-placement` engine, the `cn-capacity` / `cn-load-summary` model, and the `designate` saga
 
-> Status: draft design RFD; no implementation slices started.
+> Status: SUPERSEDED — this is the original draft, frozen as written.
+> The canonical, maintained copy (with the implementation-reality
+> table) is `mariana-trench/rfd/00011`. Known deviations from this
+> draft as built: no materializer leader election (every tritond
+> writes, last-writer-wins); 5m + 1d windows only (7-day dropped,
+> `score-avoid-peaky` retired — 11 scorers); the materializer lives at
+> `services/tritond/src/load_materializer.rs`, not behind a cargo
+> feature in the placement crate; age staleness is enforced read-side;
+> self-metrics are gauges `tritond_placement_load_materializer_seconds`
+> / `tritond_placement_load_summary_stale_rows`.
 >
 > Parent docs: [`../../DESIGN.md`](../../DESIGN.md) §4 (Substrates — FDB), §14 (API
 > surface — long-running operations and sagas), §18 (Audit log), §22 (Platform upgrades —

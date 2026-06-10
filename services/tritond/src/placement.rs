@@ -36,12 +36,27 @@ use uuid::Uuid;
 /// Sized against the agent heartbeater's ~5 s tick.
 pub const DEFAULT_AGENT_HEARTBEAT_THRESHOLD_SECS: u64 = 60;
 
-/// 3 ticks at the 60 s load-summary interval.
+/// 3 ticks at the 60 s load-summary interval — the default product of
+/// `placement.load_materializer.{staleness_ticks,interval_secs}`.
+/// [`pick`] computes the live value from [`Settings`]; this const is
+/// for callers without a settings read in hand.
 pub const DEFAULT_LOAD_STALENESS_SECS: u64 = 180;
 
 /// Convert a [`CnPickSnapshot`] from the store to a
 /// [`CnView`] the placement engine consumes.
-pub fn snapshot_to_cn_view(snap: CnPickSnapshot) -> CnView {
+///
+/// `load_staleness_secs` is the read-side age gate for the CN's
+/// `cn-load-summary` row: a row whose `last_refreshed_at` is older is
+/// projected `stale = true` regardless of its written flag, so a dead
+/// materializer cannot leave frozen rows scoring as fresh.
+pub fn snapshot_to_cn_view(
+    snap: CnPickSnapshot,
+    now: chrono::DateTime<Utc>,
+    load_staleness_secs: u64,
+) -> CnView {
+    // RAM-normalisation denominator for the load projection, captured
+    // before `capacity` is moved into its own view.
+    let ram_total_mb = snap.capacity.as_ref().map(|c| c.ram_total_mb);
     let capacity = snap.capacity.map(capacity_view);
     let placement = placement_policy_view(snap.placement);
     // Backstop for crashed/leaked reservations: a saga that dies after
@@ -51,14 +66,15 @@ pub fn snapshot_to_cn_view(snap: CnPickSnapshot) -> CnView {
     // Dropping past-deadline rows here lets the residual self-heal once
     // the reservation TTL lapses. The healthy path still releases
     // explicitly on saga success/unwind, so this only catches crashes.
-    let now = Utc::now();
     let active_reservations = snap
         .reservations
         .into_iter()
         .filter(|r| r.expires_at > now)
         .map(reservation_view)
         .collect();
-    let load_summary = snap.load_summary.map(load_summary_view);
+    let load_summary = snap
+        .load_summary
+        .map(|s| load_summary_view(s, ram_total_mb, now, load_staleness_secs));
     let assigned_instances = snap
         .assigned_instances
         .into_iter()
@@ -147,7 +163,6 @@ pub fn build_chain_context<'a>(
     ChainContext {
         now,
         cluster_overprovision: OverprovisionDefaults::default(),
-        load_staleness_secs: DEFAULT_LOAD_STALENESS_SECS,
         agent_heartbeat_threshold_secs: DEFAULT_AGENT_HEARTBEAT_THRESHOLD_SECS,
         strategy_weights,
         sibling_instances,
@@ -214,15 +229,25 @@ pub async fn pick(
     //    snapshot loop tight on large fleets.
     let cns = store.list_cns(Some(CnState::Approved)).await?;
 
+    // Cluster settings drive both the load-staleness age gate (read
+    // live so `placement.load_materializer.staleness_ticks` takes
+    // effect without a restart) and the active profile's weights.
+    let settings = store.get_settings().await?;
+    let load_staleness_secs = settings
+        .placement_load_materializer_staleness_ticks
+        .saturating_mul(settings.placement_load_materializer_interval_secs)
+        .max(1);
+
     // 2. Build CnView projections for each. Skip CNs whose
     //    snapshot read fails (e.g. the row was concurrently
     //    deleted between list and read); the report will not
     //    contain them, which is intended -- a placement run does
     //    not have to span every momentary fleet shape.
+    let now = Utc::now();
     let mut cn_views: Vec<CnView> = Vec::with_capacity(cns.len());
     for cn in &cns {
         match store.get_cn_pick_snapshot(cn.server_uuid).await {
-            Ok(snap) => cn_views.push(snapshot_to_cn_view(snap)),
+            Ok(snap) => cn_views.push(snapshot_to_cn_view(snap, now, load_staleness_secs)),
             Err(StoreError::NotFound) => continue,
             Err(e) => return Err(PickError::Store(e)),
         }
@@ -241,11 +266,10 @@ pub async fn pick(
     // from the active placement profile (cluster setting, read live so
     // a profile change takes effect on the next pick without a
     // restart); a per-request strategy_override still wins.
-    let settings = store.get_settings().await?;
     let (strategy, weights, profile) =
         resolve_pick_weights(request.strategy_override, &settings.placement_profiles);
     let runner = build_runner_with_weights(strategy, &weights);
-    let ctx = build_chain_context(Utc::now(), &weights, &siblings);
+    let ctx = build_chain_context(now, &weights, &siblings);
     let (chosen, mut report) = runner.pick(&cn_views, &request, &ctx);
     // Record which named profile produced these weights (the runner
     // only knows the Strategy label, not the profile name).
@@ -474,16 +498,31 @@ fn reservation_view(r: tritond_store::CnReservation) -> ReservationView {
     }
 }
 
-fn load_summary_view(s: tritond_store::CnLoadSummary) -> CnLoadSummaryView {
+fn load_summary_view(
+    s: tritond_store::CnLoadSummary,
+    ram_total_mb: Option<u64>,
+    now: chrono::DateTime<Utc>,
+    load_staleness_secs: u64,
+) -> CnLoadSummaryView {
+    // Read-side age gate: the materializer only sets `stale` while it
+    // is alive, so an un-refreshed row must go stale by age here.
+    let age_stale =
+        now.signed_duration_since(s.last_refreshed_at).num_seconds() > load_staleness_secs as i64;
+    // RAM utilisation as a true fraction of the CN's total RAM. The
+    // row stores bytes; without a capacity row there is no denominator,
+    // so the projection has no RAM signal and the row is treated stale
+    // (mirrors the materializer's unknown-cores rule for CPU).
+    let ram_fraction = ram_total_mb
+        .filter(|mb| *mb > 0)
+        .map(|mb| ((s.ram_used_p95_5m as f64) / (mb as f64 * 1_048_576.0)).clamp(0.0, 1.0) as f32);
     CnLoadSummaryView {
         last_refreshed_at: s.last_refreshed_at,
-        stale: s.stale,
+        stale: s.stale || age_stale || ram_fraction.is_none(),
         cpu_p50_5m: s.cpu_p50_5m,
         cpu_p95_5m: s.cpu_p95_5m,
         cpu_p50_1d: s.cpu_p50_1d,
         cpu_p95_1d: s.cpu_p95_1d,
-        // Bytes -> ~normalised; refine to a ratio when ram_total_mb arrives.
-        ram_used_p95_5m: (s.ram_used_p95_5m as f32) / 1.0e9,
+        ram_used_p95_5m: ram_fraction.unwrap_or(0.0),
         nic_tx_bps_p95_5m: s.nic_tx_bps_p95_5m,
         nic_rx_bps_p95_5m: s.nic_rx_bps_p95_5m,
     }
@@ -562,8 +601,8 @@ mod tests {
     use chrono::Utc;
     use std::collections::BTreeMap;
     use tritond_store::{
-        Cn, CnCapacity, CnPlacement, CnReservation, DeviceCapacity, NumaNode, StorageTier,
-        UnderlayCapability as StoreUnderlay, ZpoolCapacity,
+        Cn, CnCapacity, CnLoadSummary, CnPlacement, CnReservation, DeviceCapacity, NumaNode,
+        StorageTier, UnderlayCapability as StoreUnderlay, ZpoolCapacity,
     };
     use uuid::Uuid;
 
@@ -655,7 +694,7 @@ mod tests {
     fn snapshot_round_trips_into_cn_view() {
         let snap = make_snapshot();
         let server_uuid = snap.cn.server_uuid;
-        let view = snapshot_to_cn_view(snap);
+        let view = snapshot_to_cn_view(snap, Utc::now(), DEFAULT_LOAD_STALENESS_SECS);
         assert_eq!(view.server_uuid, server_uuid);
         assert!(matches!(view.state, CnStateView::Approved));
         assert!(matches!(view.role, CnRoleView::Tenant));
@@ -668,12 +707,83 @@ mod tests {
         assert_eq!(view.active_reservations[0].ram_mb, 4096);
     }
 
+    fn make_load_summary(server_uuid: Uuid, refreshed: chrono::DateTime<Utc>) -> CnLoadSummary {
+        CnLoadSummary {
+            server_uuid,
+            cpu_p50_5m: 0.2,
+            cpu_p95_5m: 0.4,
+            cpu_max_5m: 0.5,
+            cpu_p50_1d: 0.1,
+            cpu_p95_1d: 0.3,
+            cpu_max_1d: 0.6,
+            // 16 GiB used of the fixture's 32 GiB total -> 0.5.
+            ram_used_p95_5m: 16 * 1024 * 1024 * 1024,
+            ram_used_p95_1d: 16 * 1024 * 1024 * 1024,
+            disk_used_bytes_p95_5m: BTreeMap::new(),
+            disk_used_bytes_p95_1d: BTreeMap::new(),
+            nic_tx_bps_p95_5m: 0,
+            nic_tx_bps_p95_1d: 0,
+            nic_rx_bps_p95_5m: 0,
+            nic_rx_bps_p95_1d: 0,
+            samples_5m: 5,
+            samples_1d: 100,
+            last_refreshed_at: refreshed,
+            stale: false,
+        }
+    }
+
+    // RAM p95 must reach the scorer as a 0..1 fraction of the CN's
+    // total, not raw GB -- a >=1 GB-used CN previously saturated the
+    // scorer's clamp at 1.0.
+    #[test]
+    fn load_view_normalises_ram_to_a_fraction_of_total() {
+        let now = Utc::now();
+        let mut snap = make_snapshot();
+        snap.load_summary = Some(make_load_summary(snap.cn.server_uuid, now));
+        let view = snapshot_to_cn_view(snap, now, DEFAULT_LOAD_STALENESS_SECS);
+        let load = view.load_summary.expect("load summary present");
+        assert!(!load.stale);
+        assert!(
+            (load.ram_used_p95_5m - 0.5).abs() < 1e-3,
+            "16 GiB of 32 GiB must project as ~0.5, got {}",
+            load.ram_used_p95_5m
+        );
+    }
+
+    // A row the materializer stopped refreshing must go stale by age
+    // at read time, regardless of its written `stale = false`.
+    #[test]
+    fn load_view_goes_stale_by_age() {
+        let now = Utc::now();
+        let mut snap = make_snapshot();
+        snap.load_summary = Some(make_load_summary(
+            snap.cn.server_uuid,
+            now - chrono::Duration::seconds(DEFAULT_LOAD_STALENESS_SECS as i64 + 1),
+        ));
+        let view = snapshot_to_cn_view(snap, now, DEFAULT_LOAD_STALENESS_SECS);
+        assert!(view.load_summary.expect("present").stale);
+    }
+
+    // No capacity row -> no RAM denominator -> the load row cannot be
+    // trusted as a fraction; project it stale.
+    #[test]
+    fn load_view_without_capacity_is_stale() {
+        let now = Utc::now();
+        let mut snap = make_snapshot();
+        snap.load_summary = Some(make_load_summary(snap.cn.server_uuid, now));
+        snap.capacity = None;
+        let view = snapshot_to_cn_view(snap, now, DEFAULT_LOAD_STALENESS_SECS);
+        let load = view.load_summary.expect("present");
+        assert!(load.stale);
+        assert_eq!(load.ram_used_p95_5m, 0.0);
+    }
+
     #[test]
     fn build_default_runner_lays_down_the_full_chain() {
         let runner = build_default_runner(Strategy::Spread);
         let weights = resolved_weights(Strategy::Spread);
         let ctx = build_chain_context(Utc::now(), &weights, &[]);
-        let view = snapshot_to_cn_view(make_snapshot());
+        let view = snapshot_to_cn_view(make_snapshot(), Utc::now(), DEFAULT_LOAD_STALENESS_SECS);
         // Use a synthetic request that nothing in the default
         // chain rejects.
         let req_id = Uuid::new_v4();

@@ -117,11 +117,6 @@ pub struct ChainContext<'a> {
     /// per CN when set.
     pub cluster_overprovision: OverprovisionDefaults,
 
-    /// Seconds beyond which a [`CnLoadSummaryView`] is considered
-    /// stale. Load-history scorers contribute zero on stale rows
-    /// and the explain report names the skip.
-    pub load_staleness_secs: u64,
-
     /// Seconds beyond which a `cn.last_seen` heartbeat marks the
     /// CN as not-live for the `cn-approved-and-live` filter. The
     /// agent heartbeats every ~5 s (Slice D); the placement
@@ -679,13 +674,18 @@ pub struct ReservationView {
     pub deadline: DateTime<Utc>,
 }
 
-/// A `cn-load-summary/<cn>` row, projected. Materialiser-owned
+/// A `cn-load-summary/<cn>` row, projected. Materializer-owned
 /// (PL-6); read by load-history scorers. `stale = true` rows are
-/// still written so the heatmap can distinguish "data says nothing"
-/// from "no data exists" (RFD 00005 doc 02 §"Staleness").
+/// still written so a future surface can distinguish "data says
+/// nothing" from "no data exists" -- for the CPU/RAM feeds only; the
+/// row carries no per-feed sample counts for net/disk, so zeros there
+/// are ambiguous (RFD 00005 doc 02 §"Staleness").
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CnLoadSummaryView {
     pub last_refreshed_at: DateTime<Utc>,
+    /// Written by the materializer on thin samples / query error; the
+    /// projection (`placement::load_summary_view` in tritond) also
+    /// sets it by age and when the RAM fraction has no denominator.
     pub stale: bool,
 
     /// CPU utilisation (0.0..=1.0) median / 95th percentile over the
@@ -699,9 +699,9 @@ pub struct CnLoadSummaryView {
     /// 5 minutes.
     pub ram_used_p95_5m: f32,
 
-    /// NIC tx + rx in bytes/sec averaged over the last 5 minutes.
-    /// Used by load-aware scorers in PL-4; PL-1 carries the field
-    /// so the projection shape is stable.
+    /// NIC tx / rx p95 of the per-sample byte rate over the last
+    /// 5 minutes. No scorer reads these yet; carried so the
+    /// projection shape is stable for the PL-9 surface.
     pub nic_tx_bps_p95_5m: u64,
     pub nic_rx_bps_p95_5m: u64,
 }

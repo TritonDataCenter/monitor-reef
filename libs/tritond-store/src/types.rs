@@ -3567,10 +3567,10 @@ pub const DEFAULT_SAGA_RETENTION_SECS: u64 = 30 * 24 * 60 * 60;
 
 /// Default cadence of the placement load materializer, in seconds
 /// (RFD 00005 PL-6).
-pub const DEFAULT_PLACEMENT_LOAD_MATERIALISER_INTERVAL_SECS: u64 = 60;
+pub const DEFAULT_PLACEMENT_LOAD_MATERIALIZER_INTERVAL_SECS: u64 = 60;
 /// Default number of materializer ticks a `cn-load-summary` row may go
 /// un-refreshed before the row is treated as stale.
-pub const DEFAULT_PLACEMENT_LOAD_MATERIALISER_STALENESS_TICKS: u64 = 3;
+pub const DEFAULT_PLACEMENT_LOAD_MATERIALIZER_STALENESS_TICKS: u64 = 3;
 
 /// Which metrics backend `tritond` stores timeseries in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -3584,8 +3584,10 @@ pub enum MetricsBackend {
 }
 
 /// Cluster-wide tunables that live in FoundationDB rather than in the
-/// bootstrap config file. `tritond` reads these once at startup; the
-/// `tcadm config` subcommand and the admin console read and write them.
+/// bootstrap config file. Most are read once at startup; the
+/// placement keys flagged by [`ConfigKey::restart_required`] are read
+/// live on every pick. The `tcadm config` subcommand and the admin
+/// console read and write them.
 ///
 /// Every field is serialized under its dotted wire name (see
 /// [`ConfigKey`]) and the struct is `#[serde(default)]`, so a blob
@@ -3675,31 +3677,34 @@ pub struct Settings {
     /// metrics into `cn-load-summary` rows for the load-history
     /// scorers. Default 60s.
     #[serde(
-        rename = "placement.load_materialiser.interval_seconds",
-        default = "default_placement_load_materialiser_interval_secs"
+        rename = "placement.load_materializer.interval_secs",
+        default = "default_placement_load_materializer_interval_secs"
     )]
-    pub placement_load_materialiser_interval_secs: u64,
+    pub placement_load_materializer_interval_secs: u64,
     /// Number of materializer ticks a `cn-load-summary` row may go
-    /// un-refreshed before the row is treated as stale. Default 3.
+    /// un-refreshed before the placement engine treats it as stale at
+    /// pick time (`staleness_ticks × interval_secs` seconds). The gate
+    /// lives on the read side so a dead materializer cannot leave
+    /// frozen `stale = false` rows scoring as fresh. Default 3.
     #[serde(
-        rename = "placement.load_materialiser.staleness_ticks",
-        default = "default_placement_load_materialiser_staleness_ticks"
+        rename = "placement.load_materializer.staleness_ticks",
+        default = "default_placement_load_materializer_staleness_ticks"
     )]
-    pub placement_load_materialiser_staleness_ticks: u64,
+    pub placement_load_materializer_staleness_ticks: u64,
     /// ClickHouse HTTP base URL the materializer queries. When `None`
     /// (the default) the materializer falls back to
     /// [`Settings::metrics_clickhouse_url`]; if that is also `None` the
     /// materializer task is not spawned.
-    #[serde(rename = "placement.load_materialiser.clickhouse_url", default)]
-    pub placement_load_materialiser_clickhouse_url: Option<String>,
+    #[serde(rename = "placement.load_materializer.clickhouse_url", default)]
+    pub placement_load_materializer_clickhouse_url: Option<String>,
 }
 
-fn default_placement_load_materialiser_interval_secs() -> u64 {
-    DEFAULT_PLACEMENT_LOAD_MATERIALISER_INTERVAL_SECS
+fn default_placement_load_materializer_interval_secs() -> u64 {
+    DEFAULT_PLACEMENT_LOAD_MATERIALIZER_INTERVAL_SECS
 }
 
-fn default_placement_load_materialiser_staleness_ticks() -> u64 {
-    DEFAULT_PLACEMENT_LOAD_MATERIALISER_STALENESS_TICKS
+fn default_placement_load_materializer_staleness_ticks() -> u64 {
+    DEFAULT_PLACEMENT_LOAD_MATERIALIZER_STALENESS_TICKS
 }
 
 impl Default for Settings {
@@ -3719,11 +3724,11 @@ impl Default for Settings {
             saga_retention_secs: DEFAULT_SAGA_RETENTION_SECS,
             identityd_issuer_url: None,
             placement_profiles: PlacementProfiles::default(),
-            placement_load_materialiser_interval_secs:
-                DEFAULT_PLACEMENT_LOAD_MATERIALISER_INTERVAL_SECS,
-            placement_load_materialiser_staleness_ticks:
-                DEFAULT_PLACEMENT_LOAD_MATERIALISER_STALENESS_TICKS,
-            placement_load_materialiser_clickhouse_url: None,
+            placement_load_materializer_interval_secs:
+                DEFAULT_PLACEMENT_LOAD_MATERIALIZER_INTERVAL_SECS,
+            placement_load_materializer_staleness_ticks:
+                DEFAULT_PLACEMENT_LOAD_MATERIALIZER_STALENESS_TICKS,
+            placement_load_materializer_clickhouse_url: None,
         }
     }
 }
@@ -3970,12 +3975,12 @@ pub enum ConfigKey {
     SagaRetentionSecs,
     /// [`Settings::placement_profiles`]
     PlacementProfiles,
-    /// [`Settings::placement_load_materialiser_interval_secs`]
-    PlacementLoadMaterialiserIntervalSecs,
-    /// [`Settings::placement_load_materialiser_staleness_ticks`]
-    PlacementLoadMaterialiserStalenessTicks,
-    /// [`Settings::placement_load_materialiser_clickhouse_url`]
-    PlacementLoadMaterialiserClickhouseUrl,
+    /// [`Settings::placement_load_materializer_interval_secs`]
+    PlacementLoadMaterializerIntervalSecs,
+    /// [`Settings::placement_load_materializer_staleness_ticks`]
+    PlacementLoadMaterializerStalenessTicks,
+    /// [`Settings::placement_load_materializer_clickhouse_url`]
+    PlacementLoadMaterializerClickhouseUrl,
 }
 
 impl ConfigKey {
@@ -3994,9 +3999,9 @@ impl ConfigKey {
         ConfigKey::ReservoirPercentDefault,
         ConfigKey::SagaRetentionSecs,
         ConfigKey::PlacementProfiles,
-        ConfigKey::PlacementLoadMaterialiserIntervalSecs,
-        ConfigKey::PlacementLoadMaterialiserStalenessTicks,
-        ConfigKey::PlacementLoadMaterialiserClickhouseUrl,
+        ConfigKey::PlacementLoadMaterializerIntervalSecs,
+        ConfigKey::PlacementLoadMaterializerStalenessTicks,
+        ConfigKey::PlacementLoadMaterializerClickhouseUrl,
     ];
 
     /// Dotted wire name. Must exactly equal the `#[serde(rename = ...)]`
@@ -4016,14 +4021,14 @@ impl ConfigKey {
             ConfigKey::ReservoirPercentDefault => "reservoir.percent_default",
             ConfigKey::SagaRetentionSecs => "saga.retention_secs",
             ConfigKey::PlacementProfiles => "placement.profiles",
-            ConfigKey::PlacementLoadMaterialiserIntervalSecs => {
-                "placement.load_materialiser.interval_seconds"
+            ConfigKey::PlacementLoadMaterializerIntervalSecs => {
+                "placement.load_materializer.interval_secs"
             }
-            ConfigKey::PlacementLoadMaterialiserStalenessTicks => {
-                "placement.load_materialiser.staleness_ticks"
+            ConfigKey::PlacementLoadMaterializerStalenessTicks => {
+                "placement.load_materializer.staleness_ticks"
             }
-            ConfigKey::PlacementLoadMaterialiserClickhouseUrl => {
-                "placement.load_materialiser.clickhouse_url"
+            ConfigKey::PlacementLoadMaterializerClickhouseUrl => {
+                "placement.load_materializer.clickhouse_url"
             }
         }
     }
@@ -4071,24 +4076,27 @@ impl ConfigKey {
             ConfigKey::PlacementProfiles => {
                 "placement strategy profiles + active selection (managed from the Placement console)"
             }
-            ConfigKey::PlacementLoadMaterialiserIntervalSecs => {
+            ConfigKey::PlacementLoadMaterializerIntervalSecs => {
                 "placement load-materializer cadence, in seconds (default 60)"
             }
-            ConfigKey::PlacementLoadMaterialiserStalenessTicks => {
-                "ticks a cn-load-summary row may go un-refreshed before it is marked stale (default 3)"
+            ConfigKey::PlacementLoadMaterializerStalenessTicks => {
+                "materializer ticks a cn-load-summary row may go un-refreshed before placement treats it as stale (default 3; applied live at pick time)"
             }
-            ConfigKey::PlacementLoadMaterialiserClickhouseUrl => {
+            ConfigKey::PlacementLoadMaterializerClickhouseUrl => {
                 "ClickHouse HTTP base URL for the load materializer (falls back to metrics.clickhouse_url)"
             }
         }
     }
 
-    /// Whether changing this key requires a `tritond` restart. In the
-    /// current release all settings are read once at startup, so this
-    /// is `true` for every key; it stays a method so callers and the
-    /// wire surface don't have to change when live-reload lands.
+    /// Whether changing this key requires a `tritond` restart. Most
+    /// settings are read once at startup; the exceptions are read live
+    /// from FDB on every placement pick.
     pub fn restart_required(self) -> bool {
-        true
+        !matches!(
+            self,
+            // Resolved per pick (placement::pick re-reads Settings).
+            ConfigKey::PlacementProfiles | ConfigKey::PlacementLoadMaterializerStalenessTicks
+        )
     }
 
     /// Name of the legacy environment variable that, when set,
@@ -4111,14 +4119,14 @@ impl ConfigKey {
             // No env override; placement profiles are managed via the
             // config API / Placement console only.
             ConfigKey::PlacementProfiles => return None,
-            ConfigKey::PlacementLoadMaterialiserIntervalSecs => {
-                "TRITOND_PLACEMENT_LOAD_MATERIALISER_INTERVAL_SECS"
+            ConfigKey::PlacementLoadMaterializerIntervalSecs => {
+                "TRITOND_PLACEMENT_LOAD_MATERIALIZER_INTERVAL_SECS"
             }
-            ConfigKey::PlacementLoadMaterialiserStalenessTicks => {
-                "TRITOND_PLACEMENT_LOAD_MATERIALISER_STALENESS_TICKS"
+            ConfigKey::PlacementLoadMaterializerStalenessTicks => {
+                "TRITOND_PLACEMENT_LOAD_MATERIALIZER_STALENESS_TICKS"
             }
-            ConfigKey::PlacementLoadMaterialiserClickhouseUrl => {
-                "TRITOND_PLACEMENT_LOAD_MATERIALISER_CLICKHOUSE_URL"
+            ConfigKey::PlacementLoadMaterializerClickhouseUrl => {
+                "TRITOND_PLACEMENT_LOAD_MATERIALIZER_CLICKHOUSE_URL"
             }
         })
     }
@@ -4805,11 +4813,12 @@ pub struct DeviceReservation {
     pub count: u32,
 }
 
-/// Materialiser-owned per-CN ClickHouse rollup. Read by the
-/// load-history scorers on the hot path; refreshed by the
-/// leader-elected materialiser on a tick (default 60s).
+/// Materializer-owned per-CN ClickHouse rollup. Read by the
+/// load-history scorers on the hot path; refreshed by every tritond's
+/// load-materializer tick (default 60s) as an idempotent
+/// last-writer-wins overwrite — there is no leader election.
 ///
-/// The materialiser writes the row unconditionally on every tick
+/// The materializer writes the row unconditionally on every tick
 /// that produces fresh data (capacity-only scorers don't care; load
 /// scorers gate on `stale`). It does *not* try to be clever about
 /// "only write if changed" - the row is small and FDB MVCC handles
@@ -4848,12 +4857,17 @@ pub struct CnLoadSummary {
     pub samples_1d: u32,
 
     pub last_refreshed_at: DateTime<Utc>,
-    /// Set by the materialiser when (a) the last refresh is older
-    /// than `staleness_ticks × interval_seconds`, (b) the per-window
-    /// sample count is below the per-window minimum, or (c) the
-    /// ClickHouse query for this CN returned an error. The row is
-    /// still written with `stale = true` so the heatmap can
-    /// distinguish "no data" from "data says zero".
+    /// Set by the materializer when (a) the per-window CPU/RAM sample
+    /// count is below the per-window minimum, or (b) the ClickHouse
+    /// query for the pass errored. The row is still written with
+    /// `stale = true` so a future surface can distinguish "no data"
+    /// from "data says zero" for the CPU/RAM feeds (net/disk carry no
+    /// per-feed sample counts, so zeros there are ambiguous).
+    ///
+    /// Age is enforced on the read side: the placement projection
+    /// additionally treats a row older than `staleness_ticks ×
+    /// interval_secs` as stale, so a dead materializer cannot leave
+    /// frozen rows scoring as fresh.
     pub stale: bool,
 }
 

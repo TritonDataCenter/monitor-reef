@@ -36,9 +36,10 @@
 //!   under [`filter`] and [`scorer`].
 //! * No `designate` saga action — that lives in
 //!   `services/tritond/src/sagas/designate.rs` and lands in PL-5.
-//! * No ClickHouse load materialiser — that lives in
-//!   [`load_materializer`] behind the `materializer` cargo feature
-//!   and lands in PL-6.
+//! * No ClickHouse load materializer — PL-6 shipped it as
+//!   `services/tritond/src/load_materializer.rs` (the ClickHouse
+//!   client lives in `tritond-metrics`, which this leaf crate does
+//!   not depend on).
 //! * No `tritond-store` path dep yet. PL-1's [`CnView`] embeds
 //!   placement-engine projection types defined here; PL-2 adds the
 //!   canonical FDB row shapes (`CnCapacity`, `CnPlacement`,
@@ -52,14 +53,10 @@
 pub mod config;
 pub mod engine;
 pub mod filter;
-#[cfg(feature = "materializer")]
-pub mod load_materializer;
 pub mod scorer;
 pub mod types;
 
-pub use config::{
-    MaterialiserConfig, OverprovisionDefaults, PlacementConfig, ScorerConfig, strategy_weights,
-};
+pub use config::{OverprovisionDefaults, PlacementConfig, ScorerConfig, strategy_weights};
 pub use engine::{ChainRunner, ExplainPerCn, ExplainReport, ScorerContribution};
 pub use filter::{
     CnAffinityRequired, CnApprovedAndLive, CnCapacityPresent, CnCpuAvailable, CnDeviceAvailable,

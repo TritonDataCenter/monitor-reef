@@ -201,26 +201,28 @@ async fn serve(boot: BootstrapConfig) -> Result<()> {
     // Placement load materializer (RFD 00005 PL-6). Resolve the
     // ClickHouse URL from its own setting, falling back to
     // `metrics.clickhouse_url`. When neither resolves, the task is not
-    // spawned (the load-history scorers fall back to the capacity
-    // floor) -- a no-op deployment, logged once.
+    // spawned -- a deliberate degraded mode, logged once:
+    // score-avoid-hot-now falls back to the agent's live capacity
+    // floor (CAP-1b) and the history-based scorers contribute zero.
     match resolved
-        .placement_load_materialiser_clickhouse_url
+        .placement_load_materializer_clickhouse_url
         .clone()
         .or_else(|| resolved.metrics_clickhouse_url.clone())
     {
         Some(url) => {
             let lm_interval =
-                Duration::from_secs(resolved.placement_load_materialiser_interval_secs.max(1));
+                Duration::from_secs(resolved.placement_load_materializer_interval_secs.max(1));
             info!(
                 clickhouse_url = %url,
                 interval_secs = lm_interval.as_secs(),
                 "enabling placement load materializer",
             );
+            // `staleness_ticks` is not wired here: the age gate it
+            // configures is enforced read-side by the placement
+            // projection, which re-reads Settings on every pick.
             context = context.with_load_materializer(load_materializer::LoadMaterializerConfig {
                 interval: lm_interval,
-                staleness_ticks: resolved.placement_load_materialiser_staleness_ticks as u32,
-                // Per-window sample floors mirror the placement
-                // MaterialiserConfig defaults (RFD 00005 PL-6); not
+                // Per-window sample floors (RFD 00005 PL-6); not
                 // operator-tunable in this release.
                 min_samples_5m: 3,
                 min_samples_1d: 12,
@@ -230,7 +232,7 @@ async fn serve(boot: BootstrapConfig) -> Result<()> {
         None => {
             info!(
                 "placement load materializer disabled: no clickhouse url \
-                 (placement.load_materialiser.clickhouse_url / metrics.clickhouse_url)"
+                 (placement.load_materializer.clickhouse_url / metrics.clickhouse_url)"
             );
         }
     }

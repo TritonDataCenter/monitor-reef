@@ -25,9 +25,12 @@
 //!
 //! ## CH-load-based (3)
 //!
-//! Each gates on `cn-load-summary.stale` -- when stale (or
-//! absent), the contribution is `0.0` and the chain runner /
-//! `ExplainReport` notes the skip.
+//! Each gates on `cn-load-summary.stale` (which the projection also
+//! sets by age -- see `placement::load_summary_view` in tritond).
+//! [`ScoreAvoidHotNow`] falls back to the agent's live capacity
+//! floor (`cpu_utilization_pct` / `ram_available_mb`) when the
+//! roll-up is stale or absent (CAP-1b); the history-based scorers
+//! have no instantaneous substitute and contribute `0.0`.
 //!
 //! * [`ScoreAvoidHotNow`]
 //! * [`ScorePreferLowBaseline`]
@@ -374,16 +377,32 @@ impl Scorer for ScoreAvoidHotNow {
         1.5
     }
     fn score(&self, cn: &CnView, _req: &PlacementRequest, _ctx: &ChainContext) -> f32 {
-        let Some(load) = cn.load_summary.as_ref() else {
+        // Fresh ClickHouse roll-up wins: p95s over the 5m window.
+        if let Some(load) = cn.load_summary.as_ref() {
+            if !load.stale {
+                // Combine cpu_p95_5m and ram_used_p95_5m (both 0..1 in
+                // the projection). Low values = "not hot" = high score.
+                let busy =
+                    (load.cpu_p95_5m.clamp(0.0, 1.0) + load.ram_used_p95_5m.clamp(0.0, 1.0)) / 2.0;
+                return (1.0 - busy).clamp(0.0, 1.0);
+            }
+        }
+        // CAP-1b fallback: stale/absent roll-up -> the agent's live
+        // instantaneous capacity floor (ClickHouse-independent). Both
+        // fields use 0 as "unknown" (older agent); score whatever
+        // signals exist, 0.0 when there are none.
+        let Some(cap) = cn.capacity.as_ref() else {
             return 0.0;
         };
-        if load.stale {
-            return 0.0;
-        }
-        // Combine cpu_p95_5m and ram_used_p95_5m (both 0..1 in
-        // the projection). Low values = "not hot" = high score.
-        let busy =
-            (load.cpu_p95_5m.max(0.0).min(1.0) + load.ram_used_p95_5m.max(0.0).min(1.0)) / 2.0;
+        let cpu = (cap.cpu_utilization_pct > 0.0).then(|| cap.cpu_utilization_pct.clamp(0.0, 1.0));
+        let ram = (cap.ram_total_mb > 0 && cap.ram_available_mb > 0)
+            .then(|| (1.0 - cap.ram_available_mb as f32 / cap.ram_total_mb as f32).clamp(0.0, 1.0));
+        let busy = match (cpu, ram) {
+            (Some(c), Some(r)) => (c + r) / 2.0,
+            (Some(c), None) => c,
+            (None, Some(r)) => r,
+            (None, None) => return 0.0,
+        };
         (1.0 - busy).clamp(0.0, 1.0)
     }
 }
@@ -401,6 +420,8 @@ impl Scorer for ScorePreferLowBaseline {
         0.75
     }
     fn score(&self, cn: &CnView, _req: &PlacementRequest, _ctx: &ChainContext) -> f32 {
+        // No capacity-floor fallback here: a 1-day baseline has no
+        // instantaneous substitute, so stale/absent contributes 0.0.
         let Some(load) = cn.load_summary.as_ref() else {
             return 0.0;
         };
@@ -616,7 +637,6 @@ mod tests {
         ChainContext {
             now: now(),
             cluster_overprovision: OverprovisionDefaults::default(),
-            load_staleness_secs: 180,
             agent_heartbeat_threshold_secs: 60,
             strategy_weights: weights,
             sibling_instances: siblings,
@@ -857,7 +877,12 @@ mod tests {
 
     // ---- CH-load scorers ----
 
-    fn load(stale: bool, cpu_p95_5m: f32, cpu_p50_1d: f32) -> CnLoadSummaryView {
+    fn load(
+        stale: bool,
+        cpu_p95_5m: f32,
+        cpu_p50_1d: f32,
+        ram_used_p95_5m: f32,
+    ) -> CnLoadSummaryView {
         CnLoadSummaryView {
             last_refreshed_at: now(),
             stale,
@@ -865,38 +890,59 @@ mod tests {
             cpu_p95_5m,
             cpu_p50_1d,
             cpu_p95_1d: 0.0,
-            ram_used_p95_5m: 0.0,
+            ram_used_p95_5m,
             nic_tx_bps_p95_5m: 0,
             nic_rx_bps_p95_5m: 0,
         }
     }
 
+    // Absent summary: avoid-hot-now falls back to the live capacity
+    // floor (CAP-1b); the history scorers have no substitute.
     #[test]
-    fn ch_load_scorers_return_zero_when_summary_absent() {
-        let cn = make_cn(); // load_summary None
+    fn ch_load_scorers_fall_back_when_summary_absent() {
+        let cn = make_cn(); // load_summary None; cpu 0.10, ram ~0.085 busy
         let req = make_req();
         let w = StrategyWeights::new();
         let ctx = make_ctx(&w, &[]);
-        assert_eq!(ScoreAvoidHotNow.score(&cn, &req, &ctx), 0.0);
+        let s = ScoreAvoidHotNow.score(&cn, &req, &ctx);
+        assert!((0.85..1.0).contains(&s), "capacity-floor score, got {s}");
         assert_eq!(ScorePreferLowBaseline.score(&cn, &req, &ctx), 0.0);
         assert_eq!(ScoreDiurnalFit.score(&cn, &req, &ctx), 0.0);
     }
 
+    // Stale summary behaves like an absent one: floor for hot-now,
+    // zero for the history scorers. Stale values are never read.
     #[test]
-    fn ch_load_scorers_return_zero_when_summary_is_stale() {
+    fn ch_load_scorers_ignore_stale_summary_values() {
         let mut cn = make_cn();
-        cn.load_summary = Some(load(true, 0.10, 0.10));
+        cn.load_summary = Some(load(true, 0.99, 0.99, 0.99));
+        let req = make_req();
+        let w = StrategyWeights::new();
+        let ctx = make_ctx(&w, &[]);
+        let s = ScoreAvoidHotNow.score(&cn, &req, &ctx);
+        assert!((0.85..1.0).contains(&s), "capacity-floor score, got {s}");
+        assert_eq!(ScorePreferLowBaseline.score(&cn, &req, &ctx), 0.0);
+    }
+
+    // Neither a usable summary nor any live capacity signal: zero.
+    #[test]
+    fn score_avoid_hot_now_zero_without_any_signal() {
+        let mut cn = make_cn();
+        let cap = cn.capacity.as_mut().unwrap();
+        cap.cpu_utilization_pct = 0.0; // unknown
+        cap.ram_available_mb = 0; // unknown
         let req = make_req();
         let w = StrategyWeights::new();
         let ctx = make_ctx(&w, &[]);
         assert_eq!(ScoreAvoidHotNow.score(&cn, &req, &ctx), 0.0);
-        assert_eq!(ScorePreferLowBaseline.score(&cn, &req, &ctx), 0.0);
+        cn.capacity = None;
+        assert_eq!(ScoreAvoidHotNow.score(&cn, &req, &ctx), 0.0);
     }
 
     #[test]
     fn score_avoid_hot_now_higher_when_quiet() {
         let mut cn = make_cn();
-        cn.load_summary = Some(load(false, 0.10, 0.0));
+        cn.load_summary = Some(load(false, 0.10, 0.0, 0.05));
         let req = make_req();
         let w = StrategyWeights::new();
         let ctx = make_ctx(&w, &[]);
@@ -904,10 +950,31 @@ mod tests {
         assert!(s > 0.9);
     }
 
+    // The RAM axis must discriminate: same CPU, RAM-hot CN scores
+    // well below the RAM-quiet one (regression guard for the
+    // bytes/1e9 saturation bug -- a >=1 GB-used CN used to pin the
+    // RAM term at 1.0 and erase this difference).
+    #[test]
+    fn score_avoid_hot_now_discriminates_on_ram() {
+        let req = make_req();
+        let w = StrategyWeights::new();
+        let ctx = make_ctx(&w, &[]);
+        let mut quiet = make_cn();
+        quiet.load_summary = Some(load(false, 0.10, 0.0, 0.10));
+        let mut hot = make_cn();
+        hot.load_summary = Some(load(false, 0.10, 0.0, 0.90));
+        let s_quiet = ScoreAvoidHotNow.score(&quiet, &req, &ctx);
+        let s_hot = ScoreAvoidHotNow.score(&hot, &req, &ctx);
+        assert!(
+            s_quiet - s_hot > 0.3,
+            "RAM-hot CN must score well below RAM-quiet: {s_quiet} vs {s_hot}"
+        );
+    }
+
     #[test]
     fn score_prefer_low_baseline_lower_when_24h_median_high() {
         let mut cn = make_cn();
-        cn.load_summary = Some(load(false, 0.10, 0.85));
+        cn.load_summary = Some(load(false, 0.10, 0.85, 0.10));
         let req = make_req();
         let w = StrategyWeights::new();
         let ctx = make_ctx(&w, &[]);

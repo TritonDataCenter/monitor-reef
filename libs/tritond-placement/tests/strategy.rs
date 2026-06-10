@@ -20,7 +20,7 @@ use tritond_placement::scorer::{
 use tritond_placement::types::StorageTier;
 use tritond_placement::{
     AssignedInstanceView, CapacityView, ChainContext, ChainRunner, CnRoleView, CnStateView, CnView,
-    NumaNodeView, OverprovisionDefaults, PlacementPolicyView, PlacementRequest, Scorer,
+    NumaNodeView, OverprovisionDefaults, PlacementPolicyView, PlacementRequest,
     SiblingInstanceView, Strategy, StrategyWeights, UnderlayCapability, ZpoolView,
     default_filter_chain, default_scorer_chain,
 };
@@ -142,7 +142,6 @@ fn default_chain_picks_an_eligible_cn() {
     let ctx = ChainContext {
         now: now(),
         cluster_overprovision: OverprovisionDefaults::default(),
-        load_staleness_secs: 180,
         agent_heartbeat_threshold_secs: 60,
         strategy_weights: &weights,
         sibling_instances: &[],
@@ -218,7 +217,6 @@ fn spread_vs_pack_pick_opposite_cns_when_only_fault_domain_breaks_tie() {
     let ctx_spread = ChainContext {
         now: now(),
         cluster_overprovision: OverprovisionDefaults::default(),
-        load_staleness_secs: 180,
         agent_heartbeat_threshold_secs: 60,
         strategy_weights: &weights_spread,
         sibling_instances: &siblings,
@@ -226,7 +224,6 @@ fn spread_vs_pack_pick_opposite_cns_when_only_fault_domain_breaks_tie() {
     let ctx_pack = ChainContext {
         now: now(),
         cluster_overprovision: OverprovisionDefaults::default(),
-        load_staleness_secs: 180,
         agent_heartbeat_threshold_secs: 60,
         strategy_weights: &weights_pack,
         sibling_instances: &siblings,
@@ -250,7 +247,6 @@ fn explain_report_per_cn_carries_filter_and_scorer_breakdown() {
     let ctx = ChainContext {
         now: now(),
         cluster_overprovision: OverprovisionDefaults::default(),
-        load_staleness_secs: 180,
         agent_heartbeat_threshold_secs: 60,
         strategy_weights: &weights,
         sibling_instances: &[],

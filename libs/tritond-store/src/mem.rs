@@ -12026,11 +12026,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cn_load_summary_materialiser_refresh_is_idempotent_at_the_store_layer() {
-        // The materialiser writes unconditionally on every tick.
+    async fn cn_load_summary_materializer_refresh_is_idempotent_at_the_store_layer() {
+        // The materializer writes unconditionally on every tick.
         // Two writes for the same CN should produce a single row
         // whose body matches the latest write - the store is the
-        // "last write wins" surface that lets the materialiser
+        // "last write wins" surface that lets the materializer
         // avoid clever change-detection logic.
         let store = MemStore::new();
         let cn = Uuid::new_v4();

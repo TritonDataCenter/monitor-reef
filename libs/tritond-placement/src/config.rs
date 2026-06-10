@@ -39,8 +39,6 @@ pub struct PlacementConfig {
 
     pub overprovision: OverprovisionDefaults,
 
-    pub materialiser: MaterialiserConfig,
-
     pub updated_at: DateTime<Utc>,
 
     /// Principal who applied this config. Carries a `String` here
@@ -88,37 +86,9 @@ impl Default for OverprovisionDefaults {
     }
 }
 
-/// Cluster-settings shape for the load materialiser (PL-6). PL-1
-/// carries the shape so callers can round-trip configs without the
-/// materialiser feature compiled in.
-#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct MaterialiserConfig {
-    /// How often the materialiser polls ClickHouse. Default 60s
-    /// (RFD 00005 doc 02 §"The load materialiser").
-    pub interval_seconds: u32,
-
-    /// A `cn-load-summary` row whose `last_refreshed_at` is older
-    /// than `staleness_ticks × interval_seconds` is marked
-    /// `stale = true` and load-history scorers contribute zero.
-    pub staleness_ticks: u32,
-
-    pub clickhouse_url: String,
-
-    pub min_samples_5m: u32,
-    pub min_samples_1d: u32,
-}
-
-impl Default for MaterialiserConfig {
-    fn default() -> Self {
-        Self {
-            interval_seconds: 60,
-            staleness_ticks: 3,
-            clickhouse_url: String::new(),
-            min_samples_5m: 3,
-            min_samples_1d: 12,
-        }
-    }
-}
+// The materializer's own knobs live as flat `tritond_store::Settings`
+// keys (`placement.load_materializer.*`); PL-1's parallel
+// `MaterialiserConfig` shape was never wired and has been removed.
 
 /// Default strategy → weight vector mapping.
 ///

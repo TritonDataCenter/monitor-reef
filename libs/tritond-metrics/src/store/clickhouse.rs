@@ -85,9 +85,13 @@ impl ClickHouseStore {
     /// POST a query (and optional inline data) to ClickHouse, return
     /// the response body. Errors on a non-2xx status.
     async fn post(&self, body: String) -> Result<String, MetricsStoreError> {
+        self.post_to(self.base_url.clone(), body).await
+    }
+
+    async fn post_to(&self, url: String, body: String) -> Result<String, MetricsStoreError> {
         let resp = self
             .http
-            .post(&self.base_url)
+            .post(&url)
             .body(body)
             .send()
             .await
@@ -112,8 +116,14 @@ impl ClickHouseStore {
     /// Used by the placement load-materializer (RFD 00005 PL-6), whose
     /// roll-up SQL has no home on the `MetricsStore` trait. Public
     /// because [`post`](Self::post) is private to the module.
+    ///
+    /// `wait_end_of_query=1` makes ClickHouse buffer the full result
+    /// before sending headers, so a mid-stream query failure surfaces
+    /// as a non-2xx status instead of an exception line appended to a
+    /// 200 body that the row parser would silently skip.
     pub async fn query_jsoneachrow(&self, sql: String) -> Result<String, MetricsStoreError> {
-        self.post(sql).await
+        self.post_to(format!("{}/?wait_end_of_query=1", self.base_url), sql)
+            .await
     }
 
     /// Run the embedded schema migrations (idempotent). Call once at

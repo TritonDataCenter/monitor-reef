@@ -1114,7 +1114,6 @@ mod tests {
         ChainContext {
             now: now(),
             cluster_overprovision: OverprovisionDefaults::default(),
-            load_staleness_secs: 180,
             agent_heartbeat_threshold_secs: 60,
             strategy_weights: weights,
             sibling_instances: &[],

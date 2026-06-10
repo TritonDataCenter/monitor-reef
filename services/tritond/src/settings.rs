@@ -10,8 +10,9 @@
 //! startup, then layers any legacy `TRITOND_*` environment variables
 //! on top — precedence is **env > FDB > built-in default** — so an
 //! operator keeps a boot-time escape hatch even when FDB holds a bad
-//! value. All settings are applied once at startup; changing one
-//! requires a restart (`tcadm config set` says so).
+//! value. Most settings are applied once at startup and need a
+//! restart; the exceptions are re-read live per placement pick (see
+//! [`ConfigKey::restart_required`]).
 
 use tritond_store::{ConfigKey, MetricsBackend, Settings};
 
@@ -90,19 +91,19 @@ fn apply_env_overrides(mut s: Settings, env: impl Fn(&str) -> Option<String>) ->
         s.saga_retention_secs = v;
     }
     if let Some(v) = u64v(env_str_key(
-        ConfigKey::PlacementLoadMaterialiserIntervalSecs,
+        ConfigKey::PlacementLoadMaterializerIntervalSecs,
     )) {
-        s.placement_load_materialiser_interval_secs = v;
+        s.placement_load_materializer_interval_secs = v;
     }
     if let Some(v) = u64v(env_str_key(
-        ConfigKey::PlacementLoadMaterialiserStalenessTicks,
+        ConfigKey::PlacementLoadMaterializerStalenessTicks,
     )) {
-        s.placement_load_materialiser_staleness_ticks = v;
+        s.placement_load_materializer_staleness_ticks = v;
     }
     if let Some(url) = strv(env_str_key(
-        ConfigKey::PlacementLoadMaterialiserClickhouseUrl,
+        ConfigKey::PlacementLoadMaterializerClickhouseUrl,
     )) {
-        s.placement_load_materialiser_clickhouse_url = Some(url);
+        s.placement_load_materializer_clickhouse_url = Some(url);
     }
     s
 }
