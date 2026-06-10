@@ -415,6 +415,78 @@ pub async fn list_migration_tree(dataset: &str) -> Result<Vec<String>> {
         .collect())
 }
 
+/// Mount every unmounted filesystem in a received zone tree,
+/// parent-first. The migration receives run `zfs recv -u` so an
+/// in-flight incremental round never races an automount, which
+/// leaves `zones/<uuid>` (and any child filesystems) unmounted
+/// once the final receive commits. The target's `vmadm start` /
+/// listen-mode boot writes `/startvm` into the zoneroot, so the
+/// dataset must be mounted first.
+///
+/// Idempotent: a filesystem already `mounted=yes` is skipped, and
+/// `canmount=off` filesystems (which legitimately never mount) are
+/// left alone. Volumes are excluded by `-t filesystem`.
+pub async fn mount_received_tree(root: &str) -> Result<()> {
+    let output = Command::new("zfs")
+        .args([
+            "list", "-H", "-o", "name,mounted,canmount", "-r", "-t", "filesystem", root,
+        ])
+        .output()
+        .await
+        .with_context(|| format!("zfs list -r {root} for mount"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!(
+            "zfs list -r {root} failed (exit {}): {stderr}",
+            output.status,
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for name in datasets_needing_mount(&stdout) {
+        mount_one(name).await?;
+    }
+    Ok(())
+}
+
+/// Parse `zfs list -H -o name,mounted,canmount` output into the
+/// names that still need mounting: `mounted != yes` and `canmount
+/// != off`. Kept pure so the column logic is unit-testable without
+/// a live pool.
+fn datasets_needing_mount(listing: &str) -> Vec<&str> {
+    listing
+        .lines()
+        .filter_map(|line| {
+            let mut cols = line.split('\t');
+            let name = cols.next()?;
+            let mounted = cols.next()?;
+            let canmount = cols.next()?;
+            (mounted != "yes" && canmount != "off").then_some(name)
+        })
+        .collect()
+}
+
+/// `zfs mount <dataset>`, treating an already-mounted dataset as
+/// success so [`mount_received_tree`] stays idempotent across
+/// retries.
+async fn mount_one(dataset: &str) -> Result<()> {
+    let output = Command::new("zfs")
+        .args(["mount", dataset])
+        .output()
+        .await
+        .with_context(|| format!("spawn zfs mount {dataset}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("already mounted") {
+        return Ok(());
+    }
+    Err(anyhow!(
+        "zfs mount {dataset} failed (exit {}): {stderr}",
+        output.status,
+    ))
+}
+
 /// List the names of `dataset`'s migration snapshots (the
 /// `@migration-*` family the saga creates). Depth-limited to the
 /// dataset itself: the snapshots are created with `-r`, so
@@ -691,6 +763,22 @@ mod tests {
         assert_eq!(
             migration_snapshot_args("zones/abc@migration-base"),
             vec!["snapshot", "-r", "zones/abc@migration-base"],
+        );
+    }
+
+    #[test]
+    fn datasets_needing_mount_skips_mounted_and_unmountable() {
+        // name \t mounted \t canmount
+        let listing = "zones/abc\tno\ton\n\
+                       zones/abc/disk0\tno\toff\n\
+                       zones/abc/data\tyes\ton\n\
+                       zones/abc/extra\tno\tnoauto\n";
+        // Only the unmounted, mountable filesystems: the zoneroot and
+        // the `noauto` child (noauto still mounts on explicit `zfs
+        // mount`). The `off` and already-`yes` rows are excluded.
+        assert_eq!(
+            datasets_needing_mount(listing),
+            vec!["zones/abc", "zones/abc/extra"],
         );
     }
 

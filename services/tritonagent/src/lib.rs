@@ -934,6 +934,19 @@ async fn drive_job(
             );
             anyhow::bail!("MigrateTargetListen must run on the migration data-plane lane");
         }
+        JobKind::MigrateMountTarget {
+            migration_id,
+            instance_id,
+        } => {
+            // The received datasets land unmounted (`zfs recv -u`);
+            // mount the zoneroot tree so the subsequent activation
+            // (cold) or listen-mode boot (live) finds a populated
+            // `/zones/<uuid>/root` for `/startvm`.
+            let root = format!("zones/{instance_id}");
+            zfs::mount_received_tree(&root)
+                .await
+                .with_context(|| format!("mount received tree {root} for migration {migration_id}"))?;
+        }
         JobKind::Start { instance_id } => {
             // Power on an existing stopped zone. The zone and its
             // Proteus ports already exist and persist across a power

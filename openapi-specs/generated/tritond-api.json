@@ -13912,6 +13912,31 @@
             ]
           },
           {
+            "description": "Mount the received zone-root filesystem(s) on the target after the final `zfs recv`. The receives run `-u` (no automount) so an in-flight incremental round never races a mount, which leaves `zones/<uuid>` unmounted once streaming finishes; `vmadm start` (cold activation) and listen-mode boot (live) both then fail to write `/startvm` because the zoneroot path is empty. This restores the installed-zone invariant. Runs pre-switch so a mount failure unwinds while the source is still canonical.",
+            "type": "object",
+            "properties": {
+              "instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "migrate_mount_target"
+                ]
+              },
+              "migration_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "instance_id",
+              "kind",
+              "migration_id"
+            ]
+          },
+          {
             "description": "Proteus port activation on the target (`start_port`) after the cutover fence completes. Source-side equivalent is [`ProteusDeactivate`].",
             "type": "object",
             "properties": {

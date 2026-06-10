@@ -5655,6 +5655,31 @@ pub mod types {
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    {"]
+    #[doc = "      \"description\": \"Mount the received zone-root filesystem(s) on the target after the final `zfs recv`. The receives run `-u` (no automount) so an in-flight incremental round never races a mount, which leaves `zones/<uuid>` unmounted once streaming finishes; `vmadm start` (cold activation) and listen-mode boot (live) both then fail to write `/startvm` because the zoneroot path is empty. This restores the installed-zone invariant. Runs pre-switch so a mount failure unwinds while the source is still canonical.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"instance_id\","]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"migration_id\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"instance_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"migrate_mount_target\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"migration_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
     #[doc = "      \"description\": \"Proteus port activation on the target (`start_port`) after the cutover fence completes. Source-side equivalent is [`ProteusDeactivate`].\","]
     #[doc = "      \"type\": \"object\","]
     #[doc = "      \"required\": ["]
@@ -5935,6 +5960,12 @@ pub mod types {
         #[doc = "Boot the target-side zone in bhyve listen mode so the inbound memory stream has a vmm to import into. The agent polls the zone's bhyve.sock until the listener is up."]
         #[serde(rename = "migrate_target_listen")]
         MigrateTargetListen {
+            instance_id: ::uuid::Uuid,
+            migration_id: ::uuid::Uuid,
+        },
+        #[doc = "Mount the received zone-root filesystem(s) on the target after the final `zfs recv`. The receives run `-u` (no automount) so an in-flight incremental round never races a mount, which leaves `zones/<uuid>` unmounted once streaming finishes; `vmadm start` (cold activation) and listen-mode boot (live) both then fail to write `/startvm` because the zoneroot path is empty. This restores the installed-zone invariant. Runs pre-switch so a mount failure unwinds while the source is still canonical."]
+        #[serde(rename = "migrate_mount_target")]
+        MigrateMountTarget {
             instance_id: ::uuid::Uuid,
             migration_id: ::uuid::Uuid,
         },

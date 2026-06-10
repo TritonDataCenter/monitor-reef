@@ -2548,6 +2548,19 @@ pub enum JobKind {
         migration_id: Uuid,
         instance_id: Uuid,
     },
+    /// Mount the received zone-root filesystem(s) on the target
+    /// after the final `zfs recv`. The receives run `-u` (no
+    /// automount) so an in-flight incremental round never races a
+    /// mount, which leaves `zones/<uuid>` unmounted once streaming
+    /// finishes; `vmadm start` (cold activation) and listen-mode
+    /// boot (live) both then fail to write `/startvm` because the
+    /// zoneroot path is empty. This restores the installed-zone
+    /// invariant. Runs pre-switch so a mount failure unwinds while
+    /// the source is still canonical.
+    MigrateMountTarget {
+        migration_id: Uuid,
+        instance_id: Uuid,
+    },
     /// Proteus port activation on the target (`start_port`) after
     /// the cutover fence completes. Source-side equivalent is
     /// [`ProteusDeactivate`].
@@ -2681,6 +2694,7 @@ impl JobKind {
             | JobKind::MigratePauseSource { instance_id, .. }
             | JobKind::MigrateResumeSource { instance_id, .. }
             | JobKind::MigrateTargetListen { instance_id, .. }
+            | JobKind::MigrateMountTarget { instance_id, .. }
             | JobKind::ProteusActivate { instance_id, .. }
             | JobKind::ProteusDeactivate { instance_id, .. }
             | JobKind::MigrationCleanupTarget { instance_id, .. }
@@ -2717,6 +2731,7 @@ impl JobKind {
             | JobKind::MigratePauseSource { .. }
             | JobKind::MigrateResumeSource { .. }
             | JobKind::MigrateTargetListen { .. }
+            | JobKind::MigrateMountTarget { .. }
             | JobKind::ProteusActivate { .. }
             | JobKind::ProteusDeactivate { .. }
             | JobKind::MigrationCleanupTarget { .. }
@@ -2740,6 +2755,7 @@ impl JobKind {
             | JobKind::MigratePauseSource { migration_id, .. }
             | JobKind::MigrateResumeSource { migration_id, .. }
             | JobKind::MigrateTargetListen { migration_id, .. }
+            | JobKind::MigrateMountTarget { migration_id, .. }
             | JobKind::ProteusActivate { migration_id, .. }
             | JobKind::ProteusDeactivate { migration_id, .. }
             | JobKind::MigrationCleanupTarget { migration_id, .. }

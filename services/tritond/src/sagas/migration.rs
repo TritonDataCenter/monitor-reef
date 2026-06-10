@@ -4,14 +4,18 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! `migrate-instance` saga (v2). One static 14-node DAG serves both
+//! `migrate-instance` saga. One static 15-node DAG serves both
 //! the cold and the live lanes — live-only nodes no-op when
 //! `params.cold` and vice versa. The v2 sequence fixes the v1 cold
 //! data-loss bug: the source guest is now stopped (cold) or paused
 //! (live) in `quiesce_source` *before* `final_zfs_increment` runs,
-//! so writes after the final snapshot can no longer be lost.
-//! `switch_ownership` is the atomic FDB CAS — the point of no
-//! return; nodes after it are best-effort and never unwind.
+//! so writes after the final snapshot can no longer be lost. v3
+//! inserts `mount_target` after the final receive: the receives run
+//! `zfs recv -u`, so the zoneroot lands unmounted and both cold
+//! activation and live listen-mode boot fail to write `/startvm`
+//! until it is mounted. `switch_ownership` is the atomic FDB CAS —
+//! the point of no return; nodes after it are best-effort and never
+//! unwind.
 
 use std::sync::Arc;
 
@@ -35,15 +39,16 @@ pub const SAGA_NAME: &str = "migrate-instance";
 /// Steno saga version. Bump on any change to the action sequence,
 /// action ids, or [`MigrationSagaParams`] shape. v2 adds the
 /// quota-dance / sync-convergence / quiesce / activate nodes and
-/// the `was_running` param. The v1-only action names
-/// (`migration.snapshot_source_quota`,
+/// the `was_running` param. v3 inserts `migration.mount_target`
+/// between `final_zfs_increment` and `stream_vmm`. The superseded
+/// action names (`migration.snapshot_source_quota`,
 /// `migration.quiesce_and_stream`) stay registered in
-/// [`register`] per the N=2 deprecation window so a persisted v1
+/// [`register`] per the deprecation window so a persisted older
 /// DAG can still resolve its actions; note the executor's version
-/// table currently holds one version per saga name, so v1 recovery
-/// additionally needs that table widened (tracked for the saga
-/// lib).
-pub const SAGA_VERSION: u32 = 2;
+/// table currently holds one version per saga name, so old-version
+/// recovery additionally needs that table widened (tracked for the
+/// saga lib).
+pub const SAGA_VERSION: u32 = 3;
 
 /// Per-action timeout for short store mutations. 30 s catches a
 /// wedged FDB write and nothing else.
@@ -150,6 +155,11 @@ pub fn register(reg: &mut ActionRegistry) {
         no_op_undo,
     ));
     reg.register(ActionFunc::new_action(
+        "migration.mount_target",
+        mount_target,
+        no_op_undo,
+    ));
+    reg.register(ActionFunc::new_action(
         "migration.stream_vmm",
         stream_vmm,
         no_op_undo,
@@ -190,7 +200,7 @@ pub fn register(reg: &mut ActionRegistry) {
     ));
 }
 
-/// Build the saga DAG. Linear 14-action chain.
+/// Build the saga DAG. Linear 15-action chain.
 pub fn build_dag(params: &MigrationSagaParams) -> SagaResult<Arc<SagaDag>> {
     let name = SagaName::new(SAGA_NAME);
     let mut b = DagBuilder::new(name);
@@ -270,6 +280,11 @@ pub fn build_dag(params: &MigrationSagaParams) -> SagaResult<Arc<SagaDag>> {
             final_zfs_increment,
             no_op_undo,
         ),
+    ));
+    b.append(Node::action(
+        "target_mounted",
+        "mount_target",
+        &*ActionFunc::new_action("migration.mount_target", mount_target, no_op_undo),
     ));
     b.append(Node::action(
         "vmm_streamed",
@@ -1314,6 +1329,51 @@ async fn final_zfs_increment(ctx: Ctx) -> Result<(), ActionError> {
     .await
 }
 
+/// Mount the received zoneroot tree on the target after the final
+/// `zfs recv`. The receives ran `-u` (no automount) so the datasets
+/// land unmounted; both the cold activation (`vmadm start`) and the
+/// live listen-mode boot (`MigrateTargetListen`) write `/startvm`
+/// into the zoneroot and fail if it is not mounted. Runs strictly
+/// after `final_zfs_increment` (the last receive) and before
+/// `stream_vmm`/`switch_ownership`, so a mount failure unwinds while
+/// the source is still canonical. Abort is still honored. Applies to
+/// both lanes.
+async fn mount_target(ctx: Ctx) -> Result<(), ActionError> {
+    crate::sagas::with_action_timeout("migration.mount_target", ACTION_TIMEOUT_AWAIT, async move {
+        let user_ctx = ctx.user_data();
+        fence_check(user_ctx).await?;
+        let store = user_ctx.store().clone();
+        let params: MigrationSagaParams = ctx.saga_params()?;
+        let target_cn: Uuid = ctx.lookup("designated_target_cn")?;
+
+        let job = store
+            .enqueue_job(tritond_store::NewJob {
+                kind: tritond_store::JobKind::MigrateMountTarget {
+                    migration_id: params.migration_id,
+                    instance_id: params.instance_id,
+                },
+                target_cn_uuid: Some(target_cn),
+            })
+            .await
+            .map_err(store_err_to_action_err)?;
+        tracing::info!(
+            migration_id = %params.migration_id,
+            target_cn = %target_cn,
+            job_id = %job.id,
+            "migration.mount_target: enqueued MigrateMountTarget; awaiting terminal",
+        );
+        await_jobs_terminal(
+            store.clone(),
+            Some(params.migration_id),
+            &[job.id],
+            "migration.mount_target",
+        )
+        .await?;
+        Ok(())
+    })
+    .await
+}
+
 /// Live lane: stream RAM + device state from the paused source to
 /// the listening target. Cold lane: nothing to stream; the
 /// dataset transferred in the ZFS nodes is canonical once the
@@ -2156,8 +2216,8 @@ mod tests {
         assert!(json.is_object());
     }
 
-    /// The serialized DAG must contain the full v2 node sequence,
-    /// in order. Walking the serde view is the only way to assert
+    /// The serialized DAG must contain the full node sequence, in
+    /// order. Walking the serde view is the only way to assert
     /// shape without steno exposing its graph.
     #[test]
     fn dag_has_v2_action_sequence() {
@@ -2174,6 +2234,7 @@ mod tests {
             "migration.sync_convergence",
             "migration.quiesce_source",
             "migration.final_zfs_increment",
+            "migration.mount_target",
             "migration.stream_vmm",
             "migration.switch_ownership",
             "migration.activate_target",
