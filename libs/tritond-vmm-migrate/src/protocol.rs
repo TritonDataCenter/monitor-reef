@@ -106,6 +106,37 @@ pub fn hash_guest_ram(lowmem: Option<&[u8]>, highmem: Option<&[u8]>) -> u64 {
     h.digest()
 }
 
+/// Streaming counterpart of [`hash_guest_ram`] for callers that
+/// cannot materialise a whole memory region as one slice: the
+/// SmartOS `VmmDev` reads guest RAM through a bounded copy buffer
+/// because a 64 GiB guest must not require a 64 GiB heap allocation
+/// to hash. xxh3's streaming digest is independent of update-chunk
+/// boundaries, so feeding the same bytes in any chunking produces
+/// the same digest as the slice helpers above;
+/// `streaming_hash_matches_slice_helpers` pins that contract.
+pub struct RamHasher(Xxh3);
+
+impl RamHasher {
+    pub fn new() -> Self {
+        Self(Xxh3::new())
+    }
+
+    /// Feed the next bytes, in lowmem-then-highmem region order.
+    pub fn update(&mut self, data: &[u8]) {
+        self.0.update(data);
+    }
+
+    pub fn digest(&self) -> u64 {
+        self.0.digest()
+    }
+}
+
+impl Default for RamHasher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,5 +173,26 @@ mod tests {
         let mut joined = low.clone();
         joined.extend_from_slice(&high);
         assert_eq!(combined, hash_region(&joined));
+    }
+
+    #[test]
+    fn streaming_hash_matches_slice_helpers() {
+        let low: Vec<u8> = (0..3 * PAGE_SIZE).map(|i| (i & 0xff) as u8).collect();
+        let high: Vec<u8> = (0..2 * PAGE_SIZE)
+            .map(|i| ((i >> 3) & 0xff) as u8)
+            .collect();
+        let expected = hash_guest_ram(Some(&low), Some(&high));
+
+        // Deliberately odd, page-misaligned chunk sizes; the
+        // digest must not depend on how the bytes were fed.
+        for chunk in [1usize, 7, 1000, PAGE_SIZE, PAGE_SIZE + 13] {
+            let mut h = RamHasher::new();
+            for region in [&low, &high] {
+                for piece in region.chunks(chunk) {
+                    h.update(piece);
+                }
+            }
+            assert_eq!(h.digest(), expected, "chunk size {chunk}");
+        }
     }
 }

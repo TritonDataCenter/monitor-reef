@@ -25,7 +25,13 @@
 //! The LM-2 new `PauseComplete` / `SwitchComplete` codec messages
 //! (§F.1 fence) are surfaced via callbacks so the tritonagent
 //! migrate module (LM-3) can drive Proteus port pause/start in the
-//! tight cutover window without round-tripping the saga.
+//! tight cutover window without round-tripping the saga. The
+//! target's cutover side effects (bhyve `import-state`, Proteus
+//! `start_port`, `resume-vm`) run inside
+//! [`TargetHooks::state_received`], which fires after the
+//! device-state blobs land and before the Finish handshake, so the
+//! source is never told the switch happened (`SwitchComplete`)
+//! until the target can actually run the guest.
 //!
 //! Bhyve control-socket interactions (`pause_vm`, `drain_devices`,
 //! `export_state`, `import_state`, `resume_vm`) are not wired here;
@@ -127,13 +133,22 @@ impl SourceHooks for NoopSourceHooks {}
 pub trait TargetHooks: Send {
     fn phase(&mut self, _phase: Phase) {}
 
-    /// Called when the source's `PauseComplete` arrives. The
-    /// caller drives Proteus `start_port` + bhyve `resume_vm`
-    /// here. Must return the timestamp the caller will record as
-    /// `target_activated_at`, which goes on the wire as
-    /// `SwitchComplete`.
-    fn pause_complete(&mut self, _source_paused_at_ns: u64) -> u64 {
-        0
+    /// Called when the source's `PauseComplete` arrives. Progress
+    /// only: guest RAM has not been received yet, so no import /
+    /// resume / dataplane work may happen here; that belongs in
+    /// [`Self::state_received`].
+    fn pause_complete(&mut self, _source_paused_at_ns: u64) {}
+
+    /// The import fence. Called after the device-state blobs are
+    /// captured and verified RAM is in place, but BEFORE the Finish
+    /// handshake. The caller drives bhyve `import-state`, Proteus
+    /// `start_port`, and `resume-vm` here; the returned timestamp
+    /// (ns since unix epoch) is what the caller recorded as
+    /// `target_activated_at` and goes on the wire as
+    /// `SwitchComplete`. Returning an error aborts the migration
+    /// before the source is ever told the cutover happened.
+    fn state_received(&mut self, _blobs: &TargetCaptured) -> Result<u64, MigrateError> {
+        Ok(0)
     }
 
     fn pages_received(&mut self, _pages: u64, _bytes: u64) {}
@@ -338,7 +353,9 @@ pub struct InboundMigration<T: Transport, H: TargetHooks> {
 
 /// What the inbound machine captures from the source. The caller
 /// (tritonagent migrate module) feeds the kern+dev nvlists into
-/// `bhyve_ctl::import_state` after the machine returns.
+/// `bhyve_ctl::import_state` inside [`TargetHooks::state_received`],
+/// which fires before the Finish handshake; by the time `run`
+/// returns, the import has already happened.
 #[derive(Debug, Default, Clone)]
 pub struct TargetCaptured {
     pub time_data: Vec<u8>,
@@ -356,9 +373,11 @@ impl<T: Transport, H: TargetHooks> InboundMigration<T, H> {
         }
     }
 
-    /// Run the target half to completion. Returns the captured
-    /// `(time_data, kern_state, dev_state)` blobs the caller hands
-    /// to `bhyve_ctl::import_state`.
+    /// Run the target half to completion. The captured
+    /// `(time_data, kern_state, dev_state)` blobs are handed to
+    /// [`TargetHooks::state_received`] before the Finish handshake
+    /// (where the caller drives `bhyve_ctl::import_state`) and also
+    /// returned for inspection.
     pub async fn run(mut self) -> Result<TargetCaptured, MigrateError> {
         let layout = self.vmm.mem_layout();
 
@@ -428,11 +447,10 @@ impl<T: Transport, H: TargetHooks> InboundMigration<T, H> {
                 });
             }
         };
-        // Hooks: returns the timestamp the caller recorded as
-        // `target_activated_at`. The hook is where the caller does
-        // Proteus `start_port` etc., so by the time it returns the
-        // target NIC is live.
-        let target_activated_ts = self.hooks.pause_complete(source_pause_ts);
+        // Progress only: RAM hasn't arrived yet, so the caller
+        // must not import or resume anything here. The cutover
+        // side effects live in `state_received` below.
+        self.hooks.pause_complete(source_pause_ts);
 
         // ── Phase 3: RamPush (receive single full pass) ──
         self.hooks.phase(Phase::RamPush);
@@ -466,6 +484,25 @@ impl<T: Transport, H: TargetHooks> InboundMigration<T, H> {
         self.blobs.kern_state = expect_serialised(&mut self.transport, "kern-state").await?;
         self.blobs.dev_state = expect_serialised(&mut self.transport, "dev-state").await?;
 
+        // Import fence (LM-2b): the caller imports device state and
+        // brings the target dataplane up NOW, before the Finish
+        // handshake, so the source is only told the cutover is done
+        // once the target can actually run the guest. Wire order is
+        // unchanged: the source has already sent its post-state
+        // MemEnd and is parked in its okay wait; we simply haven't
+        // read it yet.
+        let target_activated_ts = match self.hooks.state_received(&self.blobs) {
+            Ok(ts) => ts,
+            Err(e) => {
+                send(
+                    &mut self.transport,
+                    Message::Error(format!("state import failed: {e}")),
+                )
+                .await?;
+                return Err(e);
+            }
+        };
+
         // ── Phase 7: Finish ──
         self.hooks.phase(Phase::Finish);
         match recv(&mut self.transport, "finish").await? {
@@ -480,9 +517,8 @@ impl<T: Transport, H: TargetHooks> InboundMigration<T, H> {
         send(&mut self.transport, Message::Okay).await?;
         expect_okay(&mut self.transport, "finish").await?;
         // Fence the source: tell it the cutover is done (so its
-        // caller can release source-side resources). The caller
-        // already drove Proteus start_port + bhyve resume_vm
-        // inside `hooks.pause_complete` above.
+        // caller can release source-side resources). The target is
+        // already live; `state_received` returned above.
         send(
             &mut self.transport,
             Message::SwitchComplete(target_activated_ts),

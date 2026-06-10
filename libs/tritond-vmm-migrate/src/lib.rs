@@ -17,10 +17,9 @@
 //! Module map:
 //!
 //! * [`codec`] — wire-format messages, encode/decode.
-//! * [`protocol`] — constants + xxh3 hashing helper.
-//! * [`vmm_dev`] — `VmmDev` trait + `mock::MockVmm`. The SmartOS
-//!   ioctl-backed implementation lands as a follow-up
-//!   (`smartos` module) so this slice ships review-ready.
+//! * [`protocol`] — constants + xxh3 hashing helpers.
+//! * [`vmm_dev`] — `VmmDev` trait + `mock::MockVmm` + the
+//!   ioctl-backed `smartos::SmartOsVmm` (illumos-only).
 //! * [`bhyve_ctl`] — async client for the in-zone bhyve control
 //!   socket (status / pause-devices / pause-vm / drain-devices /
 //!   export-state / import-state / resume-vm).
@@ -40,7 +39,7 @@ pub mod zfs_stream;
 
 pub use codec::{DecodeError, Message, MigrationPreamble, PAGE_BATCH_FLAG_ZSTD};
 pub use protocol::{
-    BATCH_SIZE, HIGHMEM_BASE_GPA, PAGE_SIZE, PROTOCOL_V0, ZFS_CHUNK_SIZE, ZSTD_LEVEL,
+    BATCH_SIZE, HIGHMEM_BASE_GPA, PAGE_SIZE, PROTOCOL_V0, RamHasher, ZFS_CHUNK_SIZE, ZSTD_LEVEL,
     hash_guest_ram, hash_region,
 };
 pub use state_machine::{
@@ -48,5 +47,7 @@ pub use state_machine::{
     SourceHooks, StateBlobs, TargetCaptured, TargetHooks,
 };
 pub use transport::{Transport, inmem};
+#[cfg(target_os = "illumos")]
+pub use vmm_dev::SmartOsVmm;
 pub use vmm_dev::{MemLayout, MemRegion, SharedVmm, VmmDev};
 pub use zfs_stream::{ZfsReceiver, ZfsSender};
