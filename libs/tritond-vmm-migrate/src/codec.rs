@@ -101,6 +101,12 @@ pub enum Message {
     /// WebSocket close ambiguity (we want a clean "no more bytes"
     /// signal distinct from a network drop).
     ZfsEnd,
+    /// Target -> source acknowledgement that `zfs recv` exited 0 and
+    /// the dataset is committed. The source waits for this after
+    /// `ZfsEnd` so the next dataset / incremental round never races a
+    /// still-committing receive. Absence (a transport close without
+    /// this ack) means the receive failed.
+    ZfsRecvOk,
 }
 
 // Tag bytes. The first block (0x00–0x7f) is shared with the legacy
@@ -119,6 +125,7 @@ const TAG_PAUSE_COMPLETE: u8 = 0x81;
 const TAG_SWITCH_COMPLETE: u8 = 0x82;
 const TAG_ZFS_CHUNK: u8 = 0x83;
 const TAG_ZFS_END: u8 = 0x84;
+const TAG_ZFS_RECV_OK: u8 = 0x85;
 
 /// Error returned by [`Message::decode`] for malformed frames.
 #[derive(Debug, thiserror::Error)]
@@ -199,6 +206,7 @@ impl Message {
                 buf
             }
             Message::ZfsEnd => vec![TAG_ZFS_END],
+            Message::ZfsRecvOk => vec![TAG_ZFS_RECV_OK],
         }
     }
 
@@ -280,6 +288,7 @@ impl Message {
             }
             TAG_ZFS_CHUNK => Ok(Message::ZfsChunk(payload.to_vec())),
             TAG_ZFS_END => Ok(Message::ZfsEnd),
+            TAG_ZFS_RECV_OK => Ok(Message::ZfsRecvOk),
             other => Err(DecodeError::UnknownTag(other)),
         }
     }

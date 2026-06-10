@@ -126,6 +126,25 @@ where
             }
         }
         self.transport.send(Message::ZfsEnd).await?;
+        // Block on the target's commit acknowledgement: the next
+        // dataset / incremental round must not start until this
+        // receive is fully committed, or it races a not-yet-present
+        // base snapshot. A close without the ack means `zfs recv`
+        // failed, so surface it as an error.
+        match self.transport.recv().await? {
+            Some(Message::ZfsRecvOk) => {}
+            Some(other) => {
+                return Err(MigrateError::Unexpected {
+                    phase: "zfs-stream-ack",
+                    got: variant_name(&other),
+                });
+            }
+            None => {
+                return Err(MigrateError::PeerClosed {
+                    phase: "zfs-stream-ack",
+                });
+            }
+        }
         let _ = self.transport.close().await;
         Ok(total)
     }
@@ -174,7 +193,7 @@ where
     /// * [`MigrateError::Unexpected`] — non-`ZfsChunk`/`ZfsEnd`
     ///   message landed (programming error: someone wired the
     ///   memory-channel transport to this side).
-    pub async fn run(mut self) -> Result<u64, MigrateError> {
+    pub async fn run(mut self) -> Result<(u64, T), MigrateError> {
         let mut total: u64 = 0;
         loop {
             match self.transport.recv().await? {
@@ -203,8 +222,10 @@ where
                     // Shutdown signals "no more bytes" to the
                     // child's stdin so `zfs recv` exits.
                     let _ = self.writer.shutdown().await;
-                    let _ = self.transport.close().await;
-                    return Ok(total);
+                    // Hand the transport back so the caller can ack the
+                    // source (with `Message::ZfsRecvOk`) only after
+                    // `zfs recv` has actually committed, then close.
+                    return Ok((total, self.transport));
                 }
                 Some(other) => {
                     return Err(MigrateError::Unexpected {
@@ -237,6 +258,7 @@ fn variant_name(msg: &Message) -> &'static str {
         Message::SwitchComplete(_) => "SwitchComplete",
         Message::ZfsChunk(_) => "ZfsChunk",
         Message::ZfsEnd => "ZfsEnd",
+        Message::ZfsRecvOk => "ZfsRecvOk",
     }
 }
 
@@ -291,7 +313,10 @@ mod tests {
 
         let recv_task = tokio::spawn(async move {
             let receiver = ZfsReceiver::new(dst_t, writer);
-            receiver.run().await
+            let (total, mut transport) = receiver.run().await?;
+            transport.send(Message::ZfsRecvOk).await?;
+            let _ = transport.close().await;
+            Ok::<u64, MigrateError>(total)
         });
 
         // We need to recover the writer to inspect its buffer.
@@ -350,7 +375,10 @@ mod tests {
         let received_clone = received.clone();
         let recv = tokio::spawn(async move {
             let receiver = ZfsReceiver::new(dst_t, SharedWriter(received_clone));
-            receiver.run().await
+            let (total, mut transport) = receiver.run().await?;
+            transport.send(Message::ZfsRecvOk).await?;
+            let _ = transport.close().await;
+            Ok::<u64, MigrateError>(total)
         });
         send.await.expect("send join").expect("send run");
         recv.await.expect("recv join").expect("recv run");

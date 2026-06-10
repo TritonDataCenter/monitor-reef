@@ -321,11 +321,36 @@ async fn migrate_zfs_ws(
         let transport = AxumWsTransport::new(socket);
         let receiver = ZfsReceiver::new(transport, stdin);
         match receiver.run().await {
-            Ok(bytes) => {
-                info!(
-                    %migration_id, dataset = %params.dataset, bytes,
-                    "migrate-zfs: stream complete, waiting for zfs recv to exit",
-                );
+            Ok((bytes, mut transport)) => {
+                // The stream is drained into `zfs recv` stdin; wait for
+                // the child to commit, then ack the source so its next
+                // dataset / round doesn't race this receive. Close
+                // without an ack on failure so the source errors out.
+                match child.wait().await {
+                    Ok(status) if status.success() => {
+                        let _ = transport.send(Message::ZfsRecvOk).await;
+                        let _ = transport.close().await;
+                        info!(
+                            %migration_id, dataset = %params.dataset, bytes,
+                            "migrate-zfs: zfs recv committed; acked source",
+                        );
+                    }
+                    Ok(status) => {
+                        let stderr = drain_stderr(recv_stderr.take()).await;
+                        warn!(
+                            %migration_id, dataset = %params.dataset, ?status, %stderr,
+                            "migrate-zfs: zfs recv exited non-zero; closing without ack",
+                        );
+                        let _ = transport.close().await;
+                    }
+                    Err(e) => {
+                        warn!(
+                            %migration_id, dataset = %params.dataset, error = %e,
+                            "migrate-zfs: zfs recv child wait failed; closing without ack",
+                        );
+                        let _ = transport.close().await;
+                    }
+                }
             }
             Err(e) => {
                 warn!(
@@ -333,24 +358,7 @@ async fn migrate_zfs_ws(
                     "migrate-zfs: receiver errored; killing zfs recv",
                 );
                 let _ = child.start_kill();
-            }
-        }
-        match child.wait().await {
-            Ok(status) if status.success() => {
-                info!(%migration_id, dataset = %params.dataset, "migrate-zfs: zfs recv exited 0");
-            }
-            Ok(status) => {
-                let stderr = drain_stderr(recv_stderr.take()).await;
-                warn!(
-                    %migration_id, dataset = %params.dataset, ?status, %stderr,
-                    "migrate-zfs: zfs recv exited non-zero",
-                );
-            }
-            Err(e) => {
-                warn!(
-                    %migration_id, dataset = %params.dataset, error = %e,
-                    "migrate-zfs: zfs recv child wait failed",
-                );
+                let _ = child.wait().await;
             }
         }
     })

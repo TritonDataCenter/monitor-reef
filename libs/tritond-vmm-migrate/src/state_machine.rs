@@ -683,6 +683,7 @@ fn variant_name(msg: &Message) -> &'static str {
         // says "ZfsChunk in ram-push phase".
         Message::ZfsChunk(_) => "ZfsChunk",
         Message::ZfsEnd => "ZfsEnd",
+        Message::ZfsRecvOk => "ZfsRecvOk",
     }
 }
 
