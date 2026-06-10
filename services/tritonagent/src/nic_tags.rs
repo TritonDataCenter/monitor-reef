@@ -21,8 +21,8 @@
 //! surface in v1 and defaults to `0` (untagged); the authoritative
 //! per-network VLAN lives on the operator-defined external Subnet.
 
-use tritond_cn_platform::smartos::Sysinfo;
 use tritond_client::types::RegisterNicTagProvision;
+use tritond_cn_platform::smartos::Sysinfo;
 
 /// Delimiter passed to `nictagadm list -d`. Must not be `:` (the
 /// default) because the MAC-address column contains colons.
@@ -62,9 +62,7 @@ fn run_nictagadm_list() -> Option<String> {
         .args(["list", "-p", "-L", "-d", &NICTAGADM_DELIM.to_string()])
         .output();
     match output {
-        Ok(out) if out.status.success() => {
-            Some(String::from_utf8_lossy(&out.stdout).into_owned())
-        }
+        Ok(out) if out.status.success() => Some(String::from_utf8_lossy(&out.stdout).into_owned()),
         Ok(out) => {
             tracing::warn!(
                 status = ?out.status,

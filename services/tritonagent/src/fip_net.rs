@@ -114,7 +114,11 @@ pub fn create_addr(link: &str, fip: IpAddr) -> anyhow::Result<()> {
         tracing::info!(%fip, link, "fip: ipadm alias already present (idempotent)");
         return Ok(());
     }
-    anyhow::bail!("ipadm create-addr {} on {link} failed: {}", fip, stderr.trim());
+    anyhow::bail!(
+        "ipadm create-addr {} on {link} failed: {}",
+        fip,
+        stderr.trim()
+    );
 }
 
 /// Remove the `<fip>/32` alias from `link`. Idempotent best-effort: a

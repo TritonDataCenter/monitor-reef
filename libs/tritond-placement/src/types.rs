@@ -340,6 +340,16 @@ pub struct MigrationCompat {
     /// `cn-not-encrypted-source` filter can short-circuit the chain.
     #[serde(default)]
     pub source_dataset_encrypted: bool,
+
+    /// True when the migration is cold: the source is stopped before
+    /// the final dataset send and the guest boots fresh on the
+    /// target. No vmm wire handshake and no TSC/wall-clock import
+    /// happen, so `cn-bhyve-compatible` and `cn-time-synced` Skip
+    /// instead of gating target choice on live-only capabilities.
+    /// The ZFS fingerprint check still applies — the dataset is
+    /// recv'd either way.
+    #[serde(default)]
+    pub cold: bool,
 }
 
 /// Per-zpool ZFS properties the migration compares between source

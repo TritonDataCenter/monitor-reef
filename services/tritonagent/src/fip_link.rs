@@ -281,7 +281,11 @@ pub fn link_vlan(_link: &str) -> Result<u16> {
 /// external subnet, threaded through the FipClaim (followup). `None`
 /// when unset / unparseable -> the kmod ExternalTx fails closed.
 pub fn env_gateway_mac() -> Option<[u8; 6]> {
-    parse_mac(std::env::var("TRITONAGENT_EXTERNAL_GATEWAY_MAC").ok()?.trim())
+    parse_mac(
+        std::env::var("TRITONAGENT_EXTERNAL_GATEWAY_MAC")
+            .ok()?
+            .trim(),
+    )
 }
 
 /// Parse a colon-separated MAC (`aa:bb:..` or illumos `a:b:..`) into 6
@@ -309,8 +313,14 @@ mod tests {
     fn parses_nic_tag_link_from_aggr_tag() {
         // monroe's real shape: name,mac,link,type
         let raw = "external,-,aggr0,aggr\ninternal,-,aggr0,aggr\nadmin,-,aggr0,aggr\n";
-        assert_eq!(parse_nic_tag_link(raw, "external").as_deref(), Some("aggr0"));
-        assert_eq!(parse_nic_tag_link(raw, "internal").as_deref(), Some("aggr0"));
+        assert_eq!(
+            parse_nic_tag_link(raw, "external").as_deref(),
+            Some("aggr0")
+        );
+        assert_eq!(
+            parse_nic_tag_link(raw, "internal").as_deref(),
+            Some("aggr0")
+        );
         assert_eq!(parse_nic_tag_link(raw, "nope"), None);
     }
 

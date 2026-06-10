@@ -18,7 +18,7 @@
 //! or a 5xx from tritond logs a warning and the next tick retries.
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use tokio::sync::oneshot;
@@ -31,10 +31,18 @@ use tritond_client::types::{
 use tritond_cn_platform::cn_status::{LiveSysinfo, collect_capacity};
 use tritond_cn_platform::smartos::{KstatTool, ZfsTool};
 
+use crate::migrate_probe::{self, MigrateCaps};
+
 /// Default cadence. Live RAM/CPU for placement doesn't need the metrics
 /// ticker's 15s granularity; 30s keeps the floor fresh without extra
 /// control-plane chatter.
 pub const DEFAULT_CAPACITY_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Migration capability probe refresh cadence. Protocol version, CPU
+/// features and pool props only change with a PI or hardware swap;
+/// the hourly re-probe exists to keep the NTP offset honest without
+/// shelling out four commands on every 30s tick.
+const MIGRATE_PROBE_REFRESH: Duration = Duration::from_secs(3600);
 
 /// Spawn the capacity ticker. Returns a [`CapacityHandle`] callers can
 /// `shutdown().await` to drain the in-flight tick before exit.
@@ -76,6 +84,11 @@ async fn run_loop(
     let kstat = KstatTool::new();
     let zfs = ZfsTool::new();
     let sysinfo = LiveSysinfo;
+    // Probe once at startup so the very first report already carries
+    // the migration fingerprint; the slow-moving result is cached and
+    // refreshed on its own (much longer) cadence below.
+    let mut migrate_caps = migrate_probe::probe().await;
+    let mut probed_at = Instant::now();
     // The first `tick()` fires immediately so a freshly-bound CN
     // becomes placeable on the next tritond pick rather than after a
     // full interval.
@@ -85,7 +98,13 @@ async fn run_loop(
     loop {
         tokio::select! {
             _ = ticker.tick() => {
-                if let Err(e) = tick_once(&client, &nic_tags, &kstat, &zfs, &sysinfo).await {
+                if probed_at.elapsed() >= MIGRATE_PROBE_REFRESH {
+                    migrate_caps = migrate_probe::probe().await;
+                    probed_at = Instant::now();
+                }
+                if let Err(e) =
+                    tick_once(&client, &nic_tags, &kstat, &zfs, &sysinfo, &migrate_caps).await
+                {
                     warn!(error = %e, "capacity tick failed");
                 }
             }
@@ -103,6 +122,7 @@ async fn tick_once(
     kstat: &KstatTool,
     zfs: &ZfsTool,
     sysinfo: &LiveSysinfo,
+    migrate_caps: &MigrateCaps,
 ) -> anyhow::Result<()> {
     let s = collect_capacity(kstat, zfs, sysinfo).await;
     let report = AgentCapacityReport {
@@ -133,16 +153,19 @@ async fn tick_once(
             ipv4: true,
             ipv6: false,
         },
-        // GPU / SR-IOV device inventory and the LM-0 migration
-        // fingerprint are reported by separate probes; left empty here
-        // so the matching filters Skip rather than misjudge.
+        // GPU / SR-IOV device inventory is a separate (future) probe;
+        // left empty so the device filter Skips rather than misjudges.
         devices: vec![],
         platform_version: s.platform_version,
         hvm_supported: s.hvm_supported,
-        cpu_features: vec![],
-        tsc_offset_ns: None,
-        vmm_protocol_version: None,
-        zpool_props: Default::default(),
+        cpu_features: migrate_caps.cpu_features.clone(),
+        tsc_offset_ns: migrate_caps.tsc_offset_ns,
+        vmm_protocol_version: migrate_caps.vmm_protocol_version.clone(),
+        zpool_props: migrate_caps
+            .zpool_props
+            .iter()
+            .map(|(pool, fp)| (pool.clone(), fp.clone()))
+            .collect(),
     };
     client
         .agent_report_capacity()

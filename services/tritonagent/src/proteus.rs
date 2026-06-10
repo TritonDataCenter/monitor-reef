@@ -17,10 +17,10 @@ use anyhow::{Context, Result, anyhow, bail};
 use proteus_api::blueprint::{BlueprintApplyStatus, PortBlueprint, PortSummary};
 use proteus_api::dump::GenerationStatus;
 use proteus_api::error::ProteusError;
+use proteus_api::floating_ip::InvalidateFipEntryRequest;
 use proteus_api::ids::PortId;
 use proteus_api::peer::PeerAddrFamily;
 use proteus_api::requests::{CreatePortRequest, EnsureExternalLinkRequest};
-use proteus_api::floating_ip::InvalidateFipEntryRequest;
 use proteus_ioctl::{Client, Error as IoctlError, Transport};
 
 /// Build the SmartOS datalink name for a Proteus port.

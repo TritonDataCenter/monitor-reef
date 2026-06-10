@@ -741,6 +741,12 @@ impl Filter for CnBhyveCompatible {
         let Some(mig) = req.migration.as_ref() else {
             return Verdict::Skip;
         };
+        if mig.cold {
+            // Cold migration boots the target from the streamed
+            // dataset; no vmm wire handshake happens, so a protocol
+            // mismatch (or a missing probe) must not gate the pick.
+            return Verdict::Skip;
+        }
         let Some(cap) = cn.capacity.as_ref() else {
             // `cn-capacity-present` already rejected; defensive Skip.
             return Verdict::Skip;
@@ -826,6 +832,11 @@ impl Filter for CnTimeSynced {
         let Some(mig) = req.migration.as_ref() else {
             return Verdict::Skip;
         };
+        if mig.cold {
+            // The guest reboots on the target; there is no TSC /
+            // wall-clock import for a skew to corrupt.
+            return Verdict::Skip;
+        }
         let Some(cap) = cn.capacity.as_ref() else {
             return Verdict::Skip;
         };
@@ -2015,6 +2026,7 @@ mod tests {
             tsc_offset_ns: 0,
             zpool_props: BTreeMap::new(),
             source_dataset_encrypted: false,
+            cold: false,
         }
     }
 
@@ -2071,6 +2083,23 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn cn_bhyve_compatible_skips_for_cold_migration() {
+        // make_cn() has no vmm_protocol_version — a live ask would
+        // reject — but cold migration never opens a vmm channel.
+        let cn = make_cn();
+        let mut mig = migration_compat_v0();
+        mig.cold = true;
+        let mut req = make_req();
+        req.migration = Some(mig);
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnBhyveCompatible.evaluate(&cn, &req, &ctx),
+            Verdict::Skip
+        ));
+    }
+
     // ---- cn-cpu-feature-superset (LM-0) ----
 
     #[test]
@@ -2111,6 +2140,25 @@ mod tests {
         assert!(matches!(
             CnCpuFeatureSuperset.evaluate(&cn, &req, &ctx),
             Verdict::Accept
+        ));
+    }
+
+    #[test]
+    fn cn_cpu_feature_superset_unaffected_by_cold_flag() {
+        // The cold flag does not gate this filter: a populated source
+        // feature list still constrains targets (a cold ask that
+        // wants no constraint sends an empty list, which Skips).
+        let mut cn = make_cn();
+        cn.capacity.as_mut().unwrap().cpu_features = vec!["vmx".into()]; // missing avx2
+        let mut mig = migration_compat_v0(); // wants vmx + avx2
+        mig.cold = true;
+        let mut req = make_req();
+        req.migration = Some(mig);
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnCpuFeatureSuperset.evaluate(&cn, &req, &ctx),
+            Verdict::Reject { .. }
         ));
     }
 
@@ -2166,6 +2214,23 @@ mod tests {
         assert!(matches!(
             CnTimeSynced::default().evaluate(&cn, &req, &ctx),
             Verdict::Accept
+        ));
+    }
+
+    #[test]
+    fn cn_time_synced_skips_for_cold_migration() {
+        // make_cn() has no tsc_offset_ns — a live ask would reject —
+        // but a cold target imports no TSC/wall-clock state.
+        let cn = make_cn();
+        let mut mig = migration_compat_v0();
+        mig.cold = true;
+        let mut req = make_req();
+        req.migration = Some(mig);
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnTimeSynced::default().evaluate(&cn, &req, &ctx),
+            Verdict::Skip
         ));
     }
 
@@ -2245,6 +2310,25 @@ mod tests {
         assert!(matches!(
             CnZfsCompatible.evaluate(&cn, &req, &ctx),
             Verdict::Accept
+        ));
+    }
+
+    #[test]
+    fn cn_zfs_compatible_unaffected_by_cold_flag() {
+        // Cold migration still zfs-recvs onto the target, so
+        // on-disk-format compat is mode-independent: a target missing
+        // the source pool rejects even when cold.
+        let cn = make_cn(); // empty target zpool_props
+        let mut mig = migration_compat_v0();
+        mig.cold = true;
+        mig.zpool_props.insert("zones".into(), zones_pool());
+        let mut req = make_req();
+        req.migration = Some(mig);
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnZfsCompatible.evaluate(&cn, &req, &ctx),
+            Verdict::Reject { .. }
         ));
     }
 

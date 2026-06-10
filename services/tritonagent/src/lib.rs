@@ -10,6 +10,7 @@
 //! only call `agent_claim`/`agent_complete`. Audit captures both
 //! the key owner and the agent's `claimed_by` identifier.
 
+pub mod capacity;
 pub mod console;
 pub mod console_creds;
 pub mod credentials;
@@ -24,10 +25,10 @@ pub mod imds_bindings;
 pub mod imds_creds;
 pub mod imds_data;
 pub mod imds_ratelimit;
-pub mod capacity;
 pub mod log_tailer;
 pub mod metrics;
 pub mod migrate;
+pub mod migrate_probe;
 pub mod nic_tags;
 pub mod platform;
 pub mod proteus;
