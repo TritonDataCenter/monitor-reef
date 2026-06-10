@@ -201,6 +201,22 @@ fn send_incremental_args(from_snap: &str, to_snap: &str) -> Vec<String> {
     ]
 }
 
+fn send_estimate_args(from_snap: Option<&str>, to_snap: &str) -> Vec<String> {
+    // Mirror the real send flags (-w -R [-I]) so the dry-run sizes
+    // the exact stream we are about to produce; -n makes it a
+    // no-op, -P asks for machine-parseable exact byte counts.
+    let mut args: Vec<String> = vec!["send".into(), "-n".into(), "-P".into()];
+    match from_snap {
+        Some(from) => {
+            args.extend(send_incremental_args(from, to_snap).into_iter().skip(1));
+        }
+        None => {
+            args.extend(send_full_args(to_snap).into_iter().skip(1));
+        }
+    }
+    args
+}
+
 fn recv_args(dataset: &str) -> Vec<String> {
     vec![
         "recv".into(),
@@ -261,6 +277,49 @@ pub fn spawn_send_incremental(from_snap: &str, to_snap: &str) -> Result<Child> {
         .stdin(std::process::Stdio::null());
     cmd.spawn()
         .with_context(|| format!("spawn zfs send -I {from_snap} {to_snap}"))
+}
+
+/// Estimate the byte size of the stream [`spawn_send_full`] /
+/// [`spawn_send_incremental`] would produce, via a `zfs send -n -P`
+/// dry run with the same flags. Both snapshots must already exist.
+/// The estimate feeds the migration progress reporter's
+/// `total_progress`; callers should degrade to "no total" on error
+/// rather than failing the transfer.
+pub async fn estimate_send_bytes(from_snap: Option<&str>, to_snap: &str) -> Result<u64> {
+    let output = Command::new("zfs")
+        .args(send_estimate_args(from_snap, to_snap))
+        .output()
+        .await
+        .with_context(|| format!("spawn zfs send -nP {to_snap}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!(
+            "zfs send -nP {to_snap} failed (exit {}): {stderr}",
+            output.status,
+        ));
+    }
+    // illumos zfs prints the dry-run report on stderr; OpenZFS
+    // moved it to stdout. Parse both rather than caring which.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    parse_send_estimate(&stdout)
+        .or_else(|| parse_send_estimate(&stderr))
+        .ok_or_else(|| anyhow!("zfs send -nP {to_snap}: no parseable size line in output"))
+}
+
+/// Pull the total from `zfs send -n -P` output: per-stream
+/// `full`/`incremental` lines followed by one `size <bytes>`
+/// summary. With `-R` packages each sub-stream may emit its own
+/// lines; the final `size` line is the package total, so the last
+/// one wins.
+fn parse_send_estimate(output: &str) -> Option<u64> {
+    output.lines().rev().find_map(|line| {
+        let mut fields = line.split_whitespace();
+        if fields.next() != Some("size") {
+            return None;
+        }
+        fields.next()?.parse().ok()
+    })
 }
 
 /// Spawn `zfs recv -F -u -x quota -x refreservation <dataset>`
@@ -590,6 +649,74 @@ mod tests {
                 "zones/abc@migration-sync-1",
             ],
         );
+    }
+
+    #[test]
+    fn send_estimate_args_mirror_full_send_flags() {
+        assert_eq!(
+            send_estimate_args(None, "zones/abc@migration-base"),
+            vec!["send", "-n", "-P", "-w", "-R", "zones/abc@migration-base"],
+        );
+    }
+
+    #[test]
+    fn send_estimate_args_mirror_incremental_send_flags() {
+        assert_eq!(
+            send_estimate_args(
+                Some("zones/abc@migration-base"),
+                "zones/abc@migration-sync-1"
+            ),
+            vec![
+                "send",
+                "-n",
+                "-P",
+                "-w",
+                "-R",
+                "-I",
+                "zones/abc@migration-base",
+                "zones/abc@migration-sync-1",
+            ],
+        );
+    }
+
+    #[test]
+    fn parse_send_estimate_reads_full_dry_run() {
+        let out = "\
+full\tzones/abc@migration-base\t10737418240
+size\t10737418240
+";
+        assert_eq!(parse_send_estimate(out), Some(10_737_418_240));
+    }
+
+    #[test]
+    fn parse_send_estimate_takes_package_total_from_replication_stream() {
+        // -R packages emit per-substream lines; the final size line
+        // is the package total and must win.
+        let out = "\
+incremental\tmigration-base\tzones/abc@migration-sync-1\t1048576
+size\t1048576
+incremental\tmigration-base\tzones/abc/disk0@migration-sync-1\t52428800
+size\t52428800
+size\t53477376
+";
+        assert_eq!(parse_send_estimate(out), Some(53_477_376));
+    }
+
+    #[test]
+    fn parse_send_estimate_tolerates_space_separated_fields() {
+        assert_eq!(parse_send_estimate("size 4096\n"), Some(4096));
+    }
+
+    #[test]
+    fn parse_send_estimate_rejects_garbage() {
+        assert_eq!(parse_send_estimate(""), None);
+        assert_eq!(
+            parse_send_estimate("cannot open 'zones/abc': dataset does not exist\n"),
+            None,
+        );
+        // A human-form (-v without -P) line must not half-parse.
+        assert_eq!(parse_send_estimate("total estimated size is 1.52G\n"), None);
+        assert_eq!(parse_send_estimate("size\tnot-a-number\n"), None);
     }
 
     #[test]

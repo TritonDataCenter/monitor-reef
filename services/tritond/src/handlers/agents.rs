@@ -762,6 +762,88 @@ pub(crate) async fn agent_report_capacity(
     Ok(HttpResponseOk(()))
 }
 
+pub(crate) async fn agent_report_migration_progress(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::MigrationPath>,
+    body: TypedBody<tritond_api::MigrationProgressReport>,
+) -> Result<HttpResponseOk<()>, HttpError> {
+    let ctx = rqctx.context();
+    let principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::MigrationProgressReport,
+    )
+    .await?;
+    // Only the two CNs moving the bytes may write this migration's
+    // progress log: the Agent scope alone would let any bound CN
+    // spam another migration's timeline.
+    let cn = require_bound_cn(&principal)?;
+    let migration_id = path.into_inner().migration_id;
+    let record = ctx
+        .store
+        .get_migration(migration_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if record.source_cn != cn && record.target_cn != Some(cn) {
+        return Err(HttpError::for_client_error(
+            Some("Forbidden".to_string()),
+            ClientErrorStatusCode::FORBIDDEN,
+            format!("cn {cn} is neither source nor target of migration {migration_id}"),
+        ));
+    }
+    let event = migration_progress_event_from_report(&record, body.into_inner());
+    ctx.store
+        .append_migration_progress(migration_id, event)
+        .await
+        .map_err(store_error_to_http)?;
+    // State-sample traffic on the transfer throttle cadence, not
+    // audited (same policy as capacity / nic-tag reports).
+    Ok(HttpResponseOk(()))
+}
+
+/// Map an agent's wire progress report onto the stored event shape.
+/// The record supplies phase/state defaults (the agent only sees
+/// its own stream, not the saga); the store CAS-assigns `seq` on
+/// append, so `0` here is a placeholder.
+fn migration_progress_event_from_report(
+    record: &tritond_store::MigrationRecord,
+    r: tritond_api::MigrationProgressReport,
+) -> tritond_store::MigrationProgressEvent {
+    let percentage = match (r.current_progress, r.total_progress) {
+        // Estimates can undershoot the real stream size; clamp so a
+        // 101% never reaches the operator UI.
+        (Some(cur), Some(total)) if total > 0 => {
+            Some(((cur as f64 / total as f64) * 100.0).min(100.0))
+        }
+        _ => None,
+    };
+    // Prefer the agent's own ETA; derive one from the trailing rate
+    // when the agent only shipped the rate.
+    let eta_ms = r.eta_ms.or_else(|| {
+        match (r.current_progress, r.total_progress, r.transfer_bytes_second) {
+            (Some(cur), Some(total), Some(rate)) if rate > 0 && total > cur => {
+                Some((total - cur).saturating_mul(1000) / rate)
+            }
+            _ => None,
+        }
+    });
+    tritond_store::MigrationProgressEvent {
+        seq: 0,
+        kind: "progress".to_string(),
+        phase: r.phase.or(Some(record.phase)),
+        state: r.state.or(Some(record.state)),
+        percentage,
+        transferred_bytes: r.current_progress,
+        total_bytes: r.total_progress,
+        eta_ms,
+        message: r.message,
+        error: None,
+        timestamp: chrono::Utc::now(),
+    }
+}
+
 /// Enqueue a `FipClaim` for every FIP hosted on `cn` (C-4b invariant
 /// 13). Split out from the handler so it is unit-testable against a
 /// `MemStore`. Skips a hosted FIP that has lost its `attached_to`
@@ -1258,5 +1340,93 @@ mod reconcile_hosted_fips_tests {
             enqueued, 0,
             "detached FIP is no longer hosted; nothing to reconcile"
         );
+    }
+}
+
+#[cfg(test)]
+mod migration_progress_tests {
+    use super::*;
+    use tritond_store::{MigrationAction, MigrationPhase, MigrationState};
+
+    fn record() -> tritond_store::MigrationRecord {
+        tritond_store::MigrationRecord {
+            id: Uuid::new_v4(),
+            instance_id: Uuid::new_v4(),
+            tenant_id: Uuid::new_v4(),
+            project_id: Uuid::new_v4(),
+            source_cn: Uuid::new_v4(),
+            target_cn: Some(Uuid::new_v4()),
+            saga_id: None,
+            phase: MigrationPhase::Sync,
+            state: MigrationState::Sync,
+            action_requested: MigrationAction::Begin,
+            created_at: chrono::Utc::now(),
+            started_at: None,
+            finished_at: None,
+            error: None,
+            reserved_nics: Vec::new(),
+            source_filesystem_details: None,
+            last_progress_seq: 0,
+            disallow_retry: false,
+            automatic: false,
+        }
+    }
+
+    fn report() -> tritond_api::MigrationProgressReport {
+        tritond_api::MigrationProgressReport {
+            phase: None,
+            state: None,
+            current_progress: None,
+            total_progress: None,
+            transfer_bytes_second: None,
+            eta_ms: None,
+            message: None,
+        }
+    }
+
+    #[test]
+    fn defaults_phase_and_state_from_record() {
+        let event = migration_progress_event_from_report(&record(), report());
+        assert_eq!(event.kind, "progress");
+        assert_eq!(event.phase, Some(MigrationPhase::Sync));
+        assert_eq!(event.state, Some(MigrationState::Sync));
+        assert_eq!(event.percentage, None);
+        assert_eq!(event.eta_ms, None);
+    }
+
+    #[test]
+    fn computes_percentage_and_derives_eta_from_rate() {
+        let mut r = report();
+        r.current_progress = Some(256 << 20);
+        r.total_progress = Some(1024 << 20);
+        r.transfer_bytes_second = Some(64 << 20);
+        let event = migration_progress_event_from_report(&record(), r);
+        assert_eq!(event.percentage, Some(25.0));
+        // (1024 - 256) MiB at 64 MiB/s = 12 s.
+        assert_eq!(event.eta_ms, Some(12_000));
+        assert_eq!(event.transferred_bytes, Some(256 << 20));
+        assert_eq!(event.total_bytes, Some(1024 << 20));
+    }
+
+    #[test]
+    fn agent_eta_wins_and_percentage_clamps() {
+        let mut r = report();
+        // Estimate undershot: more bytes streamed than predicted.
+        r.current_progress = Some(110);
+        r.total_progress = Some(100);
+        r.transfer_bytes_second = Some(10);
+        r.eta_ms = Some(777);
+        let event = migration_progress_event_from_report(&record(), r);
+        assert_eq!(event.percentage, Some(100.0));
+        assert_eq!(event.eta_ms, Some(777));
+    }
+
+    #[test]
+    fn no_rate_or_totals_yields_no_eta() {
+        let mut r = report();
+        r.current_progress = Some(50);
+        let event = migration_progress_event_from_report(&record(), r);
+        assert_eq!(event.percentage, None);
+        assert_eq!(event.eta_ms, None);
     }
 }

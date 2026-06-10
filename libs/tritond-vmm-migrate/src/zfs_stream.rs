@@ -52,6 +52,11 @@ use crate::protocol::ZFS_CHUNK_SIZE;
 use crate::state_machine::MigrateError;
 use crate::transport::Transport;
 
+/// Per-chunk progress observer. Invoked with the cumulative byte
+/// count after each chunk crosses the transport; the agent's
+/// throttled progress reporter hangs off this.
+pub type ProgressFn = Box<dyn FnMut(u64) + Send>;
+
 /// Source-side streamer. Reads the `zfs send` stdout pipe in
 /// [`ZFS_CHUNK_SIZE`] windows and writes each as a
 /// [`Message::ZfsChunk`] over the transport. Sends [`Message::ZfsEnd`]
@@ -59,6 +64,7 @@ use crate::transport::Transport;
 pub struct ZfsSender<T, R> {
     transport: T,
     reader: R,
+    progress: Option<ProgressFn>,
 }
 
 impl<T, R> ZfsSender<T, R>
@@ -67,7 +73,21 @@ where
     R: AsyncRead + Unpin + Send,
 {
     pub fn new(transport: T, reader: R) -> Self {
-        Self { transport, reader }
+        Self {
+            transport,
+            reader,
+            progress: None,
+        }
+    }
+
+    /// Observe streaming progress: `callback` fires with the
+    /// cumulative byte count after each chunk is sent. Callbacks
+    /// run inline on the stream loop, so keep them cheap (store an
+    /// atomic, poke a channel); blocking here stalls the transfer.
+    #[must_use]
+    pub fn with_progress(mut self, callback: impl FnMut(u64) + Send + 'static) -> Self {
+        self.progress = Some(Box::new(callback));
+        self
     }
 
     /// Drive the source half to completion. Returns the total
@@ -101,6 +121,9 @@ where
             let chunk = buf[..n].to_vec();
             self.transport.send(Message::ZfsChunk(chunk)).await?;
             total += n as u64;
+            if let Some(cb) = self.progress.as_mut() {
+                cb(total);
+            }
         }
         self.transport.send(Message::ZfsEnd).await?;
         let _ = self.transport.close().await;
@@ -114,6 +137,7 @@ where
 pub struct ZfsReceiver<T, W> {
     transport: T,
     writer: W,
+    progress: Option<ProgressFn>,
 }
 
 impl<T, W> ZfsReceiver<T, W>
@@ -122,7 +146,21 @@ where
     W: AsyncWrite + Unpin + Send,
 {
     pub fn new(transport: T, writer: W) -> Self {
-        Self { transport, writer }
+        Self {
+            transport,
+            writer,
+            progress: None,
+        }
+    }
+
+    /// Observe receive progress: `callback` fires with the
+    /// cumulative byte count after each chunk lands in `writer`.
+    /// Same inline-and-cheap contract as
+    /// [`ZfsSender::with_progress`].
+    #[must_use]
+    pub fn with_progress(mut self, callback: impl FnMut(u64) + Send + 'static) -> Self {
+        self.progress = Some(Box::new(callback));
+        self
     }
 
     /// Drive the target half to completion. Returns the total
@@ -154,6 +192,9 @@ where
                         .await
                         .map_err(MigrateError::Transport)?;
                     total += data.len() as u64;
+                    if let Some(cb) = self.progress.as_mut() {
+                        cb(total);
+                    }
                 }
                 Some(Message::ZfsEnd) => {
                     if let Err(e) = self.writer.flush().await {
@@ -317,6 +358,46 @@ mod tests {
         let got = received.lock().unwrap().clone();
         assert_eq!(got.len(), pattern.len(), "byte-count mismatch");
         assert_eq!(got, pattern, "byte-pattern mismatch");
+    }
+
+    #[tokio::test]
+    async fn progress_callbacks_observe_cumulative_totals() {
+        let pattern: Vec<u8> = (0..2 * ZFS_CHUNK_SIZE + 5)
+            .map(|i| (i & 0xff) as u8)
+            .collect();
+        let (src_t, dst_t) = inmem::channel_pair(16);
+
+        let sent_samples = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u64>::new()));
+        let recv_samples = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u64>::new()));
+
+        let sender_pattern = pattern.clone();
+        let sent_clone = sent_samples.clone();
+        let send = tokio::spawn(async move {
+            ZfsSender::new(src_t, Cursor::new(sender_pattern))
+                .with_progress(move |total| sent_clone.lock().unwrap().push(total))
+                .run()
+                .await
+        });
+        let recv_clone = recv_samples.clone();
+        let recv = tokio::spawn(async move {
+            ZfsReceiver::new(dst_t, VecWriter(Vec::new()))
+                .with_progress(move |total| recv_clone.lock().unwrap().push(total))
+                .run()
+                .await
+        });
+        let sent = send.await.expect("send join").expect("send run");
+        let recvd = recv.await.expect("recv join").expect("recv run");
+        assert_eq!(sent, pattern.len() as u64);
+        assert_eq!(recvd, pattern.len() as u64);
+
+        // Cumulative, strictly increasing, and the last sample is
+        // the byte total on both ends.
+        for samples in [&sent_samples, &recv_samples] {
+            let s = samples.lock().unwrap();
+            assert!(!s.is_empty());
+            assert!(s.windows(2).all(|w| w[0] < w[1]), "not increasing: {s:?}");
+            assert_eq!(*s.last().unwrap(), pattern.len() as u64);
+        }
     }
 
     #[tokio::test]

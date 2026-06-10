@@ -350,6 +350,11 @@ pub enum Action {
     /// the existing instance-read permission elsewhere.
     MigrationList,
     MigrationGet,
+    /// LM-5b — abort an in-flight migration via the flat operator
+    /// route (`POST /v1/instances/{id}/migrate`, `action=abort`).
+    /// Operator-only by the root-allows-all Cedar rule, mirroring
+    /// `MigrationList`.
+    MigrationAbort,
     /// LM-5 — start a live migration via
     /// `POST /v1/instances/{id}/actions/migrate`. Tenant-scoped
     /// (any project member can migrate their own instances);
@@ -493,6 +498,10 @@ pub enum Action {
     /// live usage). Keyed by the key's `bound_cn`, never by request
     /// body. The placement engine's capacity floor (RFD 00005).
     CnCapacityReport,
+    /// Append a progress event to a migration's event log (LM-3).
+    /// The handler additionally requires the key's `bound_cn` to be
+    /// the migration's source or target CN.
+    MigrationProgressReport,
     /// Anonymous self-registration of a compute node. Gated by
     /// the per-source-IP rate limiter, not by Cedar credentials —
     /// the agent has no key at this point in its lifecycle.
@@ -640,6 +649,7 @@ impl Action {
             Action::OperationsAbandon => "operations_abandon",
             Action::MigrationList => "migration_list",
             Action::MigrationGet => "migration_get",
+            Action::MigrationAbort => "migration_abort",
             Action::InstanceMigrate => "instance_migrate",
             Action::TenantIdpSet => "tenant_idp_set",
             Action::TenantIdpGet => "tenant_idp_get",
@@ -728,6 +738,7 @@ impl Action {
             Action::DhcpLeaseActivityReport => "dhcp_lease_activity_report",
             Action::NicTagInventoryReport => "nic_tag_inventory_report",
             Action::CnCapacityReport => "cn_capacity_report",
+            Action::MigrationProgressReport => "migration_progress_report",
             Action::AgentRegister => "agent_register",
             Action::AgentRegisterStatus => "agent_register_status",
             Action::CnList => "cn_list",
@@ -1290,6 +1301,7 @@ fn scope_allows_action(scope: ApiKeyScope, action: Action) -> bool {
                 | Action::DhcpLeaseActivityReport
                 | Action::NicTagInventoryReport
                 | Action::CnCapacityReport
+                | Action::MigrationProgressReport
         ),
         _ => false,
     }
@@ -1391,10 +1403,11 @@ fn is_read_action(action: Action) -> bool {
         // Opening a console is an interactive action that touches
         // the guest; a ReadOnly key must not reach it.
         | Action::InstanceConsole
-        // Starting a migration is a multi-host write that
-        // mutates instance ownership; ReadOnly keys must not
-        // reach it.
+        // Starting or aborting a migration is a multi-host write
+        // that mutates instance ownership; ReadOnly keys must not
+        // reach either verb.
         | Action::InstanceMigrate
+        | Action::MigrationAbort
         | Action::FloatingIpCreate
         | Action::FloatingIpDelete
         | Action::FloatingIpAttach
@@ -1414,6 +1427,7 @@ fn is_read_action(action: Action) -> bool {
         | Action::DhcpLeaseActivityReport
         | Action::NicTagInventoryReport
         | Action::CnCapacityReport
+        | Action::MigrationProgressReport
         // Agent registration is anonymous (no key), but if a key
         // is somehow attached the scope check should reject it
         // outright — these aren't read actions, they create a CN

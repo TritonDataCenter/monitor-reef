@@ -1141,6 +1141,15 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::instances::restart_instance_v1(rqctx, path).await
     }
 
+    async fn migrate_instance_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::InstancePath>,
+        body: dropshot::TypedBody<tritond_api::MigrateInstanceBody>,
+    ) -> Result<dropshot::HttpResponseCreated<tritond_api::MigrateInstanceResponse>, HttpError>
+    {
+        crate::handlers::migrations::migrate_instance_v1(rqctx, path, body).await
+    }
+
     async fn migrate_project_instance(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectInstancePath>,
@@ -1280,6 +1289,14 @@ impl TritondApi for TritondServiceImpl {
         body: TypedBody<tritond_api::AgentCapacityReport>,
     ) -> Result<HttpResponseOk<()>, HttpError> {
         crate::handlers::agents::agent_report_capacity(rqctx, body).await
+    }
+
+    async fn agent_report_migration_progress(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::MigrationPath>,
+        body: TypedBody<tritond_api::MigrationProgressReport>,
+    ) -> Result<HttpResponseOk<()>, HttpError> {
+        crate::handlers::agents::agent_report_migration_progress(rqctx, path, body).await
     }
 
     // ----- CN registration / approval (slice C) -----

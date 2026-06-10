@@ -1011,6 +1011,13 @@ async fn sync_convergence(ctx: Ctx) -> Result<String, ActionError> {
                     threshold,
                     "migration.sync_convergence: round complete",
                 );
+                append_sync_round_progress(
+                    store.as_ref(),
+                    params.migration_id,
+                    round,
+                    bytes_streamed,
+                )
+                .await;
                 match bytes_streamed {
                     Some(b) if b < threshold => break,
                     Some(_) => {}
@@ -1027,6 +1034,40 @@ async fn sync_convergence(ctx: Ctx) -> Result<String, ActionError> {
         },
     )
     .await
+}
+
+/// Per-round timeline entry for the operator progress log (LM-3).
+/// Saga-side observability only: an append failure is logged and
+/// dropped, never allowed to unwind a migration whose data plane
+/// is healthy.
+async fn append_sync_round_progress(
+    store: &dyn tritond_store::Store,
+    migration_id: Uuid,
+    round: u64,
+    bytes_streamed: Option<u64>,
+) {
+    let event = tritond_store::MigrationProgressEvent {
+        // The store CAS-assigns the real seq on append.
+        seq: 0,
+        kind: "phase_transition".to_string(),
+        phase: Some(MigrationPhase::Sync),
+        state: Some(MigrationState::Sync),
+        percentage: None,
+        transferred_bytes: bytes_streamed,
+        total_bytes: None,
+        eta_ms: None,
+        message: Some(format!("sync round {round} complete")),
+        error: None,
+        timestamp: chrono::Utc::now(),
+    };
+    if let Err(e) = store.append_migration_progress(migration_id, event).await {
+        tracing::warn!(
+            %migration_id,
+            round,
+            error = %e,
+            "migration.sync_convergence: progress append failed; continuing",
+        );
+    }
 }
 
 /// Quiesce the source guest before the final incremental send —
@@ -2230,6 +2271,47 @@ mod tests {
         assert_eq!(record.state, MigrationState::Begin);
         let read = store.get_migration(record.id).await.expect("get_migration");
         assert_eq!(read.id, record.id);
+    }
+
+    /// Each convergence round appends one phase_transition event
+    /// carrying the round's byte count, and a missing job result
+    /// still produces a (byte-less) timeline entry.
+    #[tokio::test]
+    async fn sync_round_progress_appends_timeline_events() {
+        let store: Arc<dyn tritond_store::Store> = Arc::new(MemStore::new());
+        let record = store
+            .create_migration(tritond_store::NewMigration {
+                instance_id: Uuid::new_v4(),
+                tenant_id: Uuid::new_v4(),
+                project_id: Uuid::new_v4(),
+                source_cn: Uuid::new_v4(),
+                action_requested: tritond_store::MigrationAction::Begin,
+                automatic: false,
+            })
+            .await
+            .expect("create_migration");
+
+        append_sync_round_progress(store.as_ref(), record.id, 1, Some(42 << 20)).await;
+        append_sync_round_progress(store.as_ref(), record.id, 2, None).await;
+
+        let events = store
+            .list_migration_progress(record.id, 0, 10)
+            .await
+            .expect("list_migration_progress");
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].kind, "phase_transition");
+        assert_eq!(events[0].phase, Some(MigrationPhase::Sync));
+        assert_eq!(events[0].state, Some(MigrationState::Sync));
+        assert_eq!(events[0].transferred_bytes, Some(42 << 20));
+        assert_eq!(events[0].message.as_deref(), Some("sync round 1 complete"));
+        assert_eq!(events[1].transferred_bytes, None);
+        assert_eq!(events[1].message.as_deref(), Some("sync round 2 complete"));
+        // Seqs are CAS-assigned and strictly increasing.
+        assert!(events[0].seq < events[1].seq);
+
+        // An unknown migration id must not panic or error the saga
+        // path (it only warns).
+        append_sync_round_progress(store.as_ref(), Uuid::new_v4(), 1, Some(1)).await;
     }
 
     /// Terminal put_migration releases the active guard, so a

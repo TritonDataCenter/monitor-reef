@@ -633,6 +633,59 @@
         }
       }
     },
+    "/v1/agent/migrations/{migration_id}/progress": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Append a progress event to a migration's event log. Auth:",
+        "description": "requires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]; the bound CN must be the migration's source or target. State-sample traffic on the data-plane throttle cadence (one POST per 5 s / 256 MiB of stream progress); operators read the log back via `GET /v1/migrations/{migration_id}/progress`.",
+        "operationId": "agent_report_migration_progress",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "migration_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MigrationProgressReport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Null",
+                  "type": "string",
+                  "enum": [
+                    null
+                  ]
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/agent/network-realization": {
       "post": {
         "tags": [
@@ -2968,6 +3021,56 @@
         "responses": {
           "204": {
             "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/instances/{instance_id}/migrate": {
+      "post": {
+        "tags": [
+          "instances",
+          "migrations"
+        ],
+        "summary": "Flat operator migrate surface (LM-5b):",
+        "description": "`POST /v1/instances/{instance_id}/migrate`. Sibling of the other flat instance actions (start / stop / restart); operator-only, mirroring the fleet-wide `/v1/migrations` list.\n\nDispatches on the body's `action`: * `begin` starts the migrate-instance saga. The server forces `cold = true` when the instance brand is not bhyve (only bhyve has a live lane). `automatic` labels driver-triggered migrations for audit/metrics. * `abort` flags the instance's active migration with `action_requested = abort`; the saga's abort poll converts it into an unwind. 409 once the cutover CAS has committed or the record is terminal. * everything else returns a structured 400 — those verbs are intentionally not supported in this release.",
+        "operationId": "migrate_instance_v1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MigrateInstanceBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrateInstanceResponse"
+                }
+              }
+            }
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
@@ -14806,7 +14909,7 @@
         ]
       },
       "MigrateInstanceBody": {
-        "description": "Request body for `POST .../instances/{instance_id}/migrate`.\n\nLM-5 ships `action=begin` only; the other actions (estimate, pause, switch, abort, rollback, finalize) return 501 until LM-6 / LM-8 wire the sub-sagas. The wire shape is fixed now so clients don't have to bump on each LM-* slice.",
+        "description": "Request body for `POST .../instances/{instance_id}/migrate`.\n\nThis release supports `action=begin` (start the migrate-instance saga) and, on the flat operator route, `action=abort` (request an unwind of an in-flight migration). The remaining actions (estimate, sync, pause, switch, rollback, finalize) are intentionally not supported and return a structured 400; the wire shape is fixed so clients don't have to bump if they return later.",
         "type": "object",
         "properties": {
           "action": {
@@ -14826,6 +14929,11 @@
             "items": {
               "type": "string"
             }
+          },
+          "automatic": {
+            "description": "Mark the migration as automatically triggered (rebalance / evacuation driver) rather than operator-initiated. Used for audit labels and metrics only. Operator surface only; the tenant-scoped route ignores it.",
+            "default": false,
+            "type": "boolean"
           },
           "cold": {
             "description": "Cold-migrate: the source VM is already stopped (or the operator handled it pre-migration). The saga skips the live-memory transfer (node 8) and treats the post- incremental ZFS state as canonical. Defaults to `false` once LM-7 lands the live path; until LM-7 ships, passing `false` returns a clear error pointing at LM-7 rather than running a silently-broken cutover.",
@@ -14963,6 +15071,70 @@
           "timestamp",
           "type"
         ]
+      },
+      "MigrationProgressReport": {
+        "description": "Request body for `POST /v1/agent/migrations/{migration_id}/progress`. The bound CN agent driving a migration data-plane stream posts one of these per throttle window (LM-3); tritond validates the reporting CN is the migration's source or target and appends a [`tritond_store::MigrationProgressEvent`] to the per-migration event log. Field names follow the legacy sdc-migrate progress vocabulary (`current_progress` / `total_progress`) so operators see the numbers they expect.",
+        "type": "object",
+        "properties": {
+          "current_progress": {
+            "nullable": true,
+            "description": "Cumulative bytes streamed so far for the current transfer.",
+            "default": null,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "eta_ms": {
+            "nullable": true,
+            "description": "Agent-computed time-to-completion estimate.",
+            "default": null,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "message": {
+            "nullable": true,
+            "description": "Free-form label for the operator log (e.g. the snapshot being streamed).",
+            "default": null,
+            "type": "string"
+          },
+          "phase": {
+            "nullable": true,
+            "description": "Coarse phase the agent believes the migration is in. `None` lets tritond stamp the record's current phase instead; the agent only sees its own stream, not the saga.",
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationPhase"
+              }
+            ]
+          },
+          "state": {
+            "nullable": true,
+            "description": "Same defaulting story as `phase`.",
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationState"
+              }
+            ]
+          },
+          "total_progress": {
+            "nullable": true,
+            "description": "Estimated total bytes for the current transfer (`zfs send -nvP` dry-run for ZFS, guest RAM size for the vmm stream). `None` when no estimate is available.",
+            "default": null,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "transfer_bytes_second": {
+            "nullable": true,
+            "description": "Trailing transfer rate (bytes/second) over the agent's last throttle window. Used server-side to derive `eta_ms` when the agent didn't compute one.",
+            "default": null,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        }
       },
       "MigrationRecord": {
         "description": "First-class FDB row tracking one live migration. Created by the `migrate-instance` saga's first action (LM-5) and mutated by subsequent actions; on terminal-state transitions the saga clears the `migration/active/<instance>` guard so a fresh migration can start.\n\nPersisted via the keys documented in `libs/tritond-store/src/fdb.rs`:\n\n```text migration/by_id/<uuid>                          JSON-encoded MigrationRecord migration/by_instance/<inst>/<inv_ts>/<uuid>    uuid bytes (history, newest-first) migration/by_source_cn/<cn>/<inv_ts>/<uuid>     uuid bytes migration/by_target_cn/<cn>/<inv_ts>/<uuid>     uuid bytes migration/active/<instance>                     uuid bytes (presence == active) migration/progress/<migration>/<seq>            JSON-encoded MigrationProgressEvent ```\n\nThe active guard plus `Instance.migration_in_progress` (added in LM-5) is the cross-handler advisory lock that keeps start/stop/restart/delete from racing a migration.",

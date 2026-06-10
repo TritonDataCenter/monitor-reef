@@ -779,12 +779,9 @@ pub struct OperationPath {
 }
 
 // ---------------------------------------------------------------------
-// Live migrations (LM-1).
-//
-// Read-only surface. The mutating endpoint
-// (`POST /v1/instances/{id}/actions/migrate`) lands with the
-// migration saga (LM-5) so the action handler can dispatch on
-// MigrationAction.
+// Live migrations (LM-1 read surface, LM-5 tenant begin, LM-5b
+// operator begin/abort via the flat
+// `POST /v1/instances/{instance_id}/migrate` route).
 // ---------------------------------------------------------------------
 
 /// Path parameters for `/v1/migrations/{migration_id}` + nested
@@ -817,10 +814,13 @@ pub struct ListMigrationsQuery {
 
 /// Request body for `POST .../instances/{instance_id}/migrate`.
 ///
-/// LM-5 ships `action=begin` only; the other actions (estimate,
-/// pause, switch, abort, rollback, finalize) return 501 until
-/// LM-6 / LM-8 wire the sub-sagas. The wire shape is fixed now
-/// so clients don't have to bump on each LM-* slice.
+/// This release supports `action=begin` (start the migrate-instance
+/// saga) and, on the flat operator route, `action=abort`
+/// (request an unwind of an in-flight migration). The remaining
+/// actions (estimate, sync, pause, switch, rollback, finalize) are
+/// intentionally not supported and return a structured 400; the
+/// wire shape is fixed so clients don't have to bump if they
+/// return later.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct MigrateInstanceBody {
     /// Sub-action. Defaults to `Begin` when omitted so the
@@ -847,6 +847,12 @@ pub struct MigrateInstanceBody {
     /// than running a silently-broken cutover.
     #[serde(default)]
     pub cold: bool,
+    /// Mark the migration as automatically triggered (rebalance /
+    /// evacuation driver) rather than operator-initiated. Used for
+    /// audit labels and metrics only. Operator surface only; the
+    /// tenant-scoped route ignores it.
+    #[serde(default)]
+    pub automatic: bool,
 }
 
 fn default_migration_action() -> tritond_store::MigrationAction {
@@ -996,6 +1002,46 @@ pub struct AgentCapacityReport {
     pub tsc_offset_ns: Option<i64>,
     #[serde(default)]
     pub zpool_props: std::collections::BTreeMap<String, tritond_store::ZpoolPropFingerprint>,
+}
+
+/// Request body for `POST /v1/agent/migrations/{migration_id}/progress`.
+/// The bound CN agent driving a migration data-plane stream posts
+/// one of these per throttle window (LM-3); tritond validates the
+/// reporting CN is the migration's source or target and appends a
+/// [`tritond_store::MigrationProgressEvent`] to the per-migration
+/// event log. Field names follow the legacy sdc-migrate progress
+/// vocabulary (`current_progress` / `total_progress`) so operators
+/// see the numbers they expect.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct MigrationProgressReport {
+    /// Coarse phase the agent believes the migration is in. `None`
+    /// lets tritond stamp the record's current phase instead; the
+    /// agent only sees its own stream, not the saga.
+    #[serde(default)]
+    pub phase: Option<tritond_store::MigrationPhase>,
+    /// Same defaulting story as `phase`.
+    #[serde(default)]
+    pub state: Option<tritond_store::MigrationState>,
+    /// Cumulative bytes streamed so far for the current transfer.
+    #[serde(default)]
+    pub current_progress: Option<u64>,
+    /// Estimated total bytes for the current transfer (`zfs send
+    /// -nvP` dry-run for ZFS, guest RAM size for the vmm stream).
+    /// `None` when no estimate is available.
+    #[serde(default)]
+    pub total_progress: Option<u64>,
+    /// Trailing transfer rate (bytes/second) over the agent's last
+    /// throttle window. Used server-side to derive `eta_ms` when
+    /// the agent didn't compute one.
+    #[serde(default)]
+    pub transfer_bytes_second: Option<u64>,
+    /// Agent-computed time-to-completion estimate.
+    #[serde(default)]
+    pub eta_ms: Option<u64>,
+    /// Free-form label for the operator log (e.g. the snapshot
+    /// being streamed).
+    #[serde(default)]
+    pub message: Option<String>,
 }
 
 /// Request body for `POST /v1/agent/register`. Anonymous endpoint
@@ -2571,6 +2617,24 @@ pub trait TritondApi {
     async fn agent_report_capacity(
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<AgentCapacityReport>,
+    ) -> Result<HttpResponseOk<()>, HttpError>;
+
+    /// Append a progress event to a migration's event log. Auth:
+    /// requires a CN-bound API key with
+    /// [`tritond_store::ApiKeyScope::Agent`]; the bound CN must be
+    /// the migration's source or target. State-sample traffic on
+    /// the data-plane throttle cadence (one POST per 5 s / 256 MiB
+    /// of stream progress); operators read the log back via
+    /// `GET /v1/migrations/{migration_id}/progress`.
+    #[endpoint {
+        method = POST,
+        path = "/v1/agent/migrations/{migration_id}/progress",
+        tags = ["agent"],
+    }]
+    async fn agent_report_migration_progress(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<MigrationPath>,
+        body: TypedBody<MigrationProgressReport>,
     ) -> Result<HttpResponseOk<()>, HttpError>;
 
     /// Self-register a compute node. Anonymous endpoint (no API
@@ -4288,6 +4352,34 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<crate::v1::InstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError>;
+
+    /// Flat operator migrate surface (LM-5b):
+    /// `POST /v1/instances/{instance_id}/migrate`. Sibling of the
+    /// other flat instance actions (start / stop / restart);
+    /// operator-only, mirroring the fleet-wide `/v1/migrations`
+    /// list.
+    ///
+    /// Dispatches on the body's `action`:
+    /// * `begin` starts the migrate-instance saga. The server
+    ///   forces `cold = true` when the instance brand is not
+    ///   bhyve (only bhyve has a live lane). `automatic` labels
+    ///   driver-triggered migrations for audit/metrics.
+    /// * `abort` flags the instance's active migration with
+    ///   `action_requested = abort`; the saga's abort poll
+    ///   converts it into an unwind. 409 once the cutover CAS
+    ///   has committed or the record is terminal.
+    /// * everything else returns a structured 400 — those verbs
+    ///   are intentionally not supported in this release.
+    #[endpoint {
+        method = POST,
+        path = "/v1/instances/{instance_id}/migrate",
+        tags = ["instances", "migrations"],
+    }]
+    async fn migrate_instance_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::InstancePath>,
+        body: TypedBody<MigrateInstanceBody>,
+    ) -> Result<HttpResponseCreated<MigrateInstanceResponse>, HttpError>;
 
     /// Start a live migration of a running instance (LM-5).
     ///

@@ -38,6 +38,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -53,7 +54,7 @@ use tritond_vmm_migrate::{
 };
 use uuid::Uuid;
 
-use crate::{AgentConfig, migrate, vmadm};
+use crate::{AgentConfig, migrate, migrate_progress, vmadm};
 
 /// bhyve's in-zone control-socket listener is single-threaded; the
 /// pause job's connection must fully close before ours can be
@@ -361,6 +362,9 @@ struct SourceRunHooks {
     migration_id: Uuid,
     pause_ts_ns: u64,
     shared: Arc<Mutex<SourceShared>>,
+    /// Cumulative bytes-pushed cell the throttled progress
+    /// reporter samples. `Arc::default()` (never read) in tests.
+    progress: Arc<AtomicU64>,
 }
 
 impl SourceHooks for SourceRunHooks {
@@ -387,6 +391,7 @@ impl SourceHooks for SourceRunHooks {
         let mut g = lock_or_recover(&self.shared);
         g.pages_pushed += pages;
         g.bytes_pushed += bytes;
+        self.progress.store(g.bytes_pushed, Ordering::Relaxed);
     }
 }
 
@@ -408,6 +413,7 @@ fn source_report(shared: &Arc<Mutex<SourceShared>>, pause_ts_ns: u64) -> serde_j
 /// JSON is the job `result`; on failure the same report rides the
 /// [`StreamFailed`] error so the saga still sees the last phase.
 pub(crate) async fn run_source(
+    client: &Arc<Client>,
     cfg: &AgentConfig,
     migration_id: Uuid,
     instance_id: Uuid,
@@ -457,11 +463,20 @@ pub(crate) async fn run_source(
     .await
     .context("dial target /migrate/{id}")?;
 
+    // The RAM push dominates the stream; the state blobs are noise
+    // next to it, so guest memory is the progress total.
+    let reporter = migrate_progress::ProgressReporter::start(
+        Arc::clone(client),
+        migration_id,
+        Some(layout.total_bytes() as u64),
+        "vmm ram stream".to_string(),
+    );
     let shared = Arc::new(Mutex::new(SourceShared::default()));
     let hooks = SourceRunHooks {
         migration_id,
         pause_ts_ns,
         shared: Arc::clone(&shared),
+        progress: reporter.observer(),
     };
     let blobs = StateBlobs {
         time_data: Vec::new(),
@@ -474,6 +489,7 @@ pub(crate) async fn run_source(
     let report = source_report(&shared, pause_ts_ns);
     match outcome {
         Ok(()) => {
+            reporter.finish().await;
             info!(
                 %migration_id, %instance_id, report = %report,
                 "migrate-vmm-stream/source: stream complete",
@@ -832,10 +848,12 @@ mod tests {
         });
 
         let source_shared = Arc::new(Mutex::new(SourceShared::default()));
+        let progress = Arc::new(AtomicU64::new(0));
         let source_hooks = SourceRunHooks {
             migration_id,
             pause_ts_ns: 7_777,
             shared: Arc::clone(&source_shared),
+            progress: Arc::clone(&progress),
         };
         let blobs = StateBlobs {
             time_data: b"TIME".to_vec(),
@@ -867,6 +885,12 @@ mod tests {
         // RAM landed intact (source pattern, byte for byte).
         let pattern: Vec<u8> = (0..layout.lowmem_size).map(|i| (i & 0xff) as u8).collect();
         assert_eq!(target_mock.region_snapshot(MemRegion::Lowmem), pattern);
+
+        // The progress cell mirrored the cumulative RAM push, so the
+        // throttled reporter would have had real numbers to sample.
+        let pushed = source_shared.lock().unwrap().bytes_pushed;
+        assert!(pushed > 0);
+        assert_eq!(progress.load(Ordering::Relaxed), pushed);
 
         // Cutover fence ordering: the connection-scoped script log
         // shows import-state strictly before the resume pair, and

@@ -7350,13 +7350,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `POST .../instances/{instance_id}/migrate`.\n\nLM-5 ships `action=begin` only; the other actions (estimate, pause, switch, abort, rollback, finalize) return 501 until LM-6 / LM-8 wire the sub-sagas. The wire shape is fixed now so clients don't have to bump on each LM-* slice."]
+    #[doc = "Request body for `POST .../instances/{instance_id}/migrate`.\n\nThis release supports `action=begin` (start the migrate-instance saga) and, on the flat operator route, `action=abort` (request an unwind of an in-flight migration). The remaining actions (estimate, sync, pause, switch, rollback, finalize) are intentionally not supported and return a structured 400; the wire shape is fixed so clients don't have to bump if they return later."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST .../instances/{instance_id}/migrate`.\\n\\nLM-5 ships `action=begin` only; the other actions (estimate, pause, switch, abort, rollback, finalize) return 501 until LM-6 / LM-8 wire the sub-sagas. The wire shape is fixed now so clients don't have to bump on each LM-* slice.\","]
+    #[doc = "  \"description\": \"Request body for `POST .../instances/{instance_id}/migrate`.\\n\\nThis release supports `action=begin` (start the migrate-instance saga) and, on the flat operator route, `action=abort` (request an unwind of an in-flight migration). The remaining actions (estimate, sync, pause, switch, rollback, finalize) are intentionally not supported and return a structured 400; the wire shape is fixed so clients don't have to bump if they return later.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"action\": {"]
@@ -7377,6 +7377,11 @@ pub mod types {
     #[doc = "      \"items\": {"]
     #[doc = "        \"type\": \"string\""]
     #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"automatic\": {"]
+    #[doc = "      \"description\": \"Mark the migration as automatically triggered (rebalance / evacuation driver) rather than operator-initiated. Used for audit labels and metrics only. Operator surface only; the tenant-scoped route ignores it.\","]
+    #[doc = "      \"default\": false,"]
+    #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"cold\": {"]
     #[doc = "      \"description\": \"Cold-migrate: the source VM is already stopped (or the operator handled it pre-migration). The saga skips the live-memory transfer (node 8) and treats the post- incremental ZFS state as canonical. Defaults to `false` once LM-7 lands the live path; until LM-7 ships, passing `false` returns a clear error pointing at LM-7 rather than running a silently-broken cutover.\","]
@@ -7405,6 +7410,9 @@ pub mod types {
         #[doc = "Operator-supplied affinity rules. LM-5 ignores this; LM-6 threads it through `PlacementRequest.affinity`."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub affinity: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        #[doc = "Mark the migration as automatically triggered (rebalance / evacuation driver) rather than operator-initiated. Used for audit labels and metrics only. Operator surface only; the tenant-scoped route ignores it."]
+        #[serde(default)]
+        pub automatic: bool,
         #[doc = "Cold-migrate: the source VM is already stopped (or the operator handled it pre-migration). The saga skips the live-memory transfer (node 8) and treats the post- incremental ZFS state as canonical. Defaults to `false` once LM-7 lands the live path; until LM-7 ships, passing `false` returns a clear error pointing at LM-7 rather than running a silently-broken cutover."]
         #[serde(default)]
         pub cold: bool,
@@ -7418,6 +7426,7 @@ pub mod types {
             Self {
                 action: defaults::migrate_instance_body_action(),
                 affinity: Default::default(),
+                automatic: Default::default(),
                 cold: Default::default(),
                 target_server_uuid: Default::default(),
             }
@@ -7887,6 +7896,139 @@ pub mod types {
 
     impl MigrationProgressEvent {
         pub fn builder() -> builder::MigrationProgressEvent {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request body for `POST /v1/agent/migrations/{migration_id}/progress`. The bound CN agent driving a migration data-plane stream posts one of these per throttle window (LM-3); tritond validates the reporting CN is the migration's source or target and appends a [`tritond_store::MigrationProgressEvent`] to the per-migration event log. Field names follow the legacy sdc-migrate progress vocabulary (`current_progress` / `total_progress`) so operators see the numbers they expect."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v1/agent/migrations/{migration_id}/progress`. The bound CN agent driving a migration data-plane stream posts one of these per throttle window (LM-3); tritond validates the reporting CN is the migration's source or target and appends a [`tritond_store::MigrationProgressEvent`] to the per-migration event log. Field names follow the legacy sdc-migrate progress vocabulary (`current_progress` / `total_progress`) so operators see the numbers they expect.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"current_progress\": {"]
+    #[doc = "      \"description\": \"Cumulative bytes streamed so far for the current transfer.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"eta_ms\": {"]
+    #[doc = "      \"description\": \"Agent-computed time-to-completion estimate.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"message\": {"]
+    #[doc = "      \"description\": \"Free-form label for the operator log (e.g. the snapshot being streamed).\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"phase\": {"]
+    #[doc = "      \"description\": \"Coarse phase the agent believes the migration is in. `None` lets tritond stamp the record's current phase instead; the agent only sees its own stream, not the saga.\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/MigrationPhase\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"state\": {"]
+    #[doc = "      \"description\": \"Same defaulting story as `phase`.\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/MigrationState\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"total_progress\": {"]
+    #[doc = "      \"description\": \"Estimated total bytes for the current transfer (`zfs send -nvP` dry-run for ZFS, guest RAM size for the vmm stream). `None` when no estimate is available.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"transfer_bytes_second\": {"]
+    #[doc = "      \"description\": \"Trailing transfer rate (bytes/second) over the agent's last throttle window. Used server-side to derive `eta_ms` when the agent didn't compute one.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct MigrationProgressReport {
+        #[doc = "Cumulative bytes streamed so far for the current transfer."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub current_progress: ::std::option::Option<u64>,
+        #[doc = "Agent-computed time-to-completion estimate."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub eta_ms: ::std::option::Option<u64>,
+        #[doc = "Free-form label for the operator log (e.g. the snapshot being streamed)."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub message: ::std::option::Option<::std::string::String>,
+        #[doc = "Coarse phase the agent believes the migration is in. `None` lets tritond stamp the record's current phase instead; the agent only sees its own stream, not the saga."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub phase: ::std::option::Option<MigrationPhase>,
+        #[doc = "Same defaulting story as `phase`."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub state: ::std::option::Option<MigrationState>,
+        #[doc = "Estimated total bytes for the current transfer (`zfs send -nvP` dry-run for ZFS, guest RAM size for the vmm stream). `None` when no estimate is available."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub total_progress: ::std::option::Option<u64>,
+        #[doc = "Trailing transfer rate (bytes/second) over the agent's last throttle window. Used server-side to derive `eta_ms` when the agent didn't compute one."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub transfer_bytes_second: ::std::option::Option<u64>,
+    }
+
+    impl ::std::default::Default for MigrationProgressReport {
+        fn default() -> Self {
+            Self {
+                current_progress: Default::default(),
+                eta_ms: Default::default(),
+                message: Default::default(),
+                phase: Default::default(),
+                state: Default::default(),
+                total_progress: Default::default(),
+                transfer_bytes_second: Default::default(),
+            }
+        }
+    }
+
+    impl MigrationProgressReport {
+        pub fn builder() -> builder::MigrationProgressReport {
             Default::default()
         }
     }
@@ -23683,6 +23825,7 @@ pub mod types {
                 ::std::option::Option<::std::vec::Vec<::std::string::String>>,
                 ::std::string::String,
             >,
+            automatic: ::std::result::Result<bool, ::std::string::String>,
             cold: ::std::result::Result<bool, ::std::string::String>,
             target_server_uuid:
                 ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
@@ -23693,6 +23836,7 @@ pub mod types {
                 Self {
                     action: Ok(super::defaults::migrate_instance_body_action()),
                     affinity: Ok(Default::default()),
+                    automatic: Ok(Default::default()),
                     cold: Ok(Default::default()),
                     target_server_uuid: Ok(Default::default()),
                 }
@@ -23720,6 +23864,16 @@ pub mod types {
                 self.affinity = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for affinity: {e}"));
+                self
+            }
+            pub fn automatic<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.automatic = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for automatic: {e}"));
                 self
             }
             pub fn cold<T>(mut self, value: T) -> Self
@@ -23752,6 +23906,7 @@ pub mod types {
                 Ok(Self {
                     action: value.action?,
                     affinity: value.affinity?,
+                    automatic: value.automatic?,
                     cold: value.cold?,
                     target_server_uuid: value.target_server_uuid?,
                 })
@@ -23763,6 +23918,7 @@ pub mod types {
                 Self {
                     action: Ok(value.action),
                     affinity: Ok(value.affinity),
+                    automatic: Ok(value.automatic),
                     cold: Ok(value.cold),
                     target_server_uuid: Ok(value.target_server_uuid),
                 }
@@ -24025,6 +24181,147 @@ pub mod types {
                     total_bytes: Ok(value.total_bytes),
                     transferred_bytes: Ok(value.transferred_bytes),
                     type_: Ok(value.type_),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct MigrationProgressReport {
+            current_progress:
+                ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
+            eta_ms: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
+            message: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            phase: ::std::result::Result<
+                ::std::option::Option<super::MigrationPhase>,
+                ::std::string::String,
+            >,
+            state: ::std::result::Result<
+                ::std::option::Option<super::MigrationState>,
+                ::std::string::String,
+            >,
+            total_progress:
+                ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
+            transfer_bytes_second:
+                ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for MigrationProgressReport {
+            fn default() -> Self {
+                Self {
+                    current_progress: Ok(Default::default()),
+                    eta_ms: Ok(Default::default()),
+                    message: Ok(Default::default()),
+                    phase: Ok(Default::default()),
+                    state: Ok(Default::default()),
+                    total_progress: Ok(Default::default()),
+                    transfer_bytes_second: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl MigrationProgressReport {
+            pub fn current_progress<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.current_progress = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for current_progress: {e}")
+                });
+                self
+            }
+            pub fn eta_ms<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.eta_ms = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for eta_ms: {e}"));
+                self
+            }
+            pub fn message<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.message = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for message: {e}"));
+                self
+            }
+            pub fn phase<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::MigrationPhase>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.phase = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for phase: {e}"));
+                self
+            }
+            pub fn state<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::MigrationState>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.state = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for state: {e}"));
+                self
+            }
+            pub fn total_progress<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.total_progress = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for total_progress: {e}")
+                });
+                self
+            }
+            pub fn transfer_bytes_second<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.transfer_bytes_second = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for transfer_bytes_second: {e}")
+                });
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<MigrationProgressReport> for super::MigrationProgressReport {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MigrationProgressReport,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    current_progress: value.current_progress?,
+                    eta_ms: value.eta_ms?,
+                    message: value.message?,
+                    phase: value.phase?,
+                    state: value.state?,
+                    total_progress: value.total_progress?,
+                    transfer_bytes_second: value.transfer_bytes_second?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::MigrationProgressReport> for MigrationProgressReport {
+            fn from(value: super::MigrationProgressReport) -> Self {
+                Self {
+                    current_progress: Ok(value.current_progress),
+                    eta_ms: Ok(value.eta_ms),
+                    message: Ok(value.message),
+                    phase: Ok(value.phase),
+                    state: Ok(value.state),
+                    total_progress: Ok(value.total_progress),
+                    transfer_bytes_second: Ok(value.transfer_bytes_second),
                 }
             }
         }
@@ -35229,6 +35526,11 @@ impl Client {
         builder::AgentMetricsIngest::new(self)
     }
 
+    #[doc = "Append a progress event to a migration's event log. Auth:\n\nrequires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]; the bound CN must be the migration's source or target. State-sample traffic on the data-plane throttle cadence (one POST per 5 s / 256 MiB of stream progress); operators read the log back via `GET /v1/migrations/{migration_id}/progress`.\n\nSends a `POST` request to `/v1/agent/migrations/{migration_id}/progress`\n\n```ignore\nlet response = client.agent_report_migration_progress()\n    .migration_id(migration_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn agent_report_migration_progress(&self) -> builder::AgentReportMigrationProgress<'_> {
+        builder::AgentReportMigrationProgress::new(self)
+    }
+
     #[doc = "Report realized network state for a single resource. Auth:\n\nrequires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. Backward generation reports for the same `(resource, realizer)` are rejected with `409 Conflict`.\n\nSends a `POST` request to `/v1/agent/network-realization`\n\n```ignore\nlet response = client.agent_report_network_realization()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn agent_report_network_realization(&self) -> builder::AgentReportNetworkRealization<'_> {
         builder::AgentReportNetworkRealization::new(self)
@@ -35497,6 +35799,11 @@ impl Client {
     #[doc = "RFD 00007 `DELETE /v1/instances/{instance_id}`\n\nSends a `DELETE` request to `/v1/instances/{instance_id}`\n\n```ignore\nlet response = client.delete_instance_v1()\n    .instance_id(instance_id)\n    .force(force)\n    .send()\n    .await;\n```"]
     pub fn delete_instance_v1(&self) -> builder::DeleteInstanceV1<'_> {
         builder::DeleteInstanceV1::new(self)
+    }
+
+    #[doc = "Flat operator migrate surface (LM-5b):\n\n`POST /v1/instances/{instance_id}/migrate`. Sibling of the other flat instance actions (start / stop / restart); operator-only, mirroring the fleet-wide `/v1/migrations` list.\n\nDispatches on the body's `action`: * `begin` starts the migrate-instance saga. The server forces `cold = true` when the instance brand is not bhyve (only bhyve has a live lane). `automatic` labels driver-triggered migrations for audit/metrics. * `abort` flags the instance's active migration with `action_requested = abort`; the saga's abort poll converts it into an unwind. 409 once the cutover CAS has committed or the record is terminal. * everything else returns a structured 400 — those verbs are intentionally not supported in this release.\n\nSends a `POST` request to `/v1/instances/{instance_id}/migrate`\n\n```ignore\nlet response = client.migrate_instance_v1()\n    .instance_id(instance_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn migrate_instance_v1(&self) -> builder::MigrateInstanceV1<'_> {
+        builder::MigrateInstanceV1::new(self)
     }
 
     #[doc = "Per-instance migration history (newest first). Includes\n\nterminal records so an operator can see the VM's full migration timeline.\n\nSends a `GET` request to `/v1/instances/{instance_id}/migrations`\n\n```ignore\nlet response = client.list_instance_migrations()\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
@@ -37526,6 +37833,111 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::agent_report_migration_progress`]\n\n[`Client::agent_report_migration_progress`]: super::Client::agent_report_migration_progress"]
+    #[derive(Debug, Clone)]
+    pub struct AgentReportMigrationProgress<'a> {
+        client: &'a super::Client,
+        migration_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::MigrationProgressReport, String>,
+    }
+
+    impl<'a> AgentReportMigrationProgress<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                migration_id: Err("migration_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn migration_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.migration_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for migration_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::MigrationProgressReport>,
+            <V as std::convert::TryInto<types::MigrationProgressReport>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `MigrationProgressReport` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::MigrationProgressReport,
+                ) -> types::builder::MigrationProgressReport,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/agent/migrations/{migration_id}/progress`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                migration_id,
+                body,
+            } = self;
+            let migration_id = migration_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| {
+                    types::MigrationProgressReport::try_from(v).map_err(|e| e.to_string())
+                })
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/agent/migrations/{}/progress",
+                client.baseurl,
+                encode_path(&migration_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "agent_report_migration_progress",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -42048,6 +42460,109 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::migrate_instance_v1`]\n\n[`Client::migrate_instance_v1`]: super::Client::migrate_instance_v1"]
+    #[derive(Debug, Clone)]
+    pub struct MigrateInstanceV1<'a> {
+        client: &'a super::Client,
+        instance_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::MigrateInstanceBody, String>,
+    }
+
+    impl<'a> MigrateInstanceV1<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                instance_id: Err("instance_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::MigrateInstanceBody>,
+            <V as std::convert::TryInto<types::MigrateInstanceBody>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `MigrateInstanceBody` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::MigrateInstanceBody,
+                ) -> types::builder::MigrateInstanceBody,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/instances/{instance_id}/migrate`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::MigrateInstanceResponse>, Error<types::Error>> {
+            let Self {
+                client,
+                instance_id,
+                body,
+            } = self;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::MigrateInstanceBody::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/instances/{}/migrate",
+                client.baseurl,
+                encode_path(&instance_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "migrate_instance_v1",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

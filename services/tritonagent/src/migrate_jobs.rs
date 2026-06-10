@@ -30,7 +30,7 @@ use tritond_client::types::{
 use uuid::Uuid;
 
 use crate::AgentConfig;
-use crate::{migrate, migrate_vmm, zfs};
+use crate::{migrate, migrate_progress, migrate_vmm, zfs};
 
 /// Build the per-agent data-plane lane (see module docs for why
 /// the permit count is 1).
@@ -102,7 +102,7 @@ fn failure_result(err: &anyhow::Error) -> Option<serde_json::Value> {
 /// Dispatch one data-plane job kind. Returns the optional job
 /// `result` payload to attach to the completion.
 async fn run_data_plane_job(
-    client: &Client,
+    client: &Arc<Client>,
     cfg: &AgentConfig,
     job: &ProvisioningJob,
 ) -> Result<Option<serde_json::Value>> {
@@ -119,6 +119,7 @@ async fn run_data_plane_job(
             ticket,
         } => {
             let bytes = run_zfs_send_source(
+                client,
                 cfg,
                 *migration_id,
                 *instance_id,
@@ -153,6 +154,7 @@ async fn run_data_plane_job(
                 .as_deref()
                 .ok_or_else(|| anyhow!("Source-role MigrateVmmStream missing ticket"))?;
             let report = migrate_vmm::run_source(
+                client,
                 cfg,
                 *migration_id,
                 *instance_id,
@@ -181,6 +183,7 @@ async fn run_data_plane_job(
 /// the WebSocket. Returns the bytes streamed.
 #[allow(clippy::too_many_arguments)]
 async fn run_zfs_send_source(
+    client: &Arc<Client>,
     cfg: &AgentConfig,
     migration_id: Uuid,
     instance_id: Uuid,
@@ -230,6 +233,27 @@ async fn run_zfs_send_source(
     .await
     .context("dial target /migrate/{id}/zfs")?;
 
+    // Advisory: a failed dry-run estimate degrades the progress
+    // feed to byte counts without a percentage, never the transfer.
+    let total_bytes = match zfs::estimate_send_bytes(from_snap, to_snap).await {
+        Ok(bytes) => Some(bytes),
+        Err(e) => {
+            let chain = format!("{e:#}");
+            warn!(
+                %migration_id, %to_snap, error = %chain,
+                "migrate-zfs-send: size estimate failed; reporting progress without a total",
+            );
+            None
+        }
+    };
+    let reporter = migrate_progress::ProgressReporter::start(
+        Arc::clone(client),
+        migration_id,
+        total_bytes,
+        format!("zfs send {to_snap}"),
+    );
+    let counter = reporter.observer();
+
     let mut child = match from_snap {
         Some(from) => zfs::spawn_send_incremental(from, to_snap)
             .context("spawn zfs send -I for incremental")?,
@@ -239,12 +263,16 @@ async fn run_zfs_send_source(
         .stdout
         .take()
         .ok_or_else(|| anyhow!("zfs send child has no piped stdout"))?;
-    let sender = tritond_vmm_migrate::zfs_stream::ZfsSender::new(transport, stdout);
+    let sender = tritond_vmm_migrate::zfs_stream::ZfsSender::new(transport, stdout)
+        .with_progress(move |total| {
+            counter.store(total, std::sync::atomic::Ordering::Relaxed);
+        });
     let bytes = sender.run().await.context("ZfsSender::run")?;
     let status = child.wait().await.context("await zfs send exit")?;
     if !status.success() {
         bail!("zfs send exited non-zero: {status}");
     }
+    reporter.finish().await;
     info!(
         %migration_id, %instance_id, %dataset, %to_snap, bytes,
         "migrate-zfs-send/source: stream completed",

@@ -30,6 +30,7 @@ pub mod metrics;
 pub mod migrate;
 pub mod migrate_jobs;
 pub mod migrate_probe;
+pub mod migrate_progress;
 pub mod migrate_vmm;
 pub mod nic_tags;
 pub mod platform;
