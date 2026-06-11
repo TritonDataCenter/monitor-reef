@@ -2168,14 +2168,79 @@ fn ensure_proteus_nic_tag(link_name: &str) -> anyhow::Result<()> {
         .args(["add", "-l", link_name])
         .output()
         .with_context(|| format!("invoke nictagadm add for {link_name}"))?;
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        anyhow::bail!(
-            "nictagadm add -l {link_name} failed (exit {}): {}",
-            out.status,
-            stderr.trim(),
-        );
+    if out.status.success() {
+        return Ok(());
     }
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // Common case: the kmod's `CreatePort` already created the
+    // etherstub link (via dls_devnet_create). nictagadm's bash
+    // unconditionally calls `dladm create-etherstub -t <name>` and
+    // bails before writing the conf file, so the tag never gets
+    // registered. Detect that specific failure and append the
+    // etherstub directly to /tmp/.nic-tags — the file vmadm consults
+    // for nic_tag → link resolution. Mirrors what nictagadm would
+    // have written via `conf_add_etherstub` had the dladm step
+    // succeeded. Other failure modes still propagate.
+    if stderr.contains("etherstub creation failed: object already exists") {
+        tracing::info!(
+            link_name,
+            "nictagadm add hit EEXIST on dladm create-etherstub; \
+             registering tag via /tmp/.nic-tags directly",
+        );
+        register_proteus_tag_in_nic_conf(link_name)?;
+        return Ok(());
+    }
+    anyhow::bail!(
+        "nictagadm add -l {link_name} failed (exit {}): {}",
+        out.status,
+        stderr.trim(),
+    );
+}
+
+/// Append `link_name` to the `etherstub=` line in `/tmp/.nic-tags`
+/// and re-run `sysinfo -u` so vmadm's nic_tag lookup picks it up.
+/// Mirrors what nictagadm's `conf_add_etherstub` does internally,
+/// but skips the `dladm create-etherstub` precondition (the kmod
+/// already created the link).
+fn register_proteus_tag_in_nic_conf(link_name: &str) -> anyhow::Result<()> {
+    use std::fs;
+    use std::process::Command;
+    const NIC_CONF: &str = "/tmp/.nic-tags";
+    let body =
+        fs::read_to_string(NIC_CONF).with_context(|| format!("read {NIC_CONF}"))?;
+    let mut found_line = false;
+    let mut out = String::with_capacity(body.len() + link_name.len() + 1);
+    for line in body.lines() {
+        if let Some(rest) = line.strip_prefix("etherstub=") {
+            found_line = true;
+            // Skip if already present (defensive — `nictagadm
+            // exists` should have short-circuited, but if the
+            // file was edited out-of-band we want to be safe).
+            let mut entries: Vec<&str> = rest
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .collect();
+            if !entries.iter().any(|e| *e == link_name) {
+                entries.push(link_name);
+            }
+            out.push_str("etherstub=");
+            out.push_str(&entries.join(","));
+            out.push('\n');
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    if !found_line {
+        out.push_str("etherstub=");
+        out.push_str(link_name);
+        out.push('\n');
+    }
+    fs::write(NIC_CONF, &out).with_context(|| format!("write {NIC_CONF}"))?;
+    // sysinfo caches the nic_tags; refresh so vmadm sees the new
+    // entry on its next call.
+    let _ = Command::new("sysinfo").arg("-u").status();
     Ok(())
 }
 
