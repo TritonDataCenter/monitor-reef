@@ -297,6 +297,39 @@ pub async fn set_bhyve_extra_opt(zone: Uuid, key: &str, value: Option<&str>) -> 
     Ok(())
 }
 
+/// Return a copy of a `vmadm create` payload that is safe to write to a
+/// debug log: the guest root password (the `instance/root_pw`
+/// provision-metadata entry, folded into `internal_metadata.root_pw`)
+/// is masked everywhere it appears — the metadata slot itself and,
+/// transitively, the inline `chpasswd` stanza of the NoCloud
+/// `cloud-init:user-data` (both the raw form and the YAML
+/// double-quote-escaped form `push_yaml_double_quoted` emits). Payloads
+/// without a `root_pw` are returned unchanged apart from the clone.
+fn redact_payload_for_log(payload: &serde_json::Value) -> serde_json::Value {
+    let mut redacted = payload.clone();
+    let Some(pw) = redacted
+        .pointer("/internal_metadata/root_pw")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+    else {
+        return redacted;
+    };
+    if let Some(slot) = redacted.pointer_mut("/internal_metadata/root_pw") {
+        *slot = serde_json::Value::String("<redacted>".to_string());
+    }
+    let mut escaped = String::new();
+    push_yaml_double_quoted(&mut escaped, &pw);
+    if let Some(slot) = redacted.pointer_mut("/customer_metadata/cloud-init:user-data")
+        && let Some(scrubbed) = slot.as_str().map(|text| {
+            text.replace(&escaped, "\"<redacted>\"")
+                .replace(&pw, "<redacted>")
+        })
+    {
+        *slot = serde_json::Value::String(scrubbed);
+    }
+    redacted
+}
+
 async fn run_create_payload(
     blueprint: &ProvisioningBlueprint,
     payload: serde_json::Value,
@@ -304,7 +337,8 @@ async fn run_create_payload(
     let payload_bytes = serde_json::to_vec(&payload)
         .context("serialise vmadm create payload — internal types should always serialise")?;
 
-    let pretty = serde_json::to_string_pretty(&payload).unwrap_or_default();
+    let pretty =
+        serde_json::to_string_pretty(&redact_payload_for_log(&payload)).unwrap_or_default();
     debug!(payload = %pretty, "running vmadm create");
 
     let mut child = Command::new("vmadm")
@@ -1514,6 +1548,47 @@ mod tests {
         assert!(!none.contains("chpasswd"), "{none}");
         assert!(!none.contains("ssh_pwauth"), "{none}");
         assert!(!none.contains("PermitRootLogin"), "{none}");
+    }
+
+    #[test]
+    fn redact_payload_for_log_masks_the_root_password() {
+        // The quote in the password exercises the YAML-escaped form
+        // (`push_yaml_double_quoted`) inside the user-data scrub.
+        let pw = "s3cr\"etPW";
+        let mut bp = sample_bhyve_blueprint();
+        bp.provision_metadata.push(MetaEntry {
+            key: "instance/root_pw".to_string(),
+            value: serde_json::json!(pw),
+            guest_visible: false,
+            guest_writable: false,
+            updated_by: "test".to_string(),
+            updated_at: Utc::now(),
+        });
+        let payload = create_bhyve_payload(&bp).unwrap();
+        assert_eq!(payload["internal_metadata"]["root_pw"], pw);
+
+        let redacted = redact_payload_for_log(&payload);
+        let rendered = serde_json::to_string(&redacted).unwrap();
+        assert!(
+            !rendered.contains("s3cr") && !rendered.contains("etPW"),
+            "debug-log copy must not contain the plaintext root password: {rendered}"
+        );
+        assert_eq!(redacted["internal_metadata"]["root_pw"], "<redacted>");
+        // Non-secret fields survive so the log stays useful.
+        assert_eq!(
+            redacted["internal_metadata"]["cloudinit_datasource"],
+            "nocloud"
+        );
+        assert!(
+            redacted["customer_metadata"]["cloud-init:user-data"]
+                .as_str()
+                .unwrap()
+                .contains("chpasswd:")
+        );
+
+        // A payload with no root_pw is returned intact.
+        let plain = create_bhyve_payload(&sample_bhyve_blueprint()).unwrap();
+        assert_eq!(redact_payload_for_log(&plain), plain);
     }
 
     #[test]
