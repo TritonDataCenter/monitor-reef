@@ -441,43 +441,62 @@ pub(crate) async fn run_source(
         .context("agent_id is not a UUID; cannot present source_cn in dial")?;
     let vmm_name = vmadm::vmm_device_name(instance_id).await?;
 
-    let mut ctl = connect_ctl_with_retry(&bhyve_sock_path(instance_id)).await?;
-    let status = ctl
-        .status()
+    // Everything from the control-socket connect through the dial is
+    // strictly pre-Finish: the target has imported no state (the dial
+    // only establishes the wire; the import fence is far later), so a
+    // failure here is safe to unwind by resuming the paused source. We
+    // tag such failures with `last_phase = "pause"` so the saga's
+    // classifier resumes the guest instead of stranding it paused on an
+    // ambiguous (`None`) failure. (`export-state` refusing an
+    // un-snapshottable device — e.g. the VNC `fbuf` — lands here.)
+    let setup = async {
+        let mut ctl = connect_ctl_with_retry(&bhyve_sock_path(instance_id)).await?;
+        let status = ctl
+            .status()
+            .await
+            .context("bhyve status on paused source")?;
+        let layout = MemLayout {
+            num_cpus: status.num_cpus,
+            lowmem_size: status.lowmem_size,
+            highmem_size: status.highmem_size,
+        };
+        // Export requires the pause the MigratePauseSource job already
+        // performed. The deployed bhyve returns ONE combined state blob.
+        let state_blob = ctl
+            .export_state()
+            .await
+            .context("bhyve export-state on paused source")?;
+        // Free the single-threaded listener; nothing further to ask it.
+        drop(ctl);
+        let vmm = open_smartos_vmm(&vmm_name, layout)?;
+        let transport = migrate::dial(migrate::DialParams {
+            base_url: peer_endpoint.to_string(),
+            migration_id,
+            source_cn,
+            vm_uuid: instance_id,
+            ticket: ticket.to_string(),
+            target_spki_sha256_hex: peer_spki_sha256_hex.to_string(),
+        })
         .await
-        .context("bhyve status on paused source")?;
-    let layout = MemLayout {
-        num_cpus: status.num_cpus,
-        lowmem_size: status.lowmem_size,
-        highmem_size: status.highmem_size,
+        .context("dial target /migrate/{id}")?;
+        Ok::<_, anyhow::Error>((layout, state_blob, vmm, transport))
+    }
+    .await;
+    let (layout, state_blob, vmm, transport) = match setup {
+        Ok(v) => v,
+        Err(e) => {
+            return Err(anyhow::Error::new(StreamFailed {
+                reason: format!("vmm pre-stream setup failed: {e:#}"),
+                report: serde_json::json!({ "last_phase": "pause" }),
+            }));
+        }
     };
-    // Export requires the pause the MigratePauseSource job already
-    // performed. The deployed bhyve returns ONE combined state blob.
-    let state_blob = ctl
-        .export_state()
-        .await
-        .context("bhyve export-state on paused source")?;
-    // Free the single-threaded listener; nothing further to ask it.
-    drop(ctl);
-
-    let vmm = open_smartos_vmm(&vmm_name, layout)?;
     let pause_ts_ns = take_pause_ts(migration_id).unwrap_or_else(|| {
         // Agent restarted between the pause job and this stream;
         // audit-only data, the guest itself is still paused.
         warn!(%migration_id, "migrate-vmm-stream/source: pause timestamp lost; reporting 0");
         0
     });
-
-    let transport = migrate::dial(migrate::DialParams {
-        base_url: peer_endpoint.to_string(),
-        migration_id,
-        source_cn,
-        vm_uuid: instance_id,
-        ticket: ticket.to_string(),
-        target_spki_sha256_hex: peer_spki_sha256_hex.to_string(),
-    })
-    .await
-    .context("dial target /migrate/{id}")?;
 
     // The RAM push dominates the stream; the state blobs are noise
     // next to it, so guest memory is the progress total.
