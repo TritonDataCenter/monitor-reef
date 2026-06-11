@@ -13,13 +13,12 @@
 //! §4 / `we-need-to-build-ancient-scone.md`:
 //!
 //! ```text
-//!   Sync      ─ negotiate protocol, exchange preamble
-//!   Pause     ─ source pauses viona + vCPUs + drains device I/O
-//!   RamPush   ─ source pushes ALL pages while paused (single pass)
-//!   RamHash   ─ source xxh3 of guest RAM; target verifies its copy
-//!   TimeData  ─ source exports VMM_TIME; target hands to bhyve
-//!   DevState  ─ source exports kernel+device nvlists; target imports
-//!   Finish    ─ source: MemEnd; target: Okay; source: Okay; close
+//!   Sync       ─ negotiate protocol, exchange preamble
+//!   Pause      ─ source pauses the guest (single bhyve `pause`)
+//!   RamPush    ─ source pushes ALL pages while paused (single pass)
+//!   RamHash    ─ source xxh3 of guest RAM; target verifies its copy
+//!   DeviceState─ source exports ONE combined state blob; target imports
+//!   Finish     ─ source: MemEnd; target: Okay; source: Okay; close
 //! ```
 //!
 //! The LM-2 new `PauseComplete` / `SwitchComplete` codec messages
@@ -33,9 +32,9 @@
 //! source is never told the switch happened (`SwitchComplete`)
 //! until the target can actually run the guest.
 //!
-//! Bhyve control-socket interactions (`pause_vm`, `drain_devices`,
-//! `export_state`, `import_state`, `resume_vm`) are not wired here;
-//! the state machine emits typed `Step` events the caller drives.
+//! Bhyve control-socket interactions (`pause`, `export_state`,
+//! `import_state`, `resume`) are not wired here; the state machine
+//! emits typed `Step` events / hooks the caller drives.
 //! That way the in-memory loopback test doesn't need a fake
 //! [`BhyveCtl`] and the tritonagent module can interleave proteus
 //! / ZFS work between phases without touching this file.
@@ -163,25 +162,23 @@ pub trait TargetHooks: Send {
 pub struct NoopTargetHooks;
 impl TargetHooks for NoopTargetHooks {}
 
-/// Optional time-data + device-state payloads carried alongside the
-/// state-machine drive. On a real CN the tritonagent supplies these
-/// from the bhyve control socket; in the loopback test they're
-/// pre-baked.
+/// The single combined bhyve state blob carried alongside the
+/// state-machine drive. On a real CN the tritonagent supplies it from
+/// the bhyve control socket (`export-state` returns one opaque blob
+/// covering VMM_TIME + system + per-vCPU + userspace devices); in the
+/// loopback test it's pre-baked.
 #[derive(Debug, Clone, Default)]
 pub struct StateBlobs {
-    pub time_data: Vec<u8>,
-    pub kern_state: Vec<u8>,
-    pub dev_state: Vec<u8>,
+    pub state_blob: Vec<u8>,
 }
 
 /// Outbound (source-side) migration state machine.
 ///
-/// Drives the source half of the 7-phase protocol over `transport`.
-/// `vmm` provides the guest memory + time export; `blobs.kern_state`
-/// + `blobs.dev_state` are the pre-captured bhyve state nvlists
-/// (the caller is expected to have called `bhyve_ctl.export_state`
-/// already; we don't take a `BhyveCtl` here to keep this layer pure
-/// + testable).
+/// Drives the source half of the protocol over `transport`.
+/// `vmm` provides the guest memory; `blobs.state_blob` is the
+/// pre-captured single bhyve state blob (the caller is expected to
+/// have called `bhyve_ctl.export_state` already; we don't take a
+/// `BhyveCtl` here to keep this layer pure + testable).
 pub struct OutboundMigration<T: Transport, H: SourceHooks> {
     transport: T,
     vmm: SharedVmm,
@@ -240,10 +237,10 @@ impl<T: Transport, H: SourceHooks> OutboundMigration<T, H> {
 
         // ── Phase 2: Pause ──
         //
-        // The actual `bhyve_ctl::pause_devices/pause_vm/drain_devices`
-        // calls happen on the caller side; by the time the caller
-        // invokes us they've already returned. We signal the target
-        // and surface the timestamp the caller recorded.
+        // The actual `bhyve_ctl::pause` call happens on the caller
+        // side; by the time the caller invokes us it has already
+        // returned. We signal the target and surface the timestamp
+        // the caller recorded.
         self.hooks.phase(Phase::Pause);
         let pause_ts = self.hooks.pause_complete_ts_ns();
         send(&mut self.transport, Message::PauseSignal).await?;
@@ -267,25 +264,16 @@ impl<T: Transport, H: SourceHooks> OutboundMigration<T, H> {
         let src_hash = self.vmm.hash_all_ram()?;
         send(&mut self.transport, Message::RamHash(src_hash)).await?;
 
-        // ── Phase 5: TimeData ──
-        self.hooks.phase(Phase::TimeData);
-        let time_data = if !self.blobs.time_data.is_empty() {
-            self.blobs.time_data.clone()
-        } else {
-            self.vmm.export_time()?
-        };
-        send(&mut self.transport, Message::Serialized(time_data)).await?;
-
-        // ── Phase 6: DeviceState ──
+        // ── Phase 5: DeviceState (single combined blob) ──
+        // The deployed bhyve `export-state` returns ONE opaque blob
+        // (VMM_TIME + system + per-vCPU + userspace devices); there is
+        // no separate time/kern/dev split, so we ship exactly one
+        // Serialized message. (VMM_TIME travels inside the blob, so the
+        // old separate TimeData phase / `vmm.export_time()` is gone.)
         self.hooks.phase(Phase::DeviceState);
         send(
             &mut self.transport,
-            Message::Serialized(self.blobs.kern_state.clone()),
-        )
-        .await?;
-        send(
-            &mut self.transport,
-            Message::Serialized(self.blobs.dev_state.clone()),
+            Message::Serialized(self.blobs.state_blob.clone()),
         )
         .await?;
 
@@ -358,15 +346,13 @@ pub struct InboundMigration<T: Transport, H: TargetHooks> {
 }
 
 /// What the inbound machine captures from the source. The caller
-/// (tritonagent migrate module) feeds the kern+dev nvlists into
+/// (tritonagent migrate module) feeds the single state blob into
 /// `bhyve_ctl::import_state` inside [`TargetHooks::state_received`],
 /// which fires before the Finish handshake; by the time `run`
 /// returns, the import has already happened.
 #[derive(Debug, Default, Clone)]
 pub struct TargetCaptured {
-    pub time_data: Vec<u8>,
-    pub kern_state: Vec<u8>,
-    pub dev_state: Vec<u8>,
+    pub state_blob: Vec<u8>,
 }
 
 impl<T: Transport, H: TargetHooks> InboundMigration<T, H> {
@@ -379,11 +365,10 @@ impl<T: Transport, H: TargetHooks> InboundMigration<T, H> {
         }
     }
 
-    /// Run the target half to completion. The captured
-    /// `(time_data, kern_state, dev_state)` blobs are handed to
-    /// [`TargetHooks::state_received`] before the Finish handshake
-    /// (where the caller drives `bhyve_ctl::import_state`) and also
-    /// returned for inspection.
+    /// Run the target half to completion. The captured `state_blob`
+    /// is handed to [`TargetHooks::state_received`] before the Finish
+    /// handshake (where the caller drives `bhyve_ctl::import_state`)
+    /// and also returned for inspection.
     pub async fn run(mut self) -> Result<TargetCaptured, MigrateError> {
         let layout = self.vmm.mem_layout();
 
@@ -481,14 +466,9 @@ impl<T: Transport, H: TargetHooks> InboundMigration<T, H> {
             });
         }
 
-        // ── Phase 5: TimeData ──
-        self.hooks.phase(Phase::TimeData);
-        self.blobs.time_data = expect_serialised(&mut self.transport, "time-data").await?;
-
-        // ── Phase 6: DeviceState ──
+        // ── Phase 5: DeviceState (single combined blob) ──
         self.hooks.phase(Phase::DeviceState);
-        self.blobs.kern_state = expect_serialised(&mut self.transport, "kern-state").await?;
-        self.blobs.dev_state = expect_serialised(&mut self.transport, "dev-state").await?;
+        self.blobs.state_blob = expect_serialised(&mut self.transport, "device-state").await?;
 
         // Import fence (LM-2b): the caller imports device state and
         // brings the target dataplane up NOW, before the Finish

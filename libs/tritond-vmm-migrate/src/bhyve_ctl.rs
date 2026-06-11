@@ -30,31 +30,37 @@ use serde::Deserialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
-/// One JSON reply line bhyve writes back. Optional fields cover
-/// every command shape; we deserialise into one struct + check the
-/// `success` boolean.
+/// One JSON reply line the deployed bhyve writes back. The envelope
+/// is `{"status":"ok",...}` on success and `{"status":"error",
+/// "msg":"..."}` on failure (NOT the legacy `{"success":bool}` the
+/// donor agent used — the deployed PI's `bhyve_control.c` speaks a
+/// single-blob `status` protocol). Optional fields cover every
+/// command shape.
 #[derive(Deserialize, Debug)]
 struct Response {
-    success: bool,
+    status: String,
     #[serde(default)]
-    error: Option<String>,
-    /// Returned by the legacy `export-devices` command. Not used
-    /// by the LM-2 surface, but kept on the struct so a future
-    /// migration that exports devices separately doesn't need to
-    /// change the response shape.
+    msg: Option<String>,
+    /// `export-state` reports the single combined state-blob length.
     #[serde(default)]
-    #[allow(dead_code)]
-    len: Option<u64>,
-    #[serde(default)]
-    kern_len: Option<u64>,
-    #[serde(default)]
-    dev_len: Option<u64>,
+    blob_len: Option<u64>,
     #[serde(default)]
     ncpus: Option<u32>,
     #[serde(default)]
     lowmem: Option<usize>,
     #[serde(default)]
     highmem: Option<usize>,
+}
+
+impl Response {
+    fn is_ok(&self) -> bool {
+        self.status == "ok"
+    }
+    fn err_msg(&self) -> String {
+        self.msg
+            .clone()
+            .unwrap_or_else(|| format!("bhyve returned status={:?}", self.status))
+    }
 }
 
 /// VM status info returned by the `status` command.
@@ -87,10 +93,8 @@ impl BhyveCtl {
     pub async fn status(&mut self) -> io::Result<VmStatus> {
         self.send_command(r#"{"command":"status"}"#).await?;
         let resp = self.read_response().await?;
-        if !resp.success {
-            return Err(io::Error::other(
-                resp.error.unwrap_or_else(|| "status failed".into()),
-            ));
+        if !resp.is_ok() {
+            return Err(io::Error::other(resp.err_msg()));
         }
         Ok(VmStatus {
             num_cpus: resp.ncpus.unwrap_or(1),
@@ -99,105 +103,76 @@ impl BhyveCtl {
         })
     }
 
-    /// Pause viona rings. Must be called BEFORE [`Self::pause_vm`]
-    /// so the kernel ring workers stop draining the guest's avail
-    /// rings while we capture RAM.
-    pub async fn pause_devices(&mut self) -> io::Result<()> {
-        self.simple_cmd(r#"{"command":"pause-devices"}"#).await
+    /// Pause the guest. The deployed bhyve's single `pause` command
+    /// pauses vCPUs first then devices internally (it owns the
+    /// ordering — see `bhyve_control.c::cmd_pause`), so the agent no
+    /// longer issues the donor's separate pause-devices/pause-vm/
+    /// drain-devices trio. We pause via the control socket rather
+    /// than a GZ `VM_PAUSE` ioctl because the latter deadlocks
+    /// against `VM_DATA_WRITE` (`vcpu_lock_one` blocks on vCPUs in
+    /// `VM_RUN`).
+    pub async fn pause(&mut self) -> io::Result<()> {
+        self.simple_cmd(r#"{"command":"pause"}"#).await
     }
 
-    /// Pause vCPUs + device timers. The legacy comment is worth
-    /// preserving verbatim: we do NOT pause from the GZ via
-    /// `VM_PAUSE` ioctl because it deadlocks against the subsequent
-    /// `VM_DATA_WRITE` (the kernel's `vcpu_lock_one` blocks on vCPUs
-    /// in `VM_RUN`). Doing it via bhyve's control socket lets
-    /// userspace pause its own threads cleanly.
-    pub async fn pause_vm(&mut self) -> io::Result<()> {
-        self.simple_cmd(r#"{"command":"pause-vm"}"#).await
+    /// Resume the guest. The deployed bhyve's single `resume` resumes
+    /// devices first then vCPUs internally. Used on the source for a
+    /// pre-cutover abort, and on the target after `import_state`.
+    pub async fn resume(&mut self) -> io::Result<()> {
+        self.simple_cmd(r#"{"command":"resume"}"#).await
     }
 
-    /// Drain in-flight block-device I/O AFTER [`Self::pause_vm`].
-    /// Ensures captured state has every used-ring entry and status
-    /// byte committed for in-flight requests; otherwise the migrated
-    /// state has descriptors that look "consumed" on the destination
-    /// but never see their completions, hanging guest disk I/O.
-    pub async fn drain_devices(&mut self) -> io::Result<()> {
-        self.simple_cmd(r#"{"command":"drain-devices"}"#).await
-    }
-
-    /// Resume vCPUs + device timers. Target-side only; called after
-    /// [`import_state`] completes.
-    pub async fn resume_vm(&mut self) -> io::Result<()> {
-        self.simple_cmd(r#"{"command":"resume-vm"}"#).await
-    }
-
-    /// Resume viona rings. Target-side only; pairs with
-    /// [`Self::pause_devices`].
-    pub async fn resume_devices(&mut self) -> io::Result<()> {
-        self.simple_cmd(r#"{"command":"resume-devices"}"#).await
-    }
-
-    /// Export ALL state: kernel (VMM_TIME, system devices, per-vCPU)
-    /// + bhyve userspace devices (PCI, virtio, viona). Two packed
-    /// nvlists, opaque to us. Must be called after `pause_devices`
-    /// + `pause_vm` + `drain_devices`.
-    pub async fn export_state(&mut self) -> io::Result<(Vec<u8>, Vec<u8>)> {
+    /// Export ALL migration state as a single opaque blob (kernel
+    /// VMM_TIME + system devices + per-vCPU + bhyve userspace
+    /// devices, packed by `build_save_stream`). Must be called after
+    /// [`Self::pause`]. The reply is `{"status":"ok","blob_len":N}`
+    /// followed by N raw bytes on the same connection.
+    pub async fn export_state(&mut self) -> io::Result<Vec<u8>> {
         self.send_command(r#"{"command":"export-state"}"#).await?;
         let resp = self.read_response().await?;
-        if !resp.success {
-            return Err(io::Error::other(
-                resp.error.unwrap_or_else(|| "export-state failed".into()),
-            ));
+        if !resp.is_ok() {
+            return Err(io::Error::other(resp.err_msg()));
         }
-        let kern_len = resp
-            .kern_len
-            .ok_or_else(|| io::Error::other("missing kern_len"))? as usize;
-        let dev_len = resp
-            .dev_len
-            .ok_or_else(|| io::Error::other("missing dev_len"))? as usize;
-
-        let mut kern = vec![0u8; kern_len];
-        self.reader.read_exact(&mut kern).await?;
-        let mut dev = vec![0u8; dev_len];
-        self.reader.read_exact(&mut dev).await?;
-        Ok((kern, dev))
+        let blob_len = resp
+            .blob_len
+            .ok_or_else(|| io::Error::other("export-state reply missing blob_len"))?
+            as usize;
+        let mut blob = vec![0u8; blob_len];
+        self.reader.read_exact(&mut blob).await?;
+        Ok(blob)
     }
 
-    /// Full state import: kernel state nvlist + device state
-    /// nvlist. bhyve reads destination VMM_TIME live and applies
-    /// the cross-host adjustment internally — the source's exported
-    /// VMM_TIME blob is informational on this side.
-    pub async fn import_state(&mut self, kern_data: &[u8], dev_data: &[u8]) -> io::Result<()> {
+    /// Import the single combined state blob into a listen-mode
+    /// bhyve. The command carries `blob_len`, then the N raw bytes
+    /// follow on the connection; bhyve reads its own destination
+    /// VMM_TIME live and applies the cross-host adjustment. After
+    /// this returns the caller sends [`Self::resume`] to start vCPU
+    /// forward progress.
+    pub async fn import_state(&mut self, blob: &[u8]) -> io::Result<()> {
         let cmd = format!(
-            "{{\"command\":\"import-state\",\"kern_len\":{},\"dev_len\":{}}}",
-            kern_data.len(),
-            dev_data.len(),
+            "{{\"command\":\"import-state\",\"blob_len\":{}}}",
+            blob.len(),
         );
         self.send_command(&cmd).await?;
-        self.writer.write_all(kern_data).await?;
-        self.writer.write_all(dev_data).await?;
+        self.writer.write_all(blob).await?;
+        self.writer.flush().await?;
         let resp = self.read_response().await?;
-        if resp.success {
+        if resp.is_ok() {
             Ok(())
         } else {
-            Err(io::Error::other(
-                resp.error.unwrap_or_else(|| "import-state failed".into()),
-            ))
+            Err(io::Error::other(resp.err_msg()))
         }
     }
 
-    /// Send a command and check the response is a bare-success
-    /// `{"success": true}`. Helper for the side-effect-only
-    /// commands.
+    /// Send a command and check the reply is `{"status":"ok"}`.
+    /// Helper for the side-effect-only commands.
     async fn simple_cmd(&mut self, cmd: &str) -> io::Result<()> {
         self.send_command(cmd).await?;
         let resp = self.read_response().await?;
-        if resp.success {
+        if resp.is_ok() {
             Ok(())
         } else {
-            Err(io::Error::other(
-                resp.error.unwrap_or_else(|| "command failed".into()),
-            ))
+            Err(io::Error::other(resp.err_msg()))
         }
     }
 

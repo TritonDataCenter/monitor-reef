@@ -129,9 +129,7 @@ async fn loopback_migrates_known_pattern_end_to_end() {
     let dst_hooks = RecordingHooks::default();
 
     let blobs = StateBlobs {
-        time_data: b"VMMTIMEDATA".to_vec(),
-        kern_state: b"KERN_NVLIST".to_vec(),
-        dev_state: b"DEV_NVLIST".to_vec(),
+        state_blob: b"STATE_NVLIST".to_vec(),
     };
 
     let src_recording = src_hooks.clone();
@@ -151,18 +149,14 @@ async fn loopback_migrates_known_pattern_end_to_end() {
     src.await.expect("join src").expect("src run");
     let captured = dst.await.expect("join dst").expect("dst run");
 
-    // Captured blobs round-tripped intact.
-    assert_eq!(captured.time_data, b"VMMTIMEDATA");
-    assert_eq!(captured.kern_state, b"KERN_NVLIST");
-    assert_eq!(captured.dev_state, b"DEV_NVLIST");
+    // Captured blob round-tripped intact.
+    assert_eq!(captured.state_blob, b"STATE_NVLIST");
 
-    // The import fence fired and got the same blobs run() returned.
+    // The import fence fired and got the same blob run() returned.
     let fence_blobs = dst_recording
         .state_received_blobs()
         .expect("state_received fired");
-    assert_eq!(fence_blobs.time_data, captured.time_data);
-    assert_eq!(fence_blobs.kern_state, captured.kern_state);
-    assert_eq!(fence_blobs.dev_state, captured.dev_state);
+    assert_eq!(fence_blobs.state_blob, captured.state_blob);
 
     // The source's switch_complete hook carries the timestamp the
     // target's state_received returned.
@@ -182,7 +176,8 @@ async fn loopback_migrates_known_pattern_end_to_end() {
     // Phase sequence on both sides walked the full protocol in
     // order. The Pause-Complete phase only fires from the source
     // side; the target observes via PauseSignal+PauseComplete
-    // inside the Pause phase. So both see the same 8 phases.
+    // inside the Pause phase. So both see the same 7 phases (the
+    // separate TimeData phase folded into the single DeviceState blob).
     let (src_phases, _, src_pages) = src_recording.snapshot();
     let (dst_phases, _, dst_pages) = dst_recording.snapshot();
     let expected = vec![
@@ -190,7 +185,6 @@ async fn loopback_migrates_known_pattern_end_to_end() {
         Phase::Pause,
         Phase::RamPush,
         Phase::RamHash,
-        Phase::TimeData,
         Phase::DeviceState,
         Phase::Finish,
         Phase::Complete,

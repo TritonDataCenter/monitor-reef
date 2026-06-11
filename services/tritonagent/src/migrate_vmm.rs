@@ -249,15 +249,13 @@ pub(crate) async fn pause_source(
     pause_source_at(&bhyve_sock_path(instance_id), migration_id).await
 }
 
-/// Pause order is load-bearing (donor-proven): viona rings first so
-/// the kernel stops draining avail rings, then vCPUs, then the
-/// block-device drain so every in-flight request's completion is
-/// committed before state capture.
+/// The deployed bhyve's single `pause` command owns the load-bearing
+/// order internally (vCPUs first, then devices — see
+/// `bhyve_control.c::cmd_pause`), so the agent issues one command
+/// instead of the donor's pause-devices/pause-vm/drain-devices trio.
 pub(crate) async fn pause_source_at(path: &Path, migration_id: Uuid) -> Result<serde_json::Value> {
     let mut ctl = connect_ctl_with_retry(path).await?;
-    ctl.pause_devices().await.context("bhyve pause-devices")?;
-    ctl.pause_vm().await.context("bhyve pause-vm")?;
-    ctl.drain_devices().await.context("bhyve drain-devices")?;
+    ctl.pause().await.context("bhyve pause")?;
     let ts = now_ns();
     record_pause_ts(migration_id, ts);
     info!(%migration_id, pause_complete_ts = ts, "migrate-pause-source: guest paused + drained");
@@ -273,12 +271,11 @@ pub(crate) async fn resume_source(migration_id: Uuid, instance_id: Uuid) -> Resu
     resume_source_at(&bhyve_sock_path(instance_id), migration_id).await
 }
 
-/// Resume brings the rings back before the vCPUs so the guest never
-/// runs against paused viona queues.
+/// The deployed bhyve's single `resume` resumes devices before vCPUs
+/// internally, so the guest never runs against paused viona queues.
 pub(crate) async fn resume_source_at(path: &Path, migration_id: Uuid) -> Result<()> {
     let mut ctl = connect_ctl_with_retry(path).await?;
-    ctl.resume_devices().await.context("bhyve resume-devices")?;
-    ctl.resume_vm().await.context("bhyve resume-vm")?;
+    ctl.resume().await.context("bhyve resume")?;
     let _ = take_pause_ts(migration_id);
     info!(%migration_id, "migrate-resume-source: guest resumed");
     Ok(())
@@ -454,9 +451,9 @@ pub(crate) async fn run_source(
         lowmem_size: status.lowmem_size,
         highmem_size: status.highmem_size,
     };
-    // Export requires the pause+drain the MigratePauseSource job
-    // already performed.
-    let (kern_state, dev_state) = ctl
+    // Export requires the pause the MigratePauseSource job already
+    // performed. The deployed bhyve returns ONE combined state blob.
+    let state_blob = ctl
         .export_state()
         .await
         .context("bhyve export-state on paused source")?;
@@ -497,11 +494,7 @@ pub(crate) async fn run_source(
         shared: Arc::clone(&shared),
         progress: reporter.observer(),
     };
-    let blobs = StateBlobs {
-        time_data: Vec::new(),
-        kern_state,
-        dev_state,
-    };
+    let blobs = StateBlobs { state_blob };
     let outcome = OutboundMigration::new(transport, vmm, blobs, hooks)
         .run()
         .await;
@@ -574,20 +567,18 @@ impl TargetRunHooks {
     /// and before the source is told the cutover happened.
     async fn cutover(&mut self, blobs: &TargetCaptured) -> Result<u64, MigrateError> {
         self.ctl
-            .import_state(&blobs.kern_state, &blobs.dev_state)
+            .import_state(&blobs.state_blob)
             .await
             .map_err(|e| MigrateError::Hook(format!("bhyve import-state: {e}")))?;
         self.ports
             .start_all()
             .map_err(|e| MigrateError::Hook(format!("proteus port start: {e:#}")))?;
+        // Single `resume` (devices before vCPUs internally) starts vCPU
+        // forward progress now that import-state has applied.
         self.ctl
-            .resume_devices()
+            .resume()
             .await
-            .map_err(|e| MigrateError::Hook(format!("bhyve resume-devices: {e}")))?;
-        self.ctl
-            .resume_vm()
-            .await
-            .map_err(|e| MigrateError::Hook(format!("bhyve resume-vm: {e}")))?;
+            .map_err(|e| MigrateError::Hook(format!("bhyve resume: {e}")))?;
         let ts = now_ns();
         lock_or_recover(&self.shared).activated_ts_ns = ts;
         info!(
@@ -773,21 +764,20 @@ mod tests {
                 log_clone.lock().unwrap().push(name.clone());
                 let reply = match name.as_str() {
                     "status" => serde_json::json!({
-                        "success": true,
+                        "status": "ok",
                         "ncpus": layout.num_cpus,
                         "lowmem": layout.lowmem_size,
                         "highmem": layout.highmem_size,
                     }),
                     "import-state" => {
-                        let kern = cmd["kern_len"].as_u64().unwrap_or(0) as usize;
-                        let dev = cmd["dev_len"].as_u64().unwrap_or(0) as usize;
-                        let mut buf = vec![0u8; kern + dev];
+                        let blob = cmd["blob_len"].as_u64().unwrap_or(0) as usize;
+                        let mut buf = vec![0u8; blob];
                         if reader.read_exact(&mut buf).await.is_err() {
                             return;
                         }
-                        serde_json::json!({ "success": true })
+                        serde_json::json!({ "status": "ok" })
                     }
-                    _ => serde_json::json!({ "success": true }),
+                    _ => serde_json::json!({ "status": "ok" }),
                 };
                 let mut bytes = reply.to_string().into_bytes();
                 bytes.push(b'\n');
@@ -820,17 +810,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pause_source_issues_commands_in_donor_order() {
+    async fn pause_source_issues_single_pause() {
         let dir = tempfile::tempdir().expect("tempdir");
         let (path, log) = spawn_scripted_bhyve(dir.path(), small_layout());
         let migration_id = Uuid::new_v4();
         let result = pause_source_at(&path, migration_id)
             .await
             .expect("pause succeeds");
-        assert_eq!(
-            log.lock().unwrap().as_slice(),
-            ["pause-devices", "pause-vm", "drain-devices"],
-        );
+        // The deployed bhyve owns the pause ordering internally; the
+        // agent issues exactly one `pause`.
+        assert_eq!(log.lock().unwrap().as_slice(), ["pause"]);
         let ts = result["pause_complete_ts"].as_u64().expect("ts present");
         assert!(ts > 0);
         // The stream job reads the stash; pause must have recorded it.
@@ -838,7 +827,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resume_source_brings_rings_up_before_vcpus() {
+    async fn resume_source_issues_single_resume() {
         let dir = tempfile::tempdir().expect("tempdir");
         let (path, log) = spawn_scripted_bhyve(dir.path(), small_layout());
         let migration_id = Uuid::new_v4();
@@ -846,10 +835,7 @@ mod tests {
         resume_source_at(&path, migration_id)
             .await
             .expect("resume succeeds");
-        assert_eq!(
-            log.lock().unwrap().as_slice(),
-            ["resume-devices", "resume-vm"],
-        );
+        assert_eq!(log.lock().unwrap().as_slice(), ["resume"]);
         // Resume clears the stash so a later migration can't read
         // this one's timestamp.
         assert_eq!(take_pause_ts(migration_id), None);
@@ -858,10 +844,9 @@ mod tests {
     /// Full mock live migration: MockVmm on both ends, the in-memory
     /// transport pair as the wire, a scripted control socket as
     /// bhyve, and recording ports as Proteus. Asserts the cutover
-    /// fence ordering (import-state → port start → resume-devices →
-    /// resume-vm), that guest RAM arrived intact, and that the
-    /// target's activation timestamp reached the source's
-    /// SwitchComplete hook.
+    /// fence ordering (import-state → port start → resume), that guest
+    /// RAM arrived intact, and that the target's activation timestamp
+    /// reached the source's SwitchComplete hook.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn mock_live_migration_end_to_end() {
         let layout = small_layout();
@@ -892,9 +877,7 @@ mod tests {
             progress: Arc::clone(&progress),
         };
         let blobs = StateBlobs {
-            time_data: b"TIME".to_vec(),
-            kern_state: b"KERN-STATE".to_vec(),
-            dev_state: b"DEV-STATE".to_vec(),
+            state_blob: b"STATE-BLOB".to_vec(),
         };
         let source = tokio::spawn(async move {
             OutboundMigration::new(src_t, src_vmm, blobs, source_hooks)
@@ -929,10 +912,10 @@ mod tests {
         assert_eq!(progress.load(Ordering::Relaxed), pushed);
 
         // Cutover fence ordering: the connection-scoped script log
-        // shows import-state strictly before the resume pair, and
+        // shows import-state strictly before the single resume, and
         // the recording ports fired exactly once in between.
         let cmds = ctl_log.lock().unwrap().clone();
-        assert_eq!(cmds, ["import-state", "resume-devices", "resume-vm"]);
+        assert_eq!(cmds, ["import-state", "resume"]);
         assert_eq!(port_log.lock().unwrap().as_slice(), ["ports-start"]);
     }
 
@@ -969,13 +952,12 @@ mod tests {
                     .to_string();
                 log_clone.lock().unwrap().push(name.clone());
                 let reply = if name == "import-state" {
-                    let kern = cmd["kern_len"].as_u64().unwrap_or(0) as usize;
-                    let dev = cmd["dev_len"].as_u64().unwrap_or(0) as usize;
-                    let mut buf = vec![0u8; kern + dev];
+                    let blob = cmd["blob_len"].as_u64().unwrap_or(0) as usize;
+                    let mut buf = vec![0u8; blob];
                     let _ = reader.read_exact(&mut buf).await;
-                    serde_json::json!({ "success": false, "error": "scripted import failure" })
+                    serde_json::json!({ "status": "error", "msg": "scripted import failure" })
                 } else {
-                    serde_json::json!({ "success": true })
+                    serde_json::json!({ "status": "ok" })
                 };
                 let mut bytes = reply.to_string().into_bytes();
                 bytes.push(b'\n');
