@@ -12,7 +12,7 @@ type BackingReader = Reader<'static, 'static, BufReader<File>>;
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```rust,no_run
 /// use std::io::Read;
 /// use std::fs::File;
 ///
@@ -61,7 +61,7 @@ impl Qcow2 {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use std::io::Read;
     /// use std::fs::File;
     ///
