@@ -110,14 +110,12 @@ workspace-test: | $(CARGO_EXEC) ## Run all workspace tests
 	$(CARGO) test --workspace
 
 # Update Cargo.lock to newest semver-compatible dependency versions
-cargo-update: CARGO_LOCKED=
 cargo-update:
-	$(CARGO) update
+	$(CARGO_UPDATE)
 
 # Update Cargo.lock across incompatible semver bounds (edits Cargo.toml)
-cargo-update-breaking: CARGO_LOCKED=
 cargo-update-breaking:
-	$(CARGO) update --breaking
+	$(CARGO_UPDATE) --breaking
 
 # API development commands
 api-new: ## Create new API trait (usage: make api-new API=my-service-api)
