@@ -104,7 +104,7 @@ async fn list_access_keys(
 
     let mut keys = response.into_inner();
     // Sort by created timestamp to match node-triton behavior
-    keys.sort_by(|a, b| a.created.cmp(&b.created));
+    keys.sort_by_key(|a| a.created);
 
     if use_json {
         json::print_json_stream(&keys)?;

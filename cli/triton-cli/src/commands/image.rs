@@ -1180,7 +1180,7 @@ fn resolve_from_list(images: &[Image], name: &str) -> Result<uuid::Uuid> {
 
     // Prefer name matches (sorted by published_at, return most recent)
     if !name_matches.is_empty() {
-        name_matches.sort_by(|a, b| a.published_at.cmp(&b.published_at));
+        name_matches.sort_by_key(|a| a.published_at);
         if let Some(most_recent) = name_matches.last() {
             return Ok(most_recent.id);
         }

@@ -86,7 +86,7 @@ async fn list_keys(args: KeyListArgs, client: &TypedClient, use_json: bool) -> R
 
     let mut keys = response.into_inner();
     // Sort by name (case-insensitive) to match node-triton behavior
-    keys.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    keys.sort_by_key(|a| a.name.to_lowercase());
 
     if use_json {
         json::print_json_stream(&keys)?;

@@ -5,5 +5,5 @@
 # Copyright 2026 Edgecast Cloud LLC.
 
 [toolchain]
-channel = "1.92"
+channel = "1.96"
 components = [ "rustfmt", "clippy" ]
