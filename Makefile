@@ -7,7 +7,6 @@
 # Triton Rust Monorepo Makefile
 # Common development commands for working with trait-based Dropshot APIs
 
-# NAME prefixes eng.git's CLEAN_FILES entry "$(NAME)-pkg*.gz".
 NAME = monitor-reef
 
 RUST_USE_BOOTSTRAP = false
@@ -72,13 +71,13 @@ help: ## Show this help message
 # Workspace commands
 
 build: | $(CARGO_EXEC) ## Build all APIs, services and clients
-	$(CARGO) build --locked
+	$(CARGO) build
 
 build-release: | $(CARGO_EXEC) ## Build all APIs, services and clients
-	$(CARGO) build --release --locked
+	$(CARGO) build --release
 
 tritonadm-portable: | $(CARGO_EXEC) ## Build portable tritonadm binary (no pkgsrc deps)
-	$(CARGO) build --release --bin tritonadm --locked
+	$(CARGO) build --release --bin tritonadm
 	cp ./target/release/tritonadm ./tritonadm
 	/usr/bin/elfedit -e 'dyn:delete RUNPATH' ./tritonadm
 	/usr/bin/elfedit -e 'dyn:delete RPATH' ./tritonadm
@@ -93,10 +92,10 @@ clean:: | $(CARGO_EXEC) ## Clean build artifacts
 lint:: arch-lint doc-lint clippy
 
 clippy: | $(CARGO_EXEC) ## Run clippy linter
-	$(CARGO) clippy --locked $(RUST_CLIPPY_ARGS)
+	$(CARGO) clippy $(RUST_CLIPPY_ARGS)
 
 clippy-fix: | $(CARGO_EXEC) ## Run clippy linter
-	$(CARGO) clippy --locked --fix --allow-dirty $(RUST_CLIPPY_ARGS)
+	$(CARGO) clippy --fix --allow-dirty $(RUST_CLIPPY_ARGS)
 
 format: | $(CARGO_EXEC) ## Format all code
 	$(CARGO) fmt
@@ -108,13 +107,15 @@ audit-update: | $(CARGO_EXEC) ## Update advisory database and run audit
 	$(CARGO) audit --update
 
 workspace-test: | $(CARGO_EXEC) ## Run all workspace tests
-	$(CARGO) test --locked --workspace
+	$(CARGO) test --workspace
 
 # Update Cargo.lock to newest semver-compatible dependency versions
+cargo-update: CARGO_LOCKED=
 cargo-update:
 	$(CARGO) update
 
 # Update Cargo.lock across incompatible semver bounds (edits Cargo.toml)
+cargo-update-breaking: CARGO_LOCKED=
 cargo-update-breaking:
 	$(CARGO) update --breaking
 
@@ -153,15 +154,15 @@ service-new: ## Create new service (usage: make service-new SERVICE=my-service A
 
 service-build: | $(CARGO_EXEC) ## Build specific service (usage: make service-build SERVICE=my-service)
 	@if [ -z "$(SERVICE)" ]; then echo "Usage: make service-build SERVICE=my-service"; exit 1; fi
-	$(CARGO) build --locked -p $(SERVICE)
+	$(CARGO) build -p $(SERVICE)
 
 service-test: | $(CARGO_EXEC) ## Test specific service (usage: make service-test SERVICE=my-service)
 	@if [ -z "$(SERVICE)" ]; then echo "Usage: make service-test SERVICE=my-service"; exit 1; fi
-	$(CARGO) test --locked -p $(SERVICE)
+	$(CARGO) test -p $(SERVICE)
 
 service-run: | $(CARGO_EXEC) ## Run specific service (usage: make service-run SERVICE=my-service)
 	@if [ -z "$(SERVICE)" ]; then echo "Usage: make service-run SERVICE=my-service"; exit 1; fi
-	$(CARGO) run --locked -p $(SERVICE)
+	$(CARGO) run -p $(SERVICE)
 
 # Client development commands
 client-new: ## Create new client (usage: make client-new CLIENT=my-service-client API=my-api)
@@ -180,24 +181,24 @@ client-new: ## Create new client (usage: make client-new CLIENT=my-service-clien
 
 client-build: | $(CARGO_EXEC) ## Build specific client (usage: make client-build CLIENT=my-service-client)
 	@if [ -z "$(CLIENT)" ]; then echo "Usage: make client-build CLIENT=my-service-client"; exit 1; fi
-	$(CARGO) build --locked -p $(CLIENT)
+	$(CARGO) build -p $(CLIENT)
 
 client-test: | $(CARGO_EXEC) ## Test specific client (usage: make client-test CLIENT=my-service-client)
 	@if [ -z "$(CLIENT)" ]; then echo "Usage: make client-test CLIENT=my-service-client"; exit 1; fi
-	$(CARGO) test --locked -p $(CLIENT)
+	$(CARGO) test -p $(CLIENT)
 
 # Generic package commands (for any crate in the workspace)
 package-build: | $(CARGO_EXEC) ## Build specific package (usage: make package-build PACKAGE=my-package)
 	@if [ -z "$(PACKAGE)" ]; then echo "Usage: make package-build PACKAGE=my-package"; exit 1; fi
-	$(CARGO) build --locked -p $(PACKAGE)
+	$(CARGO) build -p $(PACKAGE)
 
 package-test: | $(CARGO_EXEC) ## Test specific package (usage: make package-test PACKAGE=my-package)
 	@if [ -z "$(PACKAGE)" ]; then echo "Usage: make package-test PACKAGE=my-package"; exit 1; fi
-	$(CARGO) test --locked -p $(PACKAGE)
+	$(CARGO) test -p $(PACKAGE)
 
 # Triton CLI test commands
 triton-test: | $(CARGO_EXEC) ## Run triton-cli offline tests (no API required)
-	TRITON_CONFIG_DIR=/nonexistent $(CARGO) test --locked -p triton-cli
+	TRITON_CONFIG_DIR=/nonexistent $(CARGO) test -p triton-cli
 
 triton-test-api: | $(CARGO_EXEC) ## Run triton-cli API tests (requires tests/config.json)
 	@if [ ! -f cli/triton-cli/tests/config.json ]; then \
@@ -205,7 +206,7 @@ triton-test-api: | $(CARGO_EXEC) ## Run triton-cli API tests (requires tests/con
 		echo "Copy config.json.sample and configure for your environment"; \
 		exit 1; \
 	fi
-	$(CARGO) test --locked -p triton-cli -- --ignored
+	$(CARGO) test -p triton-cli -- --ignored
 
 triton-test-all: | $(CARGO_NEXTEST_EXEC) $(CARGO_EXEC) ## Run all triton-cli tests (offline + API)
 	@if [ ! -f cli/triton-cli/tests/config.json ]; then \
@@ -219,7 +220,7 @@ triton-test-rerun: | $(CARGO_NEXTEST_EXEC) $(CARGO_EXEC) ## Rerun specific trito
 
 triton-test-file: | $(CARGO_EXEC) ## Run specific triton-cli test file (usage: make triton-test-file TEST=cli_vlans)
 	@if [ -z "$(TEST)" ]; then echo "Usage: make triton-test-file TEST=cli_vlans"; exit 1; fi
-	$(CARGO) test --locked -p triton-cli --test $(TEST)
+	$(CARGO) test -p triton-cli --test $(TEST)
 
 # Triton CLI comparison tests (Node.js vs Rust)
 triton-compare: build ## Compare Node.js vs Rust triton (offline tests)
@@ -239,7 +240,7 @@ triton-compare-all: build ## Compare Node.js vs Rust triton (all tests, needs PR
 # OpenAPI management commands (using dropshot-api-manager)
 openapi-generate: | $(CARGO_EXEC) ## Generate OpenAPI specs from API traits
 	@echo "Generating OpenAPI specs using dropshot-api-manager..."
-	$(CARGO) run --locked -p openapi-manager -- generate
+	$(CARGO) run -p openapi-manager -- generate
 	@echo "OpenAPI specs generated in openapi-specs/generated/"
 	@echo "Patched client specs in openapi-specs/patched/"
 	@echo ""
@@ -248,28 +249,28 @@ openapi-generate: | $(CARGO_EXEC) ## Generate OpenAPI specs from API traits
 	@echo "    git commit -m 'Update OpenAPI specs'"
 
 openapi-list: | $(CARGO_EXEC) ## List all managed APIs
-	$(CARGO) run --locked -p openapi-manager -- list
+	$(CARGO) run -p openapi-manager -- list
 
 openapi-check: | $(CARGO_EXEC) ## Check that OpenAPI specs are up-to-date (use in CI)
-	$(CARGO) run --locked -p openapi-manager -- check
+	$(CARGO) run -p openapi-manager -- check
 
 openapi-debug: | $(CARGO_EXEC) ## Debug OpenAPI manager configuration
-	$(CARGO) run --locked -p openapi-manager -- debug
+	$(CARGO) run -p openapi-manager -- debug
 
 integration-test: | $(CARGO_EXEC) ## Run integration tests across all services
-	$(CARGO) test --locked --workspace --test integration_test
+	$(CARGO) test --workspace --test integration_test
 
 # Development setup
 dev-setup: | $(CARGO_EXEC) ## Set up development environment
 	@echo "Setting up development environment..."
 	@echo "Building openapi-manager..."
-	$(CARGO) build --locked -p openapi-manager
+	$(CARGO) build -p openapi-manager
 	@echo "Running initial build..."
-	$(CARGO) build --locked
+	$(CARGO) build
 	@echo "Generating OpenAPI specs..."
 	$(MAKE) openapi-generate
 	@echo "Running tests to ensure everything works..."
-	$(CARGO) test --locked
+	$(CARGO) test
 	@echo ""
 	@echo "Development environment ready!"
 	@echo ""
@@ -332,12 +333,12 @@ check:: | $(CARGO_NEXTEST_EXEC) $(CARGO_EXEC) ## Run all validation checks (CI-r
 
 # Client code generation (checked-in generated.rs files)
 clients-generate: | $(CARGO_EXEC) ## Generate all client src/generated.rs files
-	$(CARGO) run --locked -p client-generator -- generate
+	$(CARGO) run -p client-generator -- generate
 	$(CARGO) fmt -- clients/internal/*/src/generated.rs
 
 clients-check: | $(CARGO_EXEC) ## Check that generated client code is up-to-date (use in CI)
 	@echo "Checking client generated code is up-to-date..."
-	$(CARGO) run --locked -p client-generator -- generate
+	$(CARGO) run -p client-generator -- generate
 	$(CARGO) fmt -- clients/internal/*/src/generated.rs
 	@if git diff --quiet clients/internal/*/src/generated.rs; then \
 		echo "All clients are up-to-date."; \
@@ -348,7 +349,7 @@ clients-check: | $(CARGO_EXEC) ## Check that generated client code is up-to-date
 	fi
 
 clients-list: | $(CARGO_EXEC) ## List all managed clients
-	$(CARGO) run --locked -p client-generator -- list
+	$(CARGO) run -p client-generator -- list
 
 # Regenerate everything (OpenAPI specs + client code)
 regen-clients: openapi-generate clients-generate ## Regenerate OpenAPI specs and client code
