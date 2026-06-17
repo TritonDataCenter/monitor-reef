@@ -38,6 +38,19 @@ GO =			go
 GO_TOOLCHAIN_DEP =
 endif
 
+# arch-lint depends on tree-sitter, whose C portability layer (portable/endian.h)
+# only recognises illumos when the preprocessor symbol __illumos__ is defined.
+# Older gcc on illumos build images does not predefine it, so the cargo install
+# fails with "platform not supported". Inject -D__illumos__ via CFLAGS so the
+# install succeeds on those images. Skip arch-lint from `make check` regardless;
+# the Linux CI step still runs it.
+ifeq ($(shell uname -s),SunOS)
+ARCH_LINT_INSTALL =	CFLAGS="-D__illumos__" CFLAGS_x86_64_unknown_illumos="-D__illumos__" $(CARGO) install arch-lint-cli
+CHECK_ARCH_LINT =	@echo "Skipping arch-lint on illumos (run 'make arch-lint' directly to install/run)"
+else
+CHECK_ARCH_LINT =	$(MAKE) arch-lint
+endif
+
 .PHONY: help build build-release test clean lint format audit audit-update
 .PHONY: tritonadm-portable
 .PHONY: api-new service-new client-new
@@ -320,7 +333,7 @@ list: ## List all APIs, services and clients
 # Validation and CI commands
 check:: | $(CARGO_NEXTEST_EXEC) $(CARGO_EXEC) ## Run all validation checks (CI-ready)
 	@echo "Running all validation checks..."
-	$(MAKE) arch-lint
+	$(CHECK_ARCH_LINT)
 	$(MAKE) openapi-check
 	$(MAKE) clients-check
 	$(MAKE) go-vet
