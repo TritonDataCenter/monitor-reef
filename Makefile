@@ -42,8 +42,7 @@ endif
 # only recognises illumos when the preprocessor symbol __illumos__ is defined.
 # Older gcc on illumos build images does not predefine it, so the cargo install
 # fails with "platform not supported". Inject -D__illumos__ via CFLAGS so the
-# install succeeds on those images. Skip arch-lint from `make check` regardless;
-# the Linux CI step still runs it.
+# install succeeds on those images. The Linux CI step still runs it.
 ifeq ($(shell uname -s),SunOS)
 ARCH_LINT_INSTALL =	CFLAGS="-D__illumos__" CFLAGS_x86_64_unknown_illumos="-D__illumos__" $(CARGO) install arch-lint-cli
 CHECK_ARCH_LINT =	@echo "Skipping arch-lint on illumos (run 'make arch-lint' directly to install/run)"
