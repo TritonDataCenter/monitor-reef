@@ -356,7 +356,7 @@ fn print_machines_table(
     // matching node-triton's tabula default sort direction.
     let mut sorted_machines: Vec<&Machine> = machines.iter().collect();
     if args.table.sort_by.is_none() {
-        sorted_machines.sort_by(|a, b| a.created.cmp(&b.created));
+        sorted_machines.sort_by_key(|a| a.created);
     }
 
     let columns = vec![

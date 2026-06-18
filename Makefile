@@ -7,6 +7,8 @@
 # Triton Rust Monorepo Makefile
 # Common development commands for working with trait-based Dropshot APIs
 
+NAME = monitor-reef
+
 RUST_USE_BOOTSTRAP = false
 RUST_CLIPPY_ARGS = --all-targets --all-features -- -D warnings
 
@@ -34,6 +36,18 @@ include ./deps/eng/tools/mk/Makefile.go_prebuilt.targ
 else
 GO =			go
 GO_TOOLCHAIN_DEP =
+endif
+
+# arch-lint depends on tree-sitter, whose C portability layer (portable/endian.h)
+# only recognises illumos when the preprocessor symbol __illumos__ is defined.
+# Older gcc on illumos build images does not predefine it, so the cargo install
+# fails with "platform not supported". Inject -D__illumos__ via CFLAGS so the
+# install succeeds on those images. The Linux CI step still runs it.
+ifeq ($(shell uname -s),SunOS)
+ARCH_LINT_INSTALL =	CFLAGS="-D__illumos__" CFLAGS_x86_64_unknown_illumos="-D__illumos__" $(CARGO) install arch-lint-cli
+CHECK_ARCH_LINT =	@echo "Skipping arch-lint on illumos (run 'make arch-lint' directly to install/run)"
+else
+CHECK_ARCH_LINT =	$(MAKE) arch-lint
 endif
 
 .PHONY: help build build-release test clean lint format audit audit-update
@@ -82,7 +96,7 @@ tritonadm-portable: | $(CARGO_EXEC) ## Build portable tritonadm binary (no pkgsr
 	@echo "Built portable binary: ./tritonadm"
 
 test: | $(CARGO_NEXTEST_EXEC) ## Run all tests
-	TRITON_CONFIG_DIR=/nonexistent $(CARGO) nextest run
+	TRITON_CONFIG_DIR=/nonexistent $(CARGO) nextest run --locked
 
 clean:: | $(CARGO_EXEC) ## Clean build artifacts
 	$(CARGO) clean
@@ -106,6 +120,14 @@ audit-update: | $(CARGO_EXEC) ## Update advisory database and run audit
 
 workspace-test: | $(CARGO_EXEC) ## Run all workspace tests
 	$(CARGO) test --workspace
+
+# Update Cargo.lock to newest semver-compatible dependency versions
+cargo-update:
+	$(CARGO_UPDATE)
+
+# Update Cargo.lock across incompatible semver bounds (edits Cargo.toml)
+cargo-update-breaking:
+	$(CARGO_UPDATE) --breaking
 
 # API development commands
 api-new: ## Create new API trait (usage: make api-new API=my-service-api)
@@ -200,11 +222,11 @@ triton-test-all: | $(CARGO_NEXTEST_EXEC) $(CARGO_EXEC) ## Run all triton-cli tes
 	@if [ ! -f cli/triton-cli/tests/config.json ]; then \
 		echo "Warning: No config.json - API tests will fail"; \
 	fi
-	$(CARGO) nextest run -p triton-cli --no-fail-fast -- --include-ignored
+	$(CARGO) nextest run --locked -p triton-cli --no-fail-fast -- --include-ignored
 
 triton-test-rerun: | $(CARGO_NEXTEST_EXEC) $(CARGO_EXEC) ## Rerun specific triton-cli test (usage: make triton-test-rerun FILTER=test_name)
 	@if [ -z "$(FILTER)" ]; then echo "Usage: make triton-test-rerun FILTER=test_instance_snapshot_workflow"; exit 1; fi
-	$(CARGO) nextest run -p triton-cli -E 'test($(FILTER))' --no-fail-fast -- --include-ignored
+	$(CARGO) nextest run --locked -p triton-cli -E 'test($(FILTER))' --no-fail-fast -- --include-ignored
 
 triton-test-file: | $(CARGO_EXEC) ## Run specific triton-cli test file (usage: make triton-test-file TEST=cli_vlans)
 	@if [ -z "$(TEST)" ]; then echo "Usage: make triton-test-file TEST=cli_vlans"; exit 1; fi
@@ -310,12 +332,12 @@ list: ## List all APIs, services and clients
 # Validation and CI commands
 check:: | $(CARGO_NEXTEST_EXEC) $(CARGO_EXEC) ## Run all validation checks (CI-ready)
 	@echo "Running all validation checks..."
-	$(MAKE) arch-lint
+	$(CHECK_ARCH_LINT)
 	$(MAKE) openapi-check
 	$(MAKE) clients-check
 	$(MAKE) go-vet
 	$(MAKE) go-test
-	TRITON_CONFIG_DIR=/nonexistent $(CARGO) nextest run --workspace
+	TRITON_CONFIG_DIR=/nonexistent $(CARGO) nextest run --locked --workspace
 	@echo ""
 	@echo "All validation checks passed!"
 

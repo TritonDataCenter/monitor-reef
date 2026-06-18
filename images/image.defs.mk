@@ -13,13 +13,17 @@
 # Each images/<service>/Makefile includes this before the eng Makefiles.
 #
 
-# Point TOP at the repo root so eng Makefiles find deps/eng,
-# rust-toolchain.toml, etc. correctly from images/<service>/.
+# Point ENGBLD_REPO_ROOT at the repo root so eng Makefiles find deps/eng,
+# rust-toolchain.toml, etc. correctly from images/<service>/. TOP must stay
+# at its eng default ($(shell pwd) = the image dir): the buildimage target
+# writes its prep stamp relative to make's CWD but reads it back via
+# $(TOP)/..., so moving TOP breaks that lookup. See Makefile.defs: in a
+# monorepo TOP is the per-service dir and ENGBLD_REPO_ROOT is the repo root.
 REPO_ROOT := $(shell git rev-parse --show-toplevel)
 ifeq ($(REPO_ROOT),)
 $(error git rev-parse --show-toplevel failed. Are you running inside a git repository?)
 endif
-TOP = $(REPO_ROOT)
+ENGBLD_REPO_ROOT := $(REPO_ROOT)
 
 # All images use the same eng submodule
 ENGBLD_REQUIRE := $(shell git submodule update --init $(REPO_ROOT)/deps/eng)

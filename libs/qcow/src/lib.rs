@@ -2,7 +2,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,no_run
 //! # const PATH: &str = "/home/jamcleod/.panda/bionic-server-cloudimg-amd64-noaslr-nokaslr.qcow2";
 //! # use std::fs::File;
 //! # use std::io::{Read, BufReader};
@@ -105,7 +105,7 @@ pub use dynamic_qcow::DynamicQcow;
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```rust,no_run
 /// # const PATH: &str = "/home/jamcleod/.panda/bionic-server-cloudimg-amd64-noaslr-nokaslr.qcow2";
 /// let qcow = qcow::open(PATH).unwrap();
 /// ```
@@ -140,7 +140,7 @@ struct QcowVersion(u32);
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```rust,no_run
 /// # const PATH: &str = "/home/jamcleod/.panda/bionic-server-cloudimg-amd64-noaslr-nokaslr.qcow2";
 /// let qcow = qcow::open(PATH)?;
 /// # Ok::<(), Box<dyn std::error::Error>>(())
@@ -159,7 +159,7 @@ pub fn open(path: impl AsRef<Path>) -> Result<DynamicQcow, Error> {
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```rust,no_run
 /// # const PATH: &str = "/home/jamcleod/.panda/bionic-server-cloudimg-amd64-noaslr-nokaslr.qcow2";
 /// # use std::fs::File;
 /// # use std::io::BufReader;

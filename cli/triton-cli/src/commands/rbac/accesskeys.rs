@@ -131,7 +131,7 @@ pub async fn list_user_access_keys(
         .await?;
 
     let mut keys = response.into_inner();
-    keys.sort_by(|a, b| a.created.cmp(&b.created));
+    keys.sort_by_key(|a| a.created);
 
     if use_json {
         json::print_json_stream(&keys)?;

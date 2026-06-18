@@ -417,7 +417,7 @@ async fn list_rule_instances(
         .await?;
 
     let mut machines = response.into_inner();
-    machines.sort_by(|a, b| a.created.cmp(&b.created));
+    machines.sort_by_key(|a| a.created);
 
     if use_json {
         json::print_json(&machines)?;
