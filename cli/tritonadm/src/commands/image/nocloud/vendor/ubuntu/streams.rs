@@ -78,6 +78,20 @@ pub async fn fetch(http: &reqwest::Client) -> Result<Streams> {
         .with_context(|| format!("parse {STREAMS_URL}"))
 }
 
+/// Enumerate all amd64 products in the streams index. Each row carries
+/// the codename, release_title, supported flag, and version (in
+/// `release_title` ascending order — newer LTSes float to the top via
+/// the `version` key).
+pub fn list_amd64(streams: &Streams) -> Vec<&Product> {
+    let mut products: Vec<&Product> = streams
+        .products
+        .values()
+        .filter(|p| p.arch == "amd64")
+        .collect();
+    products.sort_by(|a, b| b.version.cmp(&a.version));
+    products
+}
+
 pub fn resolve(streams: &Streams, token: &str) -> Result<StreamsImage> {
     let token = token.trim();
     let amd64: Vec<&Product> = streams

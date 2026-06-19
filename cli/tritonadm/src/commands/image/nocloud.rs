@@ -49,6 +49,11 @@ pub struct FetchOpts {
     /// Vendor-specific release token. Required with `vendor`; unused
     /// with `vendor_toml`.
     pub release: Option<String>,
+    /// List the vendor's published releases and exit. Mutually
+    /// exclusive with `release` and `vendor_toml`.
+    pub list_releases: bool,
+    /// With `list_releases`, emit JSON instead of a table.
+    pub json: bool,
     /// External TOML profile path. Set when invoked as
     /// `--vendor-toml PATH`; mutually exclusive with `vendor`.
     pub vendor_toml: Option<PathBuf>,
@@ -59,6 +64,10 @@ pub struct FetchOpts {
     pub dataset: Option<String>,
     pub dry_run: bool,
     pub target: Target,
+    /// Retain the produced `*.zfs.gz` + `*.json` after a successful
+    /// upload (only meaningful for `Target::Smartos` / `Target::Imgapi`).
+    /// The on-disk cache under `workdir` is kept regardless.
+    pub keep_files: bool,
     /// Lazy IMGAPI URL, only consumed for `Target::Imgapi`. Passed
     /// through as a `Result` so File / Smartos targets don't fail
     /// when no headnode is reachable from the builder zone.
@@ -67,6 +76,21 @@ pub struct FetchOpts {
 }
 
 pub async fn run(mut opts: FetchOpts) -> Result<()> {
+    // `--list-releases` is pure metadata; bypass dry-run promotion,
+    // dataset checks, and the resolve path entirely.
+    if opts.list_releases {
+        let vendor = opts
+            .vendor
+            .ok_or_else(|| anyhow::anyhow!("--list-releases requires --vendor"))?;
+        let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
+            .await
+            .map_err(|e| anyhow::anyhow!("build http client: {e}"))?;
+        let profile = vendor::lookup(vendor);
+        let releases = profile.list_releases(&http).await?;
+        print_releases(&vendor.to_string(), &releases, opts.json)?;
+        return Ok(());
+    }
+
     // Auto-promote to --dry-run on non-SmartOS hosts so a developer
     // can smoke-test vendor metadata fetching from a Mac/Linux box
     // without remembering the flag. The build itself still requires
@@ -83,7 +107,7 @@ pub async fn run(mut opts: FetchOpts) -> Result<()> {
     // Vendor resolution is just HTTP, so it runs anywhere — doing it
     // before the SmartOS-specific preflights lets `--dry-run` exercise
     // release resolution + verifier wiring on a dev box.
-    let http = triton_tls::build_http_client(false)
+    let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
         .await
         .map_err(|e| anyhow::anyhow!("build http client: {e}"))?;
 
@@ -222,7 +246,62 @@ pub async fn run(mut opts: FetchOpts) -> Result<()> {
             push_to_imgapi(&opts, &outputs).await?;
         }
     }
+
+    if matches!(opts.target, Target::Smartos | Target::Imgapi) && !opts.keep_files {
+        cleanup_artifacts(&outputs.gz_path, &outputs.manifest_path).await;
+    }
     Ok(())
+}
+
+fn print_releases(vendor: &str, releases: &[vendor::Release], json: bool) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(releases)?);
+        return Ok(());
+    }
+    if releases.is_empty() {
+        println!("No releases reported by {vendor}.");
+        return Ok(());
+    }
+    let name_w = "RELEASE"
+        .len()
+        .max(releases.iter().map(|r| r.name.len()).max().unwrap_or(0));
+    let label_w = "LABEL".len().max(
+        releases
+            .iter()
+            .map(|r| r.label.as_deref().unwrap_or("").len())
+            .max()
+            .unwrap_or(0),
+    );
+    println!("{:<name_w$}  {:<label_w$}  NOTE", "RELEASE", "LABEL");
+    for r in releases {
+        let label = r.label.as_deref().unwrap_or("-");
+        let note = r.note.as_deref().unwrap_or("");
+        println!("{:<name_w$}  {:<label_w$}  {note}", r.name, label);
+    }
+    Ok(())
+}
+
+/// Delete the produced `*.zfs.gz` + `*.json` after a successful upload.
+/// Failures are surfaced as warnings, not errors — the upload already
+/// landed, and a leftover file is recoverable. The on-disk download
+/// cache (under `workdir`) is intentionally left alone so re-runs of
+/// the same vendor/release don't re-fetch from upstream.
+async fn cleanup_artifacts(gz: &Path, manifest: &Path) {
+    let mut all_removed = true;
+    for p in [gz, manifest] {
+        // arch-lint: allow(no-error-swallowing) reason="upload already succeeded; cleanup failure is recoverable (leftover file, not data loss) and shouldn't fail the operator-visible command"
+        if let Err(e) = tokio::fs::remove_file(p).await {
+            all_removed = false;
+            eprintln!(
+                "warning: failed to remove {} after upload: {e} \
+                 (pass --keep-files to suppress this cleanup)",
+                p.display()
+            );
+        }
+    }
+    if all_removed {
+        println!("Removed local artifacts (pass --keep-files to retain).");
+    }
 }
 
 /// Shell out to `imgadm install -m <manifest> -f <gz>`. The flags are
@@ -256,7 +335,7 @@ async fn push_to_imgapi(opts: &FetchOpts, outputs: &pipeline::PipelineOutputs) -
         .as_ref()
         .map_err(|e| anyhow::anyhow!("{e}"))?
         .clone();
-    let http = triton_tls::build_http_client(false)
+    let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
         .await
         .map_err(|e| anyhow::anyhow!("build http client: {e}"))?;
     let client = imgapi_client::Client::new_with_client(&imgapi_url, http.clone());
@@ -324,6 +403,7 @@ fn print_plan(
         println!("Source file (read in place):");
         match resolved.url.to_file_path() {
             Ok(p) => println!("  {}", p.display()),
+            // arch-lint: allow(no-error-swallowing) reason="Url::to_file_path returns Result<_, ()>; Err carries no information to propagate, and we're rendering a human-readable plan, not validating input"
             Err(()) => println!("  {} (not a usable file:// path)", resolved.url),
         }
         println!();

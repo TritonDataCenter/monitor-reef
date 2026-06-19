@@ -19,7 +19,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use url::Url;
 
-use super::{PinnedQcow2, ResolvedImage, VendorProfile};
+use super::{PinnedQcow2, Release, ResolvedImage, VendorProfile};
 
 pub struct Fedora;
 
@@ -50,5 +50,10 @@ impl VendorProfile for Fedora {
             sha256: resolved.sha256,
         }
         .into_resolved("fedora")
+    }
+
+    async fn list_releases(&self, http: &reqwest::Client) -> Result<Vec<Release>> {
+        let entries = releases::fetch(http).await?;
+        Ok(releases::list(&entries))
     }
 }

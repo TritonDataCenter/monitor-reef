@@ -41,7 +41,7 @@ Trait-based OpenAPI-driven migration of Node.js services to Rust. API traits (Dr
 4. `make audit` (check for vulnerabilities)
 5. Commit only files related to this change — one commit = one logical change
 
-**Known audit exceptions** (pre-existing, do not block commits): RUSTSEC-2023-0071 (rsa), RUSTSEC-2026-0009 (time), RUSTSEC-2024-0436 (paste), RUSTSEC-2025-0134 (rustls-pemfile).
+**Known audit exceptions** (pre-existing, do not block commits): RUSTSEC-2023-0071 (rsa), RUSTSEC-2026-0009 (time), RUSTSEC-2024-0436 (paste), RUSTSEC-2025-0134 (rustls-pemfile), RUSTSEC-2026-0049 (rustls-webpki), RUSTSEC-2026-0098 (rustls-webpki), RUSTSEC-2026-0099 (rustls-webpki), RUSTSEC-2026-0104 (rustls-webpki), RUSTSEC-2026-0097 (rand).
 
 ## Common Make Targets
 

@@ -436,7 +436,7 @@ impl MahiCommand {
         }
 
         let mahi_url = mahi_url?;
-        let http = triton_tls::build_http_client(false)
+        let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
             .await
             .context("failed to build HTTP client")?;
         let client = Client::new_with_client(&mahi_url, http);
@@ -1015,7 +1015,7 @@ impl MahiCommand {
 
 impl MahiSitterCommand {
     pub async fn run(self, sitter_url: &str) -> Result<()> {
-        let http = triton_tls::build_http_client(false)
+        let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
             .await
             .context("failed to build HTTP client")?;
         let client = mahi_sitter_client::Client::new_with_client(sitter_url, http);

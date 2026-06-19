@@ -29,6 +29,8 @@
 use anyhow::{Context, Result};
 use regex::Regex;
 
+use crate::commands::image::nocloud::vendor::Release;
+
 const TEMPLATES_URL: &str = "https://yum.oracle.com/oracle-linux-templates.html";
 
 #[derive(Debug, Clone)]
@@ -45,6 +47,28 @@ impl Resolved {
     pub fn version(&self) -> String {
         format!("{}.{}-b{}", self.major, self.update, self.build)
     }
+}
+
+/// Enumerate the Oracle Linux majors advertised on the templates
+/// landing page, newest-first. Each row carries the major as `name`
+/// and the resolved update level as the label.
+pub async fn list(http: &reqwest::Client) -> Result<Vec<Release>> {
+    let body = fetch_templates_html(http).await?;
+    let mut rows = parse_rows(&body);
+    rows.sort_by(|a, b| {
+        b.major
+            .parse::<u32>()
+            .unwrap_or(0)
+            .cmp(&a.major.parse::<u32>().unwrap_or(0))
+    });
+    Ok(rows
+        .into_iter()
+        .map(|r| Release {
+            name: r.major.clone(),
+            label: Some(format!("Oracle Linux {}.{}", r.major, r.update)),
+            note: None,
+        })
+        .collect())
 }
 
 pub async fn resolve(http: &reqwest::Client, release: &str) -> Result<Resolved> {

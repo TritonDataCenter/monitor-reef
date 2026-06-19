@@ -56,9 +56,12 @@ tritonadm-<stamp>.tgz
     └── opt/
         └── triton/
             └── tritonadm/
-                ├── bin/tritonadm        # cargo build --release, RPATH stripped
-                ├── etc/version          # build stamp + git SHA
-                └── share/completions/   # bash, zsh, fish
+                ├── bin/{tritonadm,triton}    # cargo build --release, RPATH stripped
+                ├── etc/version               # build stamp + git SHA
+                ├── etc/tritonadm.completion  # bash completion (sdcadm convention)
+                ├── etc/triton.completion     # bash completion
+                └── smf/                      # manifest + method for headnode
+                                              # bash_completion.d symlink restore
 ```
 
 Build steps (encapsulated in `images/tritonadm/Makefile`):
@@ -67,8 +70,12 @@ Build steps (encapsulated in `images/tritonadm/Makefile`):
 2. `/usr/bin/elfedit -e 'dyn:delete RUNPATH' …` and the same for RPATH
    (skipped on non-illumos build hosts; the result is then a dev-only
    tarball).
-3. Run the freshly-built binary to emit shell completions
-   (`tritonadm completion bash|zsh|fish`).
+3. Run the freshly-built binary to emit bash completions
+   (`tritonadm completion bash` → `etc/tritonadm.completion`, same for
+   `triton`). Only bash ships in the tarball; the headnode GZ
+   auto-sources `/etc/bash/bash_completion.d/` from a symlink restored
+   each boot by an SMF setup service. zsh/fish remain available on
+   demand via `tritonadm completion zsh|fish`.
 4. Stage into `proto/root/opt/triton/tritonadm/`.
 5. `tar -czf tritonadm-<stamp>.tgz -C proto root`.
 6. Generate an IMGAPI-compatible manifest

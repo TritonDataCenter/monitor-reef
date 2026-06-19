@@ -23,7 +23,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use url::Url;
 
-use super::{ResolvedImage, SourceFormat, VendorProfile};
+use super::{Release, ResolvedImage, SourceFormat, VendorProfile};
 use crate::commands::image::nocloud::verify::Sha256Pinned;
 
 pub struct Omnios;
@@ -54,5 +54,27 @@ impl VendorProfile for Omnios {
             verifier: Box::new(Sha256Pinned(resolved.sha256.clone())),
             expected_sha256: Some(resolved.sha256),
         })
+    }
+
+    async fn list_releases(&self, _http: &reqwest::Client) -> Result<Vec<Release>> {
+        // Channels are fixed; no upstream feed to query. The order
+        // matches what `latest` resolves through (stable first).
+        Ok(vec![
+            Release {
+                name: "stable".to_string(),
+                label: Some("current quarterly stable".to_string()),
+                note: Some("latest alias".to_string()),
+            },
+            Release {
+                name: "lts".to_string(),
+                label: Some("current LTS".to_string()),
+                note: None,
+            },
+            Release {
+                name: "bloody".to_string(),
+                label: Some("bleeding-edge weekly snapshot".to_string()),
+                note: None,
+            },
+        ])
     }
 }

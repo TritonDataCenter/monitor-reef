@@ -272,6 +272,26 @@ EOF
         fi
     fi
 
+    # Import the SMF setup service so /etc/bash/bash_completion.d/{tritonadm,
+    # triton} symlinks are re-created on every boot. /etc lives on the SmartOS
+    # ramdisk and won't preserve them otherwise. Skip on non-headnode systems
+    # (no svccfg / no /var/svc/manifest); this whole image is headnode-targeted
+    # but the install script can run on dev hosts for unpacking.
+    SMF_OK=false
+    SMF_MANIFEST_SRC="$INSTALL_DIR/smf/manifests/tritonadm-setup.xml"
+    SMF_MANIFEST_DST="/var/svc/manifest/site/tritonadm-setup.xml"
+    if [[ -f "$SMF_MANIFEST_SRC" ]] \
+            && command -v svccfg >/dev/null 2>&1 \
+            && [[ -d /var/svc/manifest/site ]]; then
+        if cp "$SMF_MANIFEST_SRC" "$SMF_MANIFEST_DST" 2>/dev/null \
+                && svccfg import "$SMF_MANIFEST_DST" 2>/dev/null; then
+            SMF_OK=true
+        else
+            echo "==> Warning: failed to import tritonadm-setup SMF service"
+            echo "    Bash completion will not auto-restore on reboot."
+        fi
+    fi
+
     echo
     echo "==> Installed: $INSTALLED_VERSION ($INSTALLED_UUID)"
     echo "    Binaries: $INSTALL_DIR/bin/tritonadm"
@@ -288,6 +308,9 @@ EOF
         echo "              $INSTALL_DIR/bin/triton"
         echo
         "$INSTALL_DIR/bin/tritonadm" --version || true
+    fi
+    if [[ "$SMF_OK" == "true" ]]; then
+        echo "    SMF:      svc:/triton/tritonadm-setup:default"
     fi
     exit 0
 fi

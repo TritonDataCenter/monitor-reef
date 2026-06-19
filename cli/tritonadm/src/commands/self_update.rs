@@ -91,7 +91,7 @@ pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
         Some(acquire_self_update_lock().context("self-update lock")?)
     };
 
-    let http = triton_tls::build_http_client(false)
+    let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
         .await
         .context("failed to build HTTP client")?;
     let updates = Client::new_with_client(&opts.updates_url, http);

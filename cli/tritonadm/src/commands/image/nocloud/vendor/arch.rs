@@ -20,7 +20,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use url::Url;
 
-use super::{ResolvedImage, SourceFormat, VendorProfile};
+use super::{Release, ResolvedImage, SourceFormat, VendorProfile};
 use crate::commands::image::nocloud::verify::Sha256Pinned;
 
 pub struct Arch;
@@ -29,6 +29,13 @@ pub struct Arch;
 impl VendorProfile for Arch {
     fn name(&self) -> &str {
         "arch"
+    }
+
+    async fn list_releases(&self, _http: &reqwest::Client) -> Result<Vec<Release>> {
+        anyhow::bail!(
+            "arch is a rolling release; pass `--release latest` (or a specific build like \
+             `20260501.523211`) instead of `--list-releases`"
+        )
     }
 
     async fn resolve(&self, release: &str, http: &reqwest::Client) -> Result<ResolvedImage> {

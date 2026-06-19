@@ -1,0 +1,292 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// Copyright 2026 Edgecast Cloud LLC.
+
+//! `tritonadm dev admin-profile` — generate a `triton` CLI profile
+//! for the headnode admin account. Reads the SDC config for datacenter
+//! name and admin login, derives the SSH-key fingerprint via `ssh-keygen
+//! -E md5 -lf`, and probes the CloudAPI URL to decide whether to set
+//! `insecure: true` (auto-true on TLS verification failure, e.g. COAL).
+//!
+//! Writes to `$HOME/.triton/profiles.d/<name>.json`. Profile schema
+//! matches `cli/triton-cli/src/config/profile.rs`.
+
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use anyhow::{Context, Result, bail};
+use serde::Serialize;
+use tokio::process::Command;
+
+use crate::config::TritonConfig;
+
+const ADMIN_PUB_KEY_PATH: &str = "/root/.ssh/sdc.id_rsa.pub";
+const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[derive(Serialize)]
+struct ProfileFile<'a> {
+    url: &'a str,
+    account: &'a str,
+    #[serde(rename = "keyId")]
+    key_id: &'a str,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    insecure: bool,
+}
+
+pub struct AdminProfileOpts {
+    pub name: String,
+    pub force: bool,
+    pub print: bool,
+}
+
+pub async fn run(sdc_config: Option<TritonConfig>, opts: AdminProfileOpts) -> Result<()> {
+    let cfg = sdc_config.context(
+        "tritonadm dev admin-profile must run on a Triton headnode \
+         (could not load /lib/sdc/config.sh)",
+    )?;
+
+    let account = cfg
+        .get_str("ufds_admin_login")
+        .unwrap_or("admin")
+        .to_string();
+    let url = cloudapi_url(&cfg);
+    let key_id = key_fingerprint_md5(Path::new(ADMIN_PUB_KEY_PATH)).await?;
+
+    eprintln!("==> Probing {url}");
+    let insecure = match probe_cloudapi(&url).await {
+        ProbeResult::CertValid => false,
+        ProbeResult::SelfSigned => {
+            eprintln!(
+                "warning: TLS verification of {url} failed; setting insecure=true \
+                 in the profile. This is expected on COAL (self-signed cert)."
+            );
+            true
+        }
+        ProbeResult::Unreachable(reason) => {
+            eprintln!(
+                "warning: could not reach {url} ({reason}); setting insecure=true \
+                 conservatively. Edit the profile to flip insecure=false once \
+                 cloudapi is up and serving a publicly-trusted cert."
+            );
+            true
+        }
+    };
+
+    let profile = ProfileFile {
+        url: &url,
+        account: &account,
+        key_id: &key_id,
+        insecure,
+    };
+    let body = serde_json::to_string_pretty(&profile)?;
+
+    if opts.print {
+        println!("{body}");
+        return Ok(());
+    }
+
+    let path = profile_path(&opts.name)?;
+    if tokio::fs::try_exists(&path).await.unwrap_or(false) && !opts.force {
+        bail!(
+            "{} already exists; pass --force to overwrite",
+            path.display()
+        );
+    }
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    tokio::fs::write(&path, &body)
+        .await
+        .with_context(|| format!("failed to write {}", path.display()))?;
+
+    eprintln!();
+    eprintln!("==> Wrote {} (profile '{}')", path.display(), opts.name);
+    eprintln!("    url:      {url}");
+    eprintln!("    account:  {account}");
+    eprintln!("    keyId:    {key_id}");
+    eprintln!("    insecure: {insecure}");
+    eprintln!();
+    eprintln!("Use it with:");
+    eprintln!("    triton -p {} <command>", opts.name);
+    eprintln!("or set as default:");
+    eprintln!("    triton profile set-current {}", opts.name);
+
+    if !tokio::fs::try_exists("/root/.ssh/sdc.id_rsa")
+        .await
+        .unwrap_or(false)
+    {
+        eprintln!();
+        eprintln!(
+            "warning: /root/.ssh/sdc.id_rsa not found — `triton` won't be \
+             able to sign requests until the matching private key is on \
+             disk or loaded into ssh-agent."
+        );
+    }
+
+    Ok(())
+}
+
+/// Construct the CloudAPI URL. Prefer `cloudapi_domain` from SDC config
+/// if set; otherwise fall back to the canonical
+/// `cloudapi.<datacenter>.<dns_domain>` form (which DNS resolves on a
+/// fully set up headnode).
+fn cloudapi_url(cfg: &TritonConfig) -> String {
+    if let Some(domain) = cfg.get_str("cloudapi_domain").filter(|s| !s.is_empty()) {
+        return format!("https://{domain}");
+    }
+    format!(
+        "https://cloudapi.{}.{}",
+        cfg.datacenter_name, cfg.dns_domain
+    )
+}
+
+/// Derive the MD5 fingerprint (colon-separated hex, the keyId format
+/// triton/CloudAPI use) of an OpenSSH public key by shelling out to
+/// `ssh-keygen -E md5 -lf <path>`. ssh-keygen is universally present on
+/// SmartOS GZ and is the same tool node-triton uses.
+async fn key_fingerprint_md5(pub_key_path: &Path) -> Result<String> {
+    if !tokio::fs::try_exists(pub_key_path).await.unwrap_or(false) {
+        bail!(
+            "admin SSH public key not found at {}; expected the standard \
+             headnode location",
+            pub_key_path.display()
+        );
+    }
+    let output = Command::new("ssh-keygen")
+        .args(["-E", "md5", "-lf"])
+        .arg(pub_key_path)
+        .output()
+        .await
+        .context("failed to invoke ssh-keygen")?;
+    if !output.status.success() {
+        bail!(
+            "ssh-keygen failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    // ssh-keygen output: "<bits> MD5:<aa:bb:...> <comment> (<TYPE>)"
+    let line = String::from_utf8_lossy(&output.stdout);
+    let fingerprint = line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.strip_prefix("MD5:"))
+        .with_context(|| format!("unexpected ssh-keygen output: {line:?}"))?;
+    Ok(fingerprint.to_string())
+}
+
+/// Outcome of the cert-chain probe against the CloudAPI URL.
+enum ProbeResult {
+    /// Default TLS verification succeeded — operator can use the profile
+    /// with strict cert checking.
+    CertValid,
+    /// TLS handshake failed because the cert chain didn't validate.
+    /// Expected on COAL (self-signed CA) and on any datacenter that
+    /// doesn't expose a publicly-trusted cloudapi cert.
+    SelfSigned,
+    /// Couldn't reach cloudapi at all (DNS, connect, timeout). We can't
+    /// tell whether the cert is valid or not; default to insecure=true
+    /// rather than silently produce a profile that fails strict TLS.
+    Unreachable(String),
+}
+
+/// Probe the CloudAPI URL using the same TLS trust chain `triton` itself
+/// uses (via [`triton_tls::build_http_client`]) — that's the only way to
+/// be sure the answer matches what the eventual client will see.
+/// Calling raw `reqwest::Client::builder()` falls through to
+/// rustls-platform-verifier on illumos, which can accept certs the rest
+/// of our codebase rejects.
+///
+/// Self-signed and unreachable are distinguished by *probing twice*
+/// rather than string-matching rustls/reqwest error messages (whose
+/// wording has drifted between versions). The verified probe runs
+/// first; on success we're done. On failure we retry with
+/// `TlsTrust::Insecure`: a success there means the host is up but its
+/// cert isn't trusted (self-signed), a failure means we genuinely
+/// can't reach the host.
+async fn probe_cloudapi(url: &str) -> ProbeResult {
+    if try_get(url, triton_tls::TlsTrust::Verified).await.is_ok() {
+        return ProbeResult::CertValid;
+    }
+    match try_get(url, triton_tls::TlsTrust::Insecure).await {
+        Ok(()) => ProbeResult::SelfSigned,
+        Err(reason) => ProbeResult::Unreachable(reason),
+    }
+}
+
+async fn try_get(url: &str, trust: triton_tls::TlsTrust) -> Result<(), String> {
+    let client = triton_tls::build_http_client(trust)
+        .await
+        .map_err(|e| format!("build http client: {e}"))?;
+    match tokio::time::timeout(PROBE_TIMEOUT, client.get(url).send()).await {
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(e)) => Err(format!("{e}")),
+        Err(_) => Err(format!("timed out after {PROBE_TIMEOUT:?}")),
+    }
+}
+
+/// Resolve `$HOME/.triton/profiles.d/<name>.json`, honoring
+/// `TRITON_CONFIG_DIR` and `XDG_CONFIG_HOME` so this matches what
+/// `triton` itself will read (see `cli/triton-cli/src/config/paths.rs`).
+fn profile_path(name: &str) -> Result<PathBuf> {
+    let base = if let Ok(dir) = std::env::var("TRITON_CONFIG_DIR") {
+        PathBuf::from(dir)
+    } else if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        PathBuf::from(xdg).join("triton")
+    } else {
+        dirs::home_dir()
+            .context("could not determine $HOME for profile path")?
+            .join(".triton")
+    };
+    Ok(base.join("profiles.d").join(format!("{name}.json")))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cloudapi_url_uses_cloudapi_domain_when_set() {
+        let cfg = TritonConfig::from_raw(serde_json::json!({
+            "datacenter_name": "us-east-1",
+            "dns_domain": "triton.zone",
+            "cloudapi_domain": "us-east.api.example.com",
+        }));
+        assert_eq!(cloudapi_url(&cfg), "https://us-east.api.example.com");
+    }
+
+    #[test]
+    fn cloudapi_url_falls_back_to_dc_dns() {
+        let cfg = TritonConfig::from_raw(serde_json::json!({
+            "datacenter_name": "coal",
+            "dns_domain": "joyent.us",
+        }));
+        assert_eq!(cloudapi_url(&cfg), "https://cloudapi.coal.joyent.us");
+    }
+
+    #[test]
+    fn cloudapi_url_treats_empty_domain_as_unset() {
+        let cfg = TritonConfig::from_raw(serde_json::json!({
+            "datacenter_name": "coal",
+            "dns_domain": "joyent.us",
+            "cloudapi_domain": "",
+        }));
+        assert_eq!(cloudapi_url(&cfg), "https://cloudapi.coal.joyent.us");
+    }
+
+    #[test]
+    fn profile_path_honors_triton_config_dir() {
+        unsafe {
+            std::env::set_var("TRITON_CONFIG_DIR", "/tmp/tcfg-test");
+        }
+        let p = profile_path("admin").unwrap();
+        unsafe {
+            std::env::remove_var("TRITON_CONFIG_DIR");
+        }
+        assert_eq!(p, PathBuf::from("/tmp/tcfg-test/profiles.d/admin.json"));
+    }
+}

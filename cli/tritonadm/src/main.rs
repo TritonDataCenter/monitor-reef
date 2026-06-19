@@ -48,35 +48,35 @@ fn enum_to_display<T: serde::Serialize + std::fmt::Debug>(val: &T) -> String {
 )]
 struct Cli {
     /// SAPI base URL (auto-detected from SDC config if not set)
-    #[arg(long, env = "SAPI_URL", global = true)]
+    #[arg(long, env = "SAPI_URL", global = true, hide = true)]
     sapi_url: Option<String>,
 
     /// IMGAPI base URL (auto-detected from SDC config if not set)
-    #[arg(long, env = "IMGAPI_URL", global = true)]
+    #[arg(long, env = "IMGAPI_URL", global = true, hide = true)]
     imgapi_url: Option<String>,
 
     /// VMAPI base URL (auto-detected from SDC config if not set)
-    #[arg(long, env = "VMAPI_URL", global = true)]
+    #[arg(long, env = "VMAPI_URL", global = true, hide = true)]
     vmapi_url: Option<String>,
 
     /// PAPI base URL (auto-detected from SDC config if not set)
-    #[arg(long, env = "PAPI_URL", global = true)]
+    #[arg(long, env = "PAPI_URL", global = true, hide = true)]
     papi_url: Option<String>,
 
     /// NAPI base URL (auto-detected from SDC config if not set)
-    #[arg(long, env = "NAPI_URL", global = true)]
+    #[arg(long, env = "NAPI_URL", global = true, hide = true)]
     napi_url: Option<String>,
 
     /// Mahi base URL (auto-detected from SDC config if not set)
-    #[arg(long, env = "MAHI_URL", global = true)]
+    #[arg(long, env = "MAHI_URL", global = true, hide = true)]
     mahi_url: Option<String>,
 
     /// Mahi sitter base URL (no SDC default — the sitter has no DNS record)
-    #[arg(long, env = "MAHI_SITTER_URL", global = true)]
+    #[arg(long, env = "MAHI_SITTER_URL", global = true, hide = true)]
     mahi_sitter_url: Option<String>,
 
     /// Updates server URL (default: https://updates.tritondatacenter.com)
-    #[arg(long, env = "UPDATES_URL", global = true)]
+    #[arg(long, env = "UPDATES_URL", global = true, hide = true)]
     updates_url: Option<String>,
 
     #[command(subcommand)]
@@ -398,7 +398,7 @@ async fn main() -> Result<()> {
         }
         Commands::Services { json } => cmd_services(&sapi_url?, json).await,
         Commands::Update => not_yet_implemented("update"),
-        Commands::Channel { command } => command.run(),
+        Commands::Channel { command } => command.run(&sapi_url?, updates_url.as_deref()).await,
         Commands::DcMaint { command } => command.run(&sapi_url?).await,
         Commands::Platform { command } => command.run(),
         Commands::PostSetup { command } => {
@@ -416,7 +416,11 @@ async fn main() -> Result<()> {
         }
         Commands::Experimental { command } => command.run(),
         Commands::Image { command } => command.run(imgapi_url, updates_url.as_deref()).await,
-        Commands::Dev { command } => command.run(&sapi_url?, &vmapi_url?, &napi_url?).await,
+        Commands::Dev { command } => {
+            command
+                .run(&sapi_url?, &vmapi_url?, &napi_url?, sdc_config)
+                .await
+        }
         Commands::Sapi { command } => command.run(&sapi_url?).await,
         Commands::Mahi { command } => command.run(mahi_url, mahi_sitter_url).await,
     }
@@ -440,7 +444,7 @@ async fn get_instance_counts(
 }
 
 async fn cmd_avail(sapi_url: &str, imgapi_url: &str, json: bool) -> Result<()> {
-    let http = triton_tls::build_http_client(false)
+    let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
         .await
         .context("failed to build HTTP client")?;
     let sapi = sapi_client::build_client(sapi_url, false)
@@ -591,7 +595,7 @@ async fn cmd_services(sapi_url: &str, json: bool) -> Result<()> {
 }
 
 async fn cmd_instances(sapi_url: &str, vmapi_url: &str, json: bool) -> Result<()> {
-    let http = triton_tls::build_http_client(false)
+    let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
         .await
         .context("failed to build HTTP client")?;
     let sapi = sapi_client::build_client(sapi_url, false)

@@ -364,7 +364,7 @@ fn env_fallbacks(explicit_profile: bool, triton_var: &str, sdc_var: &str) -> Vec
 /// Build a reqwest HTTP client with CA cert fallback for platforms where
 /// the default certificate store isn't found (e.g., SmartOS/illumos).
 async fn build_http_client(insecure: bool) -> Result<reqwest::Client> {
-    triton_tls::build_http_client(insecure)
+    triton_tls::build_http_client(insecure.into())
         .await
         .map_err(|e| anyhow::anyhow!("failed to build HTTP client: {e}"))
 }
@@ -534,8 +534,11 @@ impl Cli {
 #[tokio::main]
 async fn main() {
     if let Err(e) = try_main().await {
-        // Format with alternate display to include the full error chain.
-        let msg = format!("{e:#}");
+        // Prefer a renderer that knows the gateway-client Error shape;
+        // fall back to anyhow's alternate display (which walks the
+        // full cause chain) for non-API errors.
+        let api_msg = errors::render_api_error(&e);
+        let msg = api_msg.clone().unwrap_or_else(|| format!("{e:#}"));
 
         // Emit-payload mode uses a sentinel error to abort the request
         // after printing the payload. Treat it as a successful exit.

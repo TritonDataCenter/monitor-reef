@@ -15,6 +15,8 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
+use crate::commands::image::nocloud::vendor::Release;
+
 const RELEASES_URL: &str = "https://fedoraproject.org/releases.json";
 
 #[derive(Debug, Deserialize)]
@@ -109,6 +111,36 @@ pub fn resolve(entries: &[Entry], release: &str) -> Result<Resolved> {
         url: target.link.clone(),
         sha256: target.sha256.clone(),
     })
+}
+
+/// Distinct Fedora majors with a Cloud_Base x86_64 qcow2, sorted
+/// newest-first. The label is the major number; no extra note (Fedora
+/// EOL state isn't carried in releases.json).
+pub fn list(entries: &[Entry]) -> Vec<Release> {
+    let mut majors: Vec<&str> = entries
+        .iter()
+        .filter(|e| {
+            e.arch == "x86_64"
+                && e.variant == "Cloud"
+                && e.subvariant == "Cloud_Base"
+                && e.link.ends_with(".qcow2")
+        })
+        .map(|e| e.version.as_str())
+        .collect();
+    majors.sort_by(|a, b| {
+        b.parse::<u32>()
+            .unwrap_or(0)
+            .cmp(&a.parse::<u32>().unwrap_or(0))
+    });
+    majors.dedup();
+    majors
+        .into_iter()
+        .map(|v| Release {
+            name: v.to_string(),
+            label: Some(format!("Fedora {v}")),
+            note: None,
+        })
+        .collect()
 }
 
 /// Accept `42`, `f42`, `Fedora-42` — anything that uniquely
@@ -235,5 +267,13 @@ mod tests {
         assert!(parse_version("rawhide").is_err());
         assert!(parse_version("42.0").is_err());
         assert!(parse_version("f").is_err());
+    }
+
+    #[test]
+    fn list_returns_distinct_majors_newest_first() {
+        let rows = list(&sample());
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, vec!["44", "43", "42"]);
+        assert_eq!(rows[0].label.as_deref(), Some("Fedora 44"));
     }
 }

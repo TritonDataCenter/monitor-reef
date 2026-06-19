@@ -68,9 +68,10 @@ CARGO_BIN_TRITON  := $(REPO_ROOT)/target/release/triton
 # what the install script extracts onto the headnode GZ.
 INSTALL_PREFIX := root/opt/triton/tritonadm
 
-# The shells we generate completions for. clap_complete supports more
-# (elvish, powershell), but these three cover real operators.
-COMPLETION_SHELLS := bash zsh fish
+# We only ship bash completion. The headnode GZ auto-sources files from
+# /etc/bash/bash_completion.d/ via the SMF setup service (see smf/ below);
+# zsh/fish on dev hosts can be generated on demand via `tritonadm completion
+# zsh` etc. Filename matches sdcadm's convention (etc/<name>.completion).
 
 CLEAN_FILES += bits proto $(RELEASE_SHAR) $(MANIFEST) $(UUID_FILE)
 
@@ -116,7 +117,8 @@ release: all $(UUID_FILE)
 	@rm -rf $(RELSTAGEDIR)
 	@mkdir -p $(RELSTAGEDIR)/$(INSTALL_PREFIX)/bin
 	@mkdir -p $(RELSTAGEDIR)/$(INSTALL_PREFIX)/etc
-	@mkdir -p $(RELSTAGEDIR)/$(INSTALL_PREFIX)/share/completions
+	@mkdir -p $(RELSTAGEDIR)/$(INSTALL_PREFIX)/smf/manifests
+	@mkdir -p $(RELSTAGEDIR)/$(INSTALL_PREFIX)/smf/method
 	cp $(CARGO_BIN) $(RELSTAGEDIR)/$(INSTALL_PREFIX)/bin/tritonadm
 	chmod 755 $(RELSTAGEDIR)/$(INSTALL_PREFIX)/bin/tritonadm
 	cp $(CARGO_BIN_TRITON) $(RELSTAGEDIR)/$(INSTALL_PREFIX)/bin/triton
@@ -130,14 +132,15 @@ release: all $(UUID_FILE)
 	    "$(STAMP)" \
 	    "$$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
 	    > $(RELSTAGEDIR)/$(INSTALL_PREFIX)/etc/version
-	@for shell in $(COMPLETION_SHELLS); do \
-	    $(CARGO_BIN) completion $$shell \
-	        > $(RELSTAGEDIR)/$(INSTALL_PREFIX)/share/completions/tritonadm.$$shell \
-	        || { echo "tritonadm completion $$shell failed"; exit 1; }; \
-	    $(CARGO_BIN_TRITON) completion $$shell \
-	        > $(RELSTAGEDIR)/$(INSTALL_PREFIX)/share/completions/triton.$$shell \
-	        || { echo "triton completion $$shell failed"; exit 1; }; \
-	done
+	$(CARGO_BIN) completion bash \
+	    > $(RELSTAGEDIR)/$(INSTALL_PREFIX)/etc/tritonadm.completion
+	$(CARGO_BIN_TRITON) completion bash \
+	    > $(RELSTAGEDIR)/$(INSTALL_PREFIX)/etc/triton.completion
+	cp smf/manifests/tritonadm-setup.xml \
+	    $(RELSTAGEDIR)/$(INSTALL_PREFIX)/smf/manifests/tritonadm-setup.xml
+	cp smf/method/tritonadm-setup \
+	    $(RELSTAGEDIR)/$(INSTALL_PREFIX)/smf/method/tritonadm-setup
+	chmod 755 $(RELSTAGEDIR)/$(INSTALL_PREFIX)/smf/method/tritonadm-setup
 	# Stage install.sh in the proto. tools/mk-shar expects it at the top
 	# of the proto dir — everything else there gets tarred into the
 	# shar's contents.tgz.

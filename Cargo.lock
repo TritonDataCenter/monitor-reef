@@ -4929,7 +4929,7 @@ dependencies = [
 
 [[package]]
 name = "triton-tls"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "reqwest",
  "rustls 0.23.40",
@@ -4951,6 +4951,7 @@ dependencies = [
  "chrono",
  "clap",
  "clap_complete",
+ "dirs",
  "flate2",
  "futures-util",
  "imgapi-api",
