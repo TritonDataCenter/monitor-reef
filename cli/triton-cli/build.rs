@@ -5,6 +5,13 @@
 // Copyright 2026 Edgecast Cloud LLC.
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let manifest_dir = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?);
+    let repo_root = manifest_dir.join("../..");
+    let talos_api_dir = repo_root.join("talos/api");
+    let talos_vendor_dir = talos_api_dir.join("vendor");
+    let machine_proto = talos_api_dir.join("machine/machine.proto");
+    let cluster_proto = talos_api_dir.join("cluster/cluster.proto");
+
     // Build metadata
     build_data::set_GIT_COMMIT_SHORT();
 
@@ -20,17 +27,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     build_data::no_debug_rebuilds();
 
     // Compile Talos protocol buffers
+    println!("cargo:rerun-if-changed={}", machine_proto.display());
+    println!("cargo:rerun-if-changed={}", cluster_proto.display());
+    println!("cargo:rerun-if-changed={}", talos_api_dir.display());
+    println!("cargo:rerun-if-changed={}", talos_vendor_dir.display());
+
     tonic_build::configure()
         .build_server(false)
         .compile_protos(
-            &[
-                "../../../kelp-talosctl-gauntlet/talos/api/machine/machine.proto",
-                "../../../kelp-talosctl-gauntlet/talos/api/cluster/cluster.proto",
-            ],
-            &[
-                "../../../kelp-talosctl-gauntlet/talos/api/",
-                "../../../kelp-talosctl-gauntlet/talos/api/vendor/",
-            ],
+            &[machine_proto, cluster_proto],
+            &[talos_api_dir, talos_vendor_dir],
         )?;
 
     Ok(())

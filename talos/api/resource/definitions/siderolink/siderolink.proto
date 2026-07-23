@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package talos.resource.definitions.siderolink;
+
+option go_package = "github.com/siderolabs/talos/pkg/machinery/api/resource/definitions/siderolink";
+option java_package = "dev.talos.api.resource.definitions.siderolink";
+
+import "common/common.proto";
+
+// ConfigSpec describes Siderolink configuration.
+message ConfigSpec {
+  string api_endpoint = 1;
+  string host = 2;
+  string join_token = 3;
+  bool insecure = 4;
+  bool tunnel = 5;
+}
+
+// StatusSpec describes Siderolink status.
+message StatusSpec {
+  string host = 1;
+  bool connected = 2;
+  string link_name = 3;
+  bool grpc_tunnel = 4;
+}
+
+// TunnelSpec describes Siderolink GRPC Tunnel configuration.
+message TunnelSpec {
+  string api_endpoint = 1;
+  string link_name = 2;
+  int64 mtu = 3;
+  common.NetIPPort node_address = 4;
+}
+
