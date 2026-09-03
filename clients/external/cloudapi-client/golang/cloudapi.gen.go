@@ -19847,7 +19847,6 @@ func (r HeadMachineDisksResponse) StatusCode() int {
 type CreateMachineDiskResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON201      *Disk
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -27059,13 +27058,6 @@ func ParseCreateMachineDiskResponse(rsp *http.Response) (*CreateMachineDiskRespo
 	}
 
 	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest Disk
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON201 = &dest
-
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

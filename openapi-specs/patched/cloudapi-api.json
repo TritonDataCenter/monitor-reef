@@ -7511,15 +7511,8 @@
           "required": true
         },
         "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Disk"
-                }
-              }
-            },
-            "description": "successful creation"
+          "202": {
+            "description": "successfully enqueued operation"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"

@@ -28787,7 +28787,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `POST` request to `/{account}/machines/{machine}/disks`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Disk>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self {
                 client,
                 account,
@@ -28833,7 +28833,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                201u16 => ResponseValue::from_response(response).await,
+                202u16 => Ok(ResponseValue::empty(response)),
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

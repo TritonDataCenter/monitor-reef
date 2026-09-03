@@ -3787,12 +3787,16 @@
           "required": true
         },
         "responses": {
-          "201": {
-            "description": "successful creation",
+          "202": {
+            "description": "successfully enqueued operation",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Disk"
+                  "title": "Null",
+                  "type": "string",
+                  "enum": [
+                    null
+                  ]
                 }
               }
             }

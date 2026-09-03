@@ -9,6 +9,7 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use dialoguer::Confirm;
+use std::collections::HashSet;
 use std::io::IsTerminal;
 use triton_gateway_client::TypedClient;
 use triton_gateway_client::types::Disk;
@@ -198,13 +199,17 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
     let id_str = machine_id.to_string();
 
     // List existing disks before adding (baseline for --wait)
-    let _existing_disks = client
+    let existing_disk_ids: HashSet<_> = client
         .inner()
         .list_machine_disks()
         .account(account)
         .machine(machine_id)
         .send()
-        .await?;
+        .await?
+        .into_inner()
+        .into_iter()
+        .map(|disk| disk.id)
+        .collect();
 
     let request = triton_gateway_client::types::CreateDiskRequest {
         size: args.size as u64,
@@ -225,14 +230,9 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
     }
 
     if args.wait {
-        super::wait::wait_for_state(
-            machine_id,
-            triton_gateway_client::types::MachineState::Running,
-            args.wait_timeout,
-            client,
-        )
-        .await?;
-        eprintln!("Instance {} is running", &id_str[..8]);
+        super::wait::wait_for_new_disk(machine_id, &existing_disk_ids, args.wait_timeout, client)
+            .await?;
+        eprintln!("Disk addition complete for {}", &id_str[..8]);
     }
 
     Ok(())
