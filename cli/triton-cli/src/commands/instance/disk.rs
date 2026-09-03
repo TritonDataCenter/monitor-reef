@@ -211,7 +211,7 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
         pci_slot: None,
     };
 
-    let response = client
+    client
         .inner()
         .create_machine_disk()
         .account(account)
@@ -220,13 +220,9 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
         .send()
         .await?;
 
-    let disk = response.into_inner();
-
-    eprintln!(
-        "Added disk {} ({} MiB)",
-        &disk.id.to_string()[..8],
-        disk.size
-    );
+    if !use_json {
+        eprintln!("Adding disk ({} MiB)", args.size);
+    }
 
     if args.wait {
         super::wait::wait_for_state(
@@ -237,10 +233,6 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
         )
         .await?;
         eprintln!("Instance {} is running", &id_str[..8]);
-    }
-
-    if use_json {
-        json::print_json(&disk)?;
     }
 
     Ok(())
