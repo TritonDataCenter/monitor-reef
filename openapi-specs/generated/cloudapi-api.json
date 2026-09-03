@@ -10244,6 +10244,7 @@
         "enum": [
           "creating",
           "running",
+          "stopped",
           "resizing",
           "failed",
           "deleted",

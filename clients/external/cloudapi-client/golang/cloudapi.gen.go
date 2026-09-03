@@ -148,6 +148,7 @@ const (
 	DiskStateFailed   DiskState = "failed"
 	DiskStateResizing DiskState = "resizing"
 	DiskStateRunning  DiskState = "running"
+	DiskStateStopped  DiskState = "stopped"
 	DiskStateUnknown  DiskState = "unknown"
 )
 
@@ -163,6 +164,8 @@ func (e DiskState) Valid() bool {
 	case DiskStateResizing:
 		return true
 	case DiskStateRunning:
+		return true
+	case DiskStateStopped:
 		return true
 	case DiskStateUnknown:
 		return true
@@ -1318,8 +1321,6 @@ type Datacenter struct {
 // Datacenters Datacenter map: name -> URL
 //
 // The CloudAPI returns datacenters as a map where keys are datacenter names and values are their URLs. Example: ```json {"us-central-1": "https://us-central-1.api.mnx.io"} ```
-//
-// This is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Datacenters = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Datacenters map[string]string` in Go).
 type Datacenters map[string]string
 
 // DisableDeletionProtectionRequest Request to disable deletion protection
@@ -1812,8 +1813,6 @@ type MemberType0 string
 type MemberType1 string
 
 // MetadataObject Key-value metadata (values can be strings, booleans, or numbers)
-//
-// Newtype wrapper rather than a type alias so the generated OpenAPI spec carries `MetadataObject` as a named schema rather than an anonymous `additionalProperties` object. See the note on `Tags` below for the full rationale.
 type MetadataObject map[string]interface{}
 
 // MigrateRequest Migration request
@@ -2290,8 +2289,6 @@ type RoleTagsResponse struct {
 // Services Services map: name -> URL
 //
 // The CloudAPI returns services as a map where keys are service names and values are their URLs. Example: ```json {"cmon": "https://cmon.example.com:9163", "docker": "tcp://docker.example.com:2376"} ```
-//
-// This is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Services = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Services map[string]string` in Go).
 type Services map[string]string
 
 // Snapshot Snapshot information
@@ -2351,8 +2348,6 @@ type StopMachineRequest struct {
 }
 
 // Tags Key-value tags (values can be strings, booleans, or numbers)
-//
-// Newtype wrapper rather than a type alias so the generated OpenAPI spec carries `Tags` as a named schema rather than an anonymous `additionalProperties` object. A `pub type Tags = HashMap<String, Value>` is erased by schemars at compile time, causing every field typed `Tags` to inline the map shape and downstream code generators (Progenitor, oapi-codegen) to emit unnamed `serde_json::Map` / `map[string]interface{}` types per field. The newtype preserves the name so all clients see a single `Tags` type.
 type Tags map[string]interface{}
 
 // TagsRequest Request to add/replace machine tags

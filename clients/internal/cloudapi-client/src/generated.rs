@@ -2608,6 +2608,7 @@ pub mod types {
     #[doc = "  \"enum\": ["]
     #[doc = "    \"creating\","]
     #[doc = "    \"running\","]
+    #[doc = "    \"stopped\","]
     #[doc = "    \"resizing\","]
     #[doc = "    \"failed\","]
     #[doc = "    \"deleted\","]
@@ -2635,6 +2636,8 @@ pub mod types {
         Creating,
         #[serde(rename = "running")]
         Running,
+        #[serde(rename = "stopped")]
+        Stopped,
         #[serde(rename = "resizing")]
         Resizing,
         #[serde(rename = "failed")]
@@ -2650,6 +2653,7 @@ pub mod types {
             match *self {
                 Self::Creating => f.write_str("creating"),
                 Self::Running => f.write_str("running"),
+                Self::Stopped => f.write_str("stopped"),
                 Self::Resizing => f.write_str("resizing"),
                 Self::Failed => f.write_str("failed"),
                 Self::Deleted => f.write_str("deleted"),
@@ -2664,6 +2668,7 @@ pub mod types {
             match value {
                 "creating" => Ok(Self::Creating),
                 "running" => Ok(Self::Running),
+                "stopped" => Ok(Self::Stopped),
                 "resizing" => Ok(Self::Resizing),
                 "failed" => Ok(Self::Failed),
                 "deleted" => Ok(Self::Deleted),

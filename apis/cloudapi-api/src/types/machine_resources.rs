@@ -87,6 +87,7 @@ pub struct CreateSnapshotRequest {
 pub enum DiskState {
     Creating,
     Running,
+    Stopped,
     Resizing,
     Failed,
     Deleted,
