@@ -7,6 +7,7 @@
 //! Machine sub-resources (snapshots, tags, metadata, disks)
 
 use super::common::{Metadata, Tags, Timestamp, Uuid};
+use super::misc::DiskSize;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -122,8 +123,11 @@ pub struct Disk {
 /// Request to create disk
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateDiskRequest {
-    /// Size in MB
-    pub size: u64,
+    /// Size in MB or "remaining"
+    pub size: DiskSize,
+    /// Block size in bytes
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_size: Option<u64>,
     /// PCI slot (optional)
     #[serde(default)]
     pub pci_slot: Option<String>,

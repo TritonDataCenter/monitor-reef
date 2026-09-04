@@ -10,9 +10,11 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use dialoguer::Confirm;
 use std::collections::HashSet;
+use std::fmt;
 use std::io::IsTerminal;
+use std::str::FromStr;
 use triton_gateway_client::TypedClient;
-use triton_gateway_client::types::Disk;
+use triton_gateway_client::types::{CreateDiskRequest, Disk, DiskSize};
 
 use crate::define_columns;
 use crate::output::table::{TableBuilder, TableFormatArgs};
@@ -61,8 +63,11 @@ pub struct DiskAddArgs {
     /// Instance ID or name
     pub instance: String,
 
-    /// Disk size in MiB
-    pub size: i64,
+    /// Disk size in MiB or "remaining"
+    pub size: AddDiskSize,
+
+    /// Block size in bytes
+    pub block_size: Option<u64>,
 
     /// Disk name (optional, must be unique per instance)
     #[arg(long)]
@@ -75,6 +80,50 @@ pub struct DiskAddArgs {
     /// Wait timeout in seconds
     #[arg(long, default_value = "600")]
     pub wait_timeout: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AddDiskSize {
+    Mib(u64),
+    Remaining,
+}
+
+impl AddDiskSize {
+    fn to_wire_size(&self) -> DiskSize {
+        match self {
+            Self::Mib(size) => DiskSize::Uint64(*size),
+            Self::Remaining => DiskSize::String("remaining".to_string()),
+        }
+    }
+}
+
+impl FromStr for AddDiskSize {
+    type Err = String;
+
+    fn from_str(size: &str) -> std::result::Result<Self, Self::Err> {
+        if size == "remaining" {
+            return Ok(Self::Remaining);
+        }
+
+        let size = size
+            .parse::<u64>()
+            .map_err(|_| "SIZE must be a number or \"remaining\"".to_string())?;
+
+        if size == 0 {
+            return Err("SIZE must be greater than zero or \"remaining\"".to_string());
+        }
+
+        Ok(Self::Mib(size))
+    }
+}
+
+impl fmt::Display for AddDiskSize {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Mib(size) => write!(f, "{size}"),
+            Self::Remaining => f.write_str("remaining"),
+        }
+    }
 }
 
 #[derive(Args, Clone)]
@@ -211,10 +260,7 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
         .map(|disk| disk.id)
         .collect();
 
-    let request = triton_gateway_client::types::CreateDiskRequest {
-        size: args.size as u64,
-        pci_slot: None,
-    };
+    let request = build_create_disk_request(&args.size, args.block_size);
 
     client
         .inner()
@@ -226,7 +272,10 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
         .await?;
 
     if !use_json {
-        eprintln!("Adding disk ({} MiB)", args.size);
+        match &args.size {
+            AddDiskSize::Mib(size) => eprintln!("Adding disk ({size} MiB)"),
+            AddDiskSize::Remaining => eprintln!("Adding disk (remaining)"),
+        }
     }
 
     if args.wait {
@@ -236,6 +285,14 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
     }
 
     Ok(())
+}
+
+fn build_create_disk_request(size: &AddDiskSize, block_size: Option<u64>) -> CreateDiskRequest {
+    CreateDiskRequest {
+        size: size.to_wire_size(),
+        block_size,
+        pci_slot: None,
+    }
 }
 
 async fn resize_disk(args: DiskResizeArgs, client: &TypedClient) -> Result<()> {
@@ -255,6 +312,37 @@ async fn resize_disk(args: DiskResizeArgs, client: &TypedClient) -> Result<()> {
     println!("Resizing disk {} to {} MiB", &args.disk[..8], args.size);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn builds_create_disk_request_with_numeric_size_and_block_size() {
+        let request = build_create_disk_request(&AddDiskSize::Mib(2048), Some(8192));
+
+        assert_eq!(
+            serde_json::to_value(request).unwrap(),
+            json!({
+                "size": 2048,
+                "block_size": 8192
+            })
+        );
+    }
+
+    #[test]
+    fn builds_create_disk_request_with_remaining_size() {
+        let request = build_create_disk_request(&AddDiskSize::Remaining, None);
+
+        assert_eq!(
+            serde_json::to_value(request).unwrap(),
+            json!({
+                "size": "remaining"
+            })
+        );
+    }
 }
 
 async fn delete_disk(args: DiskDeleteArgs, client: &TypedClient) -> Result<()> {
