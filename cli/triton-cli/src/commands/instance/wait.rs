@@ -13,7 +13,7 @@ use anyhow::Result;
 use clap::Args;
 use tokio::time::sleep;
 use triton_gateway_client::TypedClient;
-use triton_gateway_client::types::{AuditSuccess, Disk, Machine, MachineState};
+use triton_gateway_client::types::{AuditSuccess, Disk, DiskState, Machine, MachineState};
 use uuid::Uuid;
 
 use crate::output::{enum_to_display, json};
@@ -65,6 +65,7 @@ pub async fn wait_for_state(
 pub async fn wait_for_new_disk(
     machine_id: uuid::Uuid,
     existing_disk_ids: &HashSet<Uuid>,
+    expected_size: Option<u64>,
     timeout_secs: u64,
     client: &TypedClient,
 ) -> Result<()> {
@@ -82,8 +83,15 @@ pub async fn wait_for_new_disk(
             .await?
             .into_inner();
 
-        if has_new_disk(existing_disk_ids, &disks) {
-            return Ok(());
+        let matching_disks = matching_new_disks(existing_disk_ids, &disks, expected_size);
+        match matching_disks.len() {
+            0 => {}
+            1 => return Ok(()),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Multiple new disks were detected while waiting for disk add to complete"
+                ));
+            }
         }
 
         if start.elapsed() > timeout {
@@ -96,10 +104,19 @@ pub async fn wait_for_new_disk(
     }
 }
 
-fn has_new_disk(existing_disk_ids: &HashSet<Uuid>, disks: &[Disk]) -> bool {
+fn matching_new_disks<'a>(
+    existing_disk_ids: &HashSet<Uuid>,
+    disks: &'a [Disk],
+    expected_size: Option<u64>,
+) -> Vec<&'a Disk> {
     disks
         .iter()
-        .any(|disk| !existing_disk_ids.contains(&disk.id))
+        .filter(|disk| {
+            !existing_disk_ids.contains(&disk.id)
+                && disk.state != Some(DiskState::Creating)
+                && expected_size.is_none_or(|size| disk.size == size)
+        })
+        .collect()
 }
 
 pub async fn wait_for_states(
@@ -212,7 +229,7 @@ mod tests {
     }
 
     #[test]
-    fn detects_new_disk_id() {
+    fn detects_matching_new_disk() {
         let existing =
             HashSet::from([Uuid::parse_str("918b4d5f-4a78-4e93-a4d1-965bb9ac20d9").unwrap()]);
         let disks = vec![
@@ -220,7 +237,7 @@ mod tests {
             disk("0e053ea8-fcc8-449a-8b60-94e65dfbb21c"),
         ];
 
-        assert!(has_new_disk(&existing, &disks));
+        assert_eq!(matching_new_disks(&existing, &disks, Some(2048)).len(), 1);
     }
 
     #[test]
@@ -229,6 +246,29 @@ mod tests {
             HashSet::from([Uuid::parse_str("918b4d5f-4a78-4e93-a4d1-965bb9ac20d9").unwrap()]);
         let disks = vec![disk("918b4d5f-4a78-4e93-a4d1-965bb9ac20d9")];
 
-        assert!(!has_new_disk(&existing, &disks));
+        assert!(matching_new_disks(&existing, &disks, Some(2048)).is_empty());
+    }
+
+    #[test]
+    fn does_not_trigger_on_creating_new_disk() {
+        let existing =
+            HashSet::from([Uuid::parse_str("918b4d5f-4a78-4e93-a4d1-965bb9ac20d9").unwrap()]);
+        let mut new_disk = disk("0e053ea8-fcc8-449a-8b60-94e65dfbb21c");
+        new_disk.state = Some(DiskState::Creating);
+        let disks = vec![disk("918b4d5f-4a78-4e93-a4d1-965bb9ac20d9"), new_disk];
+
+        assert!(matching_new_disks(&existing, &disks, Some(2048)).is_empty());
+    }
+
+    #[test]
+    fn does_not_trigger_on_wrong_numeric_size() {
+        let existing =
+            HashSet::from([Uuid::parse_str("918b4d5f-4a78-4e93-a4d1-965bb9ac20d9").unwrap()]);
+        let disks = vec![
+            disk("918b4d5f-4a78-4e93-a4d1-965bb9ac20d9"),
+            disk("0e053ea8-fcc8-449a-8b60-94e65dfbb21c"),
+        ];
+
+        assert!(matching_new_disks(&existing, &disks, Some(4096)).is_empty());
     }
 }

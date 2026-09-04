@@ -95,6 +95,13 @@ impl AddDiskSize {
             Self::Remaining => DiskSize::String("remaining".to_string()),
         }
     }
+
+    fn expected_response_size(&self) -> Option<u64> {
+        match self {
+            Self::Mib(size) => Some(*size),
+            Self::Remaining => None,
+        }
+    }
 }
 
 impl FromStr for AddDiskSize {
@@ -279,8 +286,14 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
     }
 
     if args.wait {
-        super::wait::wait_for_new_disk(machine_id, &existing_disk_ids, args.wait_timeout, client)
-            .await?;
+        super::wait::wait_for_new_disk(
+            machine_id,
+            &existing_disk_ids,
+            args.size.expected_response_size(),
+            args.wait_timeout,
+            client,
+        )
+        .await?;
         eprintln!("Disk addition complete for {}", &id_str[..8]);
     }
 
