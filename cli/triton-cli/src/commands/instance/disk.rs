@@ -66,7 +66,7 @@ pub struct DiskAddArgs {
     /// Disk size in MiB or "remaining"
     pub size: AddDiskSize,
 
-    /// Block size in bytes
+    /// Block size in bytes. Must be a power of 2.
     pub block_size: Option<u64>,
 
     /// Disk name (optional, must be unique per instance)
