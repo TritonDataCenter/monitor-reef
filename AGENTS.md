@@ -16,11 +16,12 @@ Trait-based OpenAPI-driven migration of Node.js services to Rust. API traits (Dr
 
 ## Architecture
 
-- **`apis/`** — API trait definitions (fast to compile): `cloudapi-api`, `vmapi-api`, `bugview-api`, `jira-api`
-- **`services/`** — Trait implementations: `bugview-service`, `jira-stub-server`
-- **`clients/internal/`** — Progenitor-generated clients: `cloudapi-client`, `vmapi-client`, `bugview-client`, `jira-client`
-- **`cli/`** — CLIs: `triton-cli`, `vmapi-cli`, `bugview-cli`, `manatee-echo-resolver`
-- **`libs/`** — Shared crates: `cueball*`, `fast`, `libmanta`, `moray`, `quickcheck-helpers`, `rebalancer-legacy`, `rust-utils`, `sharkspotter`, `triton-auth`
+- **`apis/`** — API trait definitions (fast to compile): `bugview-api`, `cloudapi-api`, `imgapi-api`, `jira-api`, `mahi-api`, `napi-api`, `papi-api`, `sapi-api`, `triton-api`, `vmapi-api` (scaffold: `api-template`)
+- **`services/`** — Trait implementations: `bugview-service`, `jira-stub-server`, `triton-api-server`, `triton-gateway` (scaffold: `service-template`)
+- **`clients/internal/`** — Progenitor-generated clients: `bugview-client`, `cloudapi-client`, `imgapi-client`, `jira-client`, `mahi-client`, `mahi-sitter-client`, `napi-client`, `papi-client`, `sapi-client`, `triton-gateway-client`, `vmapi-client` (scaffold: `client-template`)
+- **`cli/`** — CLIs: `bugview-cli`, `napi-cli`, `papi-cli`, `triton-cli`, `tritonadm`, `vmapi-cli`
+- **`libs/`** — Shared crates: `imgapi-types` (IMGAPI wire types without Dropshot), `qcow`, `triton-auth`, `triton-auth-session`, `triton-pagination`, `triton-tls`, `vmdk`
+- **Not yet modernized** (present but outside the workspace; see the commented-out members in `Cargo.toml`): `cli/manatee-echo-resolver`, `libs/cueball*`, `fast`, `libmanta`, `moray`, `quickcheck-helpers`, `rebalancer-legacy`, `rust-utils`, `sharkspotter`
 - **`client-generator/`** — Progenitor-based code generator
 - **`openapi-manager/`** — Spec management (dropshot-api-manager)
 - **`openapi-specs/generated/`** — Generated specs (checked into git)
