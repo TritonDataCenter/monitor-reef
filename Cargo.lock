@@ -4965,7 +4965,6 @@ dependencies = [
  "clap_complete",
  "flate2",
  "futures-util",
- "imgapi-api",
  "imgapi-client",
  "indicatif",
  "libc",
