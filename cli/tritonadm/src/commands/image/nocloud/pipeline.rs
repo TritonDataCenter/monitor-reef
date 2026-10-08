@@ -388,7 +388,7 @@ async fn build_image(
         ssh_key: resolved.ssh_key,
         image_size_mib: virtual_size_mib,
     };
-    let body = serde_json::to_vec_pretty(&manifest::build(&inputs))?;
+    let body = serde_json::to_vec_pretty(&manifest::build(&inputs)?)?;
     tokio::fs::write(&manifest_path, body).await?;
 
     Ok(PipelineOutputs {

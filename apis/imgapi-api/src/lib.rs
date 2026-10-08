@@ -56,7 +56,10 @@ use dropshot::{
 };
 use http::Response;
 
-pub mod types;
+// The wire types live in imgapi-types, which does not depend on Dropshot,
+// so tools that only need IMGAPI types (manifests, request bodies) need
+// not pull in the server stack. Re-exported under the old paths.
+pub use imgapi_types as types;
 pub use types::*;
 
 /// IMGAPI trait definition
@@ -458,11 +461,4 @@ pub trait ImgApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<DatasetPath>,
     ) -> Result<Response<Body>, HttpError>;
-}
-
-/// Path parameter for legacy dataset endpoints
-#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct DatasetPath {
-    /// Dataset UUID or URN
-    pub arg: String,
 }

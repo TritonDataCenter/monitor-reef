@@ -17,6 +17,7 @@ pub mod image;
 pub mod job;
 pub mod ping;
 pub mod state;
+pub mod validate;
 
 pub use action::*;
 pub use channel::*;
@@ -24,3 +25,4 @@ pub use common::*;
 pub use file::*;
 pub use image::*;
 pub use ping::*;
+pub use validate::*;

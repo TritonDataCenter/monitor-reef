@@ -1,0 +1,301 @@
+[
+  {
+    "v": 2,
+    "uuid": "fa50f94e-c1ba-11e4-abff-b7b4bd888e8f",
+    "owner": "00000000-0000-0000-0000-000000000000",
+    "name": "minimal-32-lts",
+    "version": "14.4.0",
+    "state": "active",
+    "disabled": false,
+    "public": true,
+    "published_at": "2015-03-03T15:35:53Z",
+    "type": "zone-dataset",
+    "os": "smartos",
+    "files": [
+      {
+        "sha1": "32385d3d2f14e5fc57ea266ebdcc049ce2afb2b5",
+        "size": 24104797,
+        "compression": "gzip"
+      }
+    ],
+    "description": "A 32-bit SmartOS image with just bootstrap packages installed. Ideal for users who want the smallest possible image upon which to build.",
+    "homepage": "https://docs.joyent.com/images/smartos/minimal",
+    "urn": "sdc:sdc:minimal-32-lts:14.4.0",
+    "requirements": {
+      "min_platform": {
+        "7.0": "20141030T081701Z"
+      },
+      "networks": [
+        {
+          "name": "net0",
+          "description": "public"
+        }
+      ]
+    },
+    "tags": {
+      "role": "os",
+      "group": "minimal-32-lts"
+    }
+  },
+  {
+    "v": 2,
+    "uuid": "2ab26a8c-616b-4b2f-9a30-b121c044c278",
+    "owner": "00000000-0000-0000-0000-000000000000",
+    "name": "alpine-3.23-nocloud",
+    "version": "20260311",
+    "state": "active",
+    "disabled": false,
+    "public": true,
+    "published_at": "2026-03-26T18:08:07.539Z",
+    "type": "zvol",
+    "os": "linux",
+    "files": [
+      {
+        "sha1": "b48096ddb93ae268326e351c17dbd690669cfa68",
+        "size": 110285323,
+        "compression": "gzip"
+      }
+    ],
+    "description": "Alpine Linux v3.23.3 CloudInit NoCloud compatible image. Built to run on bhyve virtual machines.",
+    "homepage": "https://alpinelinux.org/",
+    "requirements": {
+      "networks": [
+        {
+          "name": "net0",
+          "description": "public"
+        }
+      ],
+      "brand": "bhyve",
+      "bootrom": "uefi",
+      "ssh_key": true,
+      "min_platform": {
+        "7.0": "20260306T044811Z"
+      }
+    },
+    "nic_driver": "virtio",
+    "disk_driver": "virtio",
+    "cpu_type": "host",
+    "image_size": 10240,
+    "tags": {
+      "role": "os",
+      "org.smartos:cloudinit_datasource": "nocloud"
+    }
+  },
+  {
+    "v": 2,
+    "uuid": "494e0343-741e-4a5a-bc4f-14697a024ece",
+    "owner": "00000000-0000-0000-0000-000000000000",
+    "name": "almalinux-8",
+    "version": "20231127",
+    "state": "active",
+    "disabled": false,
+    "public": true,
+    "published_at": "2023-11-27T02:56:37Z",
+    "type": "zvol",
+    "os": "linux",
+    "files": [
+      {
+        "sha1": "d9932727415e539f5f12d4dfcd2e346dc9ac3252",
+        "size": 540702003,
+        "compression": "gzip"
+      }
+    ],
+    "description": "AlmaLinux 8 64-bit image with just essential packages installed. Built to run on bhyve or KVM virtual machines.",
+    "homepage": "https://docs.tritondatacenter.com/public-cloud/instances/virtual-machines/images/linux",
+    "requirements": {
+      "min_ram": 500,
+      "networks": [
+        {
+          "name": "net0",
+          "description": "public"
+        }
+      ],
+      "ssh_key": true
+    },
+    "users": [
+      {
+        "name": "root"
+      }
+    ],
+    "nic_driver": "virtio",
+    "disk_driver": "virtio",
+    "cpu_type": "host",
+    "image_size": 10240,
+    "tags": {
+      "role": "os"
+    }
+  },
+  {
+    "v": 2,
+    "uuid": "f7c19252-c998-11e4-be95-3315493f3741",
+    "owner": "00000000-0000-0000-0000-000000000000",
+    "name": "lx-centos-6",
+    "version": "20150313",
+    "state": "active",
+    "disabled": false,
+    "public": true,
+    "published_at": "2015-03-13T15:52:35Z",
+    "type": "lx-dataset",
+    "os": "linux",
+    "files": [
+      {
+        "sha1": "bb3cd4538e3fca05ff09cc600ff43e2d09ea262b",
+        "size": 204876515,
+        "compression": "gzip"
+      }
+    ],
+    "description": "Container-native CentOS 6.6 64-bit image. Built to run on containers with bare metal speed, while offering all the services of a typical unix host.",
+    "homepage": "https://docs.joyent.com/images",
+    "requirements": {
+      "networks": [
+        {
+          "name": "net0",
+          "description": "public"
+        }
+      ],
+      "min_platform": {
+        "7.0": "20140807T151857Z"
+      },
+      "brand": "lx"
+    },
+    "tags": {
+      "role": "os",
+      "kernel_version": "2.6.32"
+    }
+  },
+  {
+    "v": 2,
+    "uuid": "39a87f12-034c-11e6-84f5-4316cc1fcaa0",
+    "owner": "00000000-0000-0000-0000-000000000000",
+    "name": "freebsd-10",
+    "version": "20160415",
+    "state": "active",
+    "disabled": false,
+    "public": true,
+    "published_at": "2016-04-15T20:54:20Z",
+    "type": "zvol",
+    "os": "bsd",
+    "files": [
+      {
+        "sha1": "b9fed0961b14cec22a71cd49ccdc10426d6f7ede",
+        "size": 664417653,
+        "compression": "gzip"
+      }
+    ],
+    "description": "FreeBSD 10.3-RELEASE 64-bit image with just essential packages installed. Ideal for users who are comfortable with setting up their own environment and tools.",
+    "homepage": "https://docs.joyent.com/images/kvm/freebsd",
+    "urn": "sdc:sdc:freebsd-10:20160415",
+    "requirements": {
+      "networks": [
+        {
+          "name": "net0",
+          "description": "public"
+        }
+      ],
+      "ssh_key": true,
+      "brand": "kvm"
+    },
+    "users": [
+      {
+        "name": "root"
+      }
+    ],
+    "nic_driver": "virtio",
+    "disk_driver": "virtio",
+    "cpu_type": "host",
+    "image_size": 10240,
+    "tags": {
+      "role": "os"
+    }
+  },
+  {
+    "v": 2,
+    "uuid": "007feacd-1e4b-45ee-b61f-ffd6cca23dfd",
+    "owner": "00000000-0000-0000-0000-000000000000",
+    "name": "canary",
+    "version": "1.0.0",
+    "state": "active",
+    "disabled": false,
+    "public": true,
+    "published_at": "2006-01-02T22:04:05.000Z",
+    "type": "other",
+    "os": "other",
+    "files": [
+      {
+        "sha1": "fed1b59db7790600456766832e0302c0f0ea9b16",
+        "size": 231,
+        "compression": "gzip"
+      }
+    ],
+    "description": "A canary image used for monitoring an image repository.",
+    "homepage": "https://smartos.org/bugview/TRITON-1655"
+  },
+  {
+    "v": 2,
+    "uuid": "905a986a-d902-11e4-a37b-83619fdc3582",
+    "owner": "00000000-0000-0000-0000-000000000000",
+    "name": "mockcn",
+    "version": "release-20150402-20150402T063356Z-g3f16a2b",
+    "state": "active",
+    "disabled": false,
+    "public": false,
+    "published_at": "2015-04-02T06:35:59.962Z",
+    "type": "zone-dataset",
+    "os": "smartos",
+    "files": [
+      {
+        "sha1": "8f183fd411ff37edf3c609b041335c4cbd3b74b2",
+        "size": 5770198,
+        "compression": "gzip"
+      }
+    ],
+    "description": "SDC",
+    "requirements": {
+      "min_platform": {
+        "7.0": "20130506T233003Z"
+      },
+      "networks": [
+        {
+          "name": "net0",
+          "description": "admin"
+        }
+      ]
+    },
+    "origin": "fd2cc906-8938-11e3-beab-4359c665ac99",
+    "tags": {
+      "smartdc_service": true
+    }
+  },
+  {
+    "v": 2,
+    "uuid": "fd2cc906-8938-11e3-beab-4359c665ac99",
+    "owner": "00000000-0000-0000-0000-000000000000",
+    "name": "sdc-smartos",
+    "version": "1.6.3",
+    "state": "active",
+    "disabled": false,
+    "public": false,
+    "published_at": "2012-05-02T15:14:45.805Z",
+    "type": "zone-dataset",
+    "os": "smartos",
+    "files": [
+      {
+        "sha1": "97f20b32c2016782257176fb58a35e5044f05840",
+        "size": 46271847,
+        "compression": "bzip2"
+      }
+    ],
+    "description": "A copy of the smartos image for internal use by SmartDataCenter core images. This is only useful for development of SDC and Manta.",
+    "requirements": {
+      "networks": [
+        {
+          "name": "net0",
+          "description": "public"
+        }
+      ]
+    },
+    "tags": {
+      "smartdc": "true"
+    }
+  }
+]

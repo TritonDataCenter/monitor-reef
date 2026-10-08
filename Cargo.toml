@@ -9,6 +9,7 @@ members = [
     "apis/bugview-api",
     "apis/cloudapi-api",
     "apis/imgapi-api",
+    "libs/imgapi-types",
     "apis/jira-api",
     "apis/mahi-api",
     "apis/napi-api",
@@ -225,6 +226,7 @@ bugview-client = { path = "clients/internal/bugview-client" }
 cloudapi-api = { path = "apis/cloudapi-api" }
 imgapi-api = { path = "apis/imgapi-api" }
 imgapi-client = { path = "clients/internal/imgapi-client" }
+imgapi-types = { path = "libs/imgapi-types" }
 jira-api = { path = "apis/jira-api" }
 jira-client = { path = "clients/internal/jira-client" }
 jira-stub-server = { path = "services/jira-stub-server" }
