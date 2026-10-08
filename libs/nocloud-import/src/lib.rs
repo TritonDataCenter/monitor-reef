@@ -12,6 +12,7 @@
 //! Which image to build, and how far to trust the download, are the
 //! caller's: see [`Source`], [`ImageInfo`] and [`SourceCheck`].
 
+mod check;
 pub mod manifest;
 mod pipeline;
 pub mod zfs;
@@ -22,6 +23,7 @@ use anyhow::{Context, Result};
 use sha2::{Digest, Sha256, Sha512};
 use tokio::io::AsyncReadExt;
 
+pub use check::*;
 pub use pipeline::*;
 
 #[derive(Debug, Clone, Copy, serde::Deserialize)]
