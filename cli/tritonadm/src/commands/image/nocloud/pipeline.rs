@@ -901,4 +901,114 @@ mod tests {
         let buf = [0x80u8; 1];
         assert!(read_xz_vli(&buf).is_err());
     }
+    /// A disk image with data, a run of zeros long enough to cross the
+    /// copy loop's 1 MiB chunks (so the zero-skipping path runs), and a
+    /// tail that is not a whole chunk.
+    fn sample_disk() -> Vec<u8> {
+        let mut disk = b"cloud-image-index pipeline test\n".repeat(40_000);
+        disk.extend(std::iter::repeat_n(0u8, 3 << 20));
+        disk.extend(b"tail".repeat(1000));
+        disk
+    }
+
+    /// Decode `src` (in `format`) onto a regular file standing in for the
+    /// zvol, sized like the zvol would be, and return what landed there.
+    async fn decode(src: &[u8], format: SourceFormat, virtual_size: u64) -> Vec<u8> {
+        let dir = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        let src_path = dir.path().join("source");
+        std::fs::write(&src_path, src).unwrap_or_else(|e| panic!("{e}"));
+        let zvol = dir.path().join("zvol");
+        std::fs::File::create(&zvol)
+            .and_then(|f| f.set_len(virtual_size))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let size = read_virtual_size(&src_path, format)
+            .await
+            .unwrap_or_else(|e| panic!("{e:#}"));
+        assert_eq!(size, virtual_size, "virtual size read from the source");
+        let cancel = Arc::new(AtomicBool::new(false));
+        write_to_zvol(&src_path, format, &zvol, size, &cancel)
+            .await
+            .unwrap_or_else(|e| panic!("{e:#}"));
+        std::fs::read(&zvol).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    #[tokio::test]
+    async fn a_raw_source_lands_on_the_zvol_unchanged() {
+        let disk = sample_disk();
+        assert_eq!(
+            decode(&disk, SourceFormat::Raw, disk.len() as u64).await,
+            disk
+        );
+    }
+
+    #[tokio::test]
+    async fn a_gzipped_raw_source_lands_on_the_zvol_decompressed() {
+        let disk = sample_disk();
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        gz.write_all(&disk).unwrap_or_else(|e| panic!("{e}"));
+        let gz = gz.finish().unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(
+            decode(&gz, SourceFormat::RawGz, disk.len() as u64).await,
+            disk
+        );
+    }
+
+    #[tokio::test]
+    async fn an_xz_source_lands_on_the_zvol_decompressed() {
+        let disk = sample_disk();
+        let mut xz = Vec::new();
+        lzma_rs::xz_compress(&mut &disk[..], &mut xz).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(decode(&xz, SourceFormat::Xz, disk.len() as u64).await, disk);
+    }
+
+    /// A `file://` source whose bytes `check` passes or fails.
+    async fn check_local(bytes: &[u8], pinned_sha256: &str) -> Result<(PathBuf, String)> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("image.raw");
+        std::fs::write(&path, bytes)?;
+        let url = url::Url::from_file_path(&path)
+            .map_err(|()| anyhow::anyhow!("not an absolute path"))?;
+        let resolved = ResolvedImage {
+            url: url.clone(),
+            format: SourceFormat::Raw,
+            os: "linux".to_string(),
+            series: "s".to_string(),
+            version: "1".to_string(),
+            description: String::new(),
+            homepage: url,
+            ssh_key: true,
+            verifier: Box::new(verify::Sha256Pinned(pinned_sha256.to_string())),
+            expected_sha256: None,
+        };
+        let http = triton_tls::build_http_client(false)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let opts = PipelineOptions {
+            vendor: "test",
+            workdir: dir.path().join("work"),
+            output_dir: dir.path().join("out"),
+            zfs_dataset: "unused".to_string(),
+            http: &http,
+            insecure_no_verify: false,
+        };
+        let cancel = Arc::new(AtomicBool::new(false));
+        let result = ensure_verified_source(&resolved, &opts, &cancel).await;
+        drop(dir);
+        result
+    }
+
+    const HELLO_SHA256: &str = "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03";
+
+    #[tokio::test]
+    async fn a_local_source_with_the_expected_hash_is_accepted() {
+        let (_, sha256) = check_local(b"hello\n", HELLO_SHA256)
+            .await
+            .unwrap_or_else(|e| panic!("{e:#}"));
+        assert_eq!(sha256, HELLO_SHA256);
+    }
+
+    #[tokio::test]
+    async fn a_local_source_with_another_hash_is_refused() {
+        assert!(check_local(b"hello\n", &"0".repeat(64)).await.is_err());
+    }
 }
