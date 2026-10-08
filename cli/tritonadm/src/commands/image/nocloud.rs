@@ -185,15 +185,37 @@ pub async fn run(mut opts: FetchOpts) -> Result<()> {
     let _lock_guard = acquire_workdir_lock(&workdir)
         .with_context(|| format!("acquire workdir lock for {}", workdir.display()))?;
 
+    let source = pipeline::Source {
+        url: resolved.url.clone(),
+        format: resolved.format,
+    };
+    let info = pipeline::ImageInfo {
+        vendor: vendor_label.clone(),
+        series: resolved.series.clone(),
+        version: resolved.version.clone(),
+        os: resolved.os.clone(),
+        description: resolved.description.clone(),
+        homepage: resolved.homepage.to_string(),
+        ssh_key: resolved.ssh_key,
+    };
+    let verifier_check = VerifierCheck {
+        verifier: resolved.verifier.as_ref(),
+        http: &http,
+    };
+    let check: &dyn pipeline::SourceCheck = if opts.insecure_no_verify {
+        &SkipCheck
+    } else {
+        &verifier_check
+    };
     let outputs = pipeline::run(
-        resolved,
+        &source,
+        &info,
+        check,
         pipeline::PipelineOptions {
-            vendor: &vendor_label,
             workdir,
             output_dir,
             zfs_dataset: dataset,
             http: &http,
-            insecure_no_verify: opts.insecure_no_verify,
         },
     )
     .await?;
@@ -223,6 +245,30 @@ pub async fn run(mut opts: FetchOpts) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Checks a downloaded source with the vendor profile's verifier.
+struct VerifierCheck<'a> {
+    verifier: &'a dyn verify::Verifier,
+    http: &'a reqwest::Client,
+}
+
+#[async_trait::async_trait]
+impl pipeline::SourceCheck for VerifierCheck<'_> {
+    async fn check(&self, file: &Path, sha256_hex: &str) -> Result<()> {
+        self.verifier.verify(file, sha256_hex, self.http).await
+    }
+}
+
+/// `--insecure-no-verify`: accept the source unchecked, saying so.
+struct SkipCheck;
+
+#[async_trait::async_trait]
+impl pipeline::SourceCheck for SkipCheck {
+    async fn check(&self, _file: &Path, _sha256_hex: &str) -> Result<()> {
+        eprintln!("WARNING: --insecure-no-verify, skipping verification");
+        Ok(())
+    }
 }
 
 /// Shell out to `imgadm install -m <manifest> -f <gz>`. The flags are
