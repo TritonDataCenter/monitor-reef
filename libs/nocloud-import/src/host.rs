@@ -12,10 +12,9 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-/// Shell out to `imgadm install -m <manifest> -f <gz>`. The flags are
-/// passed in `-m`/`-f` order to mirror what the operator sees when
-/// `--target file` prints the suggested invocation. GZ-only; the
-/// caller must have rejected NGZs already.
+/// Shell out to `imgadm install -m <manifest> -f <gz>`, the same
+/// invocation an operator would type to install a built image by hand.
+/// GZ-only; the caller must have rejected NGZs already.
 pub async fn install_via_imgadm(gz: &Path, manifest: &Path) -> Result<()> {
     println!("Installing into the local SmartOS image store via imgadm...");
     let status = tokio::process::Command::new("imgadm")
@@ -52,9 +51,9 @@ pub fn acquire_workdir_lock(workdir: &Path) -> Result<std::fs::File> {
     match lock_file.try_lock() {
         Ok(()) => Ok(lock_file),
         Err(std::fs::TryLockError::WouldBlock) => anyhow::bail!(
-            "another tritonadm fetch-nocloud build is already running for this \
-             (vendor, release); wait for it to finish, or pass a different \
-             --workdir to run concurrently"
+            "another image build is already running in {}; wait for it to \
+             finish, or use a different workdir to run concurrently",
+            workdir.display()
         ),
         Err(std::fs::TryLockError::Error(e)) => Err(e).context("flock failed"),
     }
