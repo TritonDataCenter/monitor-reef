@@ -44,17 +44,19 @@ impl SourceCheck for DigestCheck {
             "no expected digest to check {} against",
             file.display()
         );
-        let mut sha512 = None;
+        let mut sha512: Option<String> = None;
         for expected in &self.0 {
             let actual = match expected.algorithm {
                 DigestAlgorithm::Sha256 => sha256_hex.to_string(),
-                DigestAlgorithm::Sha512 => {
-                    // Hashed at most once, however many sha512s are expected.
-                    if sha512.is_none() {
-                        sha512 = Some(sha512_file(file).await?);
+                // Hashed at most once, however many sha512s are expected.
+                DigestAlgorithm::Sha512 => match &sha512 {
+                    Some(hex) => hex.clone(),
+                    None => {
+                        let hex = sha512_file(file).await?;
+                        sha512 = Some(hex.clone());
+                        hex
                     }
-                    sha512.clone().unwrap_or_default()
-                }
+                },
             };
             anyhow::ensure!(
                 actual.eq_ignore_ascii_case(&expected.hex),

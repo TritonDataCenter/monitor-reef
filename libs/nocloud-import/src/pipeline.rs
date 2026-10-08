@@ -926,10 +926,15 @@ mod tests {
     async fn decode(src: &[u8], format: SourceFormat, virtual_size: u64) -> Vec<u8> {
         let dir = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
         let src_path = dir.path().join("source");
-        std::fs::write(&src_path, src).unwrap_or_else(|e| panic!("{e}"));
+        tokio::fs::write(&src_path, src)
+            .await
+            .unwrap_or_else(|e| panic!("{e}"));
         let zvol = dir.path().join("zvol");
-        std::fs::File::create(&zvol)
-            .and_then(|f| f.set_len(virtual_size))
+        tokio::fs::File::create(&zvol)
+            .await
+            .unwrap_or_else(|e| panic!("{e}"))
+            .set_len(virtual_size)
+            .await
             .unwrap_or_else(|e| panic!("{e}"));
         let size = read_virtual_size(&src_path, format)
             .await
@@ -939,7 +944,9 @@ mod tests {
         write_to_zvol(&src_path, format, &zvol, size, &cancel)
             .await
             .unwrap_or_else(|e| panic!("{e:#}"));
-        std::fs::read(&zvol).unwrap_or_else(|e| panic!("{e}"))
+        tokio::fs::read(&zvol)
+            .await
+            .unwrap_or_else(|e| panic!("{e}"))
     }
 
     #[tokio::test]
@@ -986,7 +993,7 @@ mod tests {
     async fn check_local(bytes: &[u8], pinned_sha256: &str) -> Result<(PathBuf, String)> {
         let dir = tempfile::tempdir()?;
         let path = dir.path().join("image.raw");
-        std::fs::write(&path, bytes)?;
+        tokio::fs::write(&path, bytes).await?;
         let url = url::Url::from_file_path(&path)
             .map_err(|()| anyhow::anyhow!("not an absolute path"))?;
         let source = Source {
