@@ -19,4 +19,5 @@ workspace = true
 schemars = { workspace = true, features = ["uuid1"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 uuid = { workspace = true }
