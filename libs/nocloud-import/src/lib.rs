@@ -30,9 +30,8 @@ pub enum SourceFormat {
     Qcow2,
     Xz,
     Raw,
-    /// VMDK (VMware Virtual Disk). Used by OmniOS's cloud images.
-    /// The release-resolution path is wired up; the conversion step
-    /// is deferred pending a vendored vmdk reader.
+    /// VMDK (VMware Virtual Disk). Used by OmniOS's cloud images. Read
+    /// with the vendored `vmdk-rs`.
     Vmdk,
     /// gzipped raw disk image. Used by SmartOS
     /// (`smartos-<rel>-USB.img.gz`). The pipeline streams a
