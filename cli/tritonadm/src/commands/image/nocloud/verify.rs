@@ -16,8 +16,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use sha2::{Digest, Sha256, Sha512};
-use tokio::io::AsyncReadExt;
+use nocloud_import::sha512_file;
 use url::Url;
 
 /// A `Verifier` checks the authenticity of a downloaded file. The
@@ -303,39 +302,6 @@ pub(super) fn parse_sums_file(body: &str, filename: &str) -> Option<String> {
         }
     }
     None
-}
-
-pub async fn sha256_file(file: &Path) -> Result<String> {
-    hash_file::<Sha256>(file).await
-}
-
-pub async fn sha512_file(file: &Path) -> Result<String> {
-    hash_file::<Sha512>(file).await
-}
-
-async fn hash_file<H: Digest>(file: &Path) -> Result<String> {
-    let mut f = tokio::fs::File::open(file)
-        .await
-        .with_context(|| format!("open {}", file.display()))?;
-    let mut hasher = H::new();
-    let mut buf = vec![0u8; 64 * 1024];
-    loop {
-        let n = f.read(&mut buf).await?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(format_hex(&hasher.finalize()))
-}
-
-fn format_hex(bytes: &[u8]) -> String {
-    use std::fmt::Write;
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        let _ = write!(s, "{:02x}", b);
-    }
-    s
 }
 
 #[cfg(test)]

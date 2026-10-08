@@ -64,21 +64,7 @@ impl std::fmt::Display for Vendor {
     }
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SourceFormat {
-    Qcow2,
-    Xz,
-    Raw,
-    /// VMDK (VMware Virtual Disk). Used by OmniOS's cloud images.
-    /// The release-resolution path is wired up; the conversion step
-    /// is deferred pending a vendored vmdk reader.
-    Vmdk,
-    /// gzipped raw disk image. Used by SmartOS
-    /// (`smartos-<rel>-USB.img.gz`). The pipeline streams a
-    /// gzip decoder straight into the zvol, no intermediate file.
-    RawGz,
-}
+pub use nocloud_import::SourceFormat;
 
 pub struct ResolvedImage {
     pub url: Url,

@@ -29,6 +29,7 @@ imgapi-client = { workspace = true }
 indicatif = { workspace = true }
 libc = { workspace = true }
 lzma-rs = { workspace = true }
+nocloud-import = { workspace = true }
 mahi-api = { workspace = true }
 mahi-client = { workspace = true }
 mahi-sitter-client = { workspace = true }

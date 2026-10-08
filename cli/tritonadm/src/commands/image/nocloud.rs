@@ -8,15 +8,13 @@
 //! image from an upstream vendor (POC: Ubuntu) and convert it into a
 //! gzipped ZFS stream + IMGAPI manifest pair.
 
-mod manifest;
-mod pipeline;
 mod vendor;
 mod verify;
-mod zfs;
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use nocloud_import as pipeline;
 
 pub use vendor::Vendor;
 

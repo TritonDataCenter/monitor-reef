@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
-use imgapi_client::{
+use imgapi_types::{
     FileCompression, Image, ImageFile, ImageOs, ImageRequirements, ImageState, ImageType,
     NetworkRequirement,
 };

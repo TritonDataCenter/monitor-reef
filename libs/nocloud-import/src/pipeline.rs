@@ -21,10 +21,8 @@ use indicatif::{ProgressBar, ProgressStyle};
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
-use super::manifest::{self, ManifestInputs};
-use super::vendor::SourceFormat;
-use super::verify;
-use super::zfs;
+use crate::manifest::{self, ManifestInputs};
+use crate::{SourceFormat, sha256_file, zfs};
 
 /// All transient build datasets are named `<parent>/<DATASET_PREFIX><uuid>`
 /// so a previous interrupted run can be detected and cleaned up by the
@@ -209,7 +207,7 @@ async fn ensure_verified_source(
     }
 
     eprintln!("Hashing source image ...");
-    let sha256 = verify::sha256_file(&downloaded).await?;
+    let sha256 = sha256_file(&downloaded).await?;
 
     match check.check(&downloaded, &sha256).await {
         Ok(()) => Ok((downloaded, sha256)),
@@ -227,7 +225,7 @@ async fn ensure_verified_source(
             }
             download_with_progress(opts.http, source.url.as_str(), &downloaded, cancel).await?;
             eprintln!("Hashing source image ...");
-            let sha256 = verify::sha256_file(&downloaded).await?;
+            let sha256 = sha256_file(&downloaded).await?;
             check
                 .check(&downloaded, &sha256)
                 .await
@@ -259,7 +257,7 @@ async fn verify_local_file(source: &Source, check: &dyn SourceCheck) -> Result<(
     }
     eprintln!("Using local file: {}", path.display());
     eprintln!("Hashing source image ...");
-    let sha256 = verify::sha256_file(&path).await?;
+    let sha256 = sha256_file(&path).await?;
 
     check
         .check(&path, &sha256)
