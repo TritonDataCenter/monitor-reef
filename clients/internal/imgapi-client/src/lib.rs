@@ -41,7 +41,7 @@
 //! client.activate_image(&image_uuid).await?;
 //!
 //! // Update image fields
-//! let update = imgapi_api::UpdateImageRequest {
+//! let update = imgapi_client::UpdateImageRequest {
 //!     name: Some("new-name".to_string()),
 //!     ..Default::default()
 //! };
@@ -56,8 +56,10 @@
 mod generated;
 pub use generated::*;
 
-// Re-export types from the API crate for convenience.
-pub use imgapi_api::{
+// Re-export the canonical IMGAPI types for convenience. They come from
+// imgapi-types rather than imgapi-api so the client does not depend on
+// Dropshot.
+pub use imgapi_types::{
     // Common types
     AccountQuery,
     // Action enums

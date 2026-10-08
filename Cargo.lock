@@ -1961,7 +1961,7 @@ dependencies = [
  "bytes",
  "clap",
  "futures-util",
- "imgapi-api",
+ "imgapi-types",
  "progenitor-client",
  "reqwest",
  "schemars",
