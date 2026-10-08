@@ -5,19 +5,18 @@
 # Copyright 2026 Edgecast Cloud LLC.
 
 [package]
-name = "imgapi-api"
+name = "imgapi-types"
 version = "4.13.1"
 edition.workspace = true
-description = "Triton IMGAPI trait definition"
+description = "Triton IMGAPI wire types (image manifests and request/response bodies), without the Dropshot server stack"
 
 [lints]
 workspace = true
 
 [dependencies]
-dropshot = { workspace = true }
-http = { workspace = true }
-imgapi-types = { workspace = true }
-schemars = { workspace = true }
+# uuid1: JsonSchema for Uuid fields. Crates that also depend on Dropshot get
+# it through Dropshot; this crate must ask for it itself.
+schemars = { workspace = true, features = ["uuid1"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }

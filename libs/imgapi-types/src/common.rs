@@ -21,6 +21,13 @@ pub struct ImagePath {
     pub uuid: Uuid,
 }
 
+/// Path parameter for legacy dataset endpoints
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DatasetPath {
+    /// Dataset UUID or URN
+    pub arg: String,
+}
+
 /// Query parameter for channel selection (used on many endpoints)
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ChannelQuery {
