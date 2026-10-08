@@ -13,6 +13,7 @@
 //! caller's: see [`Source`], [`ImageInfo`] and [`SourceCheck`].
 
 mod check;
+pub mod host;
 pub mod manifest;
 mod pipeline;
 pub mod zfs;

@@ -15,6 +15,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use nocloud_import as pipeline;
+use nocloud_import::host::{
+    acquire_workdir_lock, current_zone, default_dataset, install_via_imgadm, is_smartos,
+};
 
 pub use vendor::Vendor;
 
@@ -269,27 +272,6 @@ impl pipeline::SourceCheck for SkipCheck {
     }
 }
 
-/// Shell out to `imgadm install -m <manifest> -f <gz>`. The flags are
-/// passed in `-m`/`-f` order to mirror what the operator sees when
-/// `--target file` prints the suggested invocation. GZ-only; the
-/// caller must have rejected NGZs already.
-async fn install_via_imgadm(gz: &Path, manifest: &Path) -> Result<()> {
-    println!("Installing into the local SmartOS image store via imgadm...");
-    let status = tokio::process::Command::new("imgadm")
-        .arg("install")
-        .arg("-m")
-        .arg(manifest)
-        .arg("-f")
-        .arg(gz)
-        .status()
-        .await
-        .context("spawn imgadm install")?;
-    if !status.success() {
-        anyhow::bail!("imgadm install exited {status}");
-    }
-    Ok(())
-}
-
 /// Push the produced manifest+file to IMGAPI by reusing the
 /// `tritonadm image import` code path. Compression is left as
 /// `None` so the helper picks `gzip` from the manifest's
@@ -402,78 +384,4 @@ fn print_plan(
 
     println!();
     println!("(--dry-run: nothing was downloaded, written, or created.)");
-}
-
-/// Acquire an exclusive `flock` on `<workdir>/.lock`, fail-fast if
-/// another process holds it. The returned `File` must outlive the
-/// pipeline; closing it (drop) releases the lock. The kernel also
-/// releases the lock on any process exit, so a SIGKILL'd run won't
-/// leave a stuck lock on disk. The empty `.lock` file itself is
-/// harmless and stays around between runs.
-fn acquire_workdir_lock(workdir: &Path) -> Result<std::fs::File> {
-    let lock_path = workdir.join(".lock");
-    let lock_file = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(&lock_path)
-        .with_context(|| format!("open {}", lock_path.display()))?;
-    // `std::fs::File::try_lock` (stable since Rust 1.89) wraps
-    // `flock(LOCK_EX | LOCK_NB)` with no `unsafe` in our code.
-    match lock_file.try_lock() {
-        Ok(()) => Ok(lock_file),
-        Err(std::fs::TryLockError::WouldBlock) => anyhow::bail!(
-            "another tritonadm fetch-nocloud build is already running for this \
-             (vendor, release); wait for it to finish, or pass a different \
-             --workdir to run concurrently"
-        ),
-        Err(std::fs::TryLockError::Error(e)) => Err(e).context("flock failed"),
-    }
-}
-
-/// Detect whether we're running on SmartOS. `uname -v` on illumos
-/// distros starts with `joyent_…`. Any other prefix (Darwin, Linux,
-/// FreeBSD, …) means a dev box where dry-run is the only sensible
-/// thing to do.
-fn is_smartos() -> Result<bool> {
-    let v = std::process::Command::new("uname")
-        .arg("-v")
-        .output()
-        .context("spawn uname -v")?;
-    Ok(String::from_utf8_lossy(&v.stdout).starts_with("joyent_"))
-}
-
-/// Run `zonename` and return its trimmed output (`global` for the GZ,
-/// the zone name for NGZs).
-fn current_zone() -> Result<String> {
-    let zone = std::process::Command::new("zonename")
-        .output()
-        .context("spawn zonename")?;
-    if !zone.status.success() {
-        anyhow::bail!("zonename exited {}", zone.status);
-    }
-    Ok(String::from_utf8_lossy(&zone.stdout).trim().to_string())
-}
-
-/// Default dataset for the temporary build zvol.
-///
-/// In an NGZ this is the delegated dataset (`zones/<zone>/data` with
-/// `zoned=on`); in the GZ we drop directly under `zones`.
-fn default_dataset() -> Result<String> {
-    let zone = current_zone()?;
-    if zone == "global" {
-        return Ok("zones".to_string());
-    }
-    let dataset = format!("zones/{zone}/data");
-    let zoned = std::process::Command::new("zfs")
-        .args(["get", "-H", "-o", "value", "zoned", &dataset])
-        .output()
-        .context("spawn zfs get zoned")?;
-    if !zoned.status.success() || String::from_utf8_lossy(&zoned.stdout).trim() != "on" {
-        anyhow::bail!(
-            "delegated dataset {dataset} not available or not zoned. \
-             Pass --dataset to override."
-        );
-    }
-    Ok(dataset)
 }
