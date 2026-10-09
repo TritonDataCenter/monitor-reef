@@ -35,7 +35,7 @@ use async_trait::async_trait;
 use reqwest::StatusCode;
 use url::Url;
 
-use super::{ResolvedImage, SourceFormat, VendorProfile};
+use super::{Release, ResolvedImage, SourceFormat, VendorProfile};
 use crate::commands::image::nocloud::verify::{Sha256SumsTls, TlsTrustOnly, Verifier};
 
 pub struct Talos;
@@ -93,6 +93,10 @@ impl VendorProfile for Talos {
             verifier,
             expected_sha256: None,
         })
+    }
+
+    async fn list_releases(&self, http: &reqwest::Client) -> Result<Vec<Release>> {
+        Ok(releases::list(http).await?)
     }
 }
 

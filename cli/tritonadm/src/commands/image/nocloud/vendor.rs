@@ -103,6 +103,19 @@ pub struct ResolvedImage {
     pub expected_sha256: Option<String>,
 }
 
+/// One row in `tritonadm image fetch-nocloud --list-releases`. The
+/// `name` is the token to pass to `--release`; `label` and `note` are
+/// optional human-readable annotations (e.g. "24.04 LTS Noble Numbat",
+/// "current default", "EOL").
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Release {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
 #[async_trait]
 pub trait VendorProfile: Send + Sync {
     // Reserved for diagnostics/logging by future callers; not yet
@@ -110,6 +123,13 @@ pub trait VendorProfile: Send + Sync {
     #[allow(dead_code)]
     fn name(&self) -> &str;
     async fn resolve(&self, release: &str, http: &reqwest::Client) -> Result<ResolvedImage>;
+
+    /// Enumerate the upstream's published releases. Returned rows are
+    /// sorted newest-first when an obvious ordering exists; the names
+    /// are the tokens accepted by `resolve()`. Rolling vendors (no
+    /// fixed releases) return an error explaining that the vendor
+    /// has no list to show.
+    async fn list_releases(&self, http: &reqwest::Client) -> Result<Vec<Release>>;
 }
 
 /// Builder for the common "linux qcow2 with vendor-pinned sha256"

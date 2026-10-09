@@ -854,7 +854,7 @@ async fn build_mahi_service(cfg: &MahiConfigFile) -> Result<MahiService> {
     // whose native CA store is empty (reqwest's default builder panics
     // there). Mahi speaks plain HTTP today, but going through build_http_client
     // keeps us consistent with the other admin-plane clients.
-    let http = triton_tls::build_http_client(false)
+    let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
         .await
         .context("failed to build HTTP client for mahi")?;
     Ok(MahiService::new(cfg.url.as_str(), http))

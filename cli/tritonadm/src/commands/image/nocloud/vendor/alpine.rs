@@ -20,7 +20,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use url::Url;
 
-use super::{ResolvedImage, SourceFormat, VendorProfile};
+use super::{Release, ResolvedImage, SourceFormat, VendorProfile};
 use crate::commands::image::nocloud::verify::Sha512SidecarTls;
 
 pub struct Alpine;
@@ -76,5 +76,10 @@ impl VendorProfile for Alpine {
             // "(derived after download)".
             expected_sha256: None,
         })
+    }
+
+    async fn list_releases(&self, http: &reqwest::Client) -> Result<Vec<Release>> {
+        let rj = releases::fetch(http).await?;
+        Ok(releases::list(&rj))
     }
 }

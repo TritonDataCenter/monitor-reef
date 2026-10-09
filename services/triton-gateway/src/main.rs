@@ -224,7 +224,7 @@ async fn main() -> Result<()> {
     let insecure_upstream = !config.tls_verify.unwrap_or(true);
     let jwks = match jwks_url {
         Some(url) => {
-            let http = triton_tls::build_http_client(insecure_upstream)
+            let http = triton_tls::build_http_client(insecure_upstream.into())
                 .await
                 .context("build HTTP client for JWKS fetch")?;
             let client = JwksClient::new(url.clone(), http);
@@ -968,7 +968,7 @@ async fn build_proxy_client(
 ///
 /// Installed only when `tls_verify = false`. This mirrors reqwest's
 /// `danger_accept_invalid_certs(true)` — the same behavior portal uses in
-/// `triton_tls::build_http_client(insecure=true)`.
+/// `triton_tls::build_http_client(TlsTrust::Insecure)`.
 #[derive(Debug)]
 struct NoCertVerification;
 

@@ -24,6 +24,7 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
+use crate::commands::image::nocloud::vendor::Release;
 use crate::commands::image::nocloud::verify::parse_sums_file;
 
 const LEAP_BASE: &str = "https://download.opensuse.org/distribution/leap/";
@@ -41,6 +42,21 @@ pub struct Resolved {
     pub build: String,
     pub url: String,
     pub sha256: String,
+}
+
+/// Enumerate the Leap `<X>.<Y>` directories advertised by MirrorCache,
+/// newest-first.
+pub async fn list(http: &reqwest::Client) -> Result<Vec<Release>> {
+    let mut versions = fetch_leap_versions(http).await?;
+    versions.sort_by(|a, b| compare_version_keys(b, a));
+    Ok(versions
+        .into_iter()
+        .map(|v| Release {
+            name: v.clone(),
+            label: Some(format!("openSUSE Leap {v}")),
+            note: None,
+        })
+        .collect())
 }
 
 pub async fn resolve(http: &reqwest::Client, release: &str) -> Result<Resolved> {

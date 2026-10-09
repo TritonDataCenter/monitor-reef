@@ -19,7 +19,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use url::Url;
 
-use super::{ResolvedImage, SourceFormat, VendorProfile};
+use super::{Release, ResolvedImage, SourceFormat, VendorProfile};
 use crate::commands::image::nocloud::verify::Sha256Pinned;
 
 pub struct OpenBsd;
@@ -53,5 +53,9 @@ impl VendorProfile for OpenBsd {
             verifier: Box::new(Sha256Pinned(resolved.sha256.clone())),
             expected_sha256: Some(resolved.sha256),
         })
+    }
+
+    async fn list_releases(&self, http: &reqwest::Client) -> Result<Vec<Release>> {
+        Ok(releases::list(http).await?)
     }
 }

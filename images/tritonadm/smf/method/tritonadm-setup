@@ -1,0 +1,39 @@
+#!/bin/bash
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+
+#
+# Copyright 2026 Edgecast Cloud LLC.
+#
+
+#
+# tritonadm-setup SMF method. /etc lives on the SmartOS ramdisk so any
+# symlink we drop into /etc/bash/bash_completion.d/ vanishes on reboot.
+# This method re-creates the symlinks for tritonadm and triton on every
+# boot (and on `svcadm refresh`). Mirrors sdcadm-setup.
+#
+
+set -o xtrace
+
+. /lib/svc/share/smf_include.sh
+
+INSTALL_DIR=/opt/triton/tritonadm
+COMPLETION_DIR=/etc/bash/bash_completion.d
+
+mkdir -p "$COMPLETION_DIR"
+
+for tool in tritonadm triton; do
+    src="$INSTALL_DIR/etc/$tool.completion"
+    dst="$COMPLETION_DIR/$tool"
+    if [[ -e "$src" ]]; then
+        # rm + ln rather than ln -sf so a stale symlink to a different
+        # path (e.g. an old install dir) gets replaced cleanly.
+        rm -f "$dst"
+        ln -s "$src" "$dst"
+    fi
+done
+
+exit $SMF_EXIT_OK

@@ -202,9 +202,20 @@ pub enum ImageCommand {
         #[arg(long, value_enum, required_unless_present = "vendor_toml")]
         vendor: Option<nocloud::Vendor>,
         /// Vendor-specific release token (e.g. "noble", "jammy", "latest").
-        /// Required with --vendor; ignored with --vendor-toml.
-        #[arg(long, required_unless_present = "vendor_toml")]
+        /// Required with --vendor unless --list-releases is set; ignored
+        /// with --vendor-toml.
+        #[arg(
+            long,
+            required_unless_present_any = ["vendor_toml", "list_releases"],
+        )]
         release: Option<String>,
+        /// List the upstream's published releases for `--vendor` and exit.
+        /// Rolling vendors (smartos, arch) have no list and will error.
+        #[arg(long, conflicts_with_all = ["release", "vendor_toml"])]
+        list_releases: bool,
+        /// With `--list-releases`, emit JSON instead of a table.
+        #[arg(long, requires = "list_releases")]
+        json: bool,
         /// Path to a TOML profile that pins a fully-resolved
         /// (url, sha256, metadata) tuple. See
         /// docs/design/examples/nocloud-vendors/ for the schema and
@@ -242,6 +253,11 @@ pub enum ImageCommand {
         /// hash, write any files, or touch any datasets.
         #[arg(long)]
         dry_run: bool,
+        /// With `--target smartos` or `--target imgapi`, retain the
+        /// produced `*.zfs.gz` + `*.json` after a successful upload.
+        /// (The on-disk download cache is kept regardless.)
+        #[arg(long)]
+        keep_files: bool,
     },
 
     // ========================================================================
@@ -754,6 +770,8 @@ impl ImageCommand {
         if let ImageCommand::FetchNocloud {
             vendor,
             release,
+            list_releases,
+            json,
             vendor_toml,
             target,
             output_dir,
@@ -762,11 +780,14 @@ impl ImageCommand {
             insecure_no_verify,
             expected_sha256,
             dry_run,
+            keep_files,
         } = self
         {
             return nocloud::run(nocloud::FetchOpts {
                 vendor,
                 release,
+                list_releases,
+                json,
                 vendor_toml,
                 output_dir,
                 workdir,
@@ -775,6 +796,7 @@ impl ImageCommand {
                 dataset,
                 dry_run,
                 target,
+                keep_files,
                 imgapi_url,
                 updates_url: updates_url.map(str::to_string),
             })
@@ -782,7 +804,7 @@ impl ImageCommand {
         }
 
         let imgapi_url = imgapi_url?;
-        let http = triton_tls::build_http_client(false)
+        let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
             .await
             .map_err(|e| anyhow::anyhow!("failed to build HTTP client: {}", e))?;
         let client = imgapi_client::Client::new_with_client(&imgapi_url, http.clone());

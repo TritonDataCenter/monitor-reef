@@ -31,6 +31,50 @@
 
 use std::sync::Once;
 
+/// Whether to verify the server's certificate chain when building a TLS
+/// client. Replaces the unlabelled `bool` that used to thread through
+/// every public constructor in this crate; call sites now read
+/// `build_http_client(TlsTrust::Verified)` vs `(TlsTrust::Insecure)`
+/// instead of a bare `true`/`false`.
+///
+/// `TlsTrust::Insecure` disables certificate verification entirely — it
+/// is intended for COAL/self-signed test environments and operator-run
+/// commands that have already established trust by other means. Reach
+/// for it deliberately; never default to it from generic code.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TlsTrust {
+    /// Verify the server certificate against the configured root store.
+    /// This is the safe default for any code path that talks to a
+    /// publicly-trusted endpoint.
+    Verified,
+    /// Skip server certificate verification. Use only for self-signed
+    /// or development endpoints where the operator has knowingly opted
+    /// in. Internally maps to `reqwest::ClientBuilder::
+    /// danger_accept_invalid_certs(true)` or the equivalent custom
+    /// rustls `ServerCertVerifier`.
+    Insecure,
+}
+
+impl TlsTrust {
+    fn is_insecure(self) -> bool {
+        matches!(self, TlsTrust::Insecure)
+    }
+}
+
+/// Convenience for boundaries where the trust setting still arrives as
+/// a bool (e.g. a config field deserialized from JSON, or a CLI flag).
+/// Callers can write `insecure.into()` rather than spelling out the
+/// match. New code should prefer constructing `TlsTrust` directly.
+impl From<bool> for TlsTrust {
+    fn from(insecure: bool) -> Self {
+        if insecure {
+            TlsTrust::Insecure
+        } else {
+            TlsTrust::Verified
+        }
+    }
+}
+
 /// Returns the rustls `CryptoProvider` for the active backend. The
 /// backend identifier on the next line (`ring` or `aws_lc_rs`) is the
 /// single source of truth that `tools/crypto-backend.sh` rewrites.
@@ -177,30 +221,31 @@ async fn load_extra_cert_paths(root_store: &mut rustls::RootCertStore) {
 
 /// Build an HTTP client with proper TLS certificate handling.
 ///
-/// When `insecure` is `true`, TLS certificate validation is skipped entirely.
-/// Otherwise, certificates are loaded via [`build_root_cert_store`].
-pub async fn build_http_client(insecure: bool) -> Result<reqwest::Client, reqwest::Error> {
-    build_http_client_with_headers(insecure, reqwest::header::HeaderMap::new()).await
+/// With [`TlsTrust::Verified`], the root store is built via
+/// [`build_root_cert_store`]; with [`TlsTrust::Insecure`], certificate
+/// verification is skipped entirely.
+pub async fn build_http_client(trust: TlsTrust) -> Result<reqwest::Client, reqwest::Error> {
+    build_http_client_with_headers(trust, reqwest::header::HeaderMap::new()).await
 }
 
 /// Like [`build_http_client`], but installs the supplied default headers on
 /// every request the resulting client issues. Used to attach API-version
 /// negotiation headers (e.g. SAPI's `Accept-Version: ~2`).
 pub async fn build_http_client_with_headers(
-    insecure: bool,
+    trust: TlsTrust,
     default_headers: reqwest::header::HeaderMap,
 ) -> Result<reqwest::Client, reqwest::Error> {
     install_default_crypto_provider();
 
     let mut builder = reqwest::Client::builder()
-        .danger_accept_invalid_certs(insecure)
+        .danger_accept_invalid_certs(trust.is_insecure())
         .default_headers(default_headers);
 
     // Only apply custom root cert store when we actually need to verify
-    // certificates. When insecure=true, reqwest's built-in handling of
+    // certificates. On the insecure path, reqwest's built-in handling of
     // danger_accept_invalid_certs is sufficient — adding a preconfigured
     // TLS config would override it and re-enable chain validation.
-    if !insecure {
+    if trust == TlsTrust::Verified {
         let root_store = build_root_cert_store().await;
         let tls_config = rustls::ClientConfig::builder()
             .with_root_certificates(root_store)
@@ -215,21 +260,23 @@ pub async fn build_http_client_with_headers(
 /// as [`build_http_client`], for callers that need raw TLS rather than
 /// reqwest (e.g. `tokio_tungstenite::Connector::Rustls`).
 ///
-/// When `insecure` is true, certificate validation is skipped entirely
-/// via a dangerous custom verifier that accepts any presented cert.
-pub async fn build_rustls_client_config(insecure: bool) -> rustls::ClientConfig {
+/// With [`TlsTrust::Insecure`], certificate verification is skipped
+/// entirely via a dangerous custom verifier that accepts any presented
+/// cert.
+pub async fn build_rustls_client_config(trust: TlsTrust) -> rustls::ClientConfig {
     install_default_crypto_provider();
 
-    if insecure {
-        rustls::ClientConfig::builder()
+    match trust {
+        TlsTrust::Insecure => rustls::ClientConfig::builder()
             .dangerous()
             .with_custom_certificate_verifier(std::sync::Arc::new(NoCertVerifier))
-            .with_no_client_auth()
-    } else {
-        let root_store = build_root_cert_store().await;
-        rustls::ClientConfig::builder()
-            .with_root_certificates(root_store)
-            .with_no_client_auth()
+            .with_no_client_auth(),
+        TlsTrust::Verified => {
+            let root_store = build_root_cert_store().await;
+            rustls::ClientConfig::builder()
+                .with_root_certificates(root_store)
+                .with_no_client_auth()
+        }
     }
 }
 

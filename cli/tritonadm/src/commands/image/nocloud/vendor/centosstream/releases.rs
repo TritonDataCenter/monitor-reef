@@ -22,6 +22,7 @@
 
 use anyhow::{Context, Result};
 
+use crate::commands::image::nocloud::vendor::Release;
 use crate::commands::image::nocloud::vendor::dirlist;
 use crate::commands::image::nocloud::verify::parse_bsd_sums_file;
 
@@ -42,6 +43,29 @@ pub struct Resolved {
     pub build: String,
     pub url: String,
     pub sha256: String,
+}
+
+/// Enumerate CentOS Stream majors. The note column flags 8-stream as
+/// EOL when the index page still exposes it (it does today; see
+/// docstring at the top of the module).
+pub async fn list(http: &reqwest::Client) -> Result<Vec<Release>> {
+    let mut streams =
+        dirlist::fetch_numeric_subdirs(http, STREAMS_BASE, STREAM_DIR_RE, Some(USER_AGENT)).await?;
+    streams.sort_by(|a, b| b.cmp(a));
+    Ok(streams
+        .into_iter()
+        .map(|stream| Release {
+            name: stream.to_string(),
+            label: Some(format!("CentOS Stream {stream}")),
+            // 8-stream reached EOL on 2024-05-31 and is replaced by
+            // 9/10. The directory is still served; warn the operator.
+            note: if stream == 8 {
+                Some("EOL".to_string())
+            } else {
+                None
+            },
+        })
+        .collect())
 }
 
 pub async fn resolve(http: &reqwest::Client, release: &str) -> Result<Resolved> {

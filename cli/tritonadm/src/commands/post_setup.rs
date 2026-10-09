@@ -797,7 +797,7 @@ async fn cmd_add_service(
         extra_metadata,
     } = opts;
     // Build shared HTTP client
-    let http = triton_tls::build_http_client(false)
+    let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
         .await
         .context("failed to build HTTP client")?;
 
@@ -1425,7 +1425,7 @@ async fn wait_for_image_active(imgapi: &imgapi_client::Client, uuid: uuid::Uuid)
 /// admin-only to match the adminui/imgapi convention — would come back
 /// without an external NIC and need this command re-run.
 async fn cmd_common_external_nics(urls: &PostSetupUrls) -> Result<()> {
-    let http = triton_tls::build_http_client(false)
+    let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
         .await
         .context("failed to build HTTP client")?;
 
