@@ -21,10 +21,8 @@ use indicatif::{ProgressBar, ProgressStyle};
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
-use super::manifest::{self, ManifestInputs};
-use super::vendor::{ResolvedImage, SourceFormat};
-use super::verify;
-use super::zfs;
+use crate::manifest::{self, ManifestInputs};
+use crate::{SourceFormat, sha256_file, zfs};
 
 /// All transient build datasets are named `<parent>/<DATASET_PREFIX><uuid>`
 /// so a previous interrupted run can be detected and cleaned up by the
@@ -47,13 +45,46 @@ pub fn stable_manifest_uuid(source_sha256_hex: &str) -> Uuid {
     Uuid::new_v5(&manifest_namespace(), source_sha256_hex.as_bytes())
 }
 
+/// Where the vendor's image is and how it is encoded.
+pub struct Source {
+    pub url: url::Url,
+    pub format: SourceFormat,
+}
+
+/// How the built image is named and described. `vendor`, `series` and
+/// `version` name the output files and the image (`<vendor>-<series>-nocloud`).
+pub struct ImageInfo {
+    pub vendor: String,
+    pub series: String,
+    pub version: String,
+    pub os: String,
+    pub description: String,
+    pub homepage: String,
+    pub ssh_key: bool,
+}
+
+impl ImageInfo {
+    /// The image's name in its manifest, as `imgadm list` shows it:
+    /// `<vendor>-<series>-nocloud`.
+    pub fn image_name(&self) -> String {
+        format!("{}-{}-nocloud", self.vendor, self.series)
+    }
+}
+
+/// Decides whether a downloaded source may be used. The pipeline hashes
+/// the file and passes the sha256; the check decides what to compare it
+/// with (a vendor checksum file, a pinned hash, ...) or whether to
+/// accept it unchecked.
+#[async_trait::async_trait]
+pub trait SourceCheck: Send + Sync {
+    async fn check(&self, file: &Path, sha256_hex: &str) -> Result<()>;
+}
+
 pub struct PipelineOptions<'a> {
-    pub vendor: &'a str,
     pub workdir: PathBuf,
     pub output_dir: PathBuf,
     pub zfs_dataset: String,
     pub http: &'a reqwest::Client,
-    pub insecure_no_verify: bool,
 }
 
 pub struct PipelineOutputs {
@@ -62,7 +93,12 @@ pub struct PipelineOutputs {
     pub manifest_uuid: Uuid,
 }
 
-pub async fn run(resolved: ResolvedImage, opts: PipelineOptions<'_>) -> Result<PipelineOutputs> {
+pub async fn run(
+    source: &Source,
+    info: &ImageInfo,
+    check: &dyn SourceCheck,
+    opts: PipelineOptions<'_>,
+) -> Result<PipelineOutputs> {
     // Cancel flag set by the SIGINT handler. Long-running loops (download,
     // qcow→zvol copy) check it and bail cleanly, which lets us run the
     // zvol-destroy cleanup before exit. Without this, the process would
@@ -79,14 +115,16 @@ pub async fn run(resolved: ResolvedImage, opts: PipelineOptions<'_>) -> Result<P
         }
     });
 
-    let result = run_inner(&resolved, &opts, &cancel).await;
+    let result = run_inner(source, info, check, &opts, &cancel).await;
 
     signal_task.abort();
     result
 }
 
 async fn run_inner(
-    resolved: &ResolvedImage,
+    source: &Source,
+    info: &ImageInfo,
+    check: &dyn SourceCheck,
     opts: &PipelineOptions<'_>,
     cancel: &Arc<AtomicBool>,
 ) -> Result<PipelineOutputs> {
@@ -98,9 +136,9 @@ async fn run_inner(
     // leftovers; we never touch datasets named anything else.
     sweep_stale_datasets(&opts.zfs_dataset).await;
 
-    let (downloaded, source_sha256) = ensure_verified_source(resolved, opts, cancel).await?;
+    let (downloaded, source_sha256) = ensure_verified_source(source, check, opts, cancel).await?;
 
-    let virtual_size_bytes = read_virtual_size(&downloaded, resolved.format).await?;
+    let virtual_size_bytes = read_virtual_size(&downloaded, source.format).await?;
     let virtual_size_mib = virtual_size_bytes.div_ceil(1024 * 1024);
 
     let build_uuid = Uuid::new_v4();
@@ -112,16 +150,15 @@ async fn run_inner(
         dataset, virtual_size_mib
     );
     let result = build_image(
-        resolved,
+        info,
         &downloaded,
-        resolved.format,
+        source.format,
         &source_sha256,
         virtual_size_bytes,
         virtual_size_mib,
         &dataset,
         &zvol_rdsk,
         &opts.output_dir,
-        opts.vendor,
         cancel,
     )
     .await;
@@ -156,15 +193,16 @@ fn filename_from_url(url: &url::Url) -> Result<String> {
 /// more with a fresh download — upstream serial may have moved
 /// while the cache survived.
 async fn ensure_verified_source(
-    resolved: &ResolvedImage,
+    source: &Source,
+    check: &dyn SourceCheck,
     opts: &PipelineOptions<'_>,
     cancel: &Arc<AtomicBool>,
 ) -> Result<(PathBuf, String)> {
-    if resolved.url.scheme() == "file" {
-        return verify_local_file(resolved, opts).await;
+    if source.url.scheme() == "file" {
+        return verify_local_file(source, check).await;
     }
 
-    let src_filename = filename_from_url(&resolved.url)?;
+    let src_filename = filename_from_url(&source.url)?;
     let downloaded = opts.workdir.join(&src_filename);
 
     let started_with_cache = tokio::fs::try_exists(&downloaded).await?;
@@ -172,23 +210,14 @@ async fn ensure_verified_source(
         eprintln!("Source image already downloaded: {}", src_filename);
     } else {
         eprintln!("Downloading {}", src_filename);
-        eprintln!("  URL: {}", resolved.url);
-        download_with_progress(opts.http, resolved.url.as_str(), &downloaded, cancel).await?;
+        eprintln!("  URL: {}", source.url);
+        download_with_progress(opts.http, source.url.as_str(), &downloaded, cancel).await?;
     }
 
     eprintln!("Hashing source image ...");
-    let sha256 = verify::sha256_file(&downloaded).await?;
+    let sha256 = sha256_file(&downloaded).await?;
 
-    if opts.insecure_no_verify {
-        eprintln!("WARNING: --insecure-no-verify, skipping verification");
-        return Ok((downloaded, sha256));
-    }
-
-    match resolved
-        .verifier
-        .verify(&downloaded, &sha256, opts.http)
-        .await
-    {
+    match check.check(&downloaded, &sha256).await {
         Ok(()) => Ok((downloaded, sha256)),
         Err(first_err) if started_with_cache => {
             eprintln!(
@@ -202,12 +231,11 @@ async fn ensure_verified_source(
                     downloaded.display()
                 );
             }
-            download_with_progress(opts.http, resolved.url.as_str(), &downloaded, cancel).await?;
+            download_with_progress(opts.http, source.url.as_str(), &downloaded, cancel).await?;
             eprintln!("Hashing source image ...");
-            let sha256 = verify::sha256_file(&downloaded).await?;
-            resolved
-                .verifier
-                .verify(&downloaded, &sha256, opts.http)
+            let sha256 = sha256_file(&downloaded).await?;
+            check
+                .check(&downloaded, &sha256)
                 .await
                 .context("verification failed after fresh download")?;
             Ok((downloaded, sha256))
@@ -221,14 +249,11 @@ async fn ensure_verified_source(
 /// is a wrapper format we don't decode, or has no published checksum
 /// to fetch over the network). We hash the file in place and run the
 /// verifier — no download phase, no workdir caching.
-async fn verify_local_file(
-    resolved: &ResolvedImage,
-    opts: &PipelineOptions<'_>,
-) -> Result<(PathBuf, String)> {
-    let path = resolved.url.to_file_path().map_err(|()| {
+async fn verify_local_file(source: &Source, check: &dyn SourceCheck) -> Result<(PathBuf, String)> {
+    let path = source.url.to_file_path().map_err(|()| {
         anyhow::anyhow!(
             "{} is not a usable file:// URL (need an absolute path, e.g. file:///abs/path)",
-            resolved.url
+            source.url
         )
     })?;
     if !tokio::fs::try_exists(&path).await.unwrap_or(false) {
@@ -240,16 +265,10 @@ async fn verify_local_file(
     }
     eprintln!("Using local file: {}", path.display());
     eprintln!("Hashing source image ...");
-    let sha256 = verify::sha256_file(&path).await?;
+    let sha256 = sha256_file(&path).await?;
 
-    if opts.insecure_no_verify {
-        eprintln!("WARNING: --insecure-no-verify, skipping verification");
-        return Ok((path, sha256));
-    }
-
-    resolved
-        .verifier
-        .verify(&path, &sha256, opts.http)
+    check
+        .check(&path, &sha256)
         .await
         .context("verification failed")?;
     Ok((path, sha256))
@@ -320,7 +339,7 @@ async fn sweep_stale_datasets(parent: &str) {
 
 #[allow(clippy::too_many_arguments)] // local helper
 async fn build_image(
-    resolved: &ResolvedImage,
+    info: &ImageInfo,
     src_path: &Path,
     src_format: SourceFormat,
     source_sha256: &str,
@@ -329,7 +348,6 @@ async fn build_image(
     dataset: &str,
     zvol_rdsk: &Path,
     output_dir: &Path,
-    vendor: &str,
     cancel: &Arc<AtomicBool>,
 ) -> Result<PipelineOutputs> {
     zfs::create_zvol(dataset, virtual_size_mib).await?;
@@ -351,7 +369,7 @@ async fn build_image(
     eprintln!("Snapshotting zvol ...");
     zfs::snap(&snap).await?;
 
-    let stub = format!("{}-{}-{}", vendor, resolved.series, resolved.version);
+    let stub = format!("{}-{}-{}", info.vendor, info.series, info.version);
     let zfs_path = output_dir.join(format!("{stub}.x86_64.zfs"));
     let gz_path = output_dir.join(format!("{stub}.x86_64.zfs.gz"));
     let manifest_path = output_dir.join(format!("{stub}.json"));
@@ -377,15 +395,15 @@ async fn build_image(
     let published_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     let inputs = ManifestInputs {
         uuid: manifest_uuid,
-        name: format!("{}-{}-nocloud", vendor, resolved.series),
-        version: resolved.version.clone(),
+        name: info.image_name(),
+        version: info.version.clone(),
         published_at,
-        os: resolved.os.clone(),
+        os: info.os.clone(),
         sha1,
         size,
-        description: resolved.description.clone(),
-        homepage: resolved.homepage.to_string(),
-        ssh_key: resolved.ssh_key,
+        description: info.description.clone(),
+        homepage: info.homepage.clone(),
+        ssh_key: info.ssh_key,
         image_size_mib: virtual_size_mib,
     };
     let body = serde_json::to_vec_pretty(&manifest::build(&inputs)?)?;
@@ -860,6 +878,20 @@ mod tests {
     }
 
     #[test]
+    fn image_name_is_vendor_series_nocloud() {
+        let info = ImageInfo {
+            vendor: "ubuntu".to_string(),
+            series: "noble".to_string(),
+            version: "20260926".to_string(),
+            os: "linux".to_string(),
+            description: String::new(),
+            homepage: String::new(),
+            ssh_key: true,
+        };
+        assert_eq!(info.image_name(), "ubuntu-noble-nocloud");
+    }
+
+    #[test]
     fn manifest_uuid_is_v5() {
         let u = stable_manifest_uuid("aa");
         assert_eq!(u.get_version_num(), 5);
@@ -900,5 +932,124 @@ mod tests {
     fn xz_vli_rejects_truncated() {
         let buf = [0x80u8; 1];
         assert!(read_xz_vli(&buf).is_err());
+    }
+    /// A disk image with data, a run of zeros long enough to cross the
+    /// copy loop's 1 MiB chunks (so the zero-skipping path runs), and a
+    /// tail that is not a whole chunk.
+    fn sample_disk() -> Vec<u8> {
+        let mut disk = b"cloud-image-index pipeline test\n".repeat(40_000);
+        disk.extend(std::iter::repeat_n(0u8, 3 << 20));
+        disk.extend(b"tail".repeat(1000));
+        disk
+    }
+
+    /// Decode `src` (in `format`) onto a regular file standing in for the
+    /// zvol, sized like the zvol would be, and return what landed there.
+    async fn decode(src: &[u8], format: SourceFormat, virtual_size: u64) -> Vec<u8> {
+        let dir = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        let src_path = dir.path().join("source");
+        tokio::fs::write(&src_path, src)
+            .await
+            .unwrap_or_else(|e| panic!("{e}"));
+        let zvol = dir.path().join("zvol");
+        tokio::fs::File::create(&zvol)
+            .await
+            .unwrap_or_else(|e| panic!("{e}"))
+            .set_len(virtual_size)
+            .await
+            .unwrap_or_else(|e| panic!("{e}"));
+        let size = read_virtual_size(&src_path, format)
+            .await
+            .unwrap_or_else(|e| panic!("{e:#}"));
+        assert_eq!(size, virtual_size, "virtual size read from the source");
+        let cancel = Arc::new(AtomicBool::new(false));
+        write_to_zvol(&src_path, format, &zvol, size, &cancel)
+            .await
+            .unwrap_or_else(|e| panic!("{e:#}"));
+        tokio::fs::read(&zvol)
+            .await
+            .unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    #[tokio::test]
+    async fn a_raw_source_lands_on_the_zvol_unchanged() {
+        let disk = sample_disk();
+        assert_eq!(
+            decode(&disk, SourceFormat::Raw, disk.len() as u64).await,
+            disk
+        );
+    }
+
+    #[tokio::test]
+    async fn a_gzipped_raw_source_lands_on_the_zvol_decompressed() {
+        let disk = sample_disk();
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        gz.write_all(&disk).unwrap_or_else(|e| panic!("{e}"));
+        let gz = gz.finish().unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(
+            decode(&gz, SourceFormat::RawGz, disk.len() as u64).await,
+            disk
+        );
+    }
+
+    #[tokio::test]
+    async fn an_xz_source_lands_on_the_zvol_decompressed() {
+        let disk = sample_disk();
+        let mut xz = Vec::new();
+        lzma_rs::xz_compress(&mut &disk[..], &mut xz).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(decode(&xz, SourceFormat::Xz, disk.len() as u64).await, disk);
+    }
+
+    /// Accepts exactly one sha256.
+    struct PinnedCheck(String);
+
+    #[async_trait::async_trait]
+    impl SourceCheck for PinnedCheck {
+        async fn check(&self, _file: &Path, sha256_hex: &str) -> Result<()> {
+            anyhow::ensure!(sha256_hex == self.0, "sha256 mismatch");
+            Ok(())
+        }
+    }
+
+    /// A `file://` source whose bytes `check` passes or fails.
+    async fn check_local(bytes: &[u8], pinned_sha256: &str) -> Result<(PathBuf, String)> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("image.raw");
+        tokio::fs::write(&path, bytes).await?;
+        let url = url::Url::from_file_path(&path)
+            .map_err(|()| anyhow::anyhow!("not an absolute path"))?;
+        let source = Source {
+            url,
+            format: SourceFormat::Raw,
+        };
+        let http = triton_tls::build_http_client(false)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let opts = PipelineOptions {
+            workdir: dir.path().join("work"),
+            output_dir: dir.path().join("out"),
+            zfs_dataset: "unused".to_string(),
+            http: &http,
+        };
+        let cancel = Arc::new(AtomicBool::new(false));
+        let check = PinnedCheck(pinned_sha256.to_string());
+        let result = ensure_verified_source(&source, &check, &opts, &cancel).await;
+        drop(dir);
+        result
+    }
+
+    const HELLO_SHA256: &str = "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03";
+
+    #[tokio::test]
+    async fn a_local_source_with_the_expected_hash_is_accepted() {
+        let (_, sha256) = check_local(b"hello\n", HELLO_SHA256)
+            .await
+            .unwrap_or_else(|e| panic!("{e:#}"));
+        assert_eq!(sha256, HELLO_SHA256);
+    }
+
+    #[tokio::test]
+    async fn a_local_source_with_another_hash_is_refused() {
+        assert!(check_local(b"hello\n", &"0".repeat(64)).await.is_err());
     }
 }

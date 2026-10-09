@@ -20,7 +20,7 @@ Trait-based OpenAPI-driven migration of Node.js services to Rust. API traits (Dr
 - **`services/`** — Trait implementations: `bugview-service`, `jira-stub-server`, `triton-api-server`, `triton-gateway` (scaffold: `service-template`)
 - **`clients/internal/`** — Progenitor-generated clients: `bugview-client`, `cloudapi-client`, `imgapi-client`, `jira-client`, `mahi-client`, `mahi-sitter-client`, `napi-client`, `papi-client`, `sapi-client`, `triton-gateway-client`, `vmapi-client` (scaffold: `client-template`)
 - **`cli/`** — CLIs: `bugview-cli`, `napi-cli`, `papi-cli`, `triton-cli`, `tritonadm`, `vmapi-cli`
-- **`libs/`** — Shared crates: `imgapi-types` (IMGAPI wire types without Dropshot), `qcow`, `triton-auth`, `triton-auth-session`, `triton-pagination`, `triton-tls`, `vmdk`
+- **`libs/`** — Shared crates: `imgapi-types` (IMGAPI wire types without Dropshot), `nocloud-import` (builds SmartOS bhyve images from NoCloud cloud images), `qcow`, `triton-auth`, `triton-auth-session`, `triton-pagination`, `triton-tls`, `vmdk`
 - **Not yet modernized** (present but outside the workspace; see the commented-out members in `Cargo.toml`): `cli/manatee-echo-resolver`, `libs/cueball*`, `fast`, `libmanta`, `moray`, `quickcheck-helpers`, `rebalancer-legacy`, `rust-utils`, `sharkspotter`
 - **`client-generator/`** — Progenitor-based code generator
 - **`openapi-manager/`** — Spec management (dropshot-api-manager)

@@ -1,0 +1,36 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "nocloud-import"
+version = "0.1.0"
+edition.workspace = true
+description = "Build a SmartOS bhyve image (zvol stream and IMGAPI manifest) from a vendor's NoCloud cloud image"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+flate2 = { workspace = true }
+imgapi-types = { workspace = true }
+indicatif = { workspace = true }
+lzma-rs = { workspace = true }
+qcow = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
+vmdk-rs = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+triton-tls = { workspace = true }

@@ -2504,6 +2504,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "nocloud-import"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "flate2",
+ "imgapi-types",
+ "indicatif",
+ "lzma-rs",
+ "qcow",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "triton-tls",
+ "url",
+ "uuid",
+ "vmdk-rs",
+]
+
+[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4973,6 +4997,7 @@ dependencies = [
  "mahi-client",
  "mahi-sitter-client",
  "napi-client",
+ "nocloud-import",
  "papi-client",
  "predicates",
  "progenitor-client",
