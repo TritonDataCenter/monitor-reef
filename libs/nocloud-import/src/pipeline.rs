@@ -63,6 +63,14 @@ pub struct ImageInfo {
     pub ssh_key: bool,
 }
 
+impl ImageInfo {
+    /// The image's name in its manifest, as `imgadm list` shows it:
+    /// `<vendor>-<series>-nocloud`.
+    pub fn image_name(&self) -> String {
+        format!("{}-{}-nocloud", self.vendor, self.series)
+    }
+}
+
 /// Decides whether a downloaded source may be used. The pipeline hashes
 /// the file and passes the sha256; the check decides what to compare it
 /// with (a vendor checksum file, a pinned hash, ...) or whether to
@@ -387,7 +395,7 @@ async fn build_image(
     let published_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     let inputs = ManifestInputs {
         uuid: manifest_uuid,
-        name: format!("{}-{}-nocloud", info.vendor, info.series),
+        name: info.image_name(),
         version: info.version.clone(),
         published_at,
         os: info.os.clone(),
@@ -867,6 +875,20 @@ mod tests {
             "6e7016f2c9f4d3c00f48789eb6b9043ba2172ccc1b6b1eaf3ed1e29dd3e52bb3",
         );
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn image_name_is_vendor_series_nocloud() {
+        let info = ImageInfo {
+            vendor: "ubuntu".to_string(),
+            series: "noble".to_string(),
+            version: "20260926".to_string(),
+            os: "linux".to_string(),
+            description: String::new(),
+            homepage: String::new(),
+            ssh_key: true,
+        };
+        assert_eq!(info.image_name(), "ubuntu-noble-nocloud");
     }
 
     #[test]
