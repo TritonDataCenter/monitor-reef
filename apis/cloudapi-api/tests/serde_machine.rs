@@ -11,7 +11,7 @@
 
 mod common;
 
-use cloudapi_api::types::{Machine, MachineState, MachineType, MountMode};
+use cloudapi_api::types::{Disk, DiskState, Machine, MachineState, MachineType, MountMode};
 use uuid::Uuid;
 
 #[test]
@@ -154,6 +154,22 @@ fn test_machine_state_deserialize() {
             .unwrap_or_else(|_| panic!("Failed to parse {}", json_value));
         assert_eq!(state, expected_state);
     }
+}
+
+#[test]
+fn test_disk_deserializes_stopped_state() {
+    let json = r#"{
+        "id": "0e053ea8-fcc8-449a-8b60-94e65dfbb21c",
+        "pci_slot": "0:4:1",
+        "size": 20480,
+        "block_size": 8192,
+        "boot": false,
+        "state": "stopped"
+    }"#;
+
+    let disk: Disk = serde_json::from_str(json).unwrap();
+
+    assert_eq!(disk.state, Some(DiskState::Stopped));
 }
 
 /// Test deserialization of a real CloudAPI response (from `triton instance get`).

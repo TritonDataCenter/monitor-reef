@@ -9,9 +9,12 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use dialoguer::Confirm;
+use std::collections::HashSet;
+use std::fmt;
 use std::io::IsTerminal;
+use std::str::FromStr;
 use triton_gateway_client::TypedClient;
-use triton_gateway_client::types::Disk;
+use triton_gateway_client::types::{CreateDiskRequest, Disk, DiskSize};
 
 use crate::define_columns;
 use crate::output::table::{TableBuilder, TableFormatArgs};
@@ -60,8 +63,11 @@ pub struct DiskAddArgs {
     /// Instance ID or name
     pub instance: String,
 
-    /// Disk size in MiB
-    pub size: i64,
+    /// Disk size in MiB or "remaining"
+    pub size: AddDiskSize,
+
+    /// Block size in bytes. Must be a power of 2.
+    pub block_size: Option<u64>,
 
     /// Disk name (optional, must be unique per instance)
     #[arg(long)]
@@ -74,6 +80,57 @@ pub struct DiskAddArgs {
     /// Wait timeout in seconds
     #[arg(long, default_value = "600")]
     pub wait_timeout: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AddDiskSize {
+    Mib(u64),
+    Remaining,
+}
+
+impl AddDiskSize {
+    fn to_wire_size(&self) -> DiskSize {
+        match self {
+            Self::Mib(size) => DiskSize::Uint64(*size),
+            Self::Remaining => DiskSize::String("remaining".to_string()),
+        }
+    }
+
+    fn expected_response_size(&self) -> Option<u64> {
+        match self {
+            Self::Mib(size) => Some(*size),
+            Self::Remaining => None,
+        }
+    }
+}
+
+impl FromStr for AddDiskSize {
+    type Err = String;
+
+    fn from_str(size: &str) -> std::result::Result<Self, Self::Err> {
+        if size == "remaining" {
+            return Ok(Self::Remaining);
+        }
+
+        let size = size
+            .parse::<u64>()
+            .map_err(|_| "SIZE must be a number or \"remaining\"".to_string())?;
+
+        if size == 0 {
+            return Err("SIZE must be greater than zero or \"remaining\"".to_string());
+        }
+
+        Ok(Self::Mib(size))
+    }
+}
+
+impl fmt::Display for AddDiskSize {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Mib(size) => write!(f, "{size}"),
+            Self::Remaining => f.write_str("remaining"),
+        }
+    }
 }
 
 #[derive(Args, Clone)]
@@ -143,28 +200,36 @@ pub async fn list_disks(args: DiskListArgs, client: &TypedClient, use_json: bool
     if use_json {
         json::print_json_stream(&disks)?;
     } else {
-        define_columns! {
-            DiskColumn for Disk, long_from: 3, {
-                ShortId("SHORTID") => |disk| disk.id.to_string()[..8].to_string(),
-                Size("SIZE") => |disk| disk.size.to_string(),
-                PciSlot("PCI_SLOT") => |disk| {
-                    disk.pci_slot.clone().unwrap_or_else(|| "-".to_string())
-                },
-                // --- long-only columns below ---
-                Id("ID") => |disk| disk.id.to_string(),
-                Boot("BOOT") => |disk| {
-                    if disk.boot.unwrap_or(false) { "yes".to_string() } else { "no".to_string() }
-                },
-                State("STATE") => |disk| opt_enum_to_display(disk.state.as_ref()),
-            }
-        }
-
-        TableBuilder::from_enum_columns::<DiskColumn, _>(&disks, Some(DiskColumn::LONG_FROM))
-            .with_right_aligned(&["SIZE"])
-            .print(&args.table)?;
+        disk_table(&disks).print(&args.table)?;
     }
 
     Ok(())
+}
+
+fn disk_table(disks: &[Disk]) -> TableBuilder {
+    define_columns! {
+        DiskColumn for Disk, long_from: 4, {
+            ShortId("SHORTID") => |disk| disk.id.to_string()[..8].to_string(),
+            Size("SIZE") => |disk| disk.size.to_string(),
+            BlockSize("BLOCK_SIZE") => |disk| {
+                disk.block_size
+                    .map(|block_size| block_size.to_string())
+                    .unwrap_or_else(|| "-".to_string())
+            },
+            PciSlot("PCI_SLOT") => |disk| {
+                disk.pci_slot.clone().unwrap_or_else(|| "-".to_string())
+            },
+            // --- long-only columns below ---
+            Id("ID") => |disk| disk.id.to_string(),
+            Boot("BOOT") => |disk| {
+                if disk.boot.unwrap_or(false) { "yes".to_string() } else { "no".to_string() }
+            },
+            State("STATE") => |disk| opt_enum_to_display(disk.state.as_ref()),
+        }
+    }
+
+    TableBuilder::from_enum_columns::<DiskColumn, _>(disks, Some(DiskColumn::LONG_FROM))
+        .with_right_aligned(&["SIZE", "BLOCK_SIZE"])
 }
 
 async fn get_disk(args: DiskGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
@@ -198,20 +263,21 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
     let id_str = machine_id.to_string();
 
     // List existing disks before adding (baseline for --wait)
-    let _existing_disks = client
+    let existing_disk_ids: HashSet<_> = client
         .inner()
         .list_machine_disks()
         .account(account)
         .machine(machine_id)
         .send()
-        .await?;
+        .await?
+        .into_inner()
+        .into_iter()
+        .map(|disk| disk.id)
+        .collect();
 
-    let request = triton_gateway_client::types::CreateDiskRequest {
-        size: args.size as u64,
-        pci_slot: None,
-    };
+    let request = build_create_disk_request(&args.size, args.block_size);
 
-    let response = client
+    client
         .inner()
         .create_machine_disk()
         .account(account)
@@ -220,30 +286,34 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
         .send()
         .await?;
 
-    let disk = response.into_inner();
-
-    eprintln!(
-        "Added disk {} ({} MiB)",
-        &disk.id.to_string()[..8],
-        disk.size
-    );
+    if !use_json {
+        match &args.size {
+            AddDiskSize::Mib(size) => eprintln!("Adding disk ({size} MiB)"),
+            AddDiskSize::Remaining => eprintln!("Adding disk (remaining)"),
+        }
+    }
 
     if args.wait {
-        super::wait::wait_for_state(
+        super::wait::wait_for_new_disk(
             machine_id,
-            triton_gateway_client::types::MachineState::Running,
+            &existing_disk_ids,
+            args.size.expected_response_size(),
             args.wait_timeout,
             client,
         )
         .await?;
-        eprintln!("Instance {} is running", &id_str[..8]);
-    }
-
-    if use_json {
-        json::print_json(&disk)?;
+        eprintln!("Disk addition complete for {}", &id_str[..8]);
     }
 
     Ok(())
+}
+
+fn build_create_disk_request(size: &AddDiskSize, block_size: Option<u64>) -> CreateDiskRequest {
+    CreateDiskRequest {
+        size: size.to_wire_size(),
+        block_size,
+        pci_slot: None,
+    }
 }
 
 async fn resize_disk(args: DiskResizeArgs, client: &TypedClient) -> Result<()> {
@@ -292,4 +362,62 @@ async fn delete_disk(args: DiskDeleteArgs, client: &TypedClient) -> Result<()> {
     println!("Deleted disk {}", &args.disk[..8]);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use triton_gateway_client::types::DiskState;
+
+    fn disk(block_size: Option<u64>) -> Disk {
+        Disk {
+            id: uuid::Uuid::parse_str("c7d4e8a2-1f3b-4a5c-9d6e-8f7a2b3c4d5e").unwrap(),
+            size: 2048,
+            block_size,
+            pci_slot: Some("0:4:2".to_string()),
+            boot: Some(false),
+            state: Some(DiskState::Stopped),
+        }
+    }
+
+    #[test]
+    fn builds_create_disk_request_with_numeric_size_and_block_size() {
+        let request = build_create_disk_request(&AddDiskSize::Mib(2048), Some(8192));
+
+        assert_eq!(
+            serde_json::to_value(request).unwrap(),
+            json!({
+                "size": 2048,
+                "block_size": 8192
+            })
+        );
+    }
+
+    #[test]
+    fn builds_create_disk_request_with_remaining_size() {
+        let request = build_create_disk_request(&AddDiskSize::Remaining, None);
+
+        assert_eq!(
+            serde_json::to_value(request).unwrap(),
+            json!({
+                "size": "remaining"
+            })
+        );
+    }
+
+    #[test]
+    fn disk_table_includes_block_size_column() {
+        let disks = vec![disk(Some(8192)), disk(None)];
+        let output = disk_table(&disks)
+            .render(&TableFormatArgs::default())
+            .unwrap();
+
+        assert!(output.contains("SHORTID"));
+        assert!(output.contains("SIZE"));
+        assert!(output.contains("BLOCK_SIZE"));
+        assert!(output.contains("PCI_SLOT"));
+        assert!(output.contains("8192"));
+        assert!(output.contains("-"));
+    }
 }

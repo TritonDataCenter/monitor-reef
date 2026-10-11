@@ -607,7 +607,7 @@ pub trait CloudApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<MachinePath>,
         body: TypedBody<CreateDiskRequest>,
-    ) -> Result<HttpResponseCreated<Disk>, HttpError>;
+    ) -> Result<HttpResponseAccepted<()>, HttpError>;
 
     /// List machine disks
     #[endpoint {

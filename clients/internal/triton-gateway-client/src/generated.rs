@@ -1165,6 +1165,15 @@ pub mod types {
     #[doc = "    \"size\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"block_size\": {"]
+    #[doc = "      \"description\": \"Block size in bytes\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
     #[doc = "    \"pci_slot\": {"]
     #[doc = "      \"description\": \"PCI slot (optional)\","]
     #[doc = "      \"type\": ["]
@@ -1173,10 +1182,12 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"size\": {"]
-    #[doc = "      \"description\": \"Size in MB\","]
-    #[doc = "      \"type\": \"integer\","]
-    #[doc = "      \"format\": \"uint64\","]
-    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "      \"description\": \"Size in MB or \\\"remaining\\\"\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/DiskSize\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -1186,11 +1197,14 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct CreateDiskRequest {
+        #[doc = "Block size in bytes"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub block_size: ::std::option::Option<u64>,
         #[doc = "PCI slot (optional)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub pci_slot: ::std::option::Option<::std::string::String>,
-        #[doc = "Size in MB"]
-        pub size: u64,
+        #[doc = "Size in MB or \"remaining\""]
+        pub size: DiskSize,
     }
 
     impl CreateDiskRequest {
@@ -2701,6 +2715,7 @@ pub mod types {
     #[doc = "  \"enum\": ["]
     #[doc = "    \"creating\","]
     #[doc = "    \"running\","]
+    #[doc = "    \"stopped\","]
     #[doc = "    \"resizing\","]
     #[doc = "    \"failed\","]
     #[doc = "    \"deleted\","]
@@ -2728,6 +2743,8 @@ pub mod types {
         Creating,
         #[serde(rename = "running")]
         Running,
+        #[serde(rename = "stopped")]
+        Stopped,
         #[serde(rename = "resizing")]
         Resizing,
         #[serde(rename = "failed")]
@@ -2743,6 +2760,7 @@ pub mod types {
             match *self {
                 Self::Creating => f.write_str("creating"),
                 Self::Running => f.write_str("running"),
+                Self::Stopped => f.write_str("stopped"),
                 Self::Resizing => f.write_str("resizing"),
                 Self::Failed => f.write_str("failed"),
                 Self::Deleted => f.write_str("deleted"),
@@ -2757,6 +2775,7 @@ pub mod types {
             match value {
                 "creating" => Ok(Self::Creating),
                 "running" => Ok(Self::Running),
+                "stopped" => Ok(Self::Stopped),
                 "resizing" => Ok(Self::Resizing),
                 "failed" => Ok(Self::Failed),
                 "deleted" => Ok(Self::Deleted),
@@ -10979,16 +10998,18 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct CreateDiskRequest {
+            block_size: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
             pci_slot: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
-            size: ::std::result::Result<u64, ::std::string::String>,
+            size: ::std::result::Result<super::DiskSize, ::std::string::String>,
         }
 
         impl ::std::default::Default for CreateDiskRequest {
             fn default() -> Self {
                 Self {
+                    block_size: Ok(Default::default()),
                     pci_slot: Ok(Default::default()),
                     size: Err("no value supplied for size".to_string()),
                 }
@@ -10996,6 +11017,16 @@ pub mod types {
         }
 
         impl CreateDiskRequest {
+            pub fn block_size<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.block_size = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for block_size: {e}"));
+                self
+            }
             pub fn pci_slot<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
@@ -11008,7 +11039,7 @@ pub mod types {
             }
             pub fn size<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<u64>,
+                T: ::std::convert::TryInto<super::DiskSize>,
                 T::Error: ::std::fmt::Display,
             {
                 self.size = value
@@ -11024,6 +11055,7 @@ pub mod types {
                 value: CreateDiskRequest,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    block_size: value.block_size?,
                     pci_slot: value.pci_slot?,
                     size: value.size?,
                 })
@@ -11033,6 +11065,7 @@ pub mod types {
         impl ::std::convert::From<super::CreateDiskRequest> for CreateDiskRequest {
             fn from(value: super::CreateDiskRequest) -> Self {
                 Self {
+                    block_size: Ok(value.block_size),
                     pci_slot: Ok(value.pci_slot),
                     size: Ok(value.size),
                 }
@@ -28782,7 +28815,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `POST` request to `/{account}/machines/{machine}/disks`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Disk>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self {
                 client,
                 account,
@@ -28828,7 +28861,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                201u16 => ResponseValue::from_response(response).await,
+                202u16 => Ok(ResponseValue::empty(response)),
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
