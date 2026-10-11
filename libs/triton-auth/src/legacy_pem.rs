@@ -377,102 +377,202 @@ impl LegacyPrivateKey {
     }
 
     /// Sign data with this key
+    ///
+    /// Produces a *raw* signature over `data` in the wire format CloudAPI
+    /// (via sshpk) expects: PKCS#1 v1.5 for RSA, ASN.1/DER for ECDSA, raw
+    /// 64 bytes for Ed25519, and two 20-byte integers for DSA. This matches
+    /// what an SSH agent returns for the same key.
+    ///
+    /// OpenSSH-format keys are signed by extracting the underlying key
+    /// material and signing with the RustCrypto crates. We intentionally do
+    /// NOT use `ssh_key::PrivateKey::sign`, which produces an SSHSIG blob
+    /// (the `ssh-keygen -Y sign` format): it rejects the empty namespace with
+    /// `namespace invalid` and, even with a namespace, signs a wrapped digest
+    /// rather than the raw signing string, which CloudAPI rejects.
     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, AuthError> {
         match self {
-            Self::OpenSsh(key) => {
-                // Use ssh-key's signing
-                let key_type = KeyType::from_private_key(key)?;
-                let hash_alg = match key_type {
-                    KeyType::Rsa | KeyType::Dsa | KeyType::Ecdsa256 | KeyType::Ecdsa384 => {
-                        ssh_key::HashAlg::Sha256
-                    }
-                    KeyType::Ecdsa521 | KeyType::Ed25519 => ssh_key::HashAlg::Sha512,
-                };
-
-                let sig = key
-                    .sign("", hash_alg, data)
-                    .map_err(|e| AuthError::SigningError(format!("SSH signing failed: {}", e)))?;
-
-                let sig_bytes = sig.signature_bytes();
-
-                // ECDSA: ssh-key returns SSH wire format (mpint r || mpint s),
-                // but CloudAPI expects ASN.1/DER format
-                match key_type {
-                    KeyType::Ecdsa256 | KeyType::Ecdsa384 | KeyType::Ecdsa521 => {
-                        crate::certgen::ssh_ecdsa_sig_to_der(sig_bytes)
-                    }
-                    _ => Ok(sig_bytes.to_vec()),
-                }
-            }
-            Self::Rsa(key) => {
-                // RSA-SHA256 signature using PKCS#1 v1.5
-                use rsa::pkcs1v15::SigningKey;
-                use rsa::signature::Signer;
-                use sha2::Sha256;
-
-                let signing_key = SigningKey::<Sha256>::new(key.clone());
-                let signature = signing_key
-                    .try_sign(data)
-                    .map_err(|e| AuthError::SigningError(format!("RSA signing failed: {}", e)))?;
-
-                Ok(signature.to_vec())
-            }
-            Self::EcdsaP256(key) => {
-                // ECDSA-SHA256 signature in ASN.1/DER format (CloudAPI requirement)
-                use p256::ecdsa::signature::Signer;
-
-                let signature: p256::ecdsa::Signature = key
-                    .try_sign(data)
-                    .map_err(|e| AuthError::SigningError(format!("ECDSA signing failed: {}", e)))?;
-
-                Ok(signature.to_der().as_bytes().to_vec())
-            }
-            Self::EcdsaP384(key) => {
-                // ECDSA-SHA384 signature in ASN.1/DER format (CloudAPI requirement)
-                use p384::ecdsa::signature::Signer;
-
-                let signature: p384::ecdsa::Signature = key
-                    .try_sign(data)
-                    .map_err(|e| AuthError::SigningError(format!("ECDSA signing failed: {}", e)))?;
-
-                Ok(signature.to_der().as_bytes().to_vec())
-            }
-            Self::Dsa(key) => {
-                // DSA-SHA1 signature (DSA traditionally uses SHA-1)
-                use dsa::signature::DigestSigner;
-                use sha1::Sha1;
-
-                let mut digest = Sha1::new();
-                Sha1Digest::update(&mut digest, data);
-
-                let signature: dsa::Signature = key
-                    .try_sign_digest(digest)
-                    .map_err(|e| AuthError::SigningError(format!("DSA signing failed: {}", e)))?;
-
-                // DSA signature needs to be in SSH format: two 20-byte integers
-                // The dsa crate provides r() and s() accessors
-                let r_bytes = signature.r().to_bytes_be();
-                let s_bytes = signature.s().to_bytes_be();
-
-                if r_bytes.len() > 20 || s_bytes.len() > 20 {
-                    return Err(AuthError::SigningError(format!(
-                        "DSA signature component exceeds 20 bytes (r={}, s={})",
-                        r_bytes.len(),
-                        s_bytes.len()
-                    )));
-                }
-
-                // Pad to 20 bytes each (SHA-1 output size)
-                let mut sig_bytes = vec![0u8; 40];
-                let r_start = 20 - r_bytes.len();
-                let s_start = 40 - s_bytes.len();
-                sig_bytes[r_start..20].copy_from_slice(&r_bytes);
-                sig_bytes[s_start..40].copy_from_slice(&s_bytes);
-
-                Ok(sig_bytes)
-            }
+            Self::OpenSsh(key) => sign_openssh(key, data),
+            Self::Rsa(key) => sign_rsa(key, data),
+            Self::EcdsaP256(key) => sign_ecdsa_p256(key, data),
+            Self::EcdsaP384(key) => sign_ecdsa_p384(key, data),
+            Self::Dsa(key) => sign_dsa(key, data),
         }
     }
+}
+
+/// Sign with an OpenSSH-format key by extracting its key material.
+fn sign_openssh(key: &ssh_key::PrivateKey, data: &[u8]) -> Result<Vec<u8>, AuthError> {
+    use ssh_key::private::KeypairData;
+
+    match key.key_data() {
+        KeypairData::Ed25519(kp) => {
+            use ed25519_dalek::Signer;
+            // to_bytes() returns private(32) || public(32); the first 32
+            // bytes are the seed ed25519-dalek expects.
+            let bytes = kp.to_bytes();
+            let seed: [u8; 32] = bytes[..32].try_into().map_err(|_| {
+                AuthError::SigningError("Ed25519 private key has unexpected length".into())
+            })?;
+            let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
+            Ok(signing_key.sign(data).to_bytes().to_vec())
+        }
+        KeypairData::Rsa(kp) => {
+            let rsa_key = rsa_from_openssh(kp)?;
+            sign_rsa(&rsa_key, data)
+        }
+        KeypairData::Ecdsa(kp) => {
+            use ssh_key::EcdsaCurve;
+            match kp.curve() {
+                EcdsaCurve::NistP256 => {
+                    let signing_key = p256::ecdsa::SigningKey::from_slice(kp.private_key_bytes())
+                        .map_err(|e| {
+                        AuthError::SigningError(format!("Invalid P-256 key from OpenSSH: {}", e))
+                    })?;
+                    sign_ecdsa_p256(&signing_key, data)
+                }
+                EcdsaCurve::NistP384 => {
+                    let signing_key = p384::ecdsa::SigningKey::from_slice(kp.private_key_bytes())
+                        .map_err(|e| {
+                        AuthError::SigningError(format!("Invalid P-384 key from OpenSSH: {}", e))
+                    })?;
+                    sign_ecdsa_p384(&signing_key, data)
+                }
+                EcdsaCurve::NistP521 => Err(AuthError::SigningError(
+                    "ECDSA P-521 keys are not supported for signing".into(),
+                )),
+            }
+        }
+        KeypairData::Dsa(kp) => {
+            let dsa_key = dsa_from_openssh(kp)?;
+            sign_dsa(&dsa_key, data)
+        }
+        _ => Err(AuthError::SigningError(
+            "Unsupported OpenSSH key type for signing".into(),
+        )),
+    }
+}
+
+/// RSA-SHA256 signature using PKCS#1 v1.5 (raw modulus-width bytes).
+fn sign_rsa(key: &rsa::RsaPrivateKey, data: &[u8]) -> Result<Vec<u8>, AuthError> {
+    use rsa::pkcs1v15::SigningKey;
+    use rsa::signature::Signer;
+    use sha2::Sha256;
+
+    let signing_key = SigningKey::<Sha256>::new(key.clone());
+    let signature = signing_key
+        .try_sign(data)
+        .map_err(|e| AuthError::SigningError(format!("RSA signing failed: {}", e)))?;
+
+    Ok(signature.to_vec())
+}
+
+/// ECDSA-SHA256 (P-256) signature in ASN.1/DER format (CloudAPI requirement).
+fn sign_ecdsa_p256(key: &p256::ecdsa::SigningKey, data: &[u8]) -> Result<Vec<u8>, AuthError> {
+    use p256::ecdsa::signature::Signer;
+
+    let signature: p256::ecdsa::Signature = key
+        .try_sign(data)
+        .map_err(|e| AuthError::SigningError(format!("ECDSA signing failed: {}", e)))?;
+
+    Ok(signature.to_der().as_bytes().to_vec())
+}
+
+/// ECDSA-SHA384 (P-384) signature in ASN.1/DER format (CloudAPI requirement).
+fn sign_ecdsa_p384(key: &p384::ecdsa::SigningKey, data: &[u8]) -> Result<Vec<u8>, AuthError> {
+    use p384::ecdsa::signature::Signer;
+
+    let signature: p384::ecdsa::Signature = key
+        .try_sign(data)
+        .map_err(|e| AuthError::SigningError(format!("ECDSA signing failed: {}", e)))?;
+
+    Ok(signature.to_der().as_bytes().to_vec())
+}
+
+/// DSA-SHA1 signature packed as two 20-byte big-endian integers (SSH format).
+fn sign_dsa(key: &dsa::SigningKey, data: &[u8]) -> Result<Vec<u8>, AuthError> {
+    use dsa::signature::DigestSigner;
+    use sha1::Sha1;
+
+    let mut digest = Sha1::new();
+    Sha1Digest::update(&mut digest, data);
+
+    let signature: dsa::Signature = key
+        .try_sign_digest(digest)
+        .map_err(|e| AuthError::SigningError(format!("DSA signing failed: {}", e)))?;
+
+    // DSA signature needs to be in SSH format: two 20-byte integers.
+    // The dsa crate provides r() and s() accessors.
+    let r_bytes = signature.r().to_bytes_be();
+    let s_bytes = signature.s().to_bytes_be();
+
+    if r_bytes.len() > 20 || s_bytes.len() > 20 {
+        return Err(AuthError::SigningError(format!(
+            "DSA signature component exceeds 20 bytes (r={}, s={})",
+            r_bytes.len(),
+            s_bytes.len()
+        )));
+    }
+
+    // Pad to 20 bytes each (SHA-1 output size)
+    let mut sig_bytes = vec![0u8; 40];
+    let r_start = 20 - r_bytes.len();
+    let s_start = 40 - s_bytes.len();
+    sig_bytes[r_start..20].copy_from_slice(&r_bytes);
+    sig_bytes[s_start..40].copy_from_slice(&s_bytes);
+
+    Ok(sig_bytes)
+}
+
+/// Reconstruct an `rsa::RsaPrivateKey` from an OpenSSH RSA keypair.
+///
+/// We build the key from its components rather than using ssh-key's
+/// `TryFrom<&RsaKeypair>` conversion, which has an upstream bug.
+fn rsa_from_openssh(kp: &ssh_key::private::RsaKeypair) -> Result<rsa::RsaPrivateKey, AuthError> {
+    let positive = |m: &ssh_key::Mpint, name: &str| -> Result<rsa::BigUint, AuthError> {
+        m.as_positive_bytes()
+            .map(rsa::BigUint::from_bytes_be)
+            .ok_or_else(|| {
+                AuthError::SigningError(format!("RSA component {} is not a positive integer", name))
+            })
+    };
+
+    let n = positive(&kp.public.n, "n")?;
+    let e = positive(&kp.public.e, "e")?;
+    let d = positive(&kp.private.d, "d")?;
+    let p = positive(&kp.private.p, "p")?;
+    let q = positive(&kp.private.q, "q")?;
+
+    rsa::RsaPrivateKey::from_components(n, e, d, vec![p, q]).map_err(|e| {
+        AuthError::SigningError(format!("Invalid RSA key material from OpenSSH: {}", e))
+    })
+}
+
+/// Reconstruct a `dsa::SigningKey` from an OpenSSH DSA keypair.
+fn dsa_from_openssh(kp: &ssh_key::private::DsaKeypair) -> Result<dsa::SigningKey, AuthError> {
+    use dsa::Components;
+
+    let positive = |m: &ssh_key::Mpint, name: &str| -> Result<dsa::BigUint, AuthError> {
+        m.as_positive_bytes()
+            .map(dsa::BigUint::from_bytes_be)
+            .ok_or_else(|| {
+                AuthError::SigningError(format!("DSA component {} is not a positive integer", name))
+            })
+    };
+
+    let p = positive(&kp.public.p, "p")?;
+    let q = positive(&kp.public.q, "q")?;
+    let g = positive(&kp.public.g, "g")?;
+    let y = positive(&kp.public.y, "y")?;
+    let x = positive(kp.private.as_mpint(), "x")?;
+
+    let components = Components::from_components(p, q, g).map_err(|e| {
+        AuthError::SigningError(format!("Invalid DSA components from OpenSSH: {}", e))
+    })?;
+    let verifying_key = dsa::VerifyingKey::from_components(components, y).map_err(|e| {
+        AuthError::SigningError(format!("Invalid DSA public key from OpenSSH: {}", e))
+    })?;
+    dsa::SigningKey::from_components(verifying_key, x)
+        .map_err(|e| AuthError::SigningError(format!("Invalid DSA key from OpenSSH: {}", e)))
 }
 
 /// Parse DSA private key from DER encoding
