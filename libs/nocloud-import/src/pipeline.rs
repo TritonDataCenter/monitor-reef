@@ -747,7 +747,37 @@ fn copy_with_progress(
     Ok(())
 }
 
+/// Download `url` to `dest`. The bytes go to `<dest>.part` and are renamed
+/// to `dest` only once the download is complete, so an interrupted
+/// download never sits under the final name, where a later run would take
+/// it for a cached download.
 async fn download_with_progress(
+    http: &reqwest::Client,
+    url: &str,
+    dest: &Path,
+    cancel: &Arc<AtomicBool>,
+) -> Result<()> {
+    let mut part = dest.as_os_str().to_owned();
+    part.push(".part");
+    let part = PathBuf::from(part);
+    let result = download_to(http, url, &part, cancel).await;
+    match result {
+        Ok(()) => tokio::fs::rename(&part, dest)
+            .await
+            .with_context(|| format!("rename {} to {}", part.display(), dest.display())),
+        Err(e) => {
+            // arch-lint: allow(no-error-swallowing) reason="best-effort removal of a partial download; the download error is what the caller needs"
+            if let Err(rm) = tokio::fs::remove_file(&part).await
+                && rm.kind() != std::io::ErrorKind::NotFound
+            {
+                eprintln!("warning: could not remove {}: {rm}", part.display());
+            }
+            Err(e)
+        }
+    }
+}
+
+async fn download_to(
     http: &reqwest::Client,
     url: &str,
     dest: &Path,
@@ -1012,6 +1042,60 @@ mod tests {
     }
 
     /// A `file://` source whose bytes `check` passes or fails.
+    /// Serve one HTTP response from a local listener: `body`, declared as
+    /// `content_length` bytes long. Declaring more than is sent makes the
+    /// connection end early, as an interrupted download does.
+    async fn serve_once(body: &'static [u8], content_length: usize) -> Result<String> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        tokio::spawn(async move {
+            if let Ok((mut conn, _)) = listener.accept().await {
+                let mut request = [0u8; 1024];
+                let _ = conn.read(&mut request).await;
+                let head = format!("HTTP/1.1 200 OK\r\ncontent-length: {content_length}\r\n\r\n");
+                let _ = conn.write_all(head.as_bytes()).await;
+                let _ = conn.write_all(body).await;
+            }
+        });
+        Ok(format!("http://{addr}/image.raw"))
+    }
+
+    async fn download(url: &str, dest: &Path) -> Result<()> {
+        let http = triton_tls::build_http_client(false)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        download_with_progress(&http, url, dest, &Arc::new(AtomicBool::new(false))).await
+    }
+
+    /// A finished download appears under its name, with no `.part` file
+    /// left beside it.
+    #[tokio::test]
+    async fn a_download_appears_only_when_complete() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let dest = dir.path().join("image.raw");
+        download(&serve_once(b"0123456789", 10).await?, &dest).await?;
+        assert_eq!(tokio::fs::read(&dest).await?, b"0123456789");
+        assert!(!tokio::fs::try_exists(dir.path().join("image.raw.part")).await?);
+        Ok(())
+    }
+
+    /// An interrupted download leaves nothing under the final name, so a
+    /// later run cannot take the truncated file for a cached download.
+    #[tokio::test]
+    async fn an_interrupted_download_leaves_nothing_behind() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let dest = dir.path().join("image.raw");
+        assert!(
+            download(&serve_once(b"01234", 10).await?, &dest)
+                .await
+                .is_err()
+        );
+        assert!(!tokio::fs::try_exists(&dest).await?);
+        assert!(!tokio::fs::try_exists(dir.path().join("image.raw.part")).await?);
+        Ok(())
+    }
+
     async fn check_local(bytes: &[u8], pinned_sha256: &str) -> Result<(PathBuf, String)> {
         let dir = tempfile::tempdir()?;
         let path = dir.path().join("image.raw");
