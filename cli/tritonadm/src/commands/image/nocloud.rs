@@ -133,6 +133,16 @@ pub async fn run(mut opts: FetchOpts) -> Result<()> {
         .clone()
         .unwrap_or_else(|| PathBuf::from(format!("/var/tmp/tritonadm/nocloud/image/{stub}")));
 
+    let info = pipeline::ImageInfo {
+        vendor: vendor_label.clone(),
+        series: resolved.series.clone(),
+        version: resolved.version.clone(),
+        os: resolved.os.clone(),
+        description: resolved.description.clone(),
+        homepage: resolved.homepage.to_string(),
+        ssh_key: resolved.ssh_key,
+    };
+
     if opts.dry_run {
         // Best-effort dataset display: use --dataset if given, else try
         // default_dataset() (works on SmartOS), else a placeholder so
@@ -146,6 +156,7 @@ pub async fn run(mut opts: FetchOpts) -> Result<()> {
             &opts,
             &vendor_label,
             &resolved,
+            &info,
             &dataset,
             &workdir,
             &output_dir,
@@ -189,15 +200,6 @@ pub async fn run(mut opts: FetchOpts) -> Result<()> {
     let source = pipeline::Source {
         url: resolved.url.clone(),
         format: resolved.format,
-    };
-    let info = pipeline::ImageInfo {
-        vendor: vendor_label.clone(),
-        series: resolved.series.clone(),
-        version: resolved.version.clone(),
-        os: resolved.os.clone(),
-        description: resolved.description.clone(),
-        homepage: resolved.homepage.to_string(),
-        ssh_key: resolved.ssh_key,
     };
     let verifier_check = VerifierCheck {
         verifier: resolved.verifier.as_ref(),
@@ -305,16 +307,13 @@ fn print_plan(
     opts: &FetchOpts,
     vendor_label: &str,
     resolved: &vendor::ResolvedImage,
+    info: &pipeline::ImageInfo,
     dataset: &str,
     workdir: &std::path::Path,
     output_dir: &std::path::Path,
 ) {
-    let src_filename = resolved
-        .url
-        .path_segments()
-        .and_then(|mut s| s.next_back())
-        .unwrap_or("(unknown)");
-    let stub = format!("{}-{}-{}", vendor_label, resolved.series, resolved.version);
+    // The names the pipeline will use, from the pipeline.
+    let outputs = pipeline::OutputPaths::new(output_dir, info);
 
     println!("Resolved upstream image:");
     println!("  Target:        {}", opts.target);
@@ -356,16 +355,13 @@ fn print_plan(
     }
     println!("Would write to:");
     if resolved.url.scheme() != "file" {
-        println!("  Cache file:    {}", workdir.join(src_filename).display());
+        match pipeline::download_path(workdir, &resolved.url) {
+            Ok(path) => println!("  Cache file:    {}", path.display()),
+            Err(_) => println!("  Cache file:    (unknown)"),
+        }
     }
-    println!(
-        "  Image:         {}",
-        output_dir.join(format!("{stub}.x86_64.zfs.gz")).display()
-    );
-    println!(
-        "  Manifest:      {}",
-        output_dir.join(format!("{stub}.json")).display()
-    );
+    println!("  Image:         {}", outputs.gz.display());
+    println!("  Manifest:      {}", outputs.manifest.display());
 
     println!();
     println!("Would create transient zvol:");
@@ -374,10 +370,7 @@ fn print_plan(
 
     println!();
     println!("Manifest fields that would be set:");
-    println!(
-        "  name:          {}-{}-nocloud",
-        vendor_label, resolved.series
-    );
+    println!("  name:          {}", info.image_name());
     println!("  version:       {}", resolved.version);
     println!("  os:            {}", resolved.os);
     println!("  ssh_key req'd: {}", resolved.ssh_key);

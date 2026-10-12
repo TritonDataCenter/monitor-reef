@@ -179,14 +179,14 @@ async fn run_inner(
 /// The files a build writes in the output directory: the uncompressed ZFS
 /// stream (replaced by its gzipped form once compressed), the gzipped
 /// stream, and the manifest.
-struct OutputPaths {
-    zfs: PathBuf,
-    gz: PathBuf,
-    manifest: PathBuf,
+pub struct OutputPaths {
+    pub zfs: PathBuf,
+    pub gz: PathBuf,
+    pub manifest: PathBuf,
 }
 
 impl OutputPaths {
-    fn new(output_dir: &Path, info: &ImageInfo) -> OutputPaths {
+    pub fn new(output_dir: &Path, info: &ImageInfo) -> OutputPaths {
         let stub = format!("{}-{}-{}", info.vendor, info.series, info.version);
         OutputPaths {
             zfs: output_dir.join(format!("{stub}.x86_64.zfs")),
