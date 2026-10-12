@@ -163,6 +163,10 @@ async fn run_inner(
     )
     .await;
 
+    if result.is_err() {
+        remove_partial_outputs(&OutputPaths::new(&opts.output_dir, info)).await;
+    }
+
     eprintln!("Destroying zvol: {}", dataset);
     // arch-lint: allow(no-error-swallowing) reason="cleanup runs from the failure path; failing to destroy the transient zvol must not mask the outer build error"
     if let Err(e) = zfs::destroy_recursive(&dataset).await {
@@ -170,6 +174,40 @@ async fn run_inner(
     }
 
     result
+}
+
+/// The files a build writes in the output directory: the uncompressed ZFS
+/// stream (replaced by its gzipped form once compressed), the gzipped
+/// stream, and the manifest.
+struct OutputPaths {
+    zfs: PathBuf,
+    gz: PathBuf,
+    manifest: PathBuf,
+}
+
+impl OutputPaths {
+    fn new(output_dir: &Path, info: &ImageInfo) -> OutputPaths {
+        let stub = format!("{}-{}-{}", info.vendor, info.series, info.version);
+        OutputPaths {
+            zfs: output_dir.join(format!("{stub}.x86_64.zfs")),
+            gz: output_dir.join(format!("{stub}.x86_64.zfs.gz")),
+            manifest: output_dir.join(format!("{stub}.json")),
+        }
+    }
+}
+
+/// After a failed build, remove whatever of its output files it wrote: the
+/// uncompressed stream alone can be gigabytes, and a partial image or
+/// manifest is of no use.
+async fn remove_partial_outputs(paths: &OutputPaths) {
+    for path in [&paths.zfs, &paths.gz, &paths.manifest] {
+        // arch-lint: allow(no-error-swallowing) reason="best-effort cleanup on the failure path; the build error is what the caller needs"
+        if let Err(e) = tokio::fs::remove_file(path).await
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            eprintln!("warning: could not remove {}: {e}", path.display());
+        }
+    }
 }
 
 /// Where the pipeline downloads `url` in `workdir`: the URL's last path
@@ -376,10 +414,11 @@ async fn build_image(
     eprintln!("Snapshotting zvol ...");
     zfs::snap(&snap).await?;
 
-    let stub = format!("{}-{}-{}", info.vendor, info.series, info.version);
-    let zfs_path = output_dir.join(format!("{stub}.x86_64.zfs"));
-    let gz_path = output_dir.join(format!("{stub}.x86_64.zfs.gz"));
-    let manifest_path = output_dir.join(format!("{stub}.json"));
+    let OutputPaths {
+        zfs: zfs_path,
+        gz: gz_path,
+        manifest: manifest_path,
+    } = OutputPaths::new(output_dir, info);
 
     eprintln!("Exporting ZFS stream → {} ...", zfs_path.display());
     zfs::send_to_file(&snap, &zfs_path).await?;
@@ -1083,6 +1122,42 @@ mod tests {
         assert_eq!(
             download_path(Path::new("/var/tmp/w"), &url)?,
             PathBuf::from("/var/tmp/w/noble.img")
+        );
+        Ok(())
+    }
+
+    fn noble() -> ImageInfo {
+        ImageInfo {
+            vendor: "ubuntu".to_string(),
+            series: "noble".to_string(),
+            version: "20260926".to_string(),
+            os: "linux".to_string(),
+            description: String::new(),
+            homepage: String::new(),
+            ssh_key: true,
+        }
+    }
+
+    /// A failed build leaves none of its output files: the uncompressed
+    /// stream can be gigabytes, and a partial image or manifest is
+    /// useless. Other files in the output directory are left alone.
+    #[tokio::test]
+    async fn a_failed_build_leaves_no_output_files() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let paths = OutputPaths::new(dir.path(), &noble());
+        for path in [&paths.zfs, &paths.gz, &paths.manifest] {
+            tokio::fs::write(path, b"partial").await?;
+        }
+        let other = dir.path().join("someone-elses.json");
+        tokio::fs::write(&other, b"keep").await?;
+        remove_partial_outputs(&paths).await;
+        for path in [&paths.zfs, &paths.gz, &paths.manifest] {
+            assert!(!tokio::fs::try_exists(path).await?, "{}", path.display());
+        }
+        assert!(tokio::fs::try_exists(&other).await?);
+        assert_eq!(
+            paths.gz.file_name().and_then(|n| n.to_str()),
+            Some("ubuntu-noble-20260926.x86_64.zfs.gz")
         );
         Ok(())
     }
