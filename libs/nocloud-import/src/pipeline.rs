@@ -172,6 +172,13 @@ async fn run_inner(
     result
 }
 
+/// Where the pipeline downloads `url` in `workdir`: the URL's last path
+/// segment. A completed download stays there, and is reused, until the
+/// caller removes it.
+pub fn download_path(workdir: &Path, url: &url::Url) -> Result<PathBuf> {
+    Ok(workdir.join(filename_from_url(url)?))
+}
+
 fn filename_from_url(url: &url::Url) -> Result<String> {
     url.path_segments()
         .and_then(|mut s| s.next_back())
@@ -203,7 +210,7 @@ async fn ensure_verified_source(
     }
 
     let src_filename = filename_from_url(&source.url)?;
-    let downloaded = opts.workdir.join(&src_filename);
+    let downloaded = download_path(&opts.workdir, &source.url)?;
 
     let started_with_cache = tokio::fs::try_exists(&downloaded).await?;
     if started_with_cache {
@@ -1066,6 +1073,18 @@ mod tests {
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))?;
         download_with_progress(&http, url, dest, &Arc::new(AtomicBool::new(false))).await
+    }
+
+    /// Where a source is downloaded, which callers cleaning up after an
+    /// import need to know: the workdir and the URL's last path segment.
+    #[test]
+    fn a_source_downloads_to_its_file_name_in_the_workdir() -> Result<()> {
+        let url = url::Url::parse("https://example.com/images/noble.img?x=1")?;
+        assert_eq!(
+            download_path(Path::new("/var/tmp/w"), &url)?,
+            PathBuf::from("/var/tmp/w/noble.img")
+        );
+        Ok(())
     }
 
     /// A finished download appears under its name, with no `.part` file

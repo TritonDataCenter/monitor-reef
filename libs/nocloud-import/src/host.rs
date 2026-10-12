@@ -32,6 +32,11 @@ pub async fn install_via_imgadm(gz: &Path, manifest: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The lock file [`acquire_workdir_lock`] takes in `workdir`.
+pub fn workdir_lock_path(workdir: &Path) -> std::path::PathBuf {
+    workdir.join(".lock")
+}
+
 /// Acquire an exclusive `flock` on `<workdir>/.lock`, fail-fast if
 /// another process holds it. The returned `File` must outlive the
 /// pipeline; closing it (drop) releases the lock. The kernel also
@@ -39,7 +44,7 @@ pub async fn install_via_imgadm(gz: &Path, manifest: &Path) -> Result<()> {
 /// leave a stuck lock on disk. The empty `.lock` file itself is
 /// harmless and stays around between runs.
 pub fn acquire_workdir_lock(workdir: &Path) -> Result<std::fs::File> {
-    let lock_path = workdir.join(".lock");
+    let lock_path = workdir_lock_path(workdir);
     let lock_file = std::fs::OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -104,4 +109,19 @@ pub fn default_dataset() -> Result<String> {
         );
     }
     Ok(dataset)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The lock sits in the workdir, where callers cleaning up after an
+    /// import need to find it.
+    #[test]
+    fn the_workdir_lock_is_dot_lock_in_the_workdir() {
+        assert_eq!(
+            workdir_lock_path(Path::new("/var/tmp/w")),
+            std::path::PathBuf::from("/var/tmp/w/.lock")
+        );
+    }
 }
