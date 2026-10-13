@@ -15,8 +15,20 @@ use anyhow::{Context, Result, bail};
 use tokio::process::Command;
 
 pub async fn create_zvol(dataset: &str, size_mib: u64) -> Result<()> {
-    let size = format!("{size_mib}m");
-    run(&["zfs", "create", "-V", &size, dataset]).await
+    let args = create_zvol_args(dataset, size_mib);
+    let mut argv = vec!["zfs"];
+    argv.extend(args.iter().map(String::as_str));
+    run(&argv).await
+}
+
+/// `zfs` arguments for the build zvol. It is sparse (`-s`): the image only
+/// fills what it writes, and the zvol is destroyed after the build, so
+/// reserving its whole virtual size would only make imports fail on pools
+/// with less free space than that.
+fn create_zvol_args(dataset: &str, size_mib: u64) -> Vec<String> {
+    ["create", "-s", "-V", &format!("{size_mib}m"), dataset]
+        .map(str::to_string)
+        .to_vec()
 }
 
 pub async fn snap(snap_spec: &str) -> Result<()> {
@@ -129,4 +141,19 @@ async fn run(args: &[&str]) -> Result<()> {
         bail!("{args:?} exited {status}");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The build zvol is sparse: a large virtual size does not reserve
+    /// that much pool space up front, only what the image writes.
+    #[test]
+    fn the_build_zvol_is_sparse() {
+        assert_eq!(
+            create_zvol_args("zones/build", 10240),
+            ["create", "-s", "-V", "10240m", "zones/build"]
+        );
+    }
 }

@@ -163,6 +163,10 @@ async fn run_inner(
     )
     .await;
 
+    if result.is_err() {
+        remove_partial_outputs(&OutputPaths::new(&opts.output_dir, info)).await;
+    }
+
     eprintln!("Destroying zvol: {}", dataset);
     // arch-lint: allow(no-error-swallowing) reason="cleanup runs from the failure path; failing to destroy the transient zvol must not mask the outer build error"
     if let Err(e) = zfs::destroy_recursive(&dataset).await {
@@ -170,6 +174,47 @@ async fn run_inner(
     }
 
     result
+}
+
+/// The files a build writes in the output directory: the uncompressed ZFS
+/// stream (replaced by its gzipped form once compressed), the gzipped
+/// stream, and the manifest.
+pub struct OutputPaths {
+    pub zfs: PathBuf,
+    pub gz: PathBuf,
+    pub manifest: PathBuf,
+}
+
+impl OutputPaths {
+    pub fn new(output_dir: &Path, info: &ImageInfo) -> OutputPaths {
+        let stub = format!("{}-{}-{}", info.vendor, info.series, info.version);
+        OutputPaths {
+            zfs: output_dir.join(format!("{stub}.x86_64.zfs")),
+            gz: output_dir.join(format!("{stub}.x86_64.zfs.gz")),
+            manifest: output_dir.join(format!("{stub}.json")),
+        }
+    }
+}
+
+/// After a failed build, remove whatever of its output files it wrote: the
+/// uncompressed stream alone can be gigabytes, and a partial image or
+/// manifest is of no use.
+async fn remove_partial_outputs(paths: &OutputPaths) {
+    for path in [&paths.zfs, &paths.gz, &paths.manifest] {
+        // arch-lint: allow(no-error-swallowing) reason="best-effort cleanup on the failure path; the build error is what the caller needs"
+        if let Err(e) = tokio::fs::remove_file(path).await
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            eprintln!("warning: could not remove {}: {e}", path.display());
+        }
+    }
+}
+
+/// Where the pipeline downloads `url` in `workdir`: the URL's last path
+/// segment. A completed download stays there, and is reused, until the
+/// caller removes it.
+pub fn download_path(workdir: &Path, url: &url::Url) -> Result<PathBuf> {
+    Ok(workdir.join(filename_from_url(url)?))
 }
 
 fn filename_from_url(url: &url::Url) -> Result<String> {
@@ -203,7 +248,7 @@ async fn ensure_verified_source(
     }
 
     let src_filename = filename_from_url(&source.url)?;
-    let downloaded = opts.workdir.join(&src_filename);
+    let downloaded = download_path(&opts.workdir, &source.url)?;
 
     let started_with_cache = tokio::fs::try_exists(&downloaded).await?;
     if started_with_cache {
@@ -369,10 +414,11 @@ async fn build_image(
     eprintln!("Snapshotting zvol ...");
     zfs::snap(&snap).await?;
 
-    let stub = format!("{}-{}-{}", info.vendor, info.series, info.version);
-    let zfs_path = output_dir.join(format!("{stub}.x86_64.zfs"));
-    let gz_path = output_dir.join(format!("{stub}.x86_64.zfs.gz"));
-    let manifest_path = output_dir.join(format!("{stub}.json"));
+    let OutputPaths {
+        zfs: zfs_path,
+        gz: gz_path,
+        manifest: manifest_path,
+    } = OutputPaths::new(output_dir, info);
 
     eprintln!("Exporting ZFS stream → {} ...", zfs_path.display());
     zfs::send_to_file(&snap, &zfs_path).await?;
@@ -747,7 +793,37 @@ fn copy_with_progress(
     Ok(())
 }
 
+/// Download `url` to `dest`. The bytes go to `<dest>.part` and are renamed
+/// to `dest` only once the download is complete, so an interrupted
+/// download never sits under the final name, where a later run would take
+/// it for a cached download.
 async fn download_with_progress(
+    http: &reqwest::Client,
+    url: &str,
+    dest: &Path,
+    cancel: &Arc<AtomicBool>,
+) -> Result<()> {
+    let mut part = dest.as_os_str().to_owned();
+    part.push(".part");
+    let part = PathBuf::from(part);
+    let result = download_to(http, url, &part, cancel).await;
+    match result {
+        Ok(()) => tokio::fs::rename(&part, dest)
+            .await
+            .with_context(|| format!("rename {} to {}", part.display(), dest.display())),
+        Err(e) => {
+            // arch-lint: allow(no-error-swallowing) reason="best-effort removal of a partial download; the download error is what the caller needs"
+            if let Err(rm) = tokio::fs::remove_file(&part).await
+                && rm.kind() != std::io::ErrorKind::NotFound
+            {
+                eprintln!("warning: could not remove {}: {rm}", part.display());
+            }
+            Err(e)
+        }
+    }
+}
+
+async fn download_to(
     http: &reqwest::Client,
     url: &str,
     dest: &Path,
@@ -1012,6 +1088,108 @@ mod tests {
     }
 
     /// A `file://` source whose bytes `check` passes or fails.
+    /// Serve one HTTP response from a local listener: `body`, declared as
+    /// `content_length` bytes long. Declaring more than is sent makes the
+    /// connection end early, as an interrupted download does.
+    async fn serve_once(body: &'static [u8], content_length: usize) -> Result<String> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        tokio::spawn(async move {
+            if let Ok((mut conn, _)) = listener.accept().await {
+                let mut request = [0u8; 1024];
+                let _ = conn.read(&mut request).await;
+                let head = format!("HTTP/1.1 200 OK\r\ncontent-length: {content_length}\r\n\r\n");
+                let _ = conn.write_all(head.as_bytes()).await;
+                let _ = conn.write_all(body).await;
+            }
+        });
+        Ok(format!("http://{addr}/image.raw"))
+    }
+
+    async fn download(url: &str, dest: &Path) -> Result<()> {
+        let http = triton_tls::build_http_client(false)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        download_with_progress(&http, url, dest, &Arc::new(AtomicBool::new(false))).await
+    }
+
+    /// Where a source is downloaded, which callers cleaning up after an
+    /// import need to know: the workdir and the URL's last path segment.
+    #[test]
+    fn a_source_downloads_to_its_file_name_in_the_workdir() -> Result<()> {
+        let url = url::Url::parse("https://example.com/images/noble.img?x=1")?;
+        assert_eq!(
+            download_path(Path::new("/var/tmp/w"), &url)?,
+            PathBuf::from("/var/tmp/w/noble.img")
+        );
+        Ok(())
+    }
+
+    fn noble() -> ImageInfo {
+        ImageInfo {
+            vendor: "ubuntu".to_string(),
+            series: "noble".to_string(),
+            version: "20260926".to_string(),
+            os: "linux".to_string(),
+            description: String::new(),
+            homepage: String::new(),
+            ssh_key: true,
+        }
+    }
+
+    /// A failed build leaves none of its output files: the uncompressed
+    /// stream can be gigabytes, and a partial image or manifest is
+    /// useless. Other files in the output directory are left alone.
+    #[tokio::test]
+    async fn a_failed_build_leaves_no_output_files() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let paths = OutputPaths::new(dir.path(), &noble());
+        for path in [&paths.zfs, &paths.gz, &paths.manifest] {
+            tokio::fs::write(path, b"partial").await?;
+        }
+        let other = dir.path().join("someone-elses.json");
+        tokio::fs::write(&other, b"keep").await?;
+        remove_partial_outputs(&paths).await;
+        for path in [&paths.zfs, &paths.gz, &paths.manifest] {
+            assert!(!tokio::fs::try_exists(path).await?, "{}", path.display());
+        }
+        assert!(tokio::fs::try_exists(&other).await?);
+        assert_eq!(
+            paths.gz.file_name().and_then(|n| n.to_str()),
+            Some("ubuntu-noble-20260926.x86_64.zfs.gz")
+        );
+        Ok(())
+    }
+
+    /// A finished download appears under its name, with no `.part` file
+    /// left beside it.
+    #[tokio::test]
+    async fn a_download_appears_only_when_complete() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let dest = dir.path().join("image.raw");
+        download(&serve_once(b"0123456789", 10).await?, &dest).await?;
+        assert_eq!(tokio::fs::read(&dest).await?, b"0123456789");
+        assert!(!tokio::fs::try_exists(dir.path().join("image.raw.part")).await?);
+        Ok(())
+    }
+
+    /// An interrupted download leaves nothing under the final name, so a
+    /// later run cannot take the truncated file for a cached download.
+    #[tokio::test]
+    async fn an_interrupted_download_leaves_nothing_behind() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let dest = dir.path().join("image.raw");
+        assert!(
+            download(&serve_once(b"01234", 10).await?, &dest)
+                .await
+                .is_err()
+        );
+        assert!(!tokio::fs::try_exists(&dest).await?);
+        assert!(!tokio::fs::try_exists(dir.path().join("image.raw.part")).await?);
+        Ok(())
+    }
+
     async fn check_local(bytes: &[u8], pinned_sha256: &str) -> Result<(PathBuf, String)> {
         let dir = tempfile::tempdir()?;
         let path = dir.path().join("image.raw");
