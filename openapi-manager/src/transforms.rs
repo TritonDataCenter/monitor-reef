@@ -317,6 +317,7 @@ fn patch_empty_202_responses(spec: &mut Value) -> Result<()> {
     let endpoints: &[(&str, &str)] = &[
         ("/{account}/machines/{machine}", "post"),
         ("/{account}/machines/{machine}/snapshots/{name}", "post"),
+        ("/{account}/machines/{machine}/disks", "post"),
     ];
 
     let paths = spec
@@ -1151,6 +1152,37 @@ mod tests {
                 .to_string()
                 .contains("Error schema not found"),
         );
+    }
+
+    #[test]
+    fn test_patch_empty_202_removes_create_disk_content() {
+        let mut spec = serde_json::json!({
+            "openapi": "3.0.3",
+            "info": { "title": "Test", "version": "1.0.0" },
+            "paths": {
+                "/{account}/machines/{machine}/disks": {
+                    "post": {
+                        "responses": {
+                            "202": {
+                                "description": "accepted",
+                                "content": {
+                                    "application/json": {
+                                        "schema": { "type": "null" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        patch_empty_202_responses(&mut spec).unwrap();
+
+        let response =
+            &spec["paths"]["/{account}/machines/{machine}/disks"]["post"]["responses"]["202"];
+        assert_eq!(response["description"], "accepted");
+        assert!(response["content"].is_null());
     }
 
     #[test]

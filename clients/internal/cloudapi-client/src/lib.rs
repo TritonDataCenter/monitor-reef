@@ -145,6 +145,7 @@ pub use cloudapi_api::{
     DiskAction,
     DiskActionQuery,
     DiskPath,
+    DiskSize,
     DiskSpec,
     DiskState,
     FabricNetworkPath,

@@ -383,6 +383,13 @@
       "CreateDiskRequest": {
         "description": "Request to create disk",
         "properties": {
+          "block_size": {
+            "description": "Block size in bytes",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
           "pci_slot": {
             "default": null,
             "description": "PCI slot (optional)",
@@ -390,10 +397,12 @@
             "type": "string"
           },
           "size": {
-            "description": "Size in MB",
-            "format": "uint64",
-            "minimum": 0,
-            "type": "integer"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DiskSize"
+              }
+            ],
+            "description": "Size in MB or \"remaining\""
           }
         },
         "required": [
@@ -1038,6 +1047,7 @@
         "enum": [
           "creating",
           "running",
+          "stopped",
           "resizing",
           "failed",
           "deleted",
@@ -7510,15 +7520,8 @@
           "required": true
         },
         "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Disk"
-                }
-              }
-            },
-            "description": "successful creation"
+          "202": {
+            "description": "successfully enqueued operation"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
