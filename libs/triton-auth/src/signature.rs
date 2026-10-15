@@ -20,7 +20,7 @@
 use crate::error::AuthError;
 use base64::Engine;
 use chrono::Utc;
-use ssh_key::{HashAlg, PrivateKey};
+use ssh_key::PrivateKey;
 
 /// Key type for algorithm selection in HTTP signatures
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,18 +91,6 @@ impl KeyType {
             Self::Ecdsa384 => "ecdsa-sha384",
             Self::Ecdsa521 => "ecdsa-sha512",
             Self::Ed25519 => "ed25519-sha512",
-        }
-    }
-
-    /// Get the hash algorithm to use for signing
-    ///
-    /// Note: ssh-key 0.6 only supports Sha256 and Sha512 for HashAlg
-    fn hash_alg(&self) -> HashAlg {
-        match self {
-            // Use SHA-256 for RSA, DSA, and ECDSA-256/384
-            Self::Rsa | Self::Dsa | Self::Ecdsa256 | Self::Ecdsa384 => HashAlg::Sha256,
-            // Use SHA-512 for ECDSA-521 and Ed25519
-            Self::Ecdsa521 | Self::Ed25519 => HashAlg::Sha512,
         }
     }
 }
@@ -214,26 +202,14 @@ impl RequestSigner {
 /// # Returns
 /// The base64-encoded signature
 pub fn sign_with_key(key: &PrivateKey, data: &[u8]) -> Result<String, AuthError> {
-    let key_type = KeyType::from_private_key(key)?;
-    let hash_alg = key_type.hash_alg();
-
-    // Sign using the ssh-key crate
-    // The first argument is a namespace (empty string for SSH signatures)
-    let signature = key
-        .sign("", hash_alg, data)
-        .map_err(|e| AuthError::SigningError(format!("Failed to sign data: {}", e)))?;
-
-    let raw_bytes = signature.signature_bytes();
-
-    // ECDSA: ssh-key returns SSH wire format (mpint r || mpint s),
-    // but CloudAPI expects ASN.1/DER format
-    let sig_bytes = match key_type {
-        KeyType::Ecdsa256 | KeyType::Ecdsa384 | KeyType::Ecdsa521 => {
-            crate::certgen::ssh_ecdsa_sig_to_der(raw_bytes)?
-        }
-        _ => raw_bytes.to_vec(),
-    };
-
+    // Delegate to the shared signing path. We deliberately avoid
+    // `ssh_key::PrivateKey::sign`, which produces an SSHSIG blob and rejects
+    // the empty namespace with `namespace invalid`; `LegacyPrivateKey::sign`
+    // extracts the raw key material and produces the wire-format signature
+    // CloudAPI expects (PKCS#1 v1.5 for RSA, DER for ECDSA, raw 64 bytes for
+    // Ed25519, two 20-byte integers for DSA).
+    let legacy_key = crate::legacy_pem::LegacyPrivateKey::OpenSsh(key.clone());
+    let sig_bytes = legacy_key.sign(data)?;
     Ok(base64::engine::general_purpose::STANDARD.encode(&sig_bytes))
 }
 
